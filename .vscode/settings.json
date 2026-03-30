@@ -1,7 +1,0 @@
-{
-    "typescript.autoClosingTags": false,
-    "terminal.integrated.sendKeybindingsToShell": true,
-    "terminal.integrated.commandsToSkipShell": [
-        ""
-    ]
-}
