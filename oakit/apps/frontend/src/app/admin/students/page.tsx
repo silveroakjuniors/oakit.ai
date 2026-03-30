@@ -10,6 +10,29 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 interface Student { id: string; name: string; father_name: string; parent_contact: string; photo_path?: string; photo_url?: string; class_name: string; section_label: string; is_active: boolean; }
 interface Class { id: string; name: string; sections: { id: string; label: string }[]; }
 
+function ParentLinkPanel({ studentId, token, apiBase }: { studentId: string; token: string; apiBase: string }) {
+  const [mobile, setMobile] = useState('');
+  const [msg, setMsg] = useState('');
+  async function link() {
+    try {
+      const res = await fetch(`${apiBase}/api/v1/admin/students/${studentId}/link-parent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mobile }),
+      });
+      const data = await res.json();
+      setMsg(res.ok ? 'Parent linked' : data.error || 'Failed');
+    } catch { setMsg('Failed'); }
+  }
+  return (
+    <div className="mt-2 flex gap-2 items-center">
+      <input value={mobile} onChange={e => setMobile(e.target.value)} placeholder="Parent mobile" className="border rounded px-2 py-1 text-xs w-36" />
+      <button onClick={link} className="text-xs bg-primary text-white px-2 py-1 rounded">Link</button>
+      {msg && <span className="text-xs text-gray-500">{msg}</span>}
+    </div>
+  );
+}
+
 function StudentImportModal({ token, onClose, onImported }: { token: string; onClose: () => void; onImported: () => void; }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);

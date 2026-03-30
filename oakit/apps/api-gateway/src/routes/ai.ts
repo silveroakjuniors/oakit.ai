@@ -96,6 +96,7 @@ router.post('/query', async (req: Request, res: Response) => {
       query_date: today,
       role,
       history: Array.isArray(history) ? history.slice(-3) : [],
+      ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
     }, { timeout: 60000 });
 
     await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));

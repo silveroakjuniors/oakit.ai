@@ -19,8 +19,20 @@ import teacherExportRouter from './routes/teacher/export';
 import teacherContextRouter from './routes/teacher/context';
 import teacherSectionsRouter from './routes/teacher/sections';
 import principalDashboardRouter from './routes/principal/dashboard';
+import principalAttendanceRouter from './routes/principal/attendance';
+import principalTeachersRouter from './routes/principal/teachers';
+import principalCoverageRouter from './routes/principal/coverage';
+import principalPlansRouter from './routes/principal/plans';
+import principalFlagsRouter from './routes/principal/flags';
+import superAdminSchoolsRouter from './routes/super-admin/schools';
+import superAdminStatsRouter from './routes/super-admin/stats';
+import superAdminImpersonateRouter from './routes/super-admin/impersonate';
 import aiRouter from './routes/ai';
 import parentRouter from './routes/parent';
+import parentFeedRouter from './routes/parent/feed';
+import parentAttendanceRouter from './routes/parent/attendance';
+import parentNotificationsRouter from './routes/parent/notifications';
+import parentProgressRouter from './routes/parent/progress';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
 
 dotenv.config();
@@ -64,11 +76,25 @@ app.use('/api/v1/teacher/sections', teacherSectionsRouter);
 
 // Principal
 app.use('/api/v1/principal', principalDashboardRouter);
+app.use('/api/v1/principal/attendance', principalAttendanceRouter);
+app.use('/api/v1/principal/teachers', principalTeachersRouter);
+app.use('/api/v1/principal/coverage', principalCoverageRouter);
+app.use('/api/v1/principal/plans', principalPlansRouter);
+app.use('/api/v1/principal/flags', principalFlagsRouter);
+
+// Super Admin
+app.use('/api/v1/super-admin/schools', superAdminSchoolsRouter);
+app.use('/api/v1/super-admin/stats', superAdminStatsRouter);
+app.use('/api/v1/super-admin/impersonate', superAdminImpersonateRouter);
 
 // AI
 app.use('/api/v1/ai', aiRouter);
 
 // Parent
+app.use('/api/v1/parent/feed', parentFeedRouter);
+app.use('/api/v1/parent/attendance', parentAttendanceRouter);
+app.use('/api/v1/parent/notifications', parentNotificationsRouter);
+app.use('/api/v1/parent/progress', parentProgressRouter);
 app.use('/api/v1/parent', parentRouter);
 
 app.listen(PORT, () => {

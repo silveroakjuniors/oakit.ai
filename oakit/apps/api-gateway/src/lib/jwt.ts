@@ -6,14 +6,19 @@ const REFRESH_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 
 export interface JwtPayload {
   user_id: string;
-  school_id: string;
+  school_id: string; // null for super_admin — cast at sign time
   role: string;
   permissions: string[];
   force_password_reset?: boolean;
+  jti?: string;
 }
 
-export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
+export interface SuperAdminJwtPayload extends Omit<JwtPayload, 'school_id'> {
+  school_id: null;
+}
+
+export function signToken(payload: JwtPayload | SuperAdminJwtPayload, expiresIn?: string): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn ?? JWT_EXPIRES_IN } as jwt.SignOptions);
 }
 
 export function signRefreshToken(user_id: string): string {

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { pool } from '../lib/db';
-import { signToken, verifyToken } from '../lib/jwt';
+import { signToken, verifyToken, SuperAdminJwtPayload } from '../lib/jwt';
 import { jwtVerify } from '../middleware/auth';
 
 const router = Router();
@@ -14,19 +14,44 @@ router.post('/login', async (req: Request, res: Response) => {
   try {
     const { school_code, mobile, email, password, role: roleHint } = req.body;
     const identifier = mobile || email;
-    if (!school_code || !identifier || !password) {
+    if (!identifier || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Super admin login path — no school_code required
+    if (!school_code || school_code === 'platform') {
+      const saResult = await pool.query(
+        `SELECT id, password_hash, is_active, role FROM users
+         WHERE (email = $1 OR mobile = $1) AND school_id IS NULL AND role = 'super_admin'`,
+        [identifier]
+      );
+      if (saResult.rows.length > 0) {
+        const sa = saResult.rows[0];
+        if (!sa.is_active || !sa.password_hash) {
+          return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        const valid = await bcrypt.compare(password, sa.password_hash);
+        if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+        const token = signToken({ user_id: sa.id, school_id: null, role: 'super_admin', permissions: [] } as SuperAdminJwtPayload);
+        return res.json({ token, role: 'super_admin' });
+      }
+      if (!school_code) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
     }
 
     // Find school
     const schoolResult = await pool.query(
-      'SELECT id FROM schools WHERE subdomain = $1',
+      'SELECT id, status FROM schools WHERE subdomain = $1',
       [school_code.toLowerCase()]
     );
     if (schoolResult.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const school_id = schoolResult.rows[0].id;
+    const { id: school_id, status: schoolStatus } = schoolResult.rows[0];
+    if (schoolStatus === 'inactive') {
+      return res.status(401).json({ error: 'School account is inactive' });
+    }
 
     // Parent login path
     if (roleHint === 'parent') {

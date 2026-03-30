@@ -73,6 +73,23 @@ router.post('/', async (req: Request, res: Response) => {
       [school_id, section_id, user_id, date, covered_chunk_ids, settling_day_note || null]
     );
 
+    // Create parent notifications for all parents linked to students in this section (idempotent)
+    try {
+      await pool.query(
+        `INSERT INTO parent_notifications (parent_id, completion_id, section_id, completion_date, chunks_covered)
+         SELECT DISTINCT
+           psl.parent_id,
+           $1::uuid,
+           $2::uuid,
+           $3::date,
+           $4::int
+         FROM parent_student_links psl
+         JOIN students st ON st.id = psl.student_id AND st.section_id = $2::uuid
+         ON CONFLICT (parent_id, completion_id) DO NOTHING`,
+        [result.rows[0].id, section_id, date, covered_chunk_ids.length]
+      );
+    } catch { /* non-critical — don't fail the completion */ }
+
     return res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);

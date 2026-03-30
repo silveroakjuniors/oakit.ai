@@ -65,10 +65,27 @@ export default function PrincipalDashboard() {
     setMessages(m => [...m, { role: 'user', text: userMsg }]);
     setAiLoading(true);
     try {
-      const res = await apiPost<{ response: string }>('/api/v1/ai/query', { text: userMsg }, token);
+      // Assemble principal context: low-coverage sections, pending attendance, flagged sections
+      let context: Record<string, any> | undefined;
+      try {
+        const [coverageData, attendanceData] = await Promise.all([
+          apiGet<any[]>('/api/v1/principal/coverage', token),
+          apiGet<any[]>('/api/v1/principal/attendance/overview', token),
+        ]);
+        context = {
+          low_coverage_sections: coverageData.filter((s: any) => s.coverage_pct < 50).map((s: any) => ({ name: s.section_name, coverage_pct: s.coverage_pct })),
+          pending_attendance: attendanceData.filter((s: any) => s.status === 'pending').map((s: any) => s.section_name),
+          flagged_sections: coverageData.filter((s: any) => s.flagged).map((s: any) => ({ name: s.section_name, note: s.flag_note })),
+        };
+      } catch { /* context is optional */ }
+
+      const res = await apiPost<{ response: string }>('/api/v1/ai/query', { text: userMsg, context }, token);
       setMessages(m => [...m, { role: 'assistant', text: res.response }]);
-    } catch {
-      setMessages(m => [...m, { role: 'assistant', text: 'Sorry, could not process that.' }]);
+    } catch (err: any) {
+      const msg = err?.message?.includes('503') || err?.message?.includes('unavailable')
+        ? 'AI service is currently unavailable. Please try again later.'
+        : 'Sorry, could not process that.';
+      setMessages(m => [...m, { role: 'assistant', text: msg }]);
     } finally { setAiLoading(false); }
   }
 
@@ -90,6 +107,20 @@ export default function PrincipalDashboard() {
         </div>
       </header>
 
+      {/* Navigation cards */}
+      <div className="px-6 pt-5 pb-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[
+          { href: '/principal/attendance', label: 'Attendance Overview', icon: '📋' },
+          { href: '/principal/teachers', label: 'Teacher Activity', icon: '👩‍🏫' },
+          { href: '/principal/coverage', label: 'Coverage Report', icon: '📊' },
+        ].map(({ href, label, icon }) => (
+          <a key={href} href={href} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
+            <span className="text-2xl">{icon}</span>
+            <span className="text-sm font-medium text-gray-700">{label}</span>
+          </a>
+        ))}
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Progress grid */}
         <div className="flex-1 overflow-y-auto p-6">
@@ -99,10 +130,9 @@ export default function PrincipalDashboard() {
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{className}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {secs.map(s => (
+                  <div key={s.section_id} onClick={() => loadTimeline(s.section_id)} className="cursor-pointer">
                   <Card
-                    key={s.section_id}
-                    className={`cursor-pointer transition-shadow hover:shadow-md ${selectedSection === s.section_id ? 'ring-2 ring-primary' : ''}`}
-                    onClick={() => loadTimeline(s.section_id)}
+                    className={`transition-shadow hover:shadow-md ${selectedSection === s.section_id ? 'ring-2 ring-primary' : ''}`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-gray-800">Section {s.section_label}</span>
@@ -116,6 +146,7 @@ export default function PrincipalDashboard() {
                     </div>
                     <p className="text-xs text-gray-500">{s.completion_pct}% · Last log: {s.last_log_date || 'Never'}</p>
                   </Card>
+                  </div>
                 ))}
               </div>
             </div>
