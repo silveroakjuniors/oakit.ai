@@ -1,0 +1,12 @@
+{
+  "name": "oakit",
+  "private": true,
+  "workspaces": [
+    "apps/frontend",
+    "apps/api-gateway"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "dev:api": "npm run dev --workspace=apps/api-gateway"
+  }
+}

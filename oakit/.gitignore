@@ -1,0 +1,31 @@
+# System
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.kiro/
+
+# Node
+node_modules/
+**/node_modules/
+
+# Next.js
+.next/
+**/.next/
+out/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log
+
+# Misc
+git
