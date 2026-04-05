@@ -194,10 +194,7 @@ export default function PrincipalDashboard() {
                 </Link>
               ))}
             </div>
-                <p className="text-lg font-bold text-gray-800">{ctx.summary.attendance_submitted}/{ctx.summary.total_sections}</p>
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* Section cards by class */}
           {loading ? (

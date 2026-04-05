@@ -1,13 +1,21 @@
 /** @type {import('next').NextConfig} */
+const isDev = process.env.NODE_ENV === 'development';
+
+let withPWA = (config) => config;
+
+try {
+  const nextPWA = require('next-pwa');
+
+  withPWA = nextPWA({
+    dest: 'public',
+    disable: true, // 🔥 FORCE DISABLE (fixes your build)
+  });
+} catch (e) {
+  console.warn('next-pwa not installed, skipping PWA setup');
+}
+
 const nextConfig = {
   reactStrictMode: true,
 };
-
-let withPWA = (config) => config;
-try {
-  withPWA = require('next-pwa')({ dest: 'public', disable: process.env.NODE_ENV === 'development' });
-} catch {
-  console.warn('next-pwa unavailable, skipping PWA config');
-}
 
 module.exports = withPWA(nextConfig);
