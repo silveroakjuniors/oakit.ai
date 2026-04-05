@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { Button, Card, Badge, ProgressBar } from '@/components/ui';
