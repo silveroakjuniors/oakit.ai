@@ -9,6 +9,22 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 const RESET_TOKEN_EXPIRES = 15 * 60; // 15 minutes in seconds
 
+// GET /api/v1/auth/school-info?code=sojs — public endpoint to get school name
+router.get('/school-info', async (req: Request, res: Response) => {
+  try {
+    const code = (req.query.code as string || '').toLowerCase().trim();
+    if (!code) return res.status(400).json({ error: 'code is required' });
+    const result = await pool.query(
+      'SELECT name, subdomain FROM schools WHERE subdomain = $1 AND status != $2',
+      [code, 'inactive']
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'School not found' });
+    return res.json({ name: result.rows[0].name, code: result.rows[0].subdomain });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/v1/auth/login
 router.post('/login', async (req: Request, res: Response) => {
   try {
