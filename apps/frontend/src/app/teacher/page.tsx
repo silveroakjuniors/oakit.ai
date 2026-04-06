@@ -202,8 +202,15 @@ export default function TeacherPlanner() {
   const [notes, setNotes] = useState<{ id: string; note_text?: string; file_name?: string; file_size?: number; expires_at: string }[]>([]);
   const [showHomeworkPanel, setShowHomeworkPanel] = useState(false);
   const [showCompletionNotice, setShowCompletionNotice] = useState(true);
+  // Homework submission tracking state
+  const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
+  const [hwSubmissions, setHwSubmissions] = useState<Record<string, 'completed' | 'partial' | 'not_submitted'>>({});
+  const [savingHwSubmissions, setSavingHwSubmissions] = useState(false);
+  const [hwSubmissionsMsg, setHwSubmissionsMsg] = useState('');
+  const [existingHwSubmissions, setExistingHwSubmissions] = useState<{ student_id: string; student_name: string; status: string }[]>([]);
   const [streak, setStreak] = useState<{ current_streak: number; best_streak: number; badge: string | null } | null>(null);
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
+  const [showStreakInfo, setShowStreakInfo] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const initialLoadDone = useRef(false);
   const todayCompletedRef = useRef(false);
@@ -283,6 +290,28 @@ export default function TeacherPlanner() {
       ]);
       if (hw) { setExistingHomework(hw); setHomeworkText(hw.raw_text || ''); }
       setNotes(ns || []);
+    } catch { /* ignore */ }
+  }
+
+  async function loadStudents() {
+    try {
+      if (!sectionId) return;
+      const data = await apiGet<{ id: string; name: string }[]>(`/api/v1/teacher/sections/${sectionId}/students`, token);
+      setStudents(data || []);
+    } catch { /* ignore */ }
+  }
+
+  async function loadHwSubmissions(date?: string) {
+    try {
+      const d = date || today;
+      const data = await apiGet<{ student_id: string; student_name: string; status: string }[]>(
+        `/api/v1/teacher/notes/homework/submissions?date=${d}`, token
+      );
+      setExistingHwSubmissions(data || []);
+      // Pre-fill the submission state
+      const map: Record<string, 'completed' | 'partial' | 'not_submitted'> = {};
+      (data || []).forEach(s => { map[s.student_id] = s.status as any; });
+      setHwSubmissions(map);
     } catch { /* ignore */ }
   }
 
@@ -627,7 +656,15 @@ export default function TeacherPlanner() {
 
             {/* Homework & Notes panel */}
             <div className="border border-gray-200 rounded-2xl overflow-hidden mt-1">
-              <button onClick={() => { setShowHomeworkPanel(v => !v); setShowCompletionNotice(true); }}
+              <button onClick={async () => {
+                const opening = !showHomeworkPanel;
+                setShowHomeworkPanel(opening);
+                setShowCompletionNotice(true);
+                if (opening && students.length === 0 && sectionId) {
+                  await loadStudents();
+                  await loadHwSubmissions();
+                }
+              }}
                 className="w-full flex items-center justify-between px-4 py-3 bg-white text-sm font-semibold text-gray-700 active:bg-gray-50">
                 <span>📝 Homework & Notes for Parents</span>
                 <span className="text-gray-400 text-xs">{showHomeworkPanel ? '▲' : '▼'}</span>
@@ -679,12 +716,68 @@ export default function TeacherPlanner() {
                           }, token);
                           setExistingHomework(res);
                           setHomeworkMsg('✓ Homework sent to parents');
+                          // Load students for tracking if not loaded
+                          if (students.length === 0) await loadStudents();
+                          await loadHwSubmissions();
                         } catch (e: unknown) { setHomeworkMsg(e instanceof Error ? e.message : 'Failed'); }
                         finally { setSavingHomework(false); }
                       }}>
                       Send Homework to Parents
                     </Button>
                   </div>
+
+                  {/* Homework Completion Tracking */}
+                  {existingHomework && students.length > 0 && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <p className="text-xs font-semibold text-gray-700 mb-1">✅ Homework Completion Tracking</p>
+                      <p className="text-xs text-gray-400 mb-3">Mark each student's homework status. Parents can see this in their portal.</p>
+                      <div className="flex flex-col gap-1.5">
+                        {students.map(student => {
+                          const status = hwSubmissions[student.id] || 'not_submitted';
+                          return (
+                            <div key={student.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3 py-2.5">
+                              <span className="text-sm text-gray-700 truncate flex-1 mr-2">{student.name}</span>
+                              <div className="flex gap-1 shrink-0">
+                                {(['completed', 'partial', 'not_submitted'] as const).map(s => (
+                                  <button key={s} onClick={() => setHwSubmissions(prev => ({ ...prev, [student.id]: s }))}
+                                    className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                                      status === s
+                                        ? s === 'completed' ? 'bg-emerald-500 text-white'
+                                          : s === 'partial' ? 'bg-amber-500 text-white'
+                                          : 'bg-red-400 text-white'
+                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                    }`}>
+                                    {s === 'completed' ? '✓' : s === 'partial' ? '½' : '✗'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> Done</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Partial</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> Not submitted</span>
+                      </div>
+                      {hwSubmissionsMsg && <p className={`text-xs mt-2 ${hwSubmissionsMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
+                      <Button size="sm" className="w-full mt-3" loading={savingHwSubmissions}
+                        disabled={Object.keys(hwSubmissions).length === 0}
+                        onClick={async () => {
+                          setSavingHwSubmissions(true); setHwSubmissionsMsg('');
+                          try {
+                            const submissions = Object.entries(hwSubmissions).map(([student_id, status]) => ({ student_id, status }));
+                            await apiPost('/api/v1/teacher/notes/homework/submissions', {
+                              submissions, ...(sectionId ? { section_id: sectionId } : {}),
+                            }, token);
+                            setHwSubmissionsMsg('✓ Homework status saved');
+                          } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
+                          finally { setSavingHwSubmissions(false); }
+                        }}>
+                        Save Homework Status
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Notes */}
                   <div className="border-t border-gray-200 pt-4">
@@ -1064,13 +1157,36 @@ export default function TeacherPlanner() {
           {greeting && <span className="text-sm text-white/85 font-medium truncate max-w-[180px] lg:max-w-xs">{greeting}</span>}
         </div>
         <div className="flex items-center gap-2">
-          {/* Streak badge */}
+          {/* Streak badge — clickable to show explanation */}
           {streak && streak.current_streak > 0 && (
-            <div className="flex items-center gap-1 bg-amber-500/90 text-white px-2.5 py-1 rounded-full" title={`Best: ${streak.best_streak} days`}>
-              <span className="text-xs font-bold">🔥 {streak.current_streak}</span>
+            <div className="relative">
+              <button
+                onClick={() => setShowStreakInfo(s => !s)}
+                className="flex items-center gap-1 bg-amber-500/90 text-white px-2.5 py-1 rounded-full active:scale-95 transition-transform">
+                <span className="text-xs font-bold">🔥 {streak.current_streak}</span>
+              </button>
+              {showStreakInfo && (
+                <div className="absolute right-0 top-9 z-50 bg-white rounded-2xl shadow-xl border border-neutral-100 p-4 w-64 text-left"
+                  onClick={() => setShowStreakInfo(false)}>
+                  <p className="text-sm font-bold text-neutral-800 mb-1">🔥 Teaching Streak</p>
+                  <p className="text-xs text-neutral-600 mb-3">
+                    You've submitted your daily plan completion for <strong>{streak.current_streak} day{streak.current_streak > 1 ? 's' : ''} in a row</strong>! Keep it up.
+                  </p>
+                  <div className="flex items-center justify-between text-xs text-neutral-500 bg-neutral-50 rounded-xl px-3 py-2">
+                    <span>🏆 Best streak</span>
+                    <span className="font-bold text-neutral-700">{streak.best_streak} days</span>
+                  </div>
+                  {streak.badge && (
+                    <div className="mt-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 font-medium">
+                      {streak.badge}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-neutral-400 mt-2 text-center">Tap anywhere to close</p>
+                </div>
+              )}
             </div>
           )}
-          {streak?.badge && (
+          {streak?.badge && !streak.current_streak && (
             <span className="text-xs bg-white/15 text-white px-2 py-1 rounded-full font-medium hidden sm:block">{streak.badge}</span>
           )}
           {todayCompleted && (

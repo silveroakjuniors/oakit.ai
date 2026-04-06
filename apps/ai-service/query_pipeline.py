@@ -78,6 +78,14 @@ def _detect_intent(text: str) -> str:
     ]):
         return "completion_update"
 
+    # Date range coverage summary — "from X to Y", "between X and Y", "June 1 to June 15"
+    if re.search(r'\bfrom\b.+\bto\b|\bbetween\b.+\band\b', t):
+        if any(w in t for w in [
+            "covered","taught","done","completed","summary","what did","what have",
+            "topics","activities","plan","progress","report","meeting",
+        ]):
+            return "date_range_summary"
+
     # Coverage summary
     if any(w in t for w in [
         "yesterday","what did i","what did we","what was covered",
@@ -1567,6 +1575,91 @@ No time slots, no bold, no markdown. Under 250 words."""
                         f"No curriculum topics are assigned for this day."
                     )}
 
+            # ── Past date: if completion exists, show what was actually done ──
+            if target_dt < today_dt:
+                past_completion = await pool.fetchrow(
+                    "SELECT covered_chunk_ids, submitted_at FROM daily_completions "
+                    "WHERE section_id=$1 AND completion_date=$2",
+                    sec_id, target_dt,
+                )
+                if past_completion and past_completion["covered_chunk_ids"]:
+                    covered = past_completion["covered_chunk_ids"]
+                    submitted = past_completion["submitted_at"]
+                    submitted_str = submitted.strftime("%I:%M %p") if submitted else ""
+
+                    covered_chunks = await pool.fetch(
+                        "SELECT topic_label, content FROM curriculum_chunks "
+                        "WHERE id=ANY($1::uuid[]) ORDER BY chunk_index",
+                        covered,
+                    )
+
+                    # Build subject list from completed chunks
+                    subjects_done = []
+                    for chunk in covered_chunks:
+                        parsed = _parse_subjects(chunk["content"])
+                        if parsed:
+                            for subj in parsed:
+                                subjects_done.append(subj["subject"])
+                        elif chunk["topic_label"]:
+                            subjects_done.append(chunk["topic_label"])
+
+                    # Check if any planned chunks were NOT completed
+                    planned_ids = set(str(c) for c in plan["chunk_ids"])
+                    covered_ids_set = set(str(c) for c in covered)
+                    missed_ids = planned_ids - covered_ids_set
+                    missed_note = ""
+                    if missed_ids:
+                        missed_chunks = await pool.fetch(
+                            "SELECT topic_label FROM curriculum_chunks WHERE id=ANY($1::uuid[]) ORDER BY chunk_index",
+                            [UUID(c) for c in missed_ids],
+                        )
+                        missed_topics = [c["topic_label"] or "Topic" for c in missed_chunks]
+                        missed_note = f"\n\n⏭️ Not covered: {', '.join(missed_topics)}"
+
+                    # Use LLM to generate a warm summary
+                    sys_p = (
+                        f"You are a teaching assistant for {class_full}.\n"
+                        f"Plain text only — no markdown bold, no tables, no horizontal rules.\n"
+                        f"Use emojis. Short lines for mobile. Warm and encouraging tone."
+                    )
+                    topics_list_str = "\n".join(f"- {s}" for s in subjects_done) if subjects_done else "- General activities"
+                    llm_p = f"""CLASS: {class_full} | DATE: {date_label}
+
+The teacher is asking what was covered on {date_label}.
+Here are the topics that were completed that day:
+{topics_list_str}
+
+Write a warm 3-4 sentence summary of what was covered on {date_label}.
+Start with "On {date_label}, you covered:"
+Then list the topics naturally in a sentence or two.
+End with one encouraging line.
+Plain text only, no bold, no markdown, short lines for mobile."""
+
+                    response_text, _ = await _call_llm(llm_p, sys_p)
+                    if not response_text:
+                        topics_display = "\n".join(f"📌 {s}" for s in subjects_done) if subjects_done else "📌 General activities"
+                        response_text = (
+                            f"✅ Here's what you covered on {date_label}:\n\n"
+                            f"{topics_display}"
+                        )
+
+                    response_text += missed_note
+                    return {
+                        "response": response_text,
+                        "chunk_ids": [str(c) for c in covered],
+                        "covered_chunk_ids": [str(c) for c in covered],
+                        "activity_ids": [],
+                        "plan_date": str(target_dt),
+                    }
+                elif past_completion and not past_completion["covered_chunk_ids"]:
+                    # Completion record exists but no chunks (e.g. settling day marked done)
+                    return {
+                        "response": f"✅ {date_label} was marked as completed.",
+                        "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": [],
+                    }
+                # No completion record — fall through to show the original plan
+            # ─────────────────────────────────────────────────────────────
+
             chunks = await pool.fetch(
                 "SELECT id, topic_label, content, activity_ids FROM curriculum_chunks "
                 "WHERE id = ANY($1::uuid[]) ORDER BY chunk_index",
@@ -2189,6 +2282,180 @@ Give a detailed progress report: status, on-track assessment, unlogged days, dai
                 response_text = "\n".join(lines)
 
             return {"response": response_text}
+
+        # ══════════════════════════════════════════════════════════════════
+        # INTENT: date_range_summary — "what did I cover from June 1 to June 15?"
+        # ══════════════════════════════════════════════════════════════════
+        elif intent == "date_range_summary":
+
+            # Parse the two dates from the text
+            def _extract_range_dates(text: str, fallback_today: str) -> tuple[str, str]:
+                """Extract start and end dates from a range query."""
+                t = text.lower()
+                today_d = date_type.fromisoformat(fallback_today)
+                months = {
+                    "january":1,"february":2,"march":3,"april":4,"may":5,"june":6,
+                    "july":7,"august":8,"september":9,"october":10,"november":11,"december":12,
+                    "jan":1,"feb":2,"mar":3,"apr":4,"jun":6,"jul":7,"aug":8,
+                    "sep":9,"oct":10,"nov":11,"dec":12,
+                }
+                # Try "from X to Y" or "between X and Y"
+                for pat in [
+                    r'from\s+(.+?)\s+to\s+(.+?)(?:\s*$|\s*\?)',
+                    r'between\s+(.+?)\s+and\s+(.+?)(?:\s*$|\s*\?)',
+                ]:
+                    m = re.search(pat, t)
+                    if m:
+                        d1 = _parse_date_from_text(m.group(1).strip(), fallback_today)
+                        d2 = _parse_date_from_text(m.group(2).strip(), fallback_today)
+                        return d1, d2
+                # Fallback: current month
+                start = today_d.replace(day=1)
+                return str(start), fallback_today
+
+            start_date_str, end_date_str = _extract_range_dates(text, query_date)
+            start_dt = date_type.fromisoformat(start_date_str)
+            end_dt   = date_type.fromisoformat(end_date_str)
+            if start_dt > end_dt:
+                start_dt, end_dt = end_dt, start_dt
+
+            # Fetch all completions in range
+            completions = await pool.fetch(
+                """
+                SELECT dc.completion_date, dc.covered_chunk_ids
+                FROM daily_completions dc
+                WHERE dc.section_id = $1
+                  AND dc.completion_date >= $2
+                  AND dc.completion_date <= $3
+                ORDER BY dc.completion_date
+                """,
+                sec_id, start_dt, end_dt,
+            )
+
+            if not completions:
+                return {
+                    "response": (
+                        f"No completion records found between "
+                        f"{start_dt.strftime('%d %B')} and {end_dt.strftime('%d %B %Y')}.\n\n"
+                        f"Make sure you've been logging your daily completions."
+                    ),
+                    "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": [],
+                }
+
+            # Collect all covered chunk IDs
+            all_covered_ids = []
+            for comp in completions:
+                if comp["covered_chunk_ids"]:
+                    all_covered_ids.extend([str(c) for c in comp["covered_chunk_ids"]])
+            unique_covered = list(dict.fromkeys(all_covered_ids))  # deduplicate, preserve order
+
+            # Fetch chunk details
+            covered_chunks = []
+            if unique_covered:
+                covered_chunks = await pool.fetch(
+                    """SELECT cc.topic_label, cc.content, cd.title as doc_title
+                       FROM curriculum_chunks cc
+                       JOIN curriculum_documents cd ON cd.id = cc.document_id
+                       WHERE cc.id = ANY($1::uuid[])
+                       ORDER BY cc.chunk_index""",
+                    [UUID(c) for c in unique_covered],
+                )
+
+            # Build subject → list of topic labels map (grouped, not by week)
+            from collections import defaultdict
+            subject_topics: dict = defaultdict(list)
+            all_subjects_ordered = []
+            for comp in completions:
+                if not comp["covered_chunk_ids"]:
+                    continue
+                day_chunks = await pool.fetch(
+                    "SELECT topic_label, content FROM curriculum_chunks WHERE id=ANY($1::uuid[]) ORDER BY chunk_index",
+                    comp["covered_chunk_ids"],
+                )
+                for chunk in day_chunks:
+                    subjects = _parse_subjects(chunk["content"])
+                    if subjects:
+                        for s in subjects:
+                            key = s["subject"]
+                            activity = s.get("activity", "")
+                            if activity and activity not in subject_topics[key]:
+                                subject_topics[key].append(activity)
+                            if key not in all_subjects_ordered:
+                                all_subjects_ordered.append(key)
+                    elif chunk["topic_label"]:
+                        key = chunk["topic_label"]
+                        if key not in all_subjects_ordered:
+                            all_subjects_ordered.append(key)
+
+            total_days = len(completions)
+            total_topics = len(unique_covered)
+            range_label = f"{start_dt.strftime('%d %B')} – {end_dt.strftime('%d %B %Y')}"
+
+            # Build subject-grouped context for LLM
+            subject_lines = []
+            for subj in all_subjects_ordered:
+                topics = subject_topics.get(subj, [])
+                if topics:
+                    subject_lines.append(f"{subj}: {'; '.join(topics[:4])}")
+                else:
+                    subject_lines.append(subj)
+
+            sys_p = (
+                f"You are a curriculum progress analyst for {class_full}.\n"
+                f"Write a clear, well-formatted summary suitable for a parent-teacher meeting.\n"
+                f"Plain text only — no markdown bold, no tables, no horizontal rules.\n"
+                f"Use emojis to mark sections. Short lines for mobile. Warm and professional tone.\n"
+                f"Under 350 words."
+            )
+            llm_p = f"""CLASS: {class_full} | PERIOD: {range_label}
+DAYS LOGGED: {total_days} | TOPICS COVERED: {total_topics}
+
+SUBJECTS AND ACTIVITIES COVERED:
+{chr(10).join(subject_lines) or 'No data'}
+
+Write a comprehensive summary of what was covered from {range_label}.
+This will be used for a parent-teacher meeting.
+
+FORMAT:
+📅 {range_label} — {class_full}
+
+📚 Overview
+[2-3 sentences summarising the overall learning during this period]
+
+📌 What We Covered
+[For each subject, one line: subject name followed by a brief description of what was done]
+
+📊 Summary
+[Total days, total topics, any highlights]
+
+💡 [One warm, encouraging closing line for the teacher]
+
+Plain text only, no bold, no markdown, short lines for mobile."""
+
+            response_text, _ = await _call_llm(llm_p, sys_p)
+            if not response_text:
+                lines = [
+                    f"📅 {range_label} — {class_full}\n",
+                    f"📚 Overview",
+                    f"{total_days} school days logged, {total_topics} topics covered.\n",
+                    f"📌 What We Covered",
+                ]
+                for subj in all_subjects_ordered:
+                    topics = subject_topics.get(subj, [])
+                    if topics:
+                        lines.append(f"  • {subj}: {topics[0]}")
+                    else:
+                        lines.append(f"  • {subj}")
+                lines.append(f"\n📊 Summary")
+                lines.append(f"  {total_days} days · {total_topics} topics · {len(all_subjects_ordered)} subjects")
+                response_text = "\n".join(lines)
+
+            return {
+                "response": response_text,
+                "chunk_ids": unique_covered,
+                "covered_chunk_ids": unique_covered,
+                "activity_ids": [],
+            }
 
         # ══════════════════════════════════════════════════════════════════
         # FALLBACK — treat as activity_help with full day context

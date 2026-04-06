@@ -116,15 +116,16 @@ I can help with:
 
 For other questions, please use a general search engine. 🔒`;
 
-function fallbackTeacherResponse(): {
+function fallbackTeacherResponse(errorDetail?: string): {
   response: string;
   chunk_ids: string[];
   covered_chunk_ids: string[];
   activity_ids: string[];
 } {
+  const detail = errorDetail ? ` (${errorDetail})` : '';
   return {
     response:
-      `Oakie is temporarily busy right now. Please try again in 1-2 minutes.\n\n` +
+      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
       `In the meantime, you can still use your plan and mark activities as completed.`,
     chunk_ids: [],
     covered_chunk_ids: [],
@@ -132,10 +133,11 @@ function fallbackTeacherResponse(): {
   };
 }
 
-function fallbackParentResponse(): { response: string } {
+function fallbackParentResponse(errorDetail?: string): { response: string } {
+  const detail = errorDetail ? ` (${errorDetail})` : '';
   return {
     response:
-      `Oakie is temporarily busy right now. Please try again in 1-2 minutes.\n\n` +
+      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
       `You can still check attendance, homework, and notes on this page.`,
   };
 }
@@ -345,14 +347,13 @@ router.post('/query', async (req: Request, res: Response) => {
           return res.json(data);
         } catch (err: unknown) {
           const requestId = crypto.randomBytes(6).toString('hex');
+          const errMsg = getAiErrorMessage(err);
           console.error(`[ai.query][${requestId}] upstream error`, {
-            user_id,
-            school_id,
-            role,
+            user_id, school_id, role,
             endpoint: `${AI()}/internal/query`,
-            message: getAiErrorMessage(err),
+            message: errMsg,
           });
-          return res.json(fallbackTeacherResponse());
+          return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
         }
       }
     }
@@ -380,22 +381,21 @@ router.post('/query', async (req: Request, res: Response) => {
       return res.json(aiResp.data);
     } catch (err: unknown) {
       const requestId = crypto.randomBytes(6).toString('hex');
+      const errMsg = getAiErrorMessage(err);
       console.error(`[ai.query][${requestId}] upstream error`, {
-        user_id,
-        school_id,
-        role,
+        user_id, school_id, role,
         endpoint: `${AI()}/internal/query`,
-        message: getAiErrorMessage(err),
+        ai_service_url: AI(),
+        message: errMsg,
       });
-      return res.json(fallbackTeacherResponse());
+      return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
     }
 
   } catch (err: unknown) {
     const requestId = crypto.randomBytes(6).toString('hex');
-    console.error(`[ai.query][${requestId}] route error`, {
-      message: getAiErrorMessage(err),
-    });
-    return res.json(fallbackTeacherResponse());
+    const errMsg = getAiErrorMessage(err);
+    console.error(`[ai.query][${requestId}] route error`, { message: errMsg });
+    return res.json(fallbackTeacherResponse(errMsg));
   }
 });
 

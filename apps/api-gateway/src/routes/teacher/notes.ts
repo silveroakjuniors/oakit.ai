@@ -233,4 +233,61 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ── HOMEWORK SUBMISSIONS (per-student tracking) ───────────────────────────────
+
+// POST /api/v1/teacher/notes/homework/submissions — record per-student homework status
+router.post('/homework/submissions', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const today = await getToday(school_id);
+    const { submissions, homework_date, section_id: reqSectionId } = req.body;
+    // submissions: [{ student_id, status: 'completed'|'partial'|'not_submitted', teacher_note? }]
+    if (!Array.isArray(submissions) || submissions.length === 0) {
+      return res.status(400).json({ error: 'submissions array is required' });
+    }
+    const date = homework_date || today;
+    const section_id = await resolveSection(user_id, school_id, reqSectionId);
+    if (!section_id) return res.status(404).json({ error: 'No section assigned' });
+
+    const VALID_STATUSES = ['completed', 'partial', 'not_submitted'];
+    for (const sub of submissions) {
+      if (!sub.student_id || !VALID_STATUSES.includes(sub.status)) continue;
+      await pool.query(
+        `INSERT INTO homework_submissions (school_id, section_id, student_id, homework_date, status, teacher_note, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (student_id, homework_date) DO UPDATE
+         SET status = EXCLUDED.status, teacher_note = EXCLUDED.teacher_note, recorded_by = EXCLUDED.recorded_by, recorded_at = now()`,
+        [school_id, section_id, sub.student_id, date, sub.status, sub.teacher_note || null, user_id]
+      );
+    }
+    return res.status(201).json({ message: 'Submissions recorded', date });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/teacher/notes/homework/submissions?date=YYYY-MM-DD — get submissions for a date
+router.get('/homework/submissions', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const today = await getToday(school_id);
+    const date = (req.query.date as string) || today;
+    const section_id = await resolveSection(user_id, school_id, req.query.section_id as string);
+    if (!section_id) return res.json([]);
+
+    const result = await pool.query(
+      `SELECT hs.student_id, s.name as student_name, hs.status, hs.teacher_note, hs.recorded_at
+       FROM homework_submissions hs
+       JOIN students s ON s.id = hs.student_id
+       WHERE hs.section_id = $1 AND hs.homework_date = $2
+       ORDER BY s.name`,
+      [section_id, date]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

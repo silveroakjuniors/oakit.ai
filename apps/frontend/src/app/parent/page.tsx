@@ -30,6 +30,7 @@ interface ProgressData { student_id: string; coverage_pct: number; has_curriculu
 interface Notification { id: string; section_name: string; completion_date: string; chunks_covered: number; created_at: string; }
 interface Announcement { id: string; title: string; body: string; created_at: string; author_name: string; }
 interface ParentMessage { teacher_id: string; student_id: string; teacher_name: string; student_name: string; last_message: string; last_sent_at: string; last_sender: string; unread_count: number; }
+interface HomeworkRecord { homework_date: string; status: string; teacher_note: string | null; homework_text: string | null; }
 interface ChatMsg { role: 'user' | 'ai'; text: string; ts: number; }
 interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; }
 
@@ -323,7 +324,6 @@ export default function ParentPage() {
                   <div className="flex items-center gap-3 bg-white/12 rounded-2xl px-4 py-3 border border-white/10">
                     <ChildAvatar child={children[0]} size="lg" token={token} onUploaded={(url) => setChildren(prev => prev.map(c => c.id === children[0].id ? { ...c, photo_url: url } : c))} />
                     <div>
-                      <p className="text-white font-bold text-base">{children[0].name}</p>
                       <p className="text-white/55 text-xs">{children[0].class_name} · Section {children[0].section_label}</p>
                     </div>
                   </div>
@@ -522,9 +522,13 @@ function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTa
 
         {/* Homework card */}
         <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-6">
-          <div className="flex items-center gap-2 mb-3">
-            <BookOpen size={16} className="text-amber-500" />
-            <p className="text-sm font-semibold text-neutral-800">Homework</p>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <BookOpen size={16} className="text-amber-500" />
+              <p className="text-sm font-semibold text-neutral-800">Homework</p>
+            </div>
+            <button onClick={() => onTabChange('progress')}
+              className="text-xs text-primary-600 font-medium hover:underline">History →</button>
           </div>
           {feed?.homework ? (
             <p className="text-sm text-neutral-700 leading-relaxed line-clamp-3 italic border-l-4 border-amber-200 pl-3">
@@ -667,11 +671,20 @@ function AttendanceTab({ data }: { data: AttendanceData | null }) {
 // ─── Progress Tab ─────────────────────────────────────────────────────────────
 function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; activeChild: Child | null; token: string }) {
   const [milestoneData, setMilestoneData] = useState<{ completion_pct: number; achieved: number; total: number; class_level: string } | null>(null);
+  const [hwHistory, setHwHistory] = useState<HomeworkRecord[]>([]);
+  const [hwLoading, setHwLoading] = useState(false);
+
   useEffect(() => {
     if (!activeChild?.id || !token) return;
     apiGet<any>(`/api/v1/teacher/milestones/${activeChild.id}`, token)
       .then(d => setMilestoneData({ completion_pct: d.completion_pct, achieved: d.achieved, total: d.total, class_level: d.class_level }))
       .catch(() => {});
+    // Load homework history
+    setHwLoading(true);
+    apiGet<HomeworkRecord[]>(`/api/v1/parent/homework/history?student_id=${activeChild.id}`, token)
+      .then(d => setHwHistory(d || []))
+      .catch(() => {})
+      .finally(() => setHwLoading(false));
   }, [activeChild?.id]);
 
   if (!data) return (
@@ -683,6 +696,10 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
   const pct = data.coverage_pct;
   const strokeColor = pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
   const r = 50; const circ = 2 * Math.PI * r;
+
+  const missedCount = hwHistory.filter(h => h.status !== 'completed').length;
+  const completedCount = hwHistory.filter(h => h.status === 'completed').length;
+
   return (
     <div className="space-y-4">
       <div className="bg-[#0f2417] rounded-2xl p-6 flex flex-col items-center">
@@ -717,6 +734,52 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
           <p className="text-xs text-neutral-400">{milestoneData.achieved} of {milestoneData.total} {milestoneData.class_level} milestones achieved</p>
         </div>
       )}
+
+      {/* Homework History */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-neutral-800">📚 Homework History</p>
+          {hwHistory.length > 0 && (
+            <div className="flex gap-2 text-xs">
+              <span className="text-emerald-600 font-medium">{completedCount} done</span>
+              {missedCount > 0 && <span className="text-red-500 font-medium">{missedCount} missed</span>}
+            </div>
+          )}
+        </div>
+        {hwLoading ? (
+          <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-neutral-300" /></div>
+        ) : hwHistory.length === 0 ? (
+          <div className="flex items-center gap-2 text-emerald-600 py-2">
+            <CheckCircle2 size={16} />
+            <p className="text-sm font-medium">No homework records yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {hwHistory.map((hw, i) => {
+              const dateStr = new Date(hw.homework_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+              const statusConfig = {
+                completed: { label: '✓ Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+                partial: { label: '½ Partial', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
+                not_submitted: { label: '✗ Not submitted', cls: 'bg-red-50 text-red-600 border-red-100' },
+              }[hw.status] || { label: hw.status, cls: 'bg-neutral-50 text-neutral-600 border-neutral-100' };
+              return (
+                <div key={i} className={`rounded-xl px-3 py-2.5 border ${statusConfig.cls}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">{dateStr}</span>
+                    <span className="text-xs font-bold">{statusConfig.label}</span>
+                  </div>
+                  {hw.homework_text && (
+                    <p className="text-xs mt-1 opacity-70 line-clamp-1">{hw.homework_text}</p>
+                  )}
+                  {hw.teacher_note && (
+                    <p className="text-xs mt-1 italic opacity-60">Note: {hw.teacher_note}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
