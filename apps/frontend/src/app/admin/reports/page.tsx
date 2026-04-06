@@ -1,10 +1,8 @@
 ﻿'use client';
 
 import { useState, useEffect } from 'react';
-import { apiGet } from '@/lib/api';
+import { API_BASE, apiGet } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Class { id: string; name: string; sections: { id: string; label: string }[]; }
 interface Student { id: string; name: string; class_name: string; section_label: string; }

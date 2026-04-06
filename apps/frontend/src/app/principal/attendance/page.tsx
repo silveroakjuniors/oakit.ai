@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/auth';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import Badge from '@/components/ui/Badge';
 
 interface AttendanceItem {
@@ -36,7 +36,7 @@ export default function AttendanceOverviewPage() {
     if (!token) return;
     try {
       if (item.flagged) {
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/principal/flags/${item.section_id}`, {
+        await fetch(`${API_BASE}/api/v1/principal/flags/${item.section_id}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
         });

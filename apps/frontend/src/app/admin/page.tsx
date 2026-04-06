@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Card, Button } from '@/components/ui';
 import { StatCard, SkeletonLoader, EmptyState } from '@/components/ui';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import Link from 'next/link';
 
@@ -130,7 +130,7 @@ export default function AdminDashboard() {
   async function deactivateTm() {
     setTmLoading(true);
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/admin/time-machine`,
+      await fetch(`${API_BASE}/api/v1/admin/time-machine`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       setTm({ active: false, mock_date: null, expires_at: null, ttl_seconds: 0 });
       setTmMsg('Time machine disabled');

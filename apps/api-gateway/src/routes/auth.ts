@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { pool } from '../lib/db';
 import { signToken, verifyToken, SuperAdminJwtPayload } from '../lib/jwt';
 import { jwtVerify } from '../middleware/auth';
+import { loginThrottle } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -26,7 +27,7 @@ router.get('/school-info', async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/auth/login
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', loginThrottle, async (req: Request, res: Response) => {
   try {
     const { school_code, mobile, email, password } = req.body;
     const identifier = mobile || email;

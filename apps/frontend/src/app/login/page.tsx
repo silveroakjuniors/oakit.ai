@@ -1,10 +1,10 @@
 ﻿'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import OakitLogo from '@/components/OakitLogo';
-import { apiPost } from '@/lib/api';
+import { API_BASE, apiPost } from '@/lib/api';
 import { setToken, setRole, setSchoolCode, getSchoolCode, getRoleRedirect } from '@/lib/auth';
 import { applyBrandColor, saveTagline } from '@/lib/branding';
 import { Lock, Smartphone, School, Eye, EyeOff, Loader2, AlertCircle, ArrowRight } from 'lucide-react';
@@ -15,8 +15,15 @@ interface LoginResponse {
   force_password_reset?: boolean;
 }
 
+interface AiHealthResponse {
+  ai?: 'up' | 'down';
+  status?: string;
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isSuperAdminLogin = searchParams.get('superadmin') === '1';
   const [mounted, setMounted] = useState(false);
   const [schoolCode, setSchoolCodeState] = useState('');
   const [schoolName, setSchoolName] = useState('');
@@ -25,21 +32,51 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [aiStatus, setAiStatus] = useState<'up' | 'down' | 'checking'>('checking');
 
   // --- Logic: Hydration Fix & Load Saved Code ---
   useEffect(() => {
+    if (isSuperAdminLogin) {
+      setSchoolCodeState('platform');
+      setMounted(true);
+      return;
+    }
     const saved = getSchoolCode();
     if (saved) {
       setSchoolCodeState(saved);
       fetchSchoolName(saved);
     }
     setMounted(true);
-  }, []);
+  }, [isSuperAdminLogin]);
+
+  useEffect(() => {
+    if (!isSuperAdminLogin) return;
+
+    let active = true;
+    const checkAi = async () => {
+      try {
+        setAiStatus('checking');
+        const res = await fetch(`${API_BASE}/health/ai`);
+        const data: AiHealthResponse = await res.json().catch(() => ({}));
+        if (!active) return;
+        if (res.ok && data.ai === 'up') setAiStatus('up');
+        else setAiStatus('down');
+      } catch {
+        if (active) setAiStatus('down');
+      }
+    };
+
+    checkAi();
+    const id = window.setInterval(checkAi, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [isSuperAdminLogin]);
 
   async function fetchSchoolName(code: string) {
     if (!code || code.length < 2) { setSchoolName(''); return; }
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const res = await fetch(`${API_BASE}/api/v1/auth/school-info?code=${encodeURIComponent(code.toLowerCase())}`);
       if (res.ok) {
         const data = await res.json();
@@ -66,19 +103,19 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
+      const submittedSchoolCode = isSuperAdminLogin ? 'platform' : schoolCode.trim().toLowerCase();
       const data = await apiPost<LoginResponse>('/api/v1/auth/login', {
-        school_code: schoolCode.trim().toLowerCase(),
+        school_code: submittedSchoolCode,
         mobile: mobile.trim(),
         password,
       });
       
       setToken(data.token);
       setRole(data.role);
-      setSchoolCode(schoolCode.trim().toLowerCase());
+      setSchoolCode(submittedSchoolCode);
 
       // Fetch and apply brand colour in background
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
         const settingsRes = await fetch(`${API_BASE}/api/v1/admin/settings`, {
           headers: { Authorization: `Bearer ${data.token}` },
         });
@@ -150,12 +187,30 @@ export default function LoginPage() {
                   : `Signing you into ${schoolCode.toUpperCase()}`
                 : 'Sign in to continue to Oakit.'}
             </p>
+            {isSuperAdminLogin && (
+              <div className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold border ${
+                aiStatus === 'up'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : aiStatus === 'down'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                <span>{aiStatus === 'up' ? '●' : aiStatus === 'down' ? '◉' : '◌'}</span>
+                <span>
+                  {aiStatus === 'up'
+                    ? 'AI Service: Online'
+                    : aiStatus === 'down'
+                      ? 'AI Service: Down'
+                      : 'AI Service: Checking...'}
+                </span>
+              </div>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             
             {/* School Code: Display ONLY if no saved code is found in storage */}
-            {!getSchoolCode() && (
+            {!isSuperAdminLogin && !getSchoolCode() && (
               <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">School Code</label>
                 <div className="relative group">

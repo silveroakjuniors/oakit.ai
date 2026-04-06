@@ -1,4 +1,20 @@
-﻿const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+﻿function normalizeBase(url: string): string {
+  return url.replace(/\/+$/, '');
+}
+
+function resolveApiBase(): string {
+  const envBase = (process.env.NEXT_PUBLIC_API_URL || '').trim();
+  if (envBase) return normalizeBase(envBase);
+
+  // Production fallback to hosted API when env is missing/misconfigured.
+  if (typeof window !== 'undefined' && window.location.hostname === 'oakit.silveroakjuniors.in') {
+    return 'https://oakit-api-gateway.onrender.com';
+  }
+
+  return 'http://localhost:3001';
+}
+
+export const API_BASE = resolveApiBase();
 
 export async function apiPost<T>(path: string, body: unknown, token?: string): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };

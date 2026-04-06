@@ -2,10 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Button, Card, Badge, Input } from '@/components/ui';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Section { section_id: string; section_label: string; class_name: string; }
 interface User { id: string; name: string; mobile?: string; role: string; is_active: boolean; sections: Section[]; class_teacher_section?: { label: string; class_name: string } | null; }

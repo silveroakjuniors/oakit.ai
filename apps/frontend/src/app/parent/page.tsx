@@ -7,11 +7,9 @@ import {
   LogOut, BookOpen, Clock, CheckCircle2, AlertCircle, User,
   ChevronRight, Send, Loader2, RefreshCw
 } from 'lucide-react';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Child { id: string; name: string; class_name: string; section_label: string; section_id: string; class_id: string; photo_url?: string; }

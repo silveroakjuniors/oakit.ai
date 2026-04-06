@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react';
 import { applyBrandColor, loadSavedBrandColor, saveTagline } from '@/lib/branding';
-import { getToken } from '@/lib/auth';
+import { getRole, getToken } from '@/lib/auth';
+import { API_BASE } from '@/lib/api';
 
 export default function BrandColorInit() {
   useEffect(() => {
@@ -10,7 +11,10 @@ export default function BrandColorInit() {
 
     const token = getToken();
     if (!token) return;
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/admin/settings`, {
+    const role = (getRole() || '').toLowerCase();
+    const canReadSettings = ['admin', 'principal', 'head teacher', 'vice principal', 'center head', 'super_admin'].includes(role);
+    if (!canReadSettings) return;
+    fetch(`${API_BASE}/api/v1/admin/settings`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.ok ? r.json() : null)

@@ -2,10 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Card, Button, Badge, EmptyState } from '@/components/ui';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Announcement {
   id: string; title: string; body: string; target_audience: string;

@@ -15,6 +15,7 @@ const AI = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
 const MAX_ACTIVITY_QUESTIONS = 5;
 const NUDGE_AT = 3;
+const AI_TIMEOUT_MS = 60000;
 
 // Inappropriate content patterns — logged as 'blocked_inappropriate'
 const INAPPROPRIATE_PATTERNS = [
@@ -114,6 +115,36 @@ I can help with:
 • Topics covered this term
 
 For other questions, please use a general search engine. 🔒`;
+
+function fallbackTeacherResponse(): {
+  response: string;
+  chunk_ids: string[];
+  covered_chunk_ids: string[];
+  activity_ids: string[];
+} {
+  return {
+    response:
+      `Oakie is temporarily busy right now. Please try again in 1-2 minutes.\n\n` +
+      `In the meantime, you can still use your plan and mark activities as completed.`,
+    chunk_ids: [],
+    covered_chunk_ids: [],
+    activity_ids: [],
+  };
+}
+
+function fallbackParentResponse(): { response: string } {
+  return {
+    response:
+      `Oakie is temporarily busy right now. Please try again in 1-2 minutes.\n\n` +
+      `You can still check attendance, homework, and notes on this page.`,
+  };
+}
+
+function getAiErrorMessage(err: unknown): string {
+  if (!axios.isAxiosError(err)) return 'AI service unavailable';
+  const detail = (err.response?.data as any)?.detail;
+  return detail || err.message || 'AI service unavailable';
+}
 
 /** Detect and neutralize prompt injection attempts */
 function detectPromptInjection(text: string): { isInjection: boolean; reason: string } {
@@ -304,13 +335,25 @@ router.post('/query', async (req: Request, res: Response) => {
           parsed.response += `\n\n---\n💬 You've asked ${NUDGE_AT} questions today. When you're ready, mark your activities as completed using the checkboxes below.`;
           return res.json(parsed);
         }
-        const aiResp = await axios.post(`${AI()}/internal/query`, {
-          teacher_id: user_id, school_id, text: cleanText, query_date: today, role,
-        }, { timeout: 60000 });
-        const data = aiResp.data;
-        data.response += `\n\n---\n💬 You've asked ${NUDGE_AT} questions today. When you're ready, mark your activities as completed using the checkboxes below.`;
-        await redis.setEx(cacheKey, 10, JSON.stringify(data));
-        return res.json(data);
+        try {
+          const aiResp = await axios.post(`${AI()}/internal/query`, {
+            teacher_id: user_id, school_id, text: cleanText, query_date: today, role,
+          }, { timeout: AI_TIMEOUT_MS });
+          const data = aiResp.data;
+          data.response += `\n\n---\n💬 You've asked ${NUDGE_AT} questions today. When you're ready, mark your activities as completed using the checkboxes below.`;
+          await redis.setEx(cacheKey, 10, JSON.stringify(data));
+          return res.json(data);
+        } catch (err: unknown) {
+          const requestId = crypto.randomBytes(6).toString('hex');
+          console.error(`[ai.query][${requestId}] upstream error`, {
+            user_id,
+            school_id,
+            role,
+            endpoint: `${AI()}/internal/query`,
+            message: getAiErrorMessage(err),
+          });
+          return res.json(fallbackTeacherResponse());
+        }
       }
     }
     // ─────────────────────────────────────────────────────────────────────
@@ -322,22 +365,37 @@ router.post('/query', async (req: Request, res: Response) => {
     const cached = await redis.get(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
 
-    const aiResp = await axios.post(`${AI()}/internal/query`, {
-      teacher_id: user_id,
-      school_id,
-      text: cleanText,
-      query_date: today,
-      role,
-      history: Array.isArray(history) ? history.slice(-3) : [],
-      ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
-    }, { timeout: 60000 });
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/query`, {
+        teacher_id: user_id,
+        school_id,
+        text: cleanText,
+        query_date: today,
+        role,
+        history: Array.isArray(history) ? history.slice(-3) : [],
+        ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
+      }, { timeout: AI_TIMEOUT_MS });
 
-    await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
-    return res.json(aiResp.data);
+      await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
+      return res.json(aiResp.data);
+    } catch (err: unknown) {
+      const requestId = crypto.randomBytes(6).toString('hex');
+      console.error(`[ai.query][${requestId}] upstream error`, {
+        user_id,
+        school_id,
+        role,
+        endpoint: `${AI()}/internal/query`,
+        message: getAiErrorMessage(err),
+      });
+      return res.json(fallbackTeacherResponse());
+    }
 
   } catch (err: unknown) {
-    const msg = axios.isAxiosError(err) ? err.response?.data?.detail || err.message : 'AI service unavailable';
-    return res.status(503).json({ error: msg });
+    const requestId = crypto.randomBytes(6).toString('hex');
+    console.error(`[ai.query][${requestId}] route error`, {
+      message: getAiErrorMessage(err),
+    });
+    return res.json(fallbackTeacherResponse());
   }
 });
 
@@ -454,20 +512,34 @@ router.post('/parent-query', async (req: Request, res: Response) => {
       }
     }
 
-    const aiResp = await axios.post(`${AI()}/internal/query`, {
-      teacher_id: section_teacher_id,
-      school_id,
-      text: cleanText,
-      query_date: today,
-      role: 'parent',
-      context,
-    }, { timeout: 60000 });
-    await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
-    return res.json(aiResp.data);
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/query`, {
+        teacher_id: section_teacher_id,
+        school_id,
+        text: cleanText,
+        query_date: today,
+        role: 'parent',
+        context,
+      }, { timeout: AI_TIMEOUT_MS });
+      await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
+      return res.json(aiResp.data);
+    } catch (err: unknown) {
+      const requestId = crypto.randomBytes(6).toString('hex');
+      console.error(`[ai.parent-query][${requestId}] upstream error`, {
+        user_id,
+        school_id,
+        endpoint: `${AI()}/internal/query`,
+        message: getAiErrorMessage(err),
+      });
+      return res.json(fallbackParentResponse());
+    }
 
   } catch (err: unknown) {
-    const msg = axios.isAxiosError(err) ? err.response?.data?.detail || err.message : 'AI service unavailable';
-    return res.status(503).json({ error: msg });
+    const requestId = crypto.randomBytes(6).toString('hex');
+    console.error(`[ai.parent-query][${requestId}] route error`, {
+      message: getAiErrorMessage(err),
+    });
+    return res.json(fallbackParentResponse());
   }
 });
 

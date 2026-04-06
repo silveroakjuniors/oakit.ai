@@ -2,10 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { getToken } from '@/lib/auth';
-import { apiGet, apiPost, apiDelete } from '@/lib/api';
+import { API_BASE, apiGet, apiPost, apiDelete } from '@/lib/api';
 import { Button, Card, Badge } from '@/components/ui';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Pool { id: string; name: string; description: string; language: string; activity_count: number; }
 interface Activity { id: string; title: string; description: string; position: number; }

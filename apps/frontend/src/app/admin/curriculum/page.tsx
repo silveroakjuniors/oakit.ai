@@ -2,11 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Button, Card, Badge, ProgressBar } from '@/components/ui';
-import { apiGet } from '@/lib/api';
+import { API_BASE, apiGet } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import Link from 'next/link';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface CurriculumDoc {
   id: string; filename: string; status: string;

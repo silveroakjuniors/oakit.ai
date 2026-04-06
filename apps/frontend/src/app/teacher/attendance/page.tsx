@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card } from '@/components/ui';
 import AttendanceRow from '@/components/ui/AttendanceRow';
-import { apiGet } from '@/lib/api';
+import { API_BASE, apiGet } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
 interface StudentAttendance {
@@ -95,7 +95,7 @@ export default function AttendancePage() {
       const body: any = { records };
       if (confirmHoliday) body.confirm_holiday = true;
 
-      const baseUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/teacher/attendance/today`;
+      const baseUrl = `${API_BASE}/api/v1/teacher/attendance/today`;
       const url = selectedSectionId ? `${baseUrl}?section_id=${selectedSectionId}` : baseUrl;
 
       const res = await fetch(url, {
@@ -127,7 +127,7 @@ export default function AttendancePage() {
   async function markLateArrival(studentId: string) {
     setUpdatingLate(studentId);
     try {
-      const baseUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/teacher/attendance/today/${studentId}`;
+      const baseUrl = `${API_BASE}/api/v1/teacher/attendance/today/${studentId}`;
       const url = selectedSectionId ? `${baseUrl}?section_id=${selectedSectionId}` : baseUrl;
       const res = await fetch(url, {
         method: 'PATCH',

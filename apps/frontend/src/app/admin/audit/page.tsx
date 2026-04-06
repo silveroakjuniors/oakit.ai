@@ -1,10 +1,8 @@
 ﻿'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface AuditLog { id: string; actor_name: string; actor_role: string; action: string; metadata: Record<string, any>; expires_at: string | null; created_at: string; }
 interface AuditResp { logs: AuditLog[]; total: number; page: number; pages: number; }

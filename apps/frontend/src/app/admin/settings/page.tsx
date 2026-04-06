@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState, useEffect } from 'react';
-import { apiGet, apiPut } from '@/lib/api';
+import { API_BASE, apiGet, apiPut } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { applyBrandColor, saveTagline } from '@/lib/branding';
 
@@ -54,7 +54,7 @@ export default function SettingsPage() {
     setUploadingLogo(true); setError('');
     try {
       const fd = new FormData(); fd.append('logo', file);
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/admin/settings/logo`, {
+      const res = await fetch(`${API_BASE}/api/v1/admin/settings/logo`, {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
       });
       const data = await res.json();
@@ -135,7 +135,7 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-4">
                   <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-neutral-200 flex items-center justify-center bg-neutral-50 overflow-hidden shrink-0">
                     {settings.logo_url ? (
-                      <img src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${settings.logo_url}`}
+                      <img src={`${API_BASE}${settings.logo_url}`}
                         alt="School logo" className="w-full h-full object-contain p-1" />
                     ) : (
                       <span className="text-2xl">🏫</span>

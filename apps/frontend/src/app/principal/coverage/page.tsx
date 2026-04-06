@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/auth';
-import { apiGet } from '@/lib/api';
+import { API_BASE, apiGet } from '@/lib/api';
 import ProgressBar from '@/components/ui/ProgressBar';
 import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface CoverageItem {
   section_id: string;

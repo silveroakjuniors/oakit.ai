@@ -4,11 +4,9 @@ import { useState, useEffect, useRef, FormEvent } from 'react';
 import { Button, Card, Badge } from '@/components/ui';
 import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
 interface SupplementaryActivity { plan_id: string; pool_name: string; activity_title: string; activity_description: string; status: string; }
@@ -718,7 +716,7 @@ export default function TeacherPlanner() {
                             const fd = new FormData();
                             fd.append('file', noteFile);
                             if (sectionId) fd.append('section_id', sectionId);
-                            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/teacher/notes/upload`, {
+                            const res = await fetch(`${API_BASE}/api/v1/teacher/notes/upload`, {
                               method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
                             });
                             if (!res.ok) throw new Error((await res.json()).error);
