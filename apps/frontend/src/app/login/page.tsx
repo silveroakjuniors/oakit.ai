@@ -85,17 +85,17 @@ export default function LoginPage() {
 
   // Prevent hydration mismatch by returning a skeleton or null until mounted
   if (!mounted) {
-    return <div className="min-h-screen bg-[#0f2417]" />;
+    return <div className="min-h-screen bg-[#1a4a2e]" />;
   }
 
   return (
     <div className="min-h-screen flex bg-white font-sans">
       
       {/* --- Left Panel: Branding --- */}
-      <div className="hidden lg:flex lg:w-[45%] bg-[#0f2417] flex-col justify-between p-16 relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-[45%] bg-[#1a4a2e] flex-col justify-between p-16 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-          <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-500 blur-[120px]" />
-          <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] rounded-full bg-emerald-700 blur-[100px]" />
+          <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-400 blur-[120px]" />
+          <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] rounded-full bg-emerald-500 blur-[100px]" />
         </div>
         <div className="relative z-10">
           <OakitLogo size="md" variant="light" showTagline />
@@ -208,7 +208,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#0f2417] text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-emerald-900/20 hover:bg-emerald-900 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+              className="w-full bg-[#1a4a2e] text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-emerald-900/20 hover:bg-emerald-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
             >
               {loading ? (
                 <div className="flex items-center justify-center gap-2">
