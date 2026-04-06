@@ -19,6 +19,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [schoolCode, setSchoolCodeState] = useState('');
+  const [schoolName, setSchoolName] = useState('');
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -28,9 +29,26 @@ export default function LoginPage() {
   // --- Logic: Hydration Fix & Load Saved Code ---
   useEffect(() => {
     const saved = getSchoolCode();
-    if (saved) setSchoolCodeState(saved);
-    setMounted(true); // Mark as mounted to solve hydration issues
+    if (saved) {
+      setSchoolCodeState(saved);
+      fetchSchoolName(saved);
+    }
+    setMounted(true);
   }, []);
+
+  async function fetchSchoolName(code: string) {
+    if (!code || code.length < 2) { setSchoolName(''); return; }
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const res = await fetch(`${API_BASE}/api/v1/auth/school-info?code=${encodeURIComponent(code.toLowerCase())}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSchoolName(data.name || '');
+      } else {
+        setSchoolName('');
+      }
+    } catch { setSchoolName(''); }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -126,7 +144,11 @@ export default function LoginPage() {
           <div className="mb-10 text-center lg:text-left">
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">Welcome back</h1>
             <p className="text-slate-500 font-medium mt-2 text-sm italic">
-              {schoolCode ? `Signing you into ${schoolCode.toUpperCase()}` : 'Sign in to continue to Oakit.'}
+              {schoolCode
+                ? schoolName
+                  ? `Signing you into ${schoolName} (${schoolCode.toUpperCase()})`
+                  : `Signing you into ${schoolCode.toUpperCase()}`
+                : 'Sign in to continue to Oakit.'}
             </p>
           </div>
 
@@ -144,7 +166,7 @@ export default function LoginPage() {
                     type="text"
                     placeholder="e.g. sojs"
                     value={schoolCode}
-                    onChange={e => setSchoolCodeState(e.target.value)}
+                    onChange={e => { setSchoolCodeState(e.target.value); fetchSchoolName(e.target.value); }}
                     required
                     className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-bold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
                   />
