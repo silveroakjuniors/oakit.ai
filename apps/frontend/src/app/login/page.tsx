@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import OakitLogo from '@/components/OakitLogo';
 import { API_BASE, apiPost } from '@/lib/api';
@@ -22,8 +22,7 @@ interface AiHealthResponse {
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const isSuperAdminLogin = searchParams.get('superadmin') === '1';
+  const [isSuperAdminLogin, setIsSuperAdminLogin] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [schoolCode, setSchoolCodeState] = useState('');
   const [schoolName, setSchoolName] = useState('');
@@ -36,18 +35,23 @@ export default function LoginPage() {
 
   // --- Logic: Hydration Fix & Load Saved Code ---
   useEffect(() => {
-    if (isSuperAdminLogin) {
+    const isSuperAdminMode = typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('superadmin') === '1';
+    setIsSuperAdminLogin(isSuperAdminMode);
+
+    if (isSuperAdminMode) {
       setSchoolCodeState('platform');
       setMounted(true);
       return;
     }
+
     const saved = getSchoolCode();
     if (saved) {
       setSchoolCodeState(saved);
       fetchSchoolName(saved);
     }
     setMounted(true);
-  }, [isSuperAdminLogin]);
+  }, []);
 
   useEffect(() => {
     if (!isSuperAdminLogin) return;
@@ -304,7 +308,7 @@ export default function LoginPage() {
           {/* Hidden "Clear Cache" button for testing/emergencies */}
           <div className="mt-8 text-center">
             <button 
-              onClick={() => { localStorage.removeItem('school_code'); window.location.reload(); }}
+              onClick={() => { localStorage.removeItem('oakit_school_code'); window.location.reload(); }}
               className="text-[10px] text-slate-300 font-bold hover:text-emerald-600 transition-colors uppercase tracking-[0.2em]"
             >
               Reset Connection

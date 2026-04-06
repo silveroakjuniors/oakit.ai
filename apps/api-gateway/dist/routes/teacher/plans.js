@@ -8,11 +8,12 @@ const today_1 = require("../../lib/today");
 const router = (0, express_1.Router)();
 router.use(auth_1.jwtVerify, auth_1.schoolScope, (0, auth_1.roleGuard)('teacher', 'principal'));
 const PLAN_QUERY = `
-  SELECT dp.id, dp.plan_date, dp.status, dp.chunk_ids, dp.section_id,
+  SELECT dp.id, dp.plan_date::text AS plan_date, dp.status, dp.chunk_ids, dp.section_id,
+         dp.admin_note, dp.chunk_label_overrides,
          COALESCE(json_agg(json_build_object(
            'id', cc.id,
            'chunk_index', cc.chunk_index,
-           'topic_label', cc.topic_label,
+           'topic_label', COALESCE((dp.chunk_label_overrides->>(cc.id::text)), cc.topic_label),
            'content', cc.content,
            'page_start', cc.page_start,
            'page_end', cc.page_end,

@@ -29,3 +29,7 @@ export async function connectRedis() {
     console.warn('Redis unavailable, continuing without cache');
   }
 }
+
+export function isRedisConnected() {
+  return !!redisClient;
+}

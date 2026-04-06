@@ -6,6 +6,64 @@ const auth_1 = require("../../middleware/auth");
 const router = (0, express_1.Router)();
 // Apply auth middleware to all routes
 router.use(auth_1.jwtVerify, auth_1.schoolScope, (0, auth_1.roleGuard)('admin'));
+// GET /api/v1/admin/users/dashboard-stats — counts for admin dashboard cards
+router.get('/dashboard-stats', async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        const sid = school_id;
+        const [users, classes, curriculum, activities, calendar, plans, students, todayAttendance, todayCompletion] = await Promise.all([
+            // Staff count (non-parent users)
+            db_1.pool.query(`SELECT COUNT(*)::int as count FROM users u
+         JOIN roles r ON r.id = u.role_id
+         WHERE u.school_id = $1 AND r.name != 'parent' AND u.is_active = true`, [sid]),
+            // Classes count
+            db_1.pool.query('SELECT COUNT(*)::int as count FROM classes WHERE school_id = $1', [sid]),
+            // Curriculum docs (ready)
+            db_1.pool.query(`SELECT COUNT(*)::int as count, COALESCE(SUM(total_chunks),0)::int as chunks
+         FROM curriculum_documents WHERE school_id = $1 AND status = 'ready'`, [sid]),
+            // Activity pools count
+            db_1.pool.query('SELECT COUNT(*)::int as count FROM activity_pools WHERE school_id = $1', [sid]),
+            // Calendar: holidays + special days this academic year
+            db_1.pool.query(`SELECT
+           (SELECT COUNT(*)::int FROM holidays WHERE school_id = $1
+            AND academic_year = (SELECT academic_year FROM school_calendar WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1)) as holidays,
+           (SELECT COUNT(*)::int FROM special_days WHERE school_id = $1
+            AND academic_year = (SELECT academic_year FROM school_calendar WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1)) as special_days`, [sid]),
+            // Plans: sections with at least one plan generated
+            db_1.pool.query(`SELECT COUNT(DISTINCT s.id)::int as sections_with_plans
+         FROM day_plans dp JOIN sections s ON s.id = dp.section_id
+         WHERE s.school_id = $1 AND dp.chunk_ids != '{}'`, [sid]),
+            // Students count
+            db_1.pool.query('SELECT COUNT(*)::int as count FROM students WHERE school_id = $1 AND is_active = true', [sid]),
+            // Today's attendance: sections that have submitted
+            db_1.pool.query(`SELECT COUNT(DISTINCT section_id)::int as count FROM attendance_records
+         WHERE school_id = $1 AND attend_date = CURRENT_DATE`, [sid]),
+            // Today's completions
+            db_1.pool.query(`SELECT COUNT(*)::int as count FROM daily_completions
+         WHERE school_id = $1 AND completion_date = CURRENT_DATE`, [sid]),
+        ]);
+        // Total sections
+        const sectionsRow = await db_1.pool.query('SELECT COUNT(*)::int as count FROM sections WHERE school_id = $1', [sid]);
+        return res.json({
+            staff: users.rows[0].count,
+            students: students.rows[0].count,
+            classes: classes.rows[0].count,
+            sections: sectionsRow.rows[0].count,
+            curriculum_docs: curriculum.rows[0].count,
+            curriculum_chunks: curriculum.rows[0].chunks,
+            activity_pools: activities.rows[0].count,
+            holidays: calendar.rows[0].holidays,
+            special_days: calendar.rows[0].special_days,
+            sections_with_plans: plans.rows[0].sections_with_plans,
+            today_attendance_sections: todayAttendance.rows[0].count,
+            today_completions: todayCompletion.rows[0].count,
+        });
+    }
+    catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
 // GET /api/v1/admin/users
 router.get('/', async (req, res) => {
     try {

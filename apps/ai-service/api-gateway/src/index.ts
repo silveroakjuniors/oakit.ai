@@ -56,11 +56,17 @@ import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
 
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
+import { connectRedis } from './lib/redis';
 
 dotenv.config();
+connectRedis();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+// Respect client IP when running behind reverse proxies (Railway/Nginx/etc).
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -79,7 +85,25 @@ app.use(helmet({
   xssFilter: true,
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }));
+const defaultAllowedOrigins = [
+  'http://localhost:3000',
+  'https://oakit.silveroakjuniors.in',
+];
+const envOrigins = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...envOrigins]));
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser clients and same-origin requests without Origin header.
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '1mb' })); // OWASP: limit request body size
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(apiRateLimit);
@@ -100,6 +124,38 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'oakit-api-gateway' });
+});
+
+app.get('/health/ai', async (_req, res) => {
+  const startedAt = Date.now();
+  const candidates = [`${AI_SERVICE_URL}/health`, `${AI_SERVICE_URL}/internal/health`];
+
+  for (const url of candidates) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const probe = await fetch(url, { method: 'GET', signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (probe.ok) {
+        return res.json({
+          status: 'ok',
+          ai: 'up',
+          endpoint: url,
+          response_ms: Date.now() - startedAt,
+        });
+      }
+    } catch {
+      // Try next health path candidate.
+    }
+  }
+
+  return res.status(503).json({
+    status: 'degraded',
+    ai: 'down',
+    endpoint: AI_SERVICE_URL,
+    response_ms: Date.now() - startedAt,
+  });
 });
 
 // Auth

@@ -4,27 +4,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const axios_1 = __importDefault(require("axios"));
 const multer_1 = __importDefault(require("multer"));
-const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const exceljs_1 = __importDefault(require("exceljs"));
 const db_1 = require("../../lib/db");
 const auth_1 = require("../../middleware/auth");
+const storage_1 = require("../../lib/storage");
 const router = (0, express_1.Router)();
 router.use(auth_1.jwtVerify, auth_1.forceResetGuard, auth_1.schoolScope);
-const AI = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
-const UPLOAD_DIR = path_1.default.resolve(process.env.UPLOAD_DIR || './uploads', 'students');
-if (!fs_1.default.existsSync(UPLOAD_DIR))
-    fs_1.default.mkdirSync(UPLOAD_DIR, { recursive: true });
-const photoStorage = multer_1.default.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-    filename: (_req, file, cb) => {
-        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-        cb(null, `${unique}${path_1.default.extname(file.originalname)}`);
-    },
-});
+// Use memory/temp storage � file goes to Supabase, not disk
 const photoUpload = (0, multer_1.default)({
-    storage: photoStorage,
+    dest: '/tmp/oakit-uploads/',
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         if (['image/jpeg', 'image/png'].includes(file.mimetype))
@@ -34,18 +24,57 @@ const photoUpload = (0, multer_1.default)({
     },
 });
 const xlsxUpload = (0, multer_1.default)({ dest: '/tmp/oakit-uploads/' });
-// GET /api/v1/admin/students
+// - Normalise column header -
+function normalise(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+// - POST /api/v1/admin/students � create a single student -
+router.post('/', (0, auth_1.roleGuard)('admin'), async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        const { name, class_id, section_id, father_name, mother_name, parent_contact, mother_contact } = req.body;
+        if (!name || !class_id || !section_id) {
+            return res.status(400).json({ error: 'name, class_id, and section_id are required' });
+        }
+        if (parent_contact && mother_contact && parent_contact.trim() === mother_contact.trim()) {
+            return res.status(400).json({ error: 'Father and mother cannot have the same mobile number' });
+        }
+        if (parent_contact && !/^\d{10}$/.test(parent_contact.trim())) {
+            return res.status(400).json({ error: 'Father mobile must be 10 digits' });
+        }
+        if (mother_contact && !/^\d{10}$/.test(mother_contact.trim())) {
+            return res.status(400).json({ error: 'Mother mobile must be 10 digits' });
+        }
+        const result = await db_1.pool.query(`INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`, [school_id, class_id, section_id, name.trim(),
+            father_name?.trim() || null, mother_name?.trim() || null,
+            parent_contact?.trim() || null, mother_contact?.trim() || null]);
+        return res.status(201).json(result.rows[0]);
+    }
+    catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// - GET /api/v1/admin/students -
 router.get('/', (0, auth_1.roleGuard)('admin'), async (req, res) => {
     try {
         const { school_id } = req.user;
-        const { class_id, section_id } = req.query;
-        let query = `SELECT s.id, s.name, s.father_name, s.parent_contact, s.photo_path, s.is_active,
-                        c.name as class_name, sec.label as section_label
-                 FROM students s
-                 JOIN classes c ON s.class_id = c.id
-                 JOIN sections sec ON s.section_id = sec.id
-                 WHERE s.school_id = $1`;
+        const { class_id, section_id, include_inactive } = req.query;
+        let query = `
+      SELECT s.id, s.name, s.father_name, s.mother_name,
+             s.parent_contact, s.mother_contact,
+             s.photo_path,
+             s.is_active,
+             c.name as class_name, sec.label as section_label
+      FROM students s
+      JOIN classes c ON s.class_id = c.id
+      JOIN sections sec ON s.section_id = sec.id
+      WHERE s.school_id = $1`;
         const params = [school_id];
+        if (!include_inactive || include_inactive !== 'true') {
+            query += ' AND s.is_active = true';
+        }
         if (class_id) {
             params.push(class_id);
             query += ` AND s.class_id = $${params.length}`;
@@ -56,74 +85,128 @@ router.get('/', (0, auth_1.roleGuard)('admin'), async (req, res) => {
         }
         query += ' ORDER BY s.name';
         const result = await db_1.pool.query(query, params);
-        return res.json(result.rows);
+        return res.json(result.rows.map((r) => ({ ...r, photo_url: (0, storage_1.getPublicUrl)(r.photo_path) })));
     }
     catch (err) {
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
-// GET /api/v1/admin/students/import/template
+// - GET /api/v1/admin/students/import/template -
 router.get('/import/template', (0, auth_1.roleGuard)('admin'), async (_req, res) => {
-    // Return a simple CSV as template (xlsx would require a library)
-    const csv = 'student name,father name,section,class,parent contact number\nJohn Doe,James Doe,A,LKG,9876543210\n';
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="student_import_template.csv"');
-    return res.send(csv);
+    const wb = new exceljs_1.default.Workbook();
+    const ws = wb.addWorksheet('Students');
+    ws.columns = [
+        { header: 'student name', width: 22 },
+        { header: 'father name', width: 20 },
+        { header: 'mother name', width: 20 },
+        { header: 'section', width: 10 },
+        { header: 'class', width: 12 },
+        { header: 'parent contact number', width: 22 },
+        { header: 'mother contact number', width: 22 },
+    ];
+    ws.addRow(['Aarav Sharma', 'Rajesh Sharma', 'Priya Sharma', 'A', 'UKG', '9876543210', '9876543211']);
+    ws.addRow(['Diya Patel', 'Suresh Patel', 'Meena Patel', 'B', 'LKG', '9123456789', '']);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="student_import_template.xlsx"');
+    const buf = await wb.xlsx.writeBuffer();
+    return res.send(buf);
 });
-// POST /api/v1/admin/students/import
+// - POST /api/v1/admin/students/import -
 router.post('/import', (0, auth_1.roleGuard)('admin'), xlsxUpload.single('file'), async (req, res) => {
     try {
         const { school_id } = req.user;
         const file = req.file;
         if (!file)
             return res.status(400).json({ error: 'No file uploaded' });
-        const FormData = require('form-data');
-        const form = new FormData();
-        form.append('file', fs_1.default.createReadStream(file.path), { filename: file.originalname || 'students.xlsx' });
-        let parseResult;
+        const wb = new exceljs_1.default.Workbook();
         try {
-            const aiResp = await axios_1.default.post(`${AI()}/internal/import-students`, form, {
-                headers: form.getHeaders(),
-                timeout: 30000,
-            });
-            parseResult = aiResp.data;
+            await wb.xlsx.readFile(file.path);
         }
         finally {
             fs_1.default.unlink(file.path, () => { });
         }
+        const ws = wb.worksheets[0];
+        if (!ws)
+            return res.status(400).json({ error: 'File is empty or has no sheets' });
+        // Get headers from first row
+        const headers = [];
+        ws.getRow(1).eachCell((cell, colNum) => { headers[colNum - 1] = String(cell.value || ''); });
+        const colMap = {};
+        headers.forEach((h, i) => {
+            const n = normalise(h);
+            if (n.includes('studentname') || n === 'studentname' || n === 'name')
+                colMap.student_name = i;
+            else if (n.includes('fathername') || n === 'fathername')
+                colMap.father_name = i;
+            else if (n.includes('mothername') || n === 'mothername')
+                colMap.mother_name = i;
+            else if (n === 'section')
+                colMap.section = i;
+            else if (n === 'class' || n === 'classname')
+                colMap.class = i;
+            else if (n.includes('parentcontact') || n.includes('fathercontact') || n.includes('contactnumber'))
+                colMap.parent_contact = i;
+            else if (n.includes('mothercontact'))
+                colMap.mother_contact = i;
+        });
+        if (colMap.student_name === undefined)
+            return res.status(400).json({ error: 'Column "student name" not found in file' });
+        if (colMap.class === undefined)
+            return res.status(400).json({ error: 'Column "class" not found in file' });
+        if (colMap.section === undefined)
+            return res.status(400).json({ error: 'Column "section" not found in file' });
+        const rows = [];
+        ws.eachRow((row, rowNum) => {
+            if (rowNum === 1)
+                return; // skip header
+            const vals = [];
+            row.eachCell({ includeEmpty: true }, (cell, colNum) => { vals[colNum - 1] = cell.value; });
+            rows.push(vals);
+        });
+        if (rows.length === 0)
+            return res.status(400).json({ error: 'File is empty or has no data rows' });
         let created = 0;
-        const skipped = [...parseResult.invalid_rows];
-        for (const row of parseResult.valid_rows) {
-            // Resolve class and section IDs
-            const classRow = await db_1.pool.query('SELECT id FROM classes WHERE school_id = $1 AND LOWER(name) = LOWER($2)', [school_id, row.class]);
-            if (classRow.rows.length === 0) {
-                skipped.push({ row, reason: `Class '${row.class}' not found` });
+        const skipped = [];
+        for (const row of rows) {
+            const studentName = String(row[colMap.student_name] || '').trim();
+            const fatherName = colMap.father_name !== undefined ? String(row[colMap.father_name] || '').trim() : '';
+            const motherName = colMap.mother_name !== undefined ? String(row[colMap.mother_name] || '').trim() : '';
+            const sectionLabel = String(row[colMap.section] || '').trim();
+            const className = String(row[colMap.class] || '').trim();
+            const parentContact = colMap.parent_contact !== undefined ? String(row[colMap.parent_contact] || '').trim() : '';
+            const motherContact = colMap.mother_contact !== undefined ? String(row[colMap.mother_contact] || '').trim() : '';
+            if (!studentName || !className || !sectionLabel) {
+                skipped.push({ studentName, reason: 'Missing student name, class, or section' });
                 continue;
             }
-            const sectionRow = await db_1.pool.query('SELECT id FROM sections WHERE school_id = $1 AND class_id = $2 AND LOWER(label) = LOWER($3)', [school_id, classRow.rows[0].id, row.section]);
+            const classRow = await db_1.pool.query('SELECT id FROM classes WHERE school_id = $1 AND LOWER(name) = LOWER($2)', [school_id, className]);
+            if (classRow.rows.length === 0) {
+                skipped.push({ studentName, reason: `Class '${className}' not found` });
+                continue;
+            }
+            const sectionRow = await db_1.pool.query('SELECT id FROM sections WHERE school_id = $1 AND class_id = $2 AND LOWER(label) = LOWER($3)', [school_id, classRow.rows[0].id, sectionLabel]);
             if (sectionRow.rows.length === 0) {
-                skipped.push({ row, reason: `Section '${row.section}' not found in class '${row.class}'` });
+                skipped.push({ studentName, reason: `Section '${sectionLabel}' not found in class '${className}'` });
                 continue;
             }
             try {
-                await db_1.pool.query(`INSERT INTO students (school_id, class_id, section_id, name, father_name, parent_contact)
-           VALUES ($1, $2, $3, $4, $5, $6)`, [school_id, classRow.rows[0].id, sectionRow.rows[0].id,
-                    row.student_name, row.father_name, row.parent_contact]);
+                await db_1.pool.query(`INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [school_id, classRow.rows[0].id, sectionRow.rows[0].id, studentName,
+                    fatherName || null, motherName || null, parentContact || null, motherContact || null]);
                 created++;
             }
             catch (err) {
-                skipped.push({ row, reason: err.message });
+                skipped.push({ studentName, reason: err.message });
             }
         }
         return res.json({ created, skipped });
     }
     catch (err) {
         console.error(err);
-        const msg = axios_1.default.isAxiosError(err) ? err.response?.data?.detail || err.message : 'Internal server error';
-        return res.status(500).json({ error: msg });
+        return res.status(500).json({ error: 'Internal server error' });
     }
 });
-// GET /api/v1/admin/students/:id
+// - GET /api/v1/admin/students/:id -
 router.get('/:id', (0, auth_1.roleGuard)('admin'), async (req, res) => {
     try {
         const { school_id } = req.user;
@@ -135,23 +218,20 @@ router.get('/:id', (0, auth_1.roleGuard)('admin'), async (req, res) => {
         if (result.rows.length === 0)
             return res.status(404).json({ error: 'Student not found' });
         const student = result.rows[0];
-        if (student.photo_path) {
-            student.photo_url = `/uploads/students/${path_1.default.basename(student.photo_path)}`;
-        }
+        student.photo_url = (0, storage_1.getPublicUrl)(student.photo_path);
         return res.json(student);
     }
     catch (err) {
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
-// POST /api/v1/admin/students/:id/photo
+// - POST /api/v1/admin/students/:id/photo -
 router.post('/:id/photo', (0, auth_1.roleGuard)('admin'), (req, res, next) => {
     photoUpload.single('photo')(req, res, (err) => {
         if (err) {
-            if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(400).json({ error: 'Photo must be JPEG or PNG and under 5 MB' });
-            }
-            return res.status(400).json({ error: err.message || 'Photo must be JPEG or PNG and under 5 MB' });
+            if (err.code === 'LIMIT_FILE_SIZE')
+                return res.status(400).json({ error: 'Photo must be under 5 MB' });
+            return res.status(400).json({ error: err.message || 'Photo must be JPEG or PNG' });
         }
         next();
     });
@@ -166,24 +246,94 @@ router.post('/:id/photo', (0, auth_1.roleGuard)('admin'), (req, res, next) => {
             fs_1.default.unlink(file.path, () => { });
             return res.status(404).json({ error: 'Student not found' });
         }
-        // Delete old photo if exists
-        const oldPath = studentRow.rows[0].photo_path;
-        if (oldPath && fs_1.default.existsSync(oldPath))
-            fs_1.default.unlink(oldPath, () => { });
-        await db_1.pool.query('UPDATE students SET photo_path = $1 WHERE id = $2', [file.path, req.params.id]);
-        const photo_url = `/uploads/students/${path_1.default.basename(file.path)}`;
-        return res.json({ photo_url });
+        // Delete old photo from Supabase
+        await (0, storage_1.deleteFile)(studentRow.rows[0].photo_path);
+        // Upload new photo to Supabase
+        const { storagePath, publicUrl } = await (0, storage_1.uploadFile)({
+            schoolId: school_id,
+            folder: 'students',
+            localPath: file.path,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            actorId: req.user.user_id,
+            actorRole: 'admin',
+            entityType: 'student_photo',
+            entityId: req.params.id,
+            auditMeta: { student_id: req.params.id },
+        });
+        await db_1.pool.query('UPDATE students SET photo_path = $1 WHERE id = $2', [storagePath, req.params.id]);
+        return res.json({ photo_url: publicUrl });
     }
     catch (err) {
+        console.error(err);
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
-exports.default = router;
-// GET /api/v1/admin/students/:id/parent-links — list parent accounts linked to a student
-router.get('/:id/parent-links', (0, auth_1.roleGuard)('admin'), async (req, res) => {
+// - POST /api/v1/admin/students/:id/activate-parent -
+// Creates a parent account using father or mother contact, links to student
+router.post('/:id/activate-parent', (0, auth_1.roleGuard)('admin'), async (req, res) => {
     try {
         const { school_id } = req.user;
-        const result = await db_1.pool.query(`SELECT pu.id, pu.name, pu.mobile
+        const { mobile, name, relation } = req.body; // relation: 'father' | 'mother'
+        if (!mobile)
+            return res.status(400).json({ error: 'mobile is required' });
+        if (!/^\d{10}$/.test(mobile))
+            return res.status(400).json({ error: 'Mobile must be 10 digits' });
+        const studentRow = await db_1.pool.query('SELECT id, name FROM students WHERE id = $1 AND school_id = $2', [req.params.id, school_id]);
+        if (studentRow.rows.length === 0)
+            return res.status(404).json({ error: 'Student not found' });
+        // Check if parent already exists
+        let parentRow = await db_1.pool.query('SELECT id, is_active FROM parent_users WHERE mobile = $1 AND school_id = $2', [mobile, school_id]);
+        const bcrypt = require('bcryptjs');
+        const hash = await bcrypt.hash(mobile, 12);
+        if (parentRow.rows.length === 0) {
+            // Create new parent account
+            parentRow = await db_1.pool.query(`INSERT INTO parent_users (school_id, mobile, name, password_hash, force_password_reset, is_active)
+         VALUES ($1, $2, $3, $4, true, true) RETURNING id`, [school_id, mobile, name || null, hash]);
+        }
+        else {
+            // Reactivate and reset password
+            await db_1.pool.query(`UPDATE parent_users SET password_hash = $1, force_password_reset = true, is_active = true WHERE id = $2`, [hash, parentRow.rows[0].id]);
+        }
+        // Link parent to student
+        await db_1.pool.query(`INSERT INTO parent_student_links (parent_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [parentRow.rows[0].id, req.params.id]);
+        return res.status(201).json({
+            parent_id: parentRow.rows[0].id,
+            mobile,
+            message: `Parent account activated. Login: mobile=${mobile}, password=${mobile} (must change on first login)`,
+        });
+    }
+    catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// - POST /api/v1/admin/students/:id/reset-parent-login -
+router.post('/:id/reset-parent-login', (0, auth_1.roleGuard)('admin'), async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        const { parent_id } = req.body;
+        if (!parent_id)
+            return res.status(400).json({ error: 'parent_id is required' });
+        const parentRow = await db_1.pool.query('SELECT id, mobile FROM parent_users WHERE id = $1 AND school_id = $2', [parent_id, school_id]);
+        if (parentRow.rows.length === 0)
+            return res.status(404).json({ error: 'Parent not found' });
+        const bcrypt = require('bcryptjs');
+        const mobile = parentRow.rows[0].mobile;
+        const hash = await bcrypt.hash(mobile, 12);
+        await db_1.pool.query(`UPDATE parent_users SET password_hash = $1, force_password_reset = true WHERE id = $2`, [hash, parent_id]);
+        return res.json({ message: `Password reset to mobile number. Parent must change on next login.` });
+    }
+    catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// - GET /api/v1/admin/students/:id/parents -
+router.get('/:id/parents', (0, auth_1.roleGuard)('admin'), async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        const result = await db_1.pool.query(`SELECT pu.id, pu.name, pu.mobile, pu.is_active, pu.force_password_reset
        FROM parent_student_links psl
        JOIN parent_users pu ON pu.id = psl.parent_id
        WHERE psl.student_id = $1 AND pu.school_id = $2`, [req.params.id, school_id]);
@@ -193,38 +343,32 @@ router.get('/:id/parent-links', (0, auth_1.roleGuard)('admin'), async (req, res)
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
-// POST /api/v1/admin/students/:id/parent-links — create/link a parent to a student
-// Body: { mobile, name } — creates parent_user if not exists, then links
+// - POST /api/v1/admin/students/:id/parent-links -
 router.post('/:id/parent-links', (0, auth_1.roleGuard)('admin'), async (req, res) => {
     try {
         const { school_id } = req.user;
         const { mobile, name } = req.body;
         if (!mobile)
             return res.status(400).json({ error: 'mobile is required' });
-        // Verify student belongs to school
         const studentRow = await db_1.pool.query('SELECT id FROM students WHERE id = $1 AND school_id = $2', [req.params.id, school_id]);
         if (studentRow.rows.length === 0)
             return res.status(404).json({ error: 'Student not found' });
-        // Find or create parent_user
         let parentRow = await db_1.pool.query('SELECT id FROM parent_users WHERE mobile = $1 AND school_id = $2', [mobile, school_id]);
         if (parentRow.rows.length === 0) {
-            // Create parent with mobile as initial password
             const bcrypt = require('bcryptjs');
             const hash = await bcrypt.hash(mobile, 12);
             parentRow = await db_1.pool.query(`INSERT INTO parent_users (school_id, mobile, name, password_hash, force_password_reset)
          VALUES ($1, $2, $3, $4, true) RETURNING id`, [school_id, mobile, name || null, hash]);
         }
-        const parent_id = parentRow.rows[0].id;
-        // Link parent to student (ignore if already linked)
-        await db_1.pool.query(`INSERT INTO parent_student_links (parent_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [parent_id, req.params.id]);
-        return res.status(201).json({ parent_id, message: 'Parent linked successfully' });
+        await db_1.pool.query(`INSERT INTO parent_student_links (parent_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [parentRow.rows[0].id, req.params.id]);
+        return res.status(201).json({ parent_id: parentRow.rows[0].id, message: 'Parent linked successfully' });
     }
     catch (err) {
         console.error(err);
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
-// DELETE /api/v1/admin/students/:id/parent-links/:parent_id
+// - DELETE /api/v1/admin/students/:id/parent-links/:parent_id -
 router.delete('/:id/parent-links/:parent_id', (0, auth_1.roleGuard)('admin'), async (req, res) => {
     try {
         await db_1.pool.query('DELETE FROM parent_student_links WHERE student_id = $1 AND parent_id = $2', [req.params.id, req.params.parent_id]);
@@ -234,3 +378,56 @@ router.delete('/:id/parent-links/:parent_id', (0, auth_1.roleGuard)('admin'), as
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
+// - PUT /api/v1/admin/students/:id � update parent/guardian details -
+router.put('/:id', (0, auth_1.roleGuard)('admin'), async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        const { father_name, mother_name, parent_contact, mother_contact } = req.body;
+        if (parent_contact && mother_contact && parent_contact.trim() === mother_contact.trim()) {
+            return res.status(400).json({ error: 'Father and mother cannot have the same mobile number' });
+        }
+        if (parent_contact && !/^\d{10}$/.test(parent_contact.trim())) {
+            return res.status(400).json({ error: 'Father mobile must be 10 digits' });
+        }
+        if (mother_contact && !/^\d{10}$/.test(mother_contact.trim())) {
+            return res.status(400).json({ error: 'Mother mobile must be 10 digits' });
+        }
+        const result = await db_1.pool.query(`UPDATE students SET
+         father_name = COALESCE($1, father_name),
+         mother_name = COALESCE($2, mother_name),
+         parent_contact = COALESCE($3, parent_contact),
+         mother_contact = COALESCE($4, mother_contact)
+       WHERE id = $5 AND school_id = $6
+       RETURNING id, name, father_name, mother_name, parent_contact, mother_contact`, [father_name || null, mother_name || null, parent_contact || null, mother_contact || null, req.params.id, school_id]);
+        if (result.rows.length === 0)
+            return res.status(404).json({ error: 'Student not found' });
+        return res.json(result.rows[0]);
+    }
+    catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// - POST /api/v1/admin/students/:id/terminate � soft-delete a student -
+router.post('/:id/terminate', (0, auth_1.roleGuard)('admin'), async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        await db_1.pool.query('UPDATE students SET is_active = false WHERE id = $1 AND school_id = $2', [req.params.id, school_id]);
+        return res.json({ message: 'Student terminated' });
+    }
+    catch (err) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// - POST /api/v1/admin/students/:id/reactivate � restore a terminated student -
+router.post('/:id/reactivate', (0, auth_1.roleGuard)('admin'), async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        await db_1.pool.query('UPDATE students SET is_active = true WHERE id = $1 AND school_id = $2', [req.params.id, school_id]);
+        return res.json({ message: 'Student reactivated' });
+    }
+    catch (err) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+exports.default = router;

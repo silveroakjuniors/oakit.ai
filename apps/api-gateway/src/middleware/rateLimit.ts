@@ -54,10 +54,10 @@ export async function loginThrottle(req: Request, res: Response, next: NextFunct
   try {
     const count = await redis.incr(key);
     if (count === 1) {
-      await redis.pexpire(key, LOGIN_WINDOW_MS);
+      await redis.pExpire(key, LOGIN_WINDOW_MS);
     }
 
-    const ttlMs = Math.max(0, Number(await redis.pttl(key)) || 0);
+    const ttlMs = Math.max(0, Number(await redis.pTTL(key)) || 0);
     const remaining = Math.max(0, LOGIN_MAX_ATTEMPTS - Number(count));
     res.setHeader('X-RateLimit-Limit', String(LOGIN_MAX_ATTEMPTS));
     res.setHeader('X-RateLimit-Remaining', String(remaining));

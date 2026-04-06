@@ -24,8 +24,12 @@ router.get('/', async (req, res) => {
         const result = [];
         for (const link of links.rows) {
             const { student_id, student_name, section_id } = link;
-            // Total chunks in curriculum for this section
-            const totalRow = await db_1.pool.query(`SELECT COUNT(*)::int AS total FROM curriculum_chunks WHERE section_id = $1`, [section_id]);
+            // Total chunks in curriculum for this section's class
+            const totalRow = await db_1.pool.query(`SELECT COUNT(*)::int AS total
+         FROM curriculum_chunks cc
+         JOIN curriculum_documents cd ON cd.id = cc.document_id
+         JOIN sections sec ON sec.class_id = cd.class_id
+         WHERE sec.id = $1 AND cd.school_id = $2`, [section_id, school_id]);
             const total_chunks = totalRow.rows[0].total;
             if (total_chunks === 0) {
                 result.push({ student_id, student_name, section_id, coverage_pct: 0, has_curriculum: false });

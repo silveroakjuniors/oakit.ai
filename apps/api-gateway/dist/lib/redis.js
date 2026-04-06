@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.redis = void 0;
 exports.connectRedis = connectRedis;
+exports.isRedisConnected = isRedisConnected;
 const redis_1 = require("redis");
 let redisClient = null;
 const noop = async (..._args) => null;
@@ -28,4 +29,7 @@ async function connectRedis() {
     catch {
         console.warn('Redis unavailable, continuing without cache');
     }
+}
+function isRedisConnected() {
+    return !!redisClient;
 }

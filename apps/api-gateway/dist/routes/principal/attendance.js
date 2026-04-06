@@ -13,13 +13,17 @@ router.get('/overview', async (req, res) => {
         const today = await (0, today_1.getToday)(school_id);
         const result = await db_1.pool.query(`SELECT
          s.id          AS section_id,
-         s.label       AS section_name,
+         s.label       AS section_label,
+         c.name        AS class_name,
+         u.name        AS class_teacher_name,
          COALESCE(s.flagged, false)   AS flagged,
          s.flag_note,
          CASE WHEN ar.id IS NOT NULL THEN 'submitted' ELSE 'pending' END AS status,
          COALESCE(ar.present_count, 0)  AS present_count,
          COALESCE(ar.absent_count, 0)   AS absent_count
        FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       LEFT JOIN users u ON u.id = s.class_teacher_id
        LEFT JOIN LATERAL (
          SELECT
            id,
@@ -31,7 +35,7 @@ router.get('/overview', async (req, res) => {
          LIMIT 1
        ) ar ON true
        WHERE s.school_id = $1
-       ORDER BY s.label`, [school_id, today]);
+       ORDER BY c.name, s.label`, [school_id, today]);
         return res.json(result.rows);
     }
     catch (err) {

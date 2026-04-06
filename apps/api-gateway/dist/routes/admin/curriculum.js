@@ -159,6 +159,29 @@ router.patch('/chunks/:chunk_id', async (req, res) => {
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
+// GET /api/v1/admin/curriculum/by-section/:section_id/chunks — all chunks for a section's class (for day plan editing)
+router.get('/by-section/:section_id/chunks', async (req, res) => {
+    try {
+        const { school_id } = req.user;
+        // Resolve class_id from section
+        const secRow = await db_1.pool.query('SELECT class_id FROM sections WHERE id = $1 AND school_id = $2', [req.params.section_id, school_id]);
+        if (secRow.rows.length === 0)
+            return res.status(404).json({ error: 'Section not found' });
+        const class_id = secRow.rows[0].class_id;
+        const docRow = await db_1.pool.query(`SELECT id FROM curriculum_documents
+       WHERE class_id = $1 AND school_id = $2 AND status = 'ready'
+       ORDER BY uploaded_at DESC LIMIT 1`, [class_id, school_id]);
+        if (docRow.rows.length === 0)
+            return res.status(404).json({ error: 'No curriculum found for this class' });
+        const result = await db_1.pool.query(`SELECT id, chunk_index, topic_label
+       FROM curriculum_chunks WHERE document_id = $1 AND school_id = $2
+       ORDER BY chunk_index`, [docRow.rows[0].id, school_id]);
+        return res.json({ chunks: result.rows });
+    }
+    catch (err) {
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
 // GET /api/v1/admin/curriculum/by-class/:class_id/chunks — paginated chunks for a class (5 per page = 5 days)
 router.get('/by-class/:class_id/chunks', async (req, res) => {
     try {
