@@ -221,7 +221,8 @@ router.post('/student-login', loginThrottle, async (req: Request, res: Response)
   }
 });
 
-
+// POST /api/v1/auth/logout
+router.post('/logout', async (_req: Request, res: Response) => {
   return res.json({ message: 'Logged out' });
 });
 

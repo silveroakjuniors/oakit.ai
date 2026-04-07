@@ -41,7 +41,7 @@ router.get('/me', async (req: Request, res: Response) => {
   }
 });
 
-(dateStr: string, days: number): string {
+function addSchoolDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T12:00:00');
   let added = 0;
   while (added < days) {
