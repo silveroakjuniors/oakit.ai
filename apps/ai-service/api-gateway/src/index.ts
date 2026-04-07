@@ -53,6 +53,12 @@ import parentProgressRouter from './routes/parent/progress';
 import parentMessagesRouter from './routes/parent/messages';
 import parentObservationsRouter from './routes/parent/observations';
 import parentHomeworkRouter from './routes/parent/homework';
+import parentStudentAnalyticsRouter from './routes/parent/studentAnalytics';
+import adminStudentPortalRouter from './routes/admin/studentPortal';
+import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
+import teacherQuizRouter from './routes/teacher/quiz';
+import studentFeedRouter from './routes/student/feed';
+import studentQuizRouter from './routes/student/quiz';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
 
 import { cleanupExpiredFiles } from './lib/storage';
@@ -223,6 +229,18 @@ app.use('/api/v1/parent/messages', parentMessagesRouter);
 app.use('/api/v1/parent/announcements', parentAnnouncementsRouter);
 app.use('/api/v1/parent/observations', parentObservationsRouter);
 app.use('/api/v1/parent/homework', parentHomeworkRouter);
+app.use('/api/v1/parent/student-analytics', parentStudentAnalyticsRouter);
+
+// Admin — Student Portal
+app.use('/api/v1/admin/student-portal', adminStudentPortalRouter);
+
+// Teacher — Student Credentials & Quiz
+app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
+app.use('/api/v1/teacher/quiz', teacherQuizRouter);
+
+// Student Portal
+app.use('/api/v1/student', studentFeedRouter);
+app.use('/api/v1/student/quiz', studentQuizRouter);
 app.use('/api/v1/parent', parentRouter);
 
 app.listen(PORT, () => {

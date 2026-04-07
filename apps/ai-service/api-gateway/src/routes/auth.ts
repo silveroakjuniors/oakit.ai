@@ -155,8 +155,73 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/auth/logout
-router.post('/logout', async (_req: Request, res: Response) => {
+// POST /api/v1/auth/student-login
+router.post('/student-login', loginThrottle, async (req: Request, res: Response) => {
+  try {
+    const { school_code, username, password } = req.body;
+    if (!school_code || !username || !password) {
+      return res.status(400).json({ error: 'school_code, username, and password are required' });
+    }
+
+    // Find school
+    const schoolResult = await pool.query(
+      'SELECT id, status FROM schools WHERE subdomain = $1',
+      [school_code.toLowerCase()]
+    );
+    if (schoolResult.rows.length === 0 || schoolResult.rows[0].status === 'inactive') {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const school_id = schoolResult.rows[0].id;
+
+    // Find student account
+    const accountResult = await pool.query(
+      `SELECT sa.id, sa.student_id, sa.password_hash, sa.force_password_reset, sa.is_active,
+              s.section_id, s.class_id
+       FROM student_accounts sa
+       JOIN students s ON s.id = sa.student_id
+       WHERE sa.school_id = $1 AND sa.username = $2`,
+      [school_id, username.toLowerCase().trim()]
+    );
+    if (accountResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const account = accountResult.rows[0];
+    if (!account.is_active) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const valid = await bcrypt.compare(password, account.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+    // Check portal is enabled for this class
+    const configResult = await pool.query(
+      'SELECT enabled FROM student_portal_config WHERE school_id = $1 AND class_id = $2',
+      [school_id, account.class_id]
+    );
+    if (!configResult.rows[0]?.enabled) {
+      return res.status(403).json({ error: 'Your school has not enabled the student portal for your class.' });
+    }
+
+    const token = signToken({
+      user_id: account.id,
+      school_id,
+      role: 'student',
+      permissions: [],
+      force_password_reset: account.force_password_reset,
+      ...(account.student_id ? { student_id: account.student_id } : {}),
+      ...(account.section_id ? { section_id: account.section_id } : {}),
+    } as any);
+
+    return res.json({
+      token,
+      role: 'student',
+      force_password_reset: account.force_password_reset,
+    });
+  } catch (err) {
+    console.error('Student login error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
   return res.json({ message: 'Logged out' });
 });
 
@@ -167,6 +232,16 @@ router.post('/change-password', jwtVerify, async (req: Request, res: Response) =
     const { new_password } = req.body;
     if (!new_password) return res.status(400).json({ error: 'new_password is required' });
     if (new_password.length < 6) return res.status(400).json({ error: 'Password too short' });
+
+    if ((role as string) === 'student') {
+      const hash = await bcrypt.hash(new_password, 12);
+      const result = await pool.query(
+        'UPDATE student_accounts SET password_hash = $1, force_password_reset = false, updated_at = now() WHERE id = $2 AND school_id = $3 RETURNING id',
+        [hash, user_id, school_id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Account not found' });
+      return res.json({ message: 'Password changed successfully' });
+    }
 
     if ((role as string) === 'parent') {
       // Parent password change
