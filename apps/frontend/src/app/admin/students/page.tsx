@@ -1,33 +1,52 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { Button, Card, Badge } from '@/components/ui';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
-interface Parent { id: string; name: string | null; mobile: string; is_active: boolean; force_password_reset: boolean; }
-interface Student {
-  id: string; name: string;
-  father_name?: string; mother_name?: string;
-  parent_contact?: string; mother_contact?: string;
-  photo_url?: string | null; class_name: string; section_label: string; is_active: boolean;
+interface Parent {
+  id: string;
+  name: string | null;
+  mobile: string;
+  is_active: boolean;
+  force_password_reset: boolean;
 }
-interface Class { id: string; name: string; sections: { id: string; label: string }[]; }
 
-/** Resolve photo URL — handles both Supabase full URLs and legacy /uploads/ paths */
-function resolvePhoto(url: string | null | undefined): string | null {
+interface Student {
+  id: string;
+  name: string;
+  father_name?: string;
+  mother_name?: string;
+  parent_contact?: string;
+  mother_contact?: string;
+  photo_url?: string | null;
+  class_name: string;
+  section_label: string;
+  class_id: string;
+  section_id: string;
+  is_active: boolean;
+  // student portal fields (loaded separately)
+  portal_username?: string | null;
+  portal_enabled?: boolean;
+}
+
+interface Class { id: string; name: string; sections: { id: string; label: string }[] }
+
+/* Resolve photo URL — handles both Supabase full URLs and legacy /uploads/ paths */
+function resolvePhotoUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  if (url.startsWith('http')) return url;                    // Supabase full URL
-  if (url.startsWith('/uploads')) return `${API_BASE}${url}`; // legacy local
+  if (url.startsWith('http')) return url;       // Supabase full URL
+  if (url.startsWith('/uploads/')) return `${API_BASE}${url}`; // legacy local
   return null;
 }
 
-// ── Photo Preview Modal ───────────────────────────────────────────────────────
+// --- Photo Preview Modal ---------------------------------------------------
 function PhotoPreview({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]" onClick={onClose}>
       <div className="relative max-w-sm w-full" onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute -top-10 right-0 text-white/70 hover:text-white text-2xl">✕</button>
+        <button onClick={onClose} className="absolute -top-10 right-0 text-white/70 hover:text-white text-xl">✕</button>
         <img src={url} alt={name} className="w-full rounded-2xl object-cover shadow-2xl" />
         <p className="text-white text-center text-sm mt-3 font-medium">{name}</p>
       </div>
@@ -35,19 +54,19 @@ function PhotoPreview({ url, name, onClose }: { url: string; name: string; onClo
   );
 }
 
-// ── Student Avatar ────────────────────────────────────────────────────────────
+// --- Student Avatar --------------------------------------------------------
 function StudentAvatar({ student, uploading, onUpload }: {
   student: Student; uploading: boolean; onUpload: (f: File) => void;
 }) {
-  const [preview, setPreview] = useState(false);
-  const photoUrl = resolvePhoto(student.photo_url);
+  const [preview2, setPreview2] = useState(false);
+  const photoUrl = resolvePhotoUrl(student.photo_url);
 
   return (
     <>
       <div className="relative w-12 h-12 shrink-0">
         <div
           className="w-12 h-12 rounded-full bg-primary-50 border-2 border-primary-100 overflow-hidden flex items-center justify-center cursor-pointer"
-          onClick={() => photoUrl && setPreview(true)}
+          onClick={() => photoUrl && setPreview2(true)}
         >
           {photoUrl
             ? <img src={photoUrl} alt={student.name} className="w-full h-full object-cover" />
@@ -55,17 +74,17 @@ function StudentAvatar({ student, uploading, onUpload }: {
         </div>
         {/* Upload button overlay */}
         <label className="absolute -bottom-1 -right-1 w-5 h-5 bg-white border border-gray-200 rounded-full flex items-center justify-center cursor-pointer shadow-sm hover:bg-gray-50">
-          {uploading ? <span className="text-[8px]">⏳</span> : <span className="text-[10px]">📷</span>}
+          {uploading ? <span className="text-[8px]">…</span> : <span className="text-[10px]">📷</span>}
           <input type="file" accept="image/jpeg,image/png" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f); }} />
         </label>
       </div>
-      {preview && photoUrl && <PhotoPreview url={photoUrl} name={student.name} onClose={() => setPreview(false)} />}
+      {preview2 && photoUrl && <PhotoPreview url={photoUrl} name={student.name} onClose={() => setPreview2(false)} />}
     </>
   );
 }
 
-// ── Add Student Modal ─────────────────────────────────────────────────────────
+// --- Add Student Modal -----------------------------------------------------
 function AddStudentModal({ classes, token, onClose, onAdded }: {
   classes: Class[]; token: string; onClose: () => void; onAdded: () => void;
 }) {
@@ -155,7 +174,7 @@ function AddStudentModal({ classes, token, onClose, onAdded }: {
   );
 }
 
-// ── Edit Student Modal ────────────────────────────────────────────────────────
+// --- Edit Student Modal ----------------------------------------------------
 function EditStudentModal({ student, token, onClose, onSaved }: {
   student: Student; token: string; onClose: () => void; onSaved: () => void;
 }) {
@@ -226,7 +245,7 @@ function EditStudentModal({ student, token, onClose, onSaved }: {
   );
 }
 
-// ── Parent Management Panel ───────────────────────────────────────────────────
+// --- Parent Management Panel -----------------------------------------------
 function ParentPanel({ student, token, onRefresh }: { student: Student; token: string; onRefresh: () => void }) {
   const [parents, setParents] = useState<Parent[]>([]);
   const [activating, setActivating] = useState<'father' | 'mother' | 'custom' | null>(null);
@@ -263,7 +282,7 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
   }
 
   async function resetLogin(parentId: string) {
-    setResetting(parentId); setMsg('');
+    setResetting(parentId);
     try {
       const res = await fetch(`${API_BASE}/api/v1/admin/students/${student.id}/reset-parent-login`, {
         method: 'POST',
@@ -272,7 +291,10 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMsg('✓ Password reset to mobile number');
+      setMsg(`✓ Password reset to mobile number`);
+      setActivating(null); setCustomMobile(''); setCustomName('');
+      const r2 = await fetch(`${API_BASE}/api/v1/admin/students/${student.id}/parents`, { headers: { Authorization: `Bearer ${token}` } });
+      setParents(await r2.json());
     } catch (e: unknown) { setMsg(e instanceof Error ? e.message : 'Failed'); }
     finally { setResetting(null); }
   }
@@ -284,7 +306,11 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
 
   return (
     <div className="flex flex-col gap-3 pt-1">
-      {msg && <p className={`text-xs px-3 py-2 rounded-xl ${msg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>{msg}</p>}
+      {msg && (
+        <p className={`text-xs px-3 py-2 rounded-xl ${msg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+          {msg}
+        </p>
+      )}
 
       {parents.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -294,14 +320,15 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
               <div>
                 <p className="text-sm font-medium text-gray-800">{p.name || p.mobile}</p>
                 <p className="text-xs text-gray-400">
-                  {p.mobile} · {p.is_active
-                    ? p.force_password_reset ? <span className="text-amber-600">⚠ Must change password</span> : <span className="text-emerald-600">✓ Active</span>
+                  {p.mobile}&nbsp;
+                  {p.is_active
+                    ? p.force_password_reset ? <span className="text-amber-600">⚠ Must change on first login</span> : <span className="text-emerald-600">✓ Active</span>
                     : 'Inactive'}
                 </p>
               </div>
               <button onClick={() => resetLogin(p.id)} disabled={resetting === p.id}
-                className="text-xs text-amber-600 font-medium px-2.5 py-1.5 rounded-lg hover:bg-amber-50 disabled:opacity-50 min-h-[32px]">
-                {resetting === p.id ? '...' : 'Reset'}
+                className="text-xs text-amber-600 hover:bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200 transition-colors disabled:opacity-50 min-h-[32px]">
+                {resetting === p.id ? '...' : '↺ Reset password'}
               </button>
             </div>
           ))}
@@ -320,14 +347,21 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
             return (
               <div key={c.relation}>
                 {activating === c.relation ? (
-                  <div className="bg-primary-50 border border-primary-100 rounded-xl p-3 flex flex-col gap-2">
-                    <p className="text-xs text-primary-700 font-medium">{c.label}: {c.mobile}</p>
-                    <p className="text-xs text-primary-600">Password = <strong>{c.mobile}</strong> · Must change on first login</p>
+                  <div className="bg-primary-50 border border-primary-100 rounded-xl px-3 py-2 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-medium text-gray-700">{c.label}: </p>
+                      <p className="text-xs text-gray-400">{c.mobile}</p>
+                    </div>
+                    {linkedByMobile === false && hasAnyLinked && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                        ⚠ This will replace the existing {c.label.toLowerCase()} account linked to this student.
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <button onClick={() => setActivating(null)} className="flex-1 py-2 text-xs border border-gray-200 rounded-lg text-gray-600">Cancel</button>
                       <button onClick={() => activate(c.mobile!, c.name || '', c.relation)} disabled={loading}
                         className="flex-1 py-2 text-xs bg-primary-600 text-white rounded-lg font-medium disabled:opacity-50">
-                        {loading ? '...' : 'Confirm'}
+                        {loading ? '...' : linkedByMobile === false && hasAnyLinked ? 'Replace & Activate' : 'Confirm'}
                       </button>
                     </div>
                   </div>
@@ -335,31 +369,33 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
                   <div className="flex flex-col gap-1.5 bg-white border border-gray-100 rounded-xl px-3 py-2.5">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-gray-700">{c.label}: {c.name || '—'}</p>
+                        <p className="text-sm text-gray-700">{c.label}: <span className="font-medium">{c.name || '—'}</span></p>
                         <p className="text-xs text-gray-400">{c.mobile}</p>
                       </div>
                       {linkedByMobile ? (
-                        <span className="text-xs text-emerald-600 font-medium">✓ Linked</span>
+                        <span className="text-xs text-emerald-600 font-medium px-2 py-1.5 rounded-lg border border-emerald-200 min-h-[32px]">
+                          ✓ Linked
+                        </span>
                       ) : !hasAnyLinked ? (
                         <button onClick={() => setActivating(c.relation)}
                           className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg font-medium min-h-[32px]">
-                          Activate
+                          Add Account
                         </button>
                       ) : (
                         <button onClick={() => setActivating(c.relation)}
-                          className="text-xs border border-primary-300 text-primary-700 px-3 py-1.5 rounded-lg font-medium min-h-[32px] hover:bg-primary-50">
+                          className="text-xs border border-primary-300 text-primary-700 px-3 py-1.5 rounded-xl text-sm font-medium min-h-[32px] hover:bg-primary-50">
                           Add Account
                         </button>
                       )}
                     </div>
-                    {/* Show info when a linked account exists but mobile doesn't match */}
                     {!linkedByMobile && hasAnyLinked && linkedAccount && (
                       <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
-                        ⚠ A parent account already exists for this student with mobile <strong>{linkedAccount.mobile}</strong> ({linkedAccount.name || 'Unknown'}).
+                        ⚠ A parent account already exists for this student with mobile <strong>{linkedAccount.mobile}</strong> (
+                        {linkedAccount.name || 'Unknown'}).
                         The {c.label.toLowerCase()}'s number <strong>{c.mobile}</strong> is different.
                         <br />
                         <span className="text-amber-700 mt-1 block">
-                          You can either: update the student's {c.label.toLowerCase()} mobile to match the existing account, or click "Add Account" to create a separate login for this number.
+                          You can either: update the student's {c.label.toLowerCase()} mobile to match the existing account, or click &quot;Add Account&quot; to create a separate login for this number.
                         </span>
                       </div>
                     )}
@@ -377,7 +413,7 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
           💡 To link siblings: activate a parent with the same mobile on both students — they'll see both children in the parent portal.
         </p>
         {activating === 'custom' ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex flex-col gap-2">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-3 flex flex-col gap-2">
             <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="Name (optional)"
               className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
             <input value={customMobile} onChange={e => setCustomMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
@@ -400,14 +436,14 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
         )}
       </div>
 
-      {contacts.length === 0 && parents.length === 0 && (
+      {contacts.length === 0 && parents.length === 0 &&
         <p className="text-xs text-gray-400 text-center py-2">No contacts on file. Edit the student to add parent details.</p>
-      )}
+      }
     </div>
   );
 }
 
-// ── Import Modal ──────────────────────────────────────────────────────────────
+// --- Import Modal ----------------------------------------------------------
 function ImportModal({ token, onClose, onImported }: { token: string; onClose: () => void; onImported: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -415,7 +451,9 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function downloadTemplate() {
-    const res = await fetch(`${API_BASE}/api/v1/admin/students/import/template`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${API_BASE}/api/v1/admin/students/import/template`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'student_import_template.xlsx'; a.click();
@@ -427,44 +465,51 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
     setLoading(true);
     const fd = new FormData(); fd.append('file', file);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/admin/students/import`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/import`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setResult(data); onImported();
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Import failed'); }
+    } catch (err: unknown) { alert(err instanceof Error ? err.message : 'Import failed'); }
     finally { setLoading(false); }
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
-      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-5">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Import Students</h2>
-        {!result ? (
-          <>
-            <p className="text-xs text-gray-500 mb-1">Columns: student name, father name, mother name, section, class, parent contact, mother contact</p>
-            <button onClick={downloadTemplate} className="text-xs text-primary hover:underline mb-4 block">↓ Download template</button>
-            <div className="border-2 border-dashed border-gray-200 rounded-2xl p-5 text-center cursor-pointer mb-4" onClick={() => fileRef.current?.click()}>
-              <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
-              <p className="text-sm text-gray-500">{file ? file.name : '📄 Tap to select .xlsx'}</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
-              <Button onClick={handleImport} loading={loading} disabled={!file} className="flex-1">Import</Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-emerald-700 mb-2">✓ {result.created} students imported</p>
-            {result.skipped.length > 0 && <ul className="text-xs text-gray-500 list-disc pl-4 max-h-28 overflow-y-auto mb-3">{result.skipped.map((s: any, i: number) => <li key={i}>{s.reason}</li>)}</ul>}
-            <Button onClick={onClose} className="w-full">Done</Button>
-          </>
-        )}
+      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Import Students</h2>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+        <div className="px-5 py-4">
+          {!result ? (
+            <>
+              <p className="text-xs text-gray-500 mb-1">Columns: student name, father name, mother name, section, class, parent contact number, mother contact number</p>
+              <button onClick={downloadTemplate} className="text-xs text-primary hover:underline mb-4 block">↓ Download template</button>
+              <div className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center cursor-pointer mb-4" onClick={() => fileRef.current?.click()}>
+                <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
+                <p className="text-sm text-gray-500">{file ? file.name : '📎 Tap to select .xlsx'}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+                <Button onClick={handleImport} loading={loading} disabled={!file} className="flex-1">Import</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-emerald-700 mb-2">✓ {result.created} students imported</p>
+              {result.skipped.length > 0 && <ul className="text-xs text-gray-500 list-disc pl-4 max-h-28 overflow-y-auto mb-4">{result.skipped.map((s: any, i: number) => <li key={i}>{s.studentName}: {s.reason}</li>)}</ul>}
+              <Button onClick={onClose} className="w-full">Done</Button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// --- Main Page ------------------------------------------------------------
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -480,6 +525,13 @@ export default function StudentsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const token = getToken() || '';
 
+  // Portal state
+  const [portalEnabledClasses, setPortalEnabledClasses] = useState<Set<string>>(new Set());
+  // Map: student_id -> { username, has_account }
+  const [accountMap, setAccountMap] = useState<Record<string, { username: string | null; has_account: boolean }>>({});
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [newCred, setNewCred] = useState<{ studentId: string; username: string; password: string } | null>(null);
+
   async function load() {
     try {
       const params = new URLSearchParams();
@@ -491,22 +543,64 @@ export default function StudentsPage() {
         apiGet<Class[]>('/api/v1/admin/classes', token),
       ]);
       setStudents(studs); setClasses(cls);
+
+      // Load portal config
+      try {
+        const config = await apiGet<{ class_id: string; enabled: boolean }[]>('/api/v1/admin/student-portal/config', token);
+        setPortalEnabledClasses(new Set(config.filter(c => c.enabled).map(c => c.class_id)));
+      } catch { /* ignore */ }
+
+      // Load accounts for all unique sections visible
+      if (filterSection) {
+        loadAccountsForSection(filterSection);
+      } else if (studs.length > 0) {
+        const uniqueSections = [...new Set(studs.map(s => s.section_id).filter(Boolean))];
+        uniqueSections.forEach(sid => loadAccountsForSection(sid));
+      }
     } catch (err) { console.error(err); }
+  }
+
+  // Load account info for a section when needed
+  async function loadAccountsForSection(sectionId: string) {
+    try {
+      const data = await apiGet<{ student_id: string; username: string | null; has_account: boolean }[]>(
+        `/api/v1/teacher/students/credentials/${sectionId}`, token,
+      );
+      setAccountMap(prev => {
+        const next = { ...prev };
+        data.forEach(d => { next[d.student_id] = { username: d.username, has_account: d.has_account }; });
+        return next;
+      });
+    } catch { /* ignore — coverage report button will be hidden if no section */ }
   }
 
   useEffect(() => { load(); }, [filterClass, filterSection, showInactive]);
 
-  async function uploadPhoto(studentId: string, file: File) {
-    setUploadingPhoto(studentId);
-    const fd = new FormData(); fd.append('photo', file);
+  async function generateCredential(student: Student) {
+    setGeneratingId(student.id); setNewCred(null);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/admin/students/${studentId}/photo`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
-      });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      const res = await apiPost<{ username: string; password: string; is_new: boolean }>(
+        `/api/v1/teacher/students/credentials/generate`,
+        { student_id: student.id }, token,
+      );
+      setNewCred({ studentId: student.id, username: res.username, password: res.password });
+      setAccountMap(prev => ({ ...prev, [student.id]: { username: res.username, has_account: true } }));
       await load();
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Upload failed'); }
-    finally { setUploadingPhoto(null); }
+    } catch (e: any) { alert(e.message || 'Failed to generate'); }
+    finally { setGeneratingId(null); }
+  }
+
+  async function resetCredential(student: Student) {
+    if (!confirm(`Reset ${student.name}'s password to 123456?`)) return;
+    setGeneratingId(student.id); setNewCred(null);
+    try {
+      const res = await apiPost<{ username: string; password: string; is_new: boolean }>(
+        `/api/v1/teacher/students/credentials/reset/${student.id}`,
+        {}, token,
+      );
+      setNewCred({ studentId: student.id, username: res.username, password: res.password });
+    } catch (e: any) { alert(e.message || 'Failed to reset'); }
+    finally { setGeneratingId(null); }
   }
 
   async function toggleActive(student: Student) {
@@ -515,12 +609,12 @@ export default function StudentsPage() {
       : `Reactivate ${student.name}?`)) return;
     setTogglingId(student.id);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/admin/students/${student.id}/${student.is_active ? 'terminate' : 'reactivate'}`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      await apiPost(
+        `/api/v1/admin/students/${student.id}/${student.is_active ? 'terminate' : 'reactivate'}`,
+        {}, token,
+      );
       await load();
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Failed'); }
+    } catch (e: any) { alert(e.message || 'Failed'); }
     finally { setTogglingId(null); }
   }
 
@@ -539,7 +633,7 @@ export default function StudentsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-primary">
-          Students <span className="text-sm font-normal text-gray-400">({active.length} active{inactive.length > 0 ? `, ${inactive.length} terminated` : ''})</span>
+          Students <span className="text-sm font-normal text-gray-400">{active.length}{inactive.length > 0 ? `, ${inactive.length} terminated` : ''}</span>
         </h1>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>Import</Button>
@@ -573,55 +667,98 @@ export default function StudentsPage() {
 
       {/* Student list */}
       <div className="flex flex-col gap-2">
-        {filtered.map(student => (
-          <div key={student.id} className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${!student.is_active ? 'border-red-100 opacity-70' : 'border-gray-100'}`}>
-            <div className="flex items-start gap-3 p-4">
-              <StudentAvatar
-                student={student}
-                uploading={uploadingPhoto === student.id}
-                onUpload={f => uploadPhoto(student.id, f)}
-              />
+        {filtered.map(student => {
+          const isPortalEnabled = portalEnabledClasses.has(student.class_id);
+          const account = accountMap[student.id];
+          const isThisNewCred = newCred?.studentId === student.id;
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-semibold text-gray-900">{student.name}</p>
-                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{student.class_name} · {student.section_label}</span>
-                  {!student.is_active && <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">Terminated</span>}
+          return (
+            <div key={student.id} className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${!student.is_active ? 'border-red-100 opacity-70' : 'border-gray-100'}`}>
+              <div className="flex items-start gap-3 p-4">
+                <StudentAvatar
+                  student={student}
+                  uploading={uploadingPhoto === student.id}
+                  onUpload={async (f) => {
+                    setUploadingPhoto(student.id);
+                    const fd = new FormData(); fd.append('photo', f);
+                    try {
+                      const res = await fetch(`${API_BASE}/api/v1/admin/students/${student.id}/photo`, {
+                        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+                      });
+                      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+                      await load();
+                    } catch (e: any) { alert(e.message || 'Upload failed'); }
+                    finally { setUploadingPhoto(null); }
+                  }}
+                />
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-gray-900">{student.name}</p>
+                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{student.class_name} {student.section_label}</span>
+                    {!student.is_active && <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">Terminated</span>}
+                  </div>
+
+                  <div className="mt-1.5 flex flex-col gap-0.5">
+                    {(student.father_name || student.parent_contact) && (
+                      <p className="text-xs text-gray-500">
+                        👨 {student.father_name || '—'}{student.parent_contact && <span className="text-gray-400 ml-1">{student.parent_contact}</span>}
+                      </p>
+                    )}
+                    {(student.mother_name || student.mother_contact) && (
+                      <p className="text-xs text-gray-500">
+                        👩 {student.mother_name || '—'}{student.mother_contact && <span className="text-gray-400 ml-1">{student.mother_contact}</span>}
+                      </p>
+                    )}
+                    {!student.father_name && !student.mother_name && !student.parent_contact && !student.mother_contact && (
+                      <p className="text-xs text-gray-400 italic">No parent details</p>
+                    )}
+                  </div>
+
+                  {/* Student portal credentials */}
+                  {isPortalEnabled && student.is_active && (
+                    <div className="mt-2">
+                      {isThisNewCred ? (
+                        <div className="mt-1.5 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-center gap-3">
+                          <div className="text-xs">
+                            <span className="text-emerald-600 font-medium">Username: </span>
+                            <span className="font-mono text-emerald-800">{newCred.username}</span>
+                            <span className="text-emerald-600 font-medium ml-2">Password: </span>
+                            <span className="font-mono font-bold text-emerald-800">{newCred.password}</span>
+                          </div>
+                          <button onClick={() => setNewCred(null)} className="text-emerald-400 hover:text-emerald-600 ml-auto text-xs">✕</button>
+                        </div>
+                      ) : account?.has_account && account.username ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                            {account.username}
+                          </span>
+                          <button onClick={() => resetCredential(student)} disabled={generatingId === student.id}
+                            className="text-xs text-amber-600 hover:bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 transition-colors disabled:opacity-50 min-h-[28px]">
+                            {generatingId === student.id ? '...' : '? Reset password'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => generateCredential(student)} disabled={generatingId === student.id}
+                          className="text-xs text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200 transition-colors disabled:opacity-50 min-h-[28px] font-medium">
+                          {generatingId === student.id ? '...' : '🔑 Generate login'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* Parent info */}
-                <div className="mt-1.5 flex flex-col gap-0.5">
-                  {(student.father_name || student.parent_contact) && (
-                    <p className="text-xs text-gray-500">
-                      👨 <span className="font-medium">{student.father_name || '—'}</span>
-                      {student.parent_contact && <span className="text-gray-400 ml-1">· {student.parent_contact}</span>}
-                    </p>
-                  )}
-                  {(student.mother_name || student.mother_contact) && (
-                    <p className="text-xs text-gray-500">
-                      👩 <span className="font-medium">{student.mother_name || '—'}</span>
-                      {student.mother_contact && <span className="text-gray-400 ml-1">· {student.mother_contact}</span>}
-                    </p>
-                  )}
-                  {!student.father_name && !student.mother_name && !student.parent_contact && !student.mother_contact && (
-                    <p className="text-xs text-gray-400 italic">No parent details</p>
-                  )}
-                </div>
-
-                {/* Actions */}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <button onClick={() => setEditingStudent(student)}
-                    className="text-xs text-gray-500 font-medium px-2.5 py-1.5 rounded-lg hover:bg-gray-100 min-h-[28px]">
+                    className="text-xs text-gray-500 font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] hover:bg-gray-100 min-w-[28px]">
                     ✏️ Edit
                   </button>
                   <button onClick={() => setExpandedStudent(expandedStudent === student.id ? null : student.id)}
-                    className={`text-xs font-medium px-3 py-1.5 rounded-lg min-h-[28px] transition-colors ${expandedStudent === student.id ? 'bg-primary-600 text-white' : 'bg-primary-50 text-primary-700'}`}>
-                    👨‍👩‍👧 Parents {expandedStudent === student.id ? '▲' : '▼'}
+                    className={`text-xs font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] transition-colors ${expandedStudent === student.id ? 'bg-primary-600 text-white' : 'bg-primary-50 text-primary-700'}`}>
+                    {expandedStudent === student.id ? '👨‍👩‍👧 Parents ▲' : '👨‍👩‍👧 Parents ▼'}
                   </button>
-                  <button
-                    onClick={() => toggleActive(student)}
-                    disabled={togglingId === student.id}
-                    className={`text-xs font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] disabled:opacity-50 ${
+                  <button onClick={() => toggleActive(student)} disabled={togglingId === student.id}
+                    className={`text-xs font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] transition-colors disabled:opacity-50 ${
                       student.is_active
                         ? 'text-red-500 hover:bg-red-50'
                         : 'text-emerald-600 hover:bg-emerald-50'
@@ -630,18 +767,18 @@ export default function StudentsPage() {
                   </button>
                 </div>
               </div>
-            </div>
 
-            {expandedStudent === student.id && (
-              <div className="border-t border-gray-100 px-4 pb-4 pt-3 bg-gray-50/50">
-                <ParentPanel student={student} token={token} onRefresh={load} />
-              </div>
-            )}
-          </div>
-        ))}
+              {expandedStudent === student.id && (
+                <div className="border-t border-gray-100 px-4 pb-4 pt-3 bg-gray-50/50">
+                  <ParentPanel student={student} token={token} onRefresh={load} />
+                </div>
+              )}
+            </div>
+          );
+        })}
         {filtered.length === 0 && (
           <div className="text-center py-12 text-gray-400">
-            <p className="text-4xl mb-3">🎒</p>
+            <p className="text-xl mb-3">🎒</p>
             <p className="text-sm">{search ? 'No students match your search' : 'No students found'}</p>
           </div>
         )}

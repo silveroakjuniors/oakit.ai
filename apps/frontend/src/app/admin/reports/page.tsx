@@ -19,6 +19,15 @@ interface SchoolReport {
   overall_attendance_pct: number; overall_coverage_pct: number;
   sections: { class_name: string; section_label: string; coverage_pct: number; total_chunks: number; covered_chunks: number }[];
 }
+interface QuizRow {
+  id: string; subject: string; is_assigned: boolean; status: string; created_at: string;
+  time_limit_mins: number | null; due_date: string | null;
+  section_label: string; class_name: string; teacher_name: string | null;
+  created_by_role: string; question_count: number; attempts_count: number; avg_pct: number | null;
+}
+interface QuizResult {
+  attempt_id: string; student_name: string; total_marks: number; scored_marks: number; pct: number; status: string;
+}
 
 export default function ReportsPage() {
   const token = getToken() || '';
@@ -30,7 +39,11 @@ export default function ReportsPage() {
   const [studentReport, setStudentReport] = useState<StudentReport | null>(null);
   const [schoolReport, setSchoolReport] = useState<SchoolReport | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'student' | 'school'>('student');
+  const [activeTab, setActiveTab] = useState<'student' | 'school' | 'quizzes'>('student');
+  const [quizzes, setQuizzes] = useState<QuizRow[]>([]);
+  const [quizResults, setQuizResults] = useState<Record<string, QuizResult[]>>({});
+  const [expandedQuiz, setExpandedQuiz] = useState<string | null>(null);
+  const [quizzesLoading, setQuizzesLoading] = useState(false);
 
   useEffect(() => {
     apiGet<Class[]>('/api/v1/admin/classes', token).then(setClasses).catch(() => {});
@@ -56,6 +69,22 @@ export default function ReportsPage() {
     finally { setLoading(false); }
   }
 
+  async function loadQuizzes() {
+    setQuizzesLoading(true);
+    try { setQuizzes(await apiGet<QuizRow[]>('/api/v1/admin/quizzes', token)); }
+    catch {}
+    finally { setQuizzesLoading(false); }
+  }
+
+  async function loadQuizResults(quizId: string) {
+    if (quizResults[quizId]) { setExpandedQuiz(expandedQuiz === quizId ? null : quizId); return; }
+    try {
+      const data = await apiGet<QuizResult[]>(`/api/v1/admin/quizzes/${quizId}/results`, token);
+      setQuizResults(prev => ({ ...prev, [quizId]: data }));
+      setExpandedQuiz(quizId);
+    } catch {}
+  }
+
   const cls = classes.find(c => c.id === selectedClass);
 
   return (
@@ -65,10 +94,10 @@ export default function ReportsPage() {
 
         {/* Tab switcher */}
         <div className="flex gap-1 bg-neutral-100 rounded-xl p-1 mb-6 w-fit">
-          {(['student', 'school'] as const).map(t => (
-            <button key={t} onClick={() => setActiveTab(t)}
+          {(['student', 'school', 'quizzes'] as const).map(t => (
+            <button key={t} onClick={() => { setActiveTab(t); if (t === 'quizzes' && quizzes.length === 0) loadQuizzes(); }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize ${activeTab === t ? 'bg-white text-neutral-900 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}>
-              {t === 'student' ? '👤 Student Report' : '🏫 School Summary'}
+              {t === 'student' ? '👤 Student Report' : t === 'school' ? '🏫 School Summary' : '📋 Quizzes & Tests'}
             </button>
           ))}
         </div>
@@ -128,6 +157,76 @@ export default function ReportsPage() {
               </button>
             </div>
             {schoolReport && <SchoolReportCard report={schoolReport} />}
+          </div>
+        )}
+
+        {activeTab === 'quizzes' && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-neutral-500">All quizzes and tests created by teachers or students</p>
+              <button onClick={loadQuizzes} disabled={quizzesLoading}
+                className="text-xs text-primary-600 hover:underline disabled:opacity-50">
+                {quizzesLoading ? 'Loading...' : '↺ Refresh'}
+              </button>
+            </div>
+            {quizzesLoading && <p className="text-sm text-neutral-400 py-4 text-center">Loading quizzes...</p>}
+            {!quizzesLoading && quizzes.length === 0 && (
+              <div className="bg-white rounded-2xl border border-neutral-100 p-8 text-center">
+                <p className="text-3xl mb-2">📋</p>
+                <p className="text-neutral-500 text-sm">No quizzes yet. Teachers and students can create quizzes from their portals.</p>
+              </div>
+            )}
+            {quizzes.map(q => (
+              <div key={q.id} className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-neutral-800">{q.subject}</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${q.is_assigned ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-600'}`}>
+                        {q.is_assigned ? '📋 Assigned' : '✏️ Self-test'}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${q.status === 'active' ? 'bg-emerald-100 text-emerald-700' : q.status === 'closed' ? 'bg-neutral-100 text-neutral-500' : 'bg-amber-100 text-amber-700'}`}>
+                        {q.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      {q.class_name} · Section {q.section_label}
+                      {q.teacher_name && ` · ${q.teacher_name}`}
+                      {q.created_by_role === 'student' && ' · Student-created'}
+                    </p>
+                    <div className="flex gap-4 mt-1.5 text-xs text-neutral-500">
+                      <span>{q.question_count} questions</span>
+                      <span>{q.attempts_count} attempts</span>
+                      {q.avg_pct != null && <span>Avg: {q.avg_pct}%</span>}
+                      {q.time_limit_mins && <span>⏱ {q.time_limit_mins} min</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => loadQuizResults(q.id)}
+                    className="text-xs text-primary-600 hover:underline shrink-0 mt-1">
+                    {expandedQuiz === q.id ? 'Hide results ▲' : 'View results ▼'}
+                  </button>
+                </div>
+                {expandedQuiz === q.id && quizResults[q.id] && (
+                  <div className="border-t border-neutral-100 px-4 py-3 bg-neutral-50/50">
+                    {quizResults[q.id].length === 0 ? (
+                      <p className="text-xs text-neutral-400">No submissions yet.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {quizResults[q.id].map((r, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-neutral-700 font-medium">{r.student_name}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-neutral-500">{r.scored_marks}/{r.total_marks}</span>
+                              <span className={`font-bold ${r.pct >= 50 ? 'text-emerald-600' : 'text-red-500'}`}>{r.pct}%</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

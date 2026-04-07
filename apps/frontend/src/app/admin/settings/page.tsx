@@ -24,14 +24,6 @@ interface PortalClass {
   enabled_at: string | null;
 }
 
-interface StudentAccount {
-  student_id: string;
-  student_name: string;
-  username: string | null;
-  has_account: boolean;
-  force_password_reset: boolean;
-}
-
 function StudentPortalSection({ token }: { token: string }) {
   const [classes, setClasses] = useState<PortalClass[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,48 +91,40 @@ function StudentPortalSection({ token }: { token: string }) {
 
 function StudentCredentialsSection({ token }: { token: string }) {
   const [sections, setSections] = useState<{ section_id: string; section_label: string; class_name: string }[]>([]);
+  const [enabledClassIds, setEnabledClassIds] = useState<Set<string>>(new Set());
   const [selectedSection, setSelectedSection] = useState('');
-  const [students, setStudents] = useState<StudentAccount[]>([]);
+  const [students, setStudents] = useState<{ student_id: string; student_name: string; username: string | null; has_account: boolean }[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
-  const [generating, setGenerating] = useState<string | null>(null);
   const [bulkGenerating, setBulkGenerating] = useState(false);
-  const [results, setResults] = useState<{ student_id: string; username: string; password: string; is_new: boolean }[]>([]);
+  const [results, setResults] = useState<{ student_id: string; username: string; password: string }[]>([]);
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    apiGet<any[]>('/api/v1/teacher/sections', token)
-      .then(d => setSections(d))
-      .catch(() => {});
+    Promise.all([
+      apiGet<{ id: string; name: string; sections: { id: string; label: string }[] }[]>('/api/v1/admin/classes', token),
+      apiGet<{ class_id: string; enabled: boolean }[]>('/api/v1/admin/student-portal/config', token),
+    ]).then(([classes, config]) => {
+      const enabledIds = new Set(config.filter(c => c.enabled).map(c => c.class_id));
+      setEnabledClassIds(enabledIds);
+      // Flatten classes → sections, only for portal-enabled classes
+      const flat = classes
+        .filter(c => enabledIds.has(c.id))
+        .flatMap(c => c.sections.map(s => ({
+          section_id: s.id,
+          section_label: s.label,
+          class_name: c.name,
+        })));
+      setSections(flat);
+    }).catch(() => {});
   }, []);
 
   async function loadStudents(sectionId: string) {
     setLoadingStudents(true); setStudents([]); setResults([]);
     try {
-      const data = await apiGet<StudentAccount[]>(`/api/v1/teacher/students/credentials/${sectionId}`, token);
+      const data = await apiGet<any[]>(`/api/v1/teacher/students/credentials/${sectionId}`, token);
       setStudents(data);
     } catch (e: any) { setMsg(e.message || 'Failed to load students'); }
     finally { setLoadingStudents(false); }
-  }
-
-  async function generateOne(studentId: string) {
-    setGenerating(studentId); setMsg('');
-    try {
-      const res = await apiPost<any>('/api/v1/teacher/students/credentials/generate', { student_id: studentId }, token);
-      setResults(prev => [...prev.filter(r => r.student_id !== studentId), { student_id: studentId, ...res }]);
-      setStudents(prev => prev.map(s => s.student_id === studentId ? { ...s, has_account: true, username: res.username, force_password_reset: true } : s));
-    } catch (e: any) { setMsg(e.message || 'Failed'); }
-    finally { setGenerating(null); }
-  }
-
-  async function resetOne(studentId: string) {
-    setGenerating(studentId); setMsg('');
-    try {
-      const res = await apiPost<any>(`/api/v1/teacher/students/credentials/reset/${studentId}`, {}, token);
-      setResults(prev => [...prev.filter(r => r.student_id !== studentId), { student_id: studentId, ...res, is_new: false }]);
-      setMsg('✓ Password reset to 123456');
-      setTimeout(() => setMsg(''), 3000);
-    } catch (e: any) { setMsg(e.message || 'Failed'); }
-    finally { setGenerating(null); }
   }
 
   async function bulkGenerate() {
@@ -148,22 +132,29 @@ function StudentCredentialsSection({ token }: { token: string }) {
     setBulkGenerating(true); setMsg('');
     try {
       const res = await apiPost<any[]>('/api/v1/teacher/students/credentials/generate', { section_id: selectedSection }, token);
-      const successful = res.filter((r: any) => !r.error);
+      const successful = (res || []).filter((r: any) => !r.error);
       setResults(successful);
-      setMsg(`✓ Generated credentials for ${successful.length} students`);
+      setMsg(`✓ Generated credentials for ${successful.length} student${successful.length !== 1 ? 's' : ''}`);
       loadStudents(selectedSection);
     } catch (e: any) { setMsg(e.message || 'Failed'); }
     finally { setBulkGenerating(false); }
   }
 
+  // Only show sections whose class has portal enabled
+  const enabledSections = sections; // filter happens via class_id check below
+  const withoutAccount = students.filter(s => !s.has_account);
+  const allHaveAccounts = students.length > 0 && withoutAccount.length === 0;
+
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-neutral-100 bg-blue-50/50">
-        <p className="text-sm font-semibold text-neutral-800">🔑 Student Login Credentials</p>
-        <p className="text-xs text-neutral-500 mt-0.5">Generate usernames and passwords for students. Default password is <strong>123456</strong>.</p>
+        <p className="text-sm font-semibold text-neutral-800">🔑 Bulk Generate Student Logins</p>
+        <p className="text-xs text-neutral-500 mt-0.5">
+          Generate logins for all students in a section at once. Only students without an account are created.
+          For individual students, use the Students tab.
+        </p>
       </div>
       <div className="p-5 space-y-4">
-        {/* Section picker */}
         <div className="flex gap-3">
           <select
             value={selectedSection}
@@ -176,56 +167,47 @@ function StudentCredentialsSection({ token }: { token: string }) {
             ))}
           </select>
           {selectedSection && (
-            <button onClick={bulkGenerate} disabled={bulkGenerating}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors whitespace-nowrap">
-              {bulkGenerating ? 'Generating...' : '⚡ Generate All'}
+            <button onClick={bulkGenerate}
+              disabled={bulkGenerating || allHaveAccounts || withoutAccount.length === 0}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl disabled:opacity-40 transition-colors whitespace-nowrap">
+              {bulkGenerating ? 'Generating...' : allHaveAccounts ? '✓ All done' : `⚡ Generate ${withoutAccount.length > 0 ? `(${withoutAccount.length})` : ''}`}
             </button>
           )}
         </div>
 
-        {/* Student list */}
         {loadingStudents && <p className="text-sm text-neutral-400">Loading students...</p>}
-        {students.length > 0 && (
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {students.map(s => (
-              <div key={s.student_id} className="flex items-center justify-between px-4 py-3 rounded-xl border border-neutral-100 bg-neutral-50/30">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-neutral-800 truncate">{s.student_name}</p>
-                  {s.has_account && s.username ? (
-                    <p className="text-xs text-emerald-600 font-mono mt-0.5">{s.username}</p>
-                  ) : (
-                    <p className="text-xs text-neutral-400 mt-0.5">No account yet</p>
-                  )}
+
+        {/* Show only students WITHOUT accounts */}
+        {!loadingStudents && withoutAccount.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-neutral-500 mb-2">{withoutAccount.length} student{withoutAccount.length !== 1 ? 's' : ''} without login:</p>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {withoutAccount.map(s => (
+                <div key={s.student_id} className="flex items-center px-3 py-2 rounded-xl bg-neutral-50 border border-neutral-100">
+                  <span className="text-sm text-neutral-700">{s.student_name}</span>
+                  <span className="ml-auto text-xs text-neutral-400">No account</span>
                 </div>
-                <div className="flex gap-2 shrink-0 ml-3">
-                  {!s.has_account ? (
-                    <button onClick={() => generateOne(s.student_id)} disabled={generating === s.student_id}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors">
-                      {generating === s.student_id ? '...' : 'Create'}
-                    </button>
-                  ) : (
-                    <button onClick={() => resetOne(s.student_id)} disabled={generating === s.student_id}
-                      className="px-3 py-1.5 border border-neutral-200 text-neutral-600 hover:bg-neutral-100 text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors">
-                      {generating === s.student_id ? '...' : 'Reset'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Generated credentials display */}
+        {!loadingStudents && allHaveAccounts && students.length > 0 && (
+          <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 rounded-xl px-4 py-3">
+            <span className="text-sm font-medium">✓ All {students.length} students have login accounts</span>
+          </div>
+        )}
+
+        {/* Generated credentials */}
         {results.length > 0 && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-emerald-800 mb-2">✓ Credentials ready — share with students:</p>
+            <p className="text-xs font-bold text-emerald-800 mb-2">✓ New credentials — share with students:</p>
             <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {results.map((r, i) => (
+              {results.map((r: any, i: number) => (
                 <div key={i} className="flex items-center gap-3 text-xs font-mono bg-white rounded-lg px-3 py-2 border border-emerald-100">
                   <span className="text-neutral-600 flex-1 truncate">{r.username}</span>
-                  <span className="text-neutral-400">·</span>
+                  <span className="text-neutral-300">·</span>
                   <span className="text-emerald-700 font-bold">{r.password}</span>
-                  {r.is_new && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">new</span>}
                 </div>
               ))}
             </div>

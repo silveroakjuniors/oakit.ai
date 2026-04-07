@@ -91,7 +91,7 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         user_id: user.id,
         school_id,
         role: user.portal_role,
-        permissions: user.permissions,
+        permissions: user.permissions || [],
         force_password_reset: user.force_password_reset,
       } as any);
 

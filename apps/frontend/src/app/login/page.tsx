@@ -314,6 +314,14 @@ export default function LoginPage() {
               Reset Connection
             </button>
           </div>
+
+          {/* Student login link */}
+          <div className="text-center mt-4">
+            <Link href="/student/login"
+              className="text-xs text-slate-400 hover:text-emerald-400 transition-colors">
+              🎒 Student? Log in here
+            </Link>
+          </div>
         </div>
       </div>
 
