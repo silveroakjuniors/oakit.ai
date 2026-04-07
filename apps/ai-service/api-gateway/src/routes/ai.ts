@@ -264,6 +264,10 @@ const ALWAYS_ALLOWED = [
   'crying','upset','misbehav','not listening','disruptive','shy','quiet',
   'finish early','fast finisher','reward','sticker','parent','discipline',
   'scold','shout','tired','energy','transition','bathroom','toilet',
+  // Date range summary — always allowed (used for parent-teacher meetings)
+  'from june','from july','from august','from september','from october','from november','from december',
+  'from jan','from feb','from mar','from apr','from may',
+  'between','summary','what have i covered','what have we covered','parent-teacher','parent teacher',
 ];
 
 function isAlwaysAllowed(text: string): boolean {
@@ -479,6 +483,26 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         ).catch(() => ({ rows: [] }));
         if (hwRow.rows.length > 0) {
           context += `Latest homework: ${hwRow.rows[0].formatted_text?.slice(0, 200)}\n`;
+        }
+
+        // Missed homework (not_submitted or partial in last 30 days)
+        const missedHwRow = await pool.query(
+          `SELECT hs.homework_date, hs.status, th.formatted_text as homework_text
+           FROM homework_submissions hs
+           LEFT JOIN teacher_homework th ON th.section_id = hs.section_id AND th.homework_date = hs.homework_date
+           WHERE hs.student_id = $1 AND hs.status IN ('not_submitted', 'partial')
+           ORDER BY hs.homework_date DESC LIMIT 10`,
+          [student_id]
+        ).catch(() => ({ rows: [] }));
+        if (missedHwRow.rows.length > 0) {
+          const missedLines = missedHwRow.rows.map((r: any) => {
+            const dateStr = new Date(r.homework_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+            const hw = r.homework_text ? ` (${r.homework_text.slice(0, 60)})` : '';
+            return `${dateStr}: ${r.status === 'partial' ? 'Partially done' : 'Not submitted'}${hw}`;
+          });
+          context += `Missed/incomplete homework:\n${missedLines.join('\n')}\n`;
+        } else {
+          context += `Missed homework: None — all homework submitted!\n`;
         }
       }
     }

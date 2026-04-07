@@ -567,4 +567,137 @@ router.post('/parent-query', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/ai/student-query — AI doubts scoped to covered topics
+router.post('/student-query', async (req: Request, res: Response) => {
+  try {
+    const { school_id, role } = req.user!;
+    if (role !== 'student') return res.status(403).json({ error: 'Forbidden' });
+
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    if (text.length > 300) return res.status(400).json({ error: 'Question too long (max 300 characters)' });
+
+    const student_id = (req.user as any).student_id;
+    const section_id = (req.user as any).section_id;
+    if (!student_id || !section_id) return res.status(400).json({ error: 'Invalid token' });
+
+    // Block during active assigned test
+    const activeTest = await pool.query(
+      `SELECT qa.id FROM quiz_attempts qa
+       JOIN quizzes q ON q.id = qa.quiz_id
+       WHERE qa.student_id = $1 AND qa.status = 'in_progress' AND q.is_assigned = true`,
+      [student_id]
+    );
+    if (activeTest.rows.length > 0) {
+      return res.json({ response: 'AI help is not available during an assigned test. Focus on your own answers! 📝' });
+    }
+
+    const today = await getToday(school_id);
+
+    // Get all covered chunk IDs for this section up to today
+    const coveredResult = await pool.query(
+      `SELECT ARRAY_AGG(DISTINCT unnested) as chunk_ids
+       FROM daily_completions dc, UNNEST(dc.covered_chunk_ids) AS unnested
+       WHERE dc.section_id = $1 AND dc.completion_date <= $2`,
+      [section_id, today]
+    );
+    const covered_chunk_ids = coveredResult.rows[0]?.chunk_ids || [];
+
+    if (covered_chunk_ids.length === 0) {
+      return res.json({ response: "Your class hasn't covered any topics yet. Check back after your teacher logs some completed lessons! 🌱" });
+    }
+
+    const cleanText = text.trim();
+    if (isOffTopic(cleanText)) {
+      return res.json({ response: "I can only help with topics your class has covered. Ask me about something from your lessons! 📚" });
+    }
+
+    const cacheKey = `ai:student:${student_id}:${crypto.createHash('md5').update(cleanText + today).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json(JSON.parse(cached));
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/student-query`, {
+        student_id, school_id, section_id,
+        text: cleanText,
+        covered_chunk_ids,
+        query_date: today,
+      }, { timeout: AI_TIMEOUT_MS });
+      await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
+      return res.json(aiResp.data);
+    } catch {
+      return res.json({ response: 'Oakie is unavailable right now. Please try again shortly.' });
+    }
+  } catch {
+    return res.json({ response: 'Oakie is unavailable right now. Please try again shortly.' });
+  }
+});
+
 export default router;
+  try {
+    const { user_id, school_id, role } = req.user!;
+    if (role !== 'student') return res.status(403).json({ error: 'Forbidden' });
+
+    const { text, student_id: bodyStudentId } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    if (text.length > 300) return res.status(400).json({ error: 'Question too long (max 300 characters)' });
+
+    const student_id = (req.user as any).student_id || bodyStudentId;
+    const section_id = (req.user as any).section_id;
+    if (!student_id || !section_id) return res.status(400).json({ error: 'Invalid token' });
+
+    // Block during active assigned test
+    const activeTest = await pool.query(
+      `SELECT qa.id FROM quiz_attempts qa
+       JOIN quizzes q ON q.id = qa.quiz_id
+       WHERE qa.student_id = $1 AND qa.status = 'in_progress' AND q.is_assigned = true`,
+      [student_id]
+    );
+    if (activeTest.rows.length > 0) {
+      return res.json({ response: 'AI help is not available during an assigned test. Focus on your own answers! 📝' });
+    }
+
+    const today = await getToday(school_id);
+
+    // Get all covered chunk IDs for this section up to today
+    const coveredResult = await pool.query(
+      `SELECT ARRAY_AGG(DISTINCT unnested) as chunk_ids
+       FROM daily_completions dc, UNNEST(dc.covered_chunk_ids) AS unnested
+       WHERE dc.section_id = $1 AND dc.completion_date <= $2`,
+      [section_id, today]
+    );
+    const covered_chunk_ids = coveredResult.rows[0]?.chunk_ids || [];
+
+    if (covered_chunk_ids.length === 0) {
+      return res.json({ response: "Your class hasn't covered any topics yet. Check back after your teacher logs some completed lessons! 🌱" });
+    }
+
+    const cleanText = text.trim();
+
+    // Block off-topic
+    if (isOffTopic(cleanText)) {
+      return res.json({ response: "I can only help with topics your class has covered. Ask me about something from your lessons! 📚" });
+    }
+
+    const cacheKey = `ai:student:${student_id}:${crypto.createHash('md5').update(cleanText + today).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json(JSON.parse(cached));
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/student-query`, {
+        student_id, school_id, section_id,
+        text: cleanText,
+        covered_chunk_ids,
+        query_date: today,
+      }, { timeout: AI_TIMEOUT_MS });
+      await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
+      return res.json(aiResp.data);
+    } catch (err: unknown) {
+      return res.json({ response: 'Oakie is unavailable right now. Please try again shortly.' });
+    }
+  } catch (err: unknown) {
+    return res.json({ response: 'Oakie is unavailable right now. Please try again shortly.' });
+  }
+});
+
+

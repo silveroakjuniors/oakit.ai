@@ -52,6 +52,7 @@ import parentNotificationsRouter from './routes/parent/notifications';
 import parentProgressRouter from './routes/parent/progress';
 import parentMessagesRouter from './routes/parent/messages';
 import parentObservationsRouter from './routes/parent/observations';
+import parentHomeworkRouter from './routes/parent/homework';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
 
 import { cleanupExpiredFiles } from './lib/storage';
@@ -221,6 +222,7 @@ app.use('/api/v1/parent/progress', parentProgressRouter);
 app.use('/api/v1/parent/messages', parentMessagesRouter);
 app.use('/api/v1/parent/announcements', parentAnnouncementsRouter);
 app.use('/api/v1/parent/observations', parentObservationsRouter);
+app.use('/api/v1/parent/homework', parentHomeworkRouter);
 app.use('/api/v1/parent', parentRouter);
 
 app.listen(PORT, () => {

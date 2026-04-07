@@ -924,3 +924,265 @@ Return JSON:
             {"type": "drawing", "title": "Draw and Colour", "prompt": "Draw your favourite animal and colour it."},
         ],
     }
+
+
+# ─── Student Portal AI Endpoints ─────────────────────────────────────────────
+
+class StudentQueryRequest(BaseModel):
+    student_id: str
+    school_id: str
+    section_id: str
+    text: str
+    covered_chunk_ids: list
+    query_date: str
+
+@app.post("/internal/student-query")
+async def student_query(req: StudentQueryRequest):
+    """AI doubts scoped strictly to covered topics."""
+    from query_pipeline import _call_llm, _build_chunk_context
+    from db import get_pool
+    from uuid import UUID
+
+    pool = await get_pool()
+
+    if not req.covered_chunk_ids:
+        return {"response": "Your class hasn't covered any topics yet. Check back after your teacher logs some completed lessons! 🌱"}
+
+    # Fetch covered chunks
+    chunks = await pool.fetch(
+        "SELECT id, topic_label, content FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index",
+        [UUID(c) for c in req.covered_chunk_ids[:50]],  # cap at 50
+    )
+    if not chunks:
+        return {"response": "I couldn't find your covered topics. Please try again later."}
+
+    # Build topic list for relevance check
+    topic_labels = [c["topic_label"] or "Topic" for c in chunks]
+    topics_text = "\n".join(f"- {t}" for t in topic_labels[:20])
+
+    # Check relevance + generate answer in one LLM call
+    sys_p = (
+        "You are Oakie, a friendly learning assistant for school children.\n"
+        "You ONLY answer questions about topics the student's class has already covered.\n"
+        "If the question is not about any covered topic, politely decline and suggest a covered topic.\n"
+        "Give clear, simple, age-appropriate explanations. Use examples children can relate to.\n"
+        "Plain text only — no markdown bold, no tables. Use emojis to make it friendly.\n"
+        "Keep responses under 200 words."
+    )
+    llm_p = f"""Student's question: "{req.text}"
+
+TOPICS COVERED BY THIS CLASS:
+{topics_text}
+
+CURRICULUM CONTENT (for reference):
+{_build_chunk_context(list(chunks[:10]))}
+
+If the question is about a covered topic:
+- Give a clear, friendly explanation
+- Use a simple example
+- End with an encouraging line
+
+If the question is NOT about any covered topic:
+- Say: "I can only help with topics your class has covered."
+- Suggest 2-3 relevant covered topics they could ask about instead
+
+Answer:"""
+
+    response_text, _ = await _call_llm(llm_p, sys_p)
+    if not response_text:
+        response_text = "Oakie is unavailable right now. Please try again shortly."
+
+    return {"response": response_text}
+
+
+class GenerateQuizRequest(BaseModel):
+    quiz_id: str
+    chunk_ids: list
+    chunks: list  # [{ id, topic_label, content }]
+    question_types: list  # ['fill_blank', '1_mark', '2_mark', 'descriptive']
+    subject: str
+    class_name: str
+
+@app.post("/internal/generate-quiz")
+async def generate_quiz(req: GenerateQuizRequest):
+    """Generate quiz questions from confirmed topic list."""
+    from query_pipeline import _call_llm
+    import json, random
+
+    if not req.chunks:
+        return {"questions": []}
+
+    # Build content context
+    content_lines = []
+    for chunk in req.chunks[:15]:
+        label = chunk.get("topic_label", "Topic")
+        content = (chunk.get("content") or "")[:300]
+        content_lines.append(f"Topic: {label}\n{content}")
+    content_text = "\n\n---\n\n".join(content_lines)
+
+    q_types_str = ", ".join(req.question_types)
+    n_questions = max(5, len(req.chunks) * 2)
+
+    sys_p = (
+        f"You are generating quiz questions for {req.class_name} students.\n"
+        f"Questions must be specific to the curriculum content provided.\n"
+        f"Make questions varied and random — avoid repeating the same phrasing.\n"
+        f"Return ONLY valid JSON — no markdown, no explanation."
+    )
+    llm_p = f"""Generate {n_questions} quiz questions for subject: {req.subject}
+Question types to include: {q_types_str}
+
+CURRICULUM CONTENT:
+{content_text}
+
+Return JSON:
+{{
+  "questions": [
+    {{
+      "chunk_id": "<id from content above or null>",
+      "subject": "{req.subject}",
+      "question": "question text",
+      "q_type": "fill_blank|1_mark|2_mark|descriptive",
+      "marks": 1,
+      "answer_key": "correct answer",
+      "explanation": "brief explanation"
+    }}
+  ]
+}}
+
+Rules:
+- fill_blank: sentence with ___ to fill in (1 mark)
+- 1_mark: short answer question (1 mark)
+- 2_mark: question requiring 2-3 sentences (2 marks)
+- descriptive: open-ended question (2 marks)
+- Make questions specific to the actual content, not generic
+- Vary the difficulty and phrasing"""
+
+    try:
+        result, _ = await _call_llm(llm_p, sys_p)
+        start = result.find('{')
+        end = result.rfind('}') + 1
+        if start >= 0 and end > start:
+            data = json.loads(result[start:end])
+            questions = data.get("questions", [])
+            # Shuffle for randomness
+            random.shuffle(questions)
+            return {"questions": questions}
+    except Exception as e:
+        print(f"[generate-quiz] error: {e}")
+
+    # Fallback: basic questions from topic labels
+    questions = []
+    for chunk in req.chunks:
+        label = chunk.get("topic_label", "Topic")
+        questions.append({
+            "chunk_id": chunk.get("id"),
+            "subject": req.subject,
+            "question": f"What did you learn about {label}?",
+            "q_type": "1_mark",
+            "marks": 1,
+            "answer_key": label,
+            "explanation": f"This topic was covered in class.",
+        })
+    return {"questions": questions}
+
+
+class EvaluateQuizRequest(BaseModel):
+    questions: list  # [{ id, question, q_type, marks, answer_key, explanation }]
+    student_answers: list  # [{ question_id, answer }]
+    class_name: str
+
+@app.post("/internal/evaluate-quiz")
+async def evaluate_quiz(req: EvaluateQuizRequest):
+    """Evaluate student answers and assign marks."""
+    from query_pipeline import _call_llm
+    import json
+
+    q_map = {q["id"]: q for q in req.questions}
+    answer_map = {a["question_id"]: a.get("answer", "") for a in req.student_answers}
+
+    evaluations = []
+
+    # Separate objective (fill_blank, 1_mark) from subjective (2_mark, descriptive)
+    objective_ids = [q["id"] for q in req.questions if q["q_type"] in ("fill_blank", "1_mark")]
+    subjective_ids = [q["id"] for q in req.questions if q["q_type"] in ("2_mark", "descriptive")]
+
+    # Evaluate objective questions with fuzzy match
+    for qid in objective_ids:
+        q = q_map.get(qid)
+        if not q:
+            continue
+        student_ans = (answer_map.get(qid) or "").strip().lower()
+        correct_ans = (q.get("answer_key") or "").strip().lower()
+        # Fuzzy: check if answer contains key words
+        is_correct = student_ans == correct_ans or (len(correct_ans) > 3 and correct_ans in student_ans)
+        evaluations.append({
+            "question_id": qid,
+            "is_correct": is_correct,
+            "marks_awarded": q["marks"] if is_correct else 0,
+            "ai_feedback": "Correct! 🎉" if is_correct else f"The answer is: {q['answer_key']}",
+        })
+
+    # Evaluate subjective questions with LLM
+    if subjective_ids:
+        subj_lines = []
+        for qid in subjective_ids:
+            q = q_map.get(qid)
+            if not q:
+                continue
+            student_ans = answer_map.get(qid) or "(no answer)"
+            subj_lines.append(
+                f"Q: {q['question']}\nExpected: {q['answer_key']}\nStudent answered: {student_ans}\nMax marks: {q['marks']}"
+            )
+
+        sys_p = (
+            f"You are evaluating quiz answers for {req.class_name} students.\n"
+            f"Be fair and encouraging. Award partial marks for partially correct answers.\n"
+            f"Return ONLY valid JSON."
+        )
+        llm_p = f"""Evaluate these student answers:
+
+{chr(10).join(subj_lines)}
+
+Return JSON:
+{{
+  "evaluations": [
+    {{
+      "question_id": "<id>",
+      "marks_awarded": <number>,
+      "is_correct": <true/false>,
+      "ai_feedback": "brief encouraging feedback"
+    }}
+  ]
+}}"""
+
+        try:
+            result, _ = await _call_llm(llm_p, sys_p)
+            start = result.find('{')
+            end = result.rfind('}') + 1
+            if start >= 0 and end > start:
+                data = json.loads(result[start:end])
+                for ev in data.get("evaluations", []):
+                    q = q_map.get(ev.get("question_id"))
+                    if q:
+                        marks = min(int(ev.get("marks_awarded", 0)), q["marks"])
+                        evaluations.append({
+                            "question_id": ev["question_id"],
+                            "is_correct": ev.get("is_correct", marks == q["marks"]),
+                            "marks_awarded": marks,
+                            "ai_feedback": ev.get("ai_feedback", ""),
+                        })
+        except Exception as e:
+            print(f"[evaluate-quiz] LLM error: {e}")
+            # Fallback: 0 marks for subjective
+            for qid in subjective_ids:
+                q = q_map.get(qid)
+                if q:
+                    evaluations.append({
+                        "question_id": qid,
+                        "is_correct": False,
+                        "marks_awarded": 0,
+                        "ai_feedback": f"Expected: {q['answer_key']}",
+                    })
+
+    return {"evaluations": evaluations}
