@@ -41,7 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Get settings
     const settingsRow = await pool.query(
-      `SELECT notes_expiry_days FROM school_settings WHERE school_id = $1`,
+      `SELECT notes_expiry_days, ai_plan_mode FROM school_settings WHERE school_id = $1`,
       [school_id]
     );
     if (settingsRow.rows.length === 0) {
@@ -58,6 +58,7 @@ router.get('/', async (req: Request, res: Response) => {
       contact_phone: school.contact?.phone ?? '',
       contact_address: school.contact?.address ?? '',
       notes_expiry_days: settingsRow.rows[0]?.notes_expiry_days ?? 14,
+      ai_plan_mode: settingsRow.rows[0]?.ai_plan_mode ?? 'standard',
       logo_url: school.logo_path ? getPublicUrl(school.logo_path) : null,
       primary_color: school.primary_color ?? '#1A3C2E',
       tagline: school.tagline ?? '',
@@ -108,10 +109,25 @@ router.put('/', async (req: Request, res: Response) => {
       );
     }
 
+    const { ai_plan_mode } = req.body;
+    if (ai_plan_mode !== undefined) {
+      if (!['standard', 'ai_enhanced'].includes(ai_plan_mode)) {
+        return res.status(400).json({ error: 'ai_plan_mode must be standard or ai_enhanced' });
+      }
+      await pool.query(
+        `INSERT INTO school_settings (school_id, ai_plan_mode, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (school_id) DO UPDATE
+         SET ai_plan_mode = EXCLUDED.ai_plan_mode, updated_at = now()`,
+        [school_id, ai_plan_mode]
+      );
+    }
+
     // Return updated settings
     const updated = await pool.query(
       `SELECT s.name as school_name, s.subdomain, s.contact, s.logo_path, s.primary_color, s.tagline,
-              COALESCE(ss.notes_expiry_days, 14) as notes_expiry_days
+              COALESCE(ss.notes_expiry_days, 14) as notes_expiry_days,
+              COALESCE(ss.ai_plan_mode, 'standard') as ai_plan_mode
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
        WHERE s.id = $1`,
@@ -125,6 +141,7 @@ router.put('/', async (req: Request, res: Response) => {
       contact_phone: r.contact?.phone ?? '',
       contact_address: r.contact?.address ?? '',
       notes_expiry_days: r.notes_expiry_days,
+      ai_plan_mode: r.ai_plan_mode ?? 'standard',
       logo_url: r.logo_path ? getPublicUrl(r.logo_path) : null,
       primary_color: r.primary_color ?? '#1A3C2E',
       tagline: r.tagline ?? '',
@@ -171,6 +188,74 @@ router.post('/logo', uploadRateLimit, (req: Request, res: Response, next: any) =
     return res.json({ logo_url: publicUrl });
   } catch (err) {
     console.error('[logo upload]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/settings/ai-plan-mode — get per-class AI mode for all classes
+router.get('/ai-plan-mode', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+
+    // Get all classes with their AI mode (join with class_ai_settings if exists)
+    const r = await pool.query(
+      `SELECT c.id as class_id, c.name as class_name,
+              COALESCE(cas.ai_plan_mode, ss.ai_plan_mode, 'standard') as ai_plan_mode
+       FROM classes c
+       LEFT JOIN class_ai_settings cas ON cas.class_id = c.id
+       LEFT JOIN school_settings ss ON ss.school_id = c.school_id
+       WHERE c.school_id = $1
+       ORDER BY c.name`,
+      [school_id]
+    );
+
+    // Also return school-level default
+    const schoolSettings = await pool.query(
+      `SELECT COALESCE(ai_plan_mode, 'standard') as ai_plan_mode FROM school_settings WHERE school_id = $1`,
+      [school_id]
+    );
+
+    return res.json({
+      school_default: schoolSettings.rows[0]?.ai_plan_mode ?? 'standard',
+      classes: r.rows,
+    });
+  } catch (err) {
+    console.error('[settings] GET ai-plan-mode', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/v1/admin/settings/ai-plan-mode — set AI mode for a class or school default
+router.put('/ai-plan-mode', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, ai_plan_mode } = req.body;
+
+    if (!['standard', 'ai_enhanced'].includes(ai_plan_mode)) {
+      return res.status(400).json({ error: 'ai_plan_mode must be standard or ai_enhanced' });
+    }
+
+    if (class_id) {
+      // Per-class setting
+      await pool.query(
+        `INSERT INTO class_ai_settings (class_id, school_id, ai_plan_mode, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (class_id) DO UPDATE SET ai_plan_mode = EXCLUDED.ai_plan_mode, updated_at = now()`,
+        [class_id, school_id, ai_plan_mode]
+      );
+    } else {
+      // School-level default
+      await pool.query(
+        `INSERT INTO school_settings (school_id, ai_plan_mode, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (school_id) DO UPDATE SET ai_plan_mode = EXCLUDED.ai_plan_mode, updated_at = now()`,
+        [school_id, ai_plan_mode]
+      );
+    }
+
+    return res.json({ ok: true, class_id: class_id || null, ai_plan_mode });
+  } catch (err) {
+    console.error('[settings] PUT ai-plan-mode', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

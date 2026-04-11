@@ -207,9 +207,12 @@ export default function TeacherPlanner() {
   const [noteMsg, setNoteMsg] = useState('');
   const [notes, setNotes] = useState<{ id: string; note_text?: string; file_name?: string; file_size?: number; expires_at: string }[]>([]);
   const [showHomeworkPanel, setShowHomeworkPanel] = useState(false);
+  const [showTopicsPanel, setShowTopicsPanel] = useState(false);
   const [showCompletionNotice, setShowCompletionNotice] = useState(true);
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [planViewMode, setPlanViewMode] = useState<'raw' | 'detailed'>('raw');
+  const [detailedPlanText, setDetailedPlanText] = useState<string | null>(null);
+  const [fetchingDetailedPlan, setFetchingDetailedPlan] = useState(false);
   // Homework submission tracking state
   const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, 'completed' | 'partial' | 'not_submitted'>>({});
@@ -518,40 +521,7 @@ export default function TeacherPlanner() {
                 </h2>
                 {plan.status === 'carried_forward' && <span className="text-[10px] text-amber-600 font-medium">Topics carried forward</span>}
               </div>
-              {/* Raw / Detailed toggle */}
-              <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 gap-0.5">
-                <button
-                  onClick={() => setPlanViewMode('raw')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${planViewMode === 'raw' ? 'bg-white text-neutral-800 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}
-                >
-                  Raw
-                </button>
-                <button
-                  onClick={() => {
-                    setPlanViewMode('detailed');
-                    if (planViewMode !== 'detailed') {
-                      setActiveTab('chat');
-                      askSuggested('what is my plan for today');
-                    }
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1 ${planViewMode === 'detailed' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}
-                >
-                  <Sparkles className="w-3 h-3" /> Detailed
-                </button>
-              </div>
             </div>
-
-            {/* Detailed plan notice */}
-            {planViewMode === 'detailed' && (
-              <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                className="bg-primary-50 border border-primary-100 rounded-xl px-3 py-2.5 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-primary-500 shrink-0" />
-                <p className="text-xs text-primary-700">AI-detailed plan is shown in the <strong>Oakie chat</strong> tab. Switch to Chat to view it.</p>
-                <button onClick={() => setActiveTab('chat')} className="ml-auto text-xs text-primary-600 font-semibold hover:text-primary-800 shrink-0 flex items-center gap-0.5">
-                  View <ArrowRight className="w-3 h-3" />
-                </button>
-              </motion.div>
-            )}
 
             {/* Admin note if present */}
             {plan.admin_note && (
@@ -561,7 +531,7 @@ export default function TeacherPlanner() {
               </div>
             )}
 
-            {/* Topics checklist — same style as Homework & Notes panel */}
+            {/* Today's Topics — collapsible panel like Homework & Notes */}
             {(() => {
               const activities: { chunkId: string; label: string; subjectKey: string }[] = [];
               plan.chunks.forEach((chunk: any) => {
@@ -601,93 +571,110 @@ export default function TeacherPlanner() {
 
               return (
                 <div className="border border-neutral-200 rounded-2xl overflow-hidden">
-                  {/* Header with Mark All */}
-                  <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-neutral-100">
+                  {/* Collapsible header — click to expand/collapse */}
+                  <button
+                    onClick={() => setShowTopicsPanel(p => !p)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-white text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
+                  >
                     <div className="flex items-center gap-2">
                       <BookOpen className="w-4 h-4 text-primary-500" />
-                      <span className="text-sm font-semibold text-neutral-800">Today's Topics</span>
-                      <span className="text-xs text-neutral-400 font-normal">
-                        {checkedCount > 0 ? `${checkedCount}/${activities.length} done` : `${activities.length} topic${activities.length !== 1 ? 's' : ''}`}
-                      </span>
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <span className="text-xs text-neutral-500 font-medium">Mark all</span>
-                      <div
-                        onClick={() => allChecked ? setSelectedChunks([]) : setSelectedChunks(allKeys)}
-                        className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${
-                          allChecked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
-                        }`}
-                      >
-                        {allChecked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                      </div>
-                    </label>
-                  </div>
-
-                  {/* Individual topic rows */}
-                  {activities.map((act, idx) => {
-                    const checked = selectedChunks.includes(act.subjectKey);
-                    return (
-                      <label key={act.subjectKey}
-                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-neutral-50 last:border-0 ${
-                          checked ? 'bg-emerald-50/60' : 'bg-white hover:bg-neutral-50'
-                        }`}>
-                        <div
-                          onClick={() => toggleChunk(act.subjectKey)}
-                          className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
-                            checked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
-                          }`}
-                        >
-                          {checked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                        </div>
-                        <span className={`text-sm flex-1 transition-all ${checked ? 'text-emerald-700 line-through opacity-60' : 'text-neutral-800'}`}>
-                          {act.label}
+                      <span>Today's Topics</span>
+                      {checkedCount > 0 && (
+                        <span className="text-xs font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                          {checkedCount}/{activities.length} done
                         </span>
-                        {!checked && (
-                          <button
-                            type="button"
-                            onClick={e => { e.preventDefault(); setActiveTab('chat'); askSuggested(`How do I conduct ${act.label} today?`); }}
-                            className="text-xs text-primary-500 hover:text-primary-700 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0"
-                          >
-                            Ask
-                          </button>
-                        )}
-                      </label>
-                    );
-                  })}
+                      )}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform ${showTopicsPanel ? 'rotate-180' : ''}`} />
+                  </button>
 
-                  {/* Footer */}
-                  <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
-                    {checkedCount === 0 ? (
-                      <p className="text-xs text-neutral-400 text-center">Tick topics as you complete them today</p>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        {/* Carry-forward notice */}
-                        {uncheckedCount > 0 && (
-                          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                            <p className="text-xs text-amber-700">
-                              <strong>{uncheckedCount} topic{uncheckedCount > 1 ? 's' : ''}</strong> not ticked will automatically move to <strong>tomorrow's plan</strong>.
-                            </p>
+                  {showTopicsPanel && (
+                    <>
+                      {/* Mark All row */}
+                      <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-50 border-t border-neutral-100 border-b border-neutral-100">
+                        <span className="text-xs text-neutral-500">{activities.length} topic{activities.length !== 1 ? 's' : ''} today</span>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <span className="text-xs text-neutral-500 font-medium">Mark all</span>
+                          <div
+                            onClick={() => allChecked ? setSelectedChunks([]) : setSelectedChunks(allKeys)}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${
+                              allChecked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
+                            }`}
+                          >
+                            {allChecked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* Individual topic rows */}
+                      {activities.map((act) => {
+                        const checked = selectedChunks.includes(act.subjectKey);
+                        return (
+                          <div key={act.subjectKey}
+                            className={`flex items-center gap-3 px-4 py-3 border-b border-neutral-50 last:border-0 transition-colors ${
+                              checked ? 'bg-emerald-50/60' : 'bg-white hover:bg-neutral-50'
+                            }`}>
+                            <div
+                              onClick={() => toggleChunk(act.subjectKey)}
+                              className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                                checked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
+                              }`}
+                            >
+                              {checked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                            </div>
+                            <span
+                              onClick={() => toggleChunk(act.subjectKey)}
+                              className={`text-sm flex-1 cursor-pointer transition-all ${checked ? 'text-emerald-700 line-through opacity-60' : 'text-neutral-800'}`}
+                            >
+                              {act.label}
+                            </span>
+                            {!checked && (
+                              <button
+                                type="button"
+                                onClick={() => { setActiveTab('chat'); askSuggested(`How do I conduct ${act.label} today?`); }}
+                                className="text-xs text-primary-500 hover:text-primary-700 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0"
+                              >
+                                Ask
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Footer */}
+                      <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
+                        {checkedCount === 0 ? (
+                          <p className="text-xs text-neutral-400 text-center">Tick topics as you complete them today</p>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            {uncheckedCount > 0 && (
+                              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                                <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-700">
+                                  <strong>{uncheckedCount} topic{uncheckedCount > 1 ? 's' : ''}</strong> not ticked will move to <strong>tomorrow's plan</strong>.
+                                </p>
+                              </div>
+                            )}
+                            {completionMsg && (
+                              <p className={`text-xs text-center font-medium ${completionMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {completionMsg}
+                              </p>
+                            )}
+                            <Button
+                              size="sm"
+                              onClick={submitCompletion}
+                              loading={submittingCompletion}
+                              className={`w-full ${allChecked ? 'bg-emerald-600 hover:bg-emerald-700 border-0 text-white' : ''}`}
+                            >
+                              {allChecked
+                                ? '✓ Mark All as Done — Parents Notified'
+                                : `✓ Submit — ${checkedCount} done, ${uncheckedCount} carry forward`}
+                            </Button>
                           </div>
                         )}
-                        {completionMsg && (
-                          <p className={`text-xs text-center font-medium ${completionMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-500'}`}>
-                            {completionMsg}
-                          </p>
-                        )}
-                        <Button
-                          size="sm"
-                          onClick={submitCompletion}
-                          loading={submittingCompletion}
-                          className={`w-full ${allChecked ? 'bg-emerald-600 hover:bg-emerald-700 border-0 text-white' : ''}`}
-                        >
-                          {allChecked
-                            ? '✓ Mark All as Done — Parents Notified'
-                            : `✓ Submit — ${checkedCount} done, ${uncheckedCount} carry forward`}
-                        </Button>
                       </div>
-                    )}
-                  </div>
+                    </>
+                  )}
                 </div>
               );
             })()}
@@ -964,12 +951,107 @@ export default function TeacherPlanner() {
       </div>
   );
 
-  // ── Chat Tab ──────────────────────────────────────────────────────────
+  // ── Chat Tab (Right Panel) ────────────────────────────────────────────
+  // Quick View = show today's chunks from DB directly (default)
+  // Oakie's View = Oakie plans your day once, caches it, button disabled after
   const chatTabContent = (
       <>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50" style={{ paddingBottom: '8px' }}>
-          <div className="flex-1" />
-          {messages.map((msg, i) => (
+        {/* Quick View / Oakie's View toggle — top of right panel */}
+        <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-white border-b border-neutral-100">
+          <span className="text-xs font-semibold text-neutral-600">How would you like to see today?</span>
+          <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 gap-0.5">
+            <button
+              onClick={() => setPlanViewMode('raw')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${planViewMode === 'raw' ? 'bg-white text-neutral-800 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}
+            >
+              Quick View
+            </button>
+            <button
+              disabled={fetchingDetailedPlan || !!detailedPlanText}
+              onClick={async () => {
+                if (detailedPlanText) { setPlanViewMode('detailed'); return; }
+                setPlanViewMode('detailed');
+                setFetchingDetailedPlan(true);
+                try {
+                  const res = await apiPost<any>('/api/v1/ai/query', { text: 'what is my plan for today' }, token);
+                  setDetailedPlanText(res.response || '');
+                } catch { setDetailedPlanText("Oakie couldn't reach you right now. Try again later."); }
+                finally { setFetchingDetailedPlan(false); }
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-60 ${
+                planViewMode === 'detailed' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'
+              }`}
+              title={detailedPlanText ? "Oakie has your plan ready" : "Ask Oakie to plan your day (once per session)"}
+            >
+              {fetchingDetailedPlan
+                ? <><span className="w-3 h-3 border border-primary-400 border-t-transparent rounded-full animate-spin" />Oakie is thinking…</>
+                : <><Sparkles className="w-3 h-3" />{detailedPlanText ? "Oakie's View ✓" : "Ask Oakie"}</>
+              }
+            </button>
+          </div>
+        </div>
+
+        {/* Raw plan view — chunks from DB */}
+        {planViewMode === 'raw' && plan?.chunks?.length ? (
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50">
+            <div className="bg-white border border-neutral-100 rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-4 py-3 border-b border-neutral-100 bg-neutral-50/50">
+                <p className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-primary-500" />
+                  {new Date(today + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </p>
+              </div>
+              {plan.chunks.map((chunk: any, i: number) => (
+                <div key={chunk.id} className="px-4 py-3 border-b border-neutral-50 last:border-0">
+                  <p className="text-sm font-semibold text-neutral-800 mb-1">{chunk.topic_label || `Topic ${i + 1}`}</p>
+                  {chunk.content && (
+                    <p className="text-xs text-neutral-500 leading-relaxed whitespace-pre-wrap">{chunk.content}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {plan.supplementary_activities && plan.supplementary_activities.length > 0 && (
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-amber-100">
+                  <p className="text-xs font-semibold text-amber-800">🎵 Today's Activities</p>
+                </div>
+                {plan.supplementary_activities.map((sa: any) => (
+                  <div key={sa.plan_id} className="px-4 py-3 border-b border-amber-50 last:border-0">
+                    <p className="text-xs text-amber-700 font-medium">{sa.pool_name}</p>
+                    <p className="text-sm text-neutral-800">{sa.activity_title}</p>
+                    {sa.activity_description && <p className="text-xs text-neutral-500 mt-0.5">{sa.activity_description}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : planViewMode === 'detailed' ? (
+          /* Oakie's View — planned once, cached */
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-neutral-50/50">
+            {fetchingDetailedPlan ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3">
+                <div className="w-8 h-8 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
+                <p className="text-sm text-neutral-600 font-medium">Oakie is planning your day…</p>
+                <p className="text-xs text-neutral-400">This only happens once</p>
+              </div>
+            ) : detailedPlanText ? (
+              <div className="bg-white border border-neutral-100 rounded-2xl overflow-hidden shadow-sm">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-50 border-b border-primary-100">
+                  <Sparkles className="w-3.5 h-3.5 text-primary-500" />
+                  <span className="text-xs font-semibold text-primary-700">Oakie has planned your day</span>
+                  <span className="ml-auto text-[10px] text-primary-400">Oakie says ✓</span>
+                </div>
+                <div className="px-4 py-3">
+                  <AiMessageText text={detailedPlanText} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          /* Default: Oakie chat messages */
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50" style={{ paddingBottom: '8px' }}>
+            <div className="flex-1" />
+            {messages.map((msg, i) => (
             <motion.div key={i}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1086,13 +1168,15 @@ export default function TeacherPlanner() {
           )}
           <div ref={chatEndRef} />
         </div>
+        )}
 
-        {/* Chat input */}
+        {/* Chat input — only shown in chat/detailed mode */}
+        {planViewMode !== 'raw' && (
         <div className="border-t border-neutral-100 bg-white px-3 pt-2" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
           {limitReached && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-2 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-              <p className="text-xs text-amber-700 font-medium">Mark activities as completed to ask more questions.</p>
+              <p className="text-xs text-amber-700 font-medium">Mark activities as completed so Oakie can help more.</p>
             </div>
           )}
           {/* Subject chips — horizontal scroll */}
@@ -1116,7 +1200,7 @@ export default function TeacherPlanner() {
             <div className="flex-1 relative">
               <input
                 className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 disabled:bg-gray-50 disabled:text-gray-400 bg-gray-50"
-                placeholder={limitReached ? "Mark activities first..." : "Ask Oakie..."}
+                placeholder={limitReached ? "Mark activities first so Oakie can help more…" : "Ask Oakie…"}
                 value={input}
                 onChange={e => {
                   if (e.target.value.length <= 200) setInput(e.target.value);
@@ -1141,6 +1225,7 @@ export default function TeacherPlanner() {
             </motion.button>
           </form>
         </div>
+        )}
       </>
   );
 
@@ -1156,12 +1241,12 @@ export default function TeacherPlanner() {
           </div>
           <div className="flex flex-col gap-3">
             {[
-              { icon: '📅', title: 'Your plan loads automatically', desc: 'Every morning, Oakie shows your day\'s plan. Tap the Plan tab to see it.' },
-              { icon: '💬', title: 'Ask about any activity', desc: 'Tap a subject button or type your question. Oakie answers based on your plan only.' },
+              { icon: '📅', title: 'Oakie plans your day automatically', desc: 'Every morning, Oakie has your day ready. Tap the Plan tab to see it.' },
+              { icon: '💬', title: 'Ask Oakie about any activity', desc: 'Tap a subject button or type your question. Oakie answers based on your plan only.' },
               { icon: '✅', title: 'Mark activities as done', desc: 'Use the checkboxes in the chat to tick off each activity. Parents are notified automatically.' },
-              { icon: '⏳', title: 'Pending topics carry forward', desc: 'If you don\'t complete a topic, it appears in tomorrow\'s plan automatically.' },
-              { icon: '🔒', title: 'Question limit', desc: 'You can ask up to 5 activity questions per day. Classroom situations (crying child, not listening) are always allowed.' },
-              { icon: '📄', title: 'Export your plan', desc: 'Download today\'s plan as a PDF using the export button in the chat.' },
+              { icon: '⏳', title: 'Oakie carries topics forward', desc: "If you don't complete a topic, Oakie moves it to tomorrow's plan automatically." },
+              { icon: '🔒', title: 'Oakie has a daily limit', desc: 'Oakie can answer up to 5 activity questions per day. Classroom situations (crying child, not listening) are always allowed.' },
+              { icon: '📄', title: 'Export your plan', desc: "Download today's plan as a PDF using the export button in the chat." },
             ].map((item, i) => (
               <div key={i} className="flex gap-3">
                 <span className="text-xl shrink-0">{item.icon}</span>
@@ -1198,11 +1283,11 @@ export default function TeacherPlanner() {
         </div>
 
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <p className="text-sm font-semibold text-amber-800 mb-2">⚠️ What Oakie cannot do</p>
+          <p className="text-sm font-semibold text-amber-800 mb-2">⚠️ What Oakie won't do</p>
           <ul className="text-xs text-amber-700 flex flex-col gap-1">
             <li>• Answer questions outside today's plan</li>
             <li>• Provide YouTube links or external URLs</li>
-            <li>• Answer more than 5 activity questions before you mark completion</li>
+            <li>• Help more than 5 times before you mark completion</li>
             <li>• Show tomorrow's plan before today is marked as done</li>
           </ul>
         </div>
