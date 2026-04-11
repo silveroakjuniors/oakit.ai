@@ -1,12 +1,18 @@
 ﻿'use client';
 
 import { useState, useEffect, useRef, FormEvent } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button, Card, Badge } from '@/components/ui';
 import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
+import {
+  CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
+  ChevronDown, ChevronUp, Send, Paperclip, BookOpen, Sparkles,
+  LogOut, Clock, AlertCircle, ArrowRight, FileText, Users
+} from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
 interface SupplementaryActivity { plan_id: string; pool_name: string; activity_title: string; activity_description: string; status: string; }
@@ -46,9 +52,14 @@ function AiMessageText({ text, subjectCheckboxes }: { text: string; subjectCheck
       {lines.map((line, i) => {
         const trimmed = line.trim();
         if (!trimmed) return <div key={i} className="h-2" />;
-        if (/^[📌📅✅⏳🎯💡☕🌱📚📝🎪🎉🔢📖✏️🌍🎨⭕🗺️🔬🌿🗣️📋⚠️🚨]/.test(trimmed) && !trimmed.startsWith('💡')) {
-          const subjectName = trimmed.replace(/^(\p{Emoji}\s*)/u, '').trim();
-          // Find matching checkbox for this subject header
+
+        // Section heading: emoji at start + text (but not 💡 tip lines)
+        const emojiHeadingMatch = trimmed.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s*(.+)/u);
+        const isHeading = emojiHeadingMatch && !trimmed.startsWith('💡') && !trimmed.startsWith('☕') && !trimmed.startsWith('⚠') && !trimmed.startsWith('🚨');
+
+        if (isHeading) {
+          const emoji = emojiHeadingMatch[1];
+          const subjectName = emojiHeadingMatch[2].trim();
           const checkbox = subjectCheckboxes?.find(s =>
             s.label.toLowerCase() === subjectName.toLowerCase() ||
             subjectName.toLowerCase().includes(s.label.toLowerCase()) ||
@@ -56,32 +67,27 @@ function AiMessageText({ text, subjectCheckboxes }: { text: string; subjectCheck
           );
           return (
             <div key={i} className={`flex items-center justify-between gap-2 mt-3 first:mt-0 rounded-xl px-3 py-2.5 ${
-              checkbox?.alreadyDone ? 'bg-green-50 border border-green-200' :
-              checkbox?.checked ? 'bg-primary/5 border border-primary/20' :
-              'bg-primary/5'
+              checkbox?.alreadyDone ? 'bg-emerald-50 border border-emerald-200' :
+              checkbox?.checked ? 'bg-primary-50 border border-primary-200' :
+              'bg-primary-50/60 border border-primary-100'
             }`}>
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="text-base shrink-0">{trimmed.match(/^(\p{Emoji})/u)?.[1]}</span>
-                <span className="font-semibold text-primary text-sm truncate">{subjectName}</span>
-                {checkbox?.alreadyDone && <span className="text-green-500 text-xs shrink-0">✓ Done</span>}
+                <span className="text-base shrink-0">{emoji}</span>
+                <span className="font-semibold text-primary-700 text-sm truncate">{subjectName}</span>
+                {checkbox?.alreadyDone && <span className="text-emerald-500 text-xs shrink-0 font-medium">✓ Done</span>}
               </div>
               {checkbox && !checkbox.alreadyDone && (
-                <input
-                  type="checkbox"
-                  checked={checkbox.checked}
-                  onChange={checkbox.onToggle}
-                  className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary shrink-0 cursor-pointer"
-                />
+                <input type="checkbox" checked={checkbox.checked} onChange={checkbox.onToggle}
+                  className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary shrink-0 cursor-pointer" />
               )}
-              {checkbox?.alreadyDone && (
-                <span className="w-5 h-5 flex items-center justify-center text-green-500 shrink-0">✓</span>
-              )}
+              {checkbox?.alreadyDone && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
             </div>
           );
         }
+
         if (trimmed.startsWith('💡')) {
           return (
-            <div key={i} className="flex items-start gap-2 mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            <div key={i} className="flex items-start gap-2 mt-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
               <span className="text-base shrink-0">💡</span>
               <span className="text-xs text-amber-800">{trimmed.replace(/^💡\s*/, '')}</span>
             </div>
@@ -90,26 +96,26 @@ function AiMessageText({ text, subjectCheckboxes }: { text: string; subjectCheck
         if (trimmed.startsWith('☕')) {
           return (
             <div key={i} className="flex items-center gap-2 my-1">
-              <div className="flex-1 h-px bg-gray-200" />
-              <span className="text-xs text-gray-400">☕ Break</span>
-              <div className="flex-1 h-px bg-gray-200" />
+              <div className="flex-1 h-px bg-neutral-100" />
+              <span className="text-xs text-neutral-400">☕ Break</span>
+              <div className="flex-1 h-px bg-neutral-100" />
             </div>
           );
         }
         if (trimmed.startsWith('⚠️') || trimmed.startsWith('🚨')) {
           return (
-            <div key={i} className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              <span className="text-base shrink-0">{trimmed[0]}</span>
+            <div key={i} className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span className="text-xs text-red-700 font-medium">{trimmed.replace(/^[⚠️🚨]\s*/u, '')}</span>
             </div>
           );
         }
-        const labelMatch = trimmed.match(/^(What to do|Ask children|Tip|Objective|Materials|Note):\s*(.*)/i);
+        const labelMatch = trimmed.match(/^(What to do|Ask children|Tip|Objective|Materials|Note|✅ Offline Support|Resources):\s*(.*)/i);
         if (labelMatch) {
           return (
             <div key={i} className="flex items-start gap-1.5 pl-3">
-              <span className="text-xs font-semibold text-gray-500 shrink-0 mt-0.5 min-w-[80px]">{labelMatch[1]}:</span>
-              <span className="text-xs text-gray-700">{labelMatch[2]}</span>
+              <span className="text-xs font-semibold text-neutral-500 shrink-0 mt-0.5 min-w-[90px]">{labelMatch[1]}:</span>
+              <span className="text-xs text-neutral-700">{labelMatch[2]}</span>
             </div>
           );
         }
@@ -117,31 +123,31 @@ function AiMessageText({ text, subjectCheckboxes }: { text: string; subjectCheck
         if (numMatch) {
           return (
             <div key={i} className="flex items-start gap-2 pl-3">
-              <span className="text-xs font-bold text-primary/60 shrink-0 w-4 mt-0.5">{numMatch[1]}.</span>
-              <span className="text-xs text-gray-700">{numMatch[2]}</span>
+              <span className="text-xs font-bold text-primary-400 shrink-0 w-4 mt-0.5">{numMatch[1]}.</span>
+              <span className="text-xs text-neutral-700">{numMatch[2]}</span>
             </div>
           );
         }
-        if (trimmed.startsWith('•') || trimmed.startsWith('- ')) {
+        if (trimmed.startsWith('·') || trimmed.startsWith('•') || trimmed.startsWith('- ')) {
           return (
             <div key={i} className="flex items-start gap-2 pl-3">
-              <span className="text-primary/40 shrink-0 mt-0.5 text-xs">•</span>
-              <span className="text-xs text-gray-700">{trimmed.replace(/^[•\-]\s*/, '')}</span>
+              <span className="text-primary-300 shrink-0 mt-0.5 text-xs">•</span>
+              <span className="text-xs text-neutral-700">{trimmed.replace(/^[·•\-]\s*/, '')}</span>
             </div>
           );
         }
-        if (trimmed.startsWith('---')) return <hr key={i} className="border-gray-100 my-1" />;
+        if (trimmed.startsWith('---')) return <hr key={i} className="border-neutral-100 my-1" />;
         const parts = trimmed.split(/(\*\*[^*]+\*\*)/g);
         if (parts.some(p => p.startsWith('**'))) {
           return (
-            <p key={i} className="text-xs text-gray-700">
+            <p key={i} className="text-xs text-neutral-700">
               {parts.map((p, j) => p.startsWith('**') && p.endsWith('**')
-                ? <strong key={j} className="font-semibold text-gray-800">{p.slice(2, -2)}</strong>
+                ? <strong key={j} className="font-semibold text-neutral-800">{p.slice(2, -2)}</strong>
                 : <span key={j}>{p}</span>)}
             </p>
           );
         }
-        return <p key={i} className="text-xs text-gray-700">{trimmed}</p>;
+        return <p key={i} className="text-xs text-neutral-700">{trimmed}</p>;
       })}
     </div>
   );
@@ -202,6 +208,8 @@ export default function TeacherPlanner() {
   const [notes, setNotes] = useState<{ id: string; note_text?: string; file_name?: string; file_size?: number; expires_at: string }[]>([]);
   const [showHomeworkPanel, setShowHomeworkPanel] = useState(false);
   const [showCompletionNotice, setShowCompletionNotice] = useState(true);
+  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
+  const [planViewMode, setPlanViewMode] = useState<'raw' | 'detailed'>('raw');
   // Homework submission tracking state
   const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, 'completed' | 'partial' | 'not_submitted'>>({});
@@ -503,21 +511,58 @@ export default function TeacherPlanner() {
         ) : plan?.chunks?.length ? (
           <>
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800">📅 Today's Plan</h2>
-              {plan.status === 'carried_forward' && <Badge label="Topics carried forward" variant="warning" />}
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-1.5">
+                  <CalendarDays className="w-4 h-4 text-primary-500" />
+                  Today's Plan
+                </h2>
+                {plan.status === 'carried_forward' && <span className="text-[10px] text-amber-600 font-medium">Topics carried forward</span>}
+              </div>
+              {/* Raw / Detailed toggle */}
+              <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => setPlanViewMode('raw')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${planViewMode === 'raw' ? 'bg-white text-neutral-800 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}
+                >
+                  Raw
+                </button>
+                <button
+                  onClick={() => {
+                    setPlanViewMode('detailed');
+                    if (planViewMode !== 'detailed') {
+                      setActiveTab('chat');
+                      askSuggested('what is my plan for today');
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1 ${planViewMode === 'detailed' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}
+                >
+                  <Sparkles className="w-3 h-3" /> Detailed
+                </button>
+              </div>
             </div>
+
+            {/* Detailed plan notice */}
+            {planViewMode === 'detailed' && (
+              <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                className="bg-primary-50 border border-primary-100 rounded-xl px-3 py-2.5 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary-500 shrink-0" />
+                <p className="text-xs text-primary-700">AI-detailed plan is shown in the <strong>Oakie chat</strong> tab. Switch to Chat to view it.</p>
+                <button onClick={() => setActiveTab('chat')} className="ml-auto text-xs text-primary-600 font-semibold hover:text-primary-800 shrink-0 flex items-center gap-0.5">
+                  View <ArrowRight className="w-3 h-3" />
+                </button>
+              </motion.div>
+            )}
 
             {/* Admin note if present */}
             {plan.admin_note && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
-                <span className="text-blue-500 shrink-0 mt-0.5">📋</span>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                <FileText className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-blue-700">{plan.admin_note}</p>
               </div>
             )}
 
-            {/* Activities with checkboxes — mark done inline */}
+            {/* Topics checklist — same style as Homework & Notes panel */}
             {(() => {
-              // Build flat list of activities from all chunks
               const activities: { chunkId: string; label: string; subjectKey: string }[] = [];
               plan.chunks.forEach((chunk: any) => {
                 const subjects = extractSubjects([chunk]);
@@ -528,107 +573,117 @@ export default function TeacherPlanner() {
                 }
               });
               const allKeys = activities.map(a => a.subjectKey);
-              const allChecked = allKeys.length > 0 && allKeys.every(k => selectedChunks.includes(k));
               const checkedCount = allKeys.filter(k => selectedChunks.includes(k)).length;
               const uncheckedCount = allKeys.length - checkedCount;
+              const allChecked = allKeys.length > 0 && checkedCount === allKeys.length;
+
+              const submitCompletion = () => {
+                const coveredChunkIds = [...new Set(
+                  allKeys.filter(k => selectedChunks.includes(k)).map(k => k.split(':')[0])
+                )];
+                setSubmittingCompletion(true);
+                apiPost('/api/v1/teacher/completion', {
+                  covered_chunk_ids: coveredChunkIds,
+                  ...(sectionId ? { section_id: sectionId } : {}),
+                }, token).then(() => {
+                  setCompletionMsg(allChecked ? '✅ All done! Parents notified.' : `✅ ${checkedCount} done. ${uncheckedCount} topic${uncheckedCount > 1 ? 's' : ''} carried forward to tomorrow.`);
+                  setSelectedChunks([]);
+                  if (allChecked) {
+                    setTodayCompleted(true); todayCompletedRef.current = true;
+                    apiPost('/api/v1/ai/reset-limit', {}, token).catch(() => {});
+                    apiGet<any>('/api/v1/teacher/context', token).then(ctx => setTomorrowPlan(ctx.tomorrow_plan || null)).catch(() => {});
+                  }
+                  loadPending();
+                }).catch((e: unknown) => {
+                  setCompletionMsg(e instanceof Error ? e.message : 'Failed');
+                }).finally(() => setSubmittingCompletion(false));
+              };
 
               return (
-                <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-                  {/* Mark all toggle */}
-                  <label className={`flex items-center justify-between px-4 py-3 border-b border-gray-100 cursor-pointer transition-colors ${allChecked ? 'bg-primary/5' : 'bg-gray-50'}`}>
-                    <span className="text-sm font-semibold text-gray-700">{allChecked ? '✓ All activities selected' : 'Select all activities'}</span>
-                    <input type="checkbox" checked={allChecked}
-                      onChange={() => {
-                        if (allChecked) setSelectedChunks([]);
-                        else setSelectedChunks(allKeys);
-                      }}
-                      className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                  </label>
+                <div className="border border-neutral-200 rounded-2xl overflow-hidden">
+                  {/* Header with Mark All */}
+                  <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-neutral-100">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-primary-500" />
+                      <span className="text-sm font-semibold text-neutral-800">Today's Topics</span>
+                      <span className="text-xs text-neutral-400 font-normal">
+                        {checkedCount > 0 ? `${checkedCount}/${activities.length} done` : `${activities.length} topic${activities.length !== 1 ? 's' : ''}`}
+                      </span>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <span className="text-xs text-neutral-500 font-medium">Mark all</span>
+                      <div
+                        onClick={() => allChecked ? setSelectedChunks([]) : setSelectedChunks(allKeys)}
+                        className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${
+                          allChecked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
+                        }`}
+                      >
+                        {allChecked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                      </div>
+                    </label>
+                  </div>
 
-                  {/* Individual activities */}
-                  {activities.map((act, i) => {
+                  {/* Individual topic rows */}
+                  {activities.map((act, idx) => {
                     const checked = selectedChunks.includes(act.subjectKey);
                     return (
                       <label key={act.subjectKey}
-                        className={`flex items-center justify-between px-4 py-3 cursor-pointer transition-colors border-b border-gray-50 last:border-0 ${checked ? 'bg-emerald-50/60' : 'hover:bg-gray-50'}`}>
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300'}`}>
-                            {checked && <span className="text-white text-xs">✓</span>}
-                          </span>
-                          <div className="min-w-0">
-                            <span className={`text-sm truncate block ${checked ? 'text-emerald-700 line-through opacity-70' : 'text-gray-800'}`}>{act.label}</span>
-                            {plan.chunk_label_overrides?.[act.chunkId] && (
-                              <span className="text-2xs text-amber-600 font-medium">✏ Updated by admin</span>
-                            )}
-                          </div>
+                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-neutral-50 last:border-0 ${
+                          checked ? 'bg-emerald-50/60' : 'bg-white hover:bg-neutral-50'
+                        }`}>
+                        <div
+                          onClick={() => toggleChunk(act.subjectKey)}
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                            checked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
+                          }`}
+                        >
+                          {checked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                         </div>
-                        <input type="checkbox" checked={checked}
-                          onChange={() => toggleChunk(act.subjectKey)}
-                          className="sr-only" />
-                        <button type="button" onClick={(e) => { e.preventDefault(); setActiveTab('chat'); askSuggested(`How do I conduct ${act.label} today?`); }}
-                          className="text-xs text-primary shrink-0 ml-2 px-2.5 py-1.5 rounded-lg active:bg-primary/5 min-h-[36px] min-w-[40px]">
-                          Ask
-                        </button>
+                        <span className={`text-sm flex-1 transition-all ${checked ? 'text-emerald-700 line-through opacity-60' : 'text-neutral-800'}`}>
+                          {act.label}
+                        </span>
+                        {!checked && (
+                          <button
+                            type="button"
+                            onClick={e => { e.preventDefault(); setActiveTab('chat'); askSuggested(`How do I conduct ${act.label} today?`); }}
+                            className="text-xs text-primary-500 hover:text-primary-700 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0"
+                          >
+                            Ask
+                          </button>
+                        )}
                       </label>
                     );
                   })}
 
-                  {/* Submit section */}
-                  <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
+                  {/* Footer */}
+                  <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
                     {checkedCount === 0 ? (
-                      <p className="text-xs text-gray-400 text-center">Tick activities as you complete them</p>
-                    ) : uncheckedCount > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-emerald-600 font-medium">✓ {checkedCount} done</span>
-                          <span className="text-amber-600 font-medium">⏳ {uncheckedCount} will carry forward to tomorrow</span>
-                        </div>
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">
-                          The {uncheckedCount} unchecked activit{uncheckedCount > 1 ? 'ies' : 'y'} will automatically move to tomorrow's plan.
-                        </div>
-                        {completionMsg && <p className="text-xs text-emerald-600">{completionMsg}</p>}
-                        <Button size="sm" onClick={() => {
-                          // Map subjectKeys back to chunk IDs for the API
-                          const coveredChunkIds = [...new Set(
-                            allKeys.filter(k => selectedChunks.includes(k)).map(k => k.split(':')[0])
-                          )];
-                          setSubmittingCompletion(true);
-                          apiPost('/api/v1/teacher/completion', {
-                            covered_chunk_ids: coveredChunkIds,
-                            ...(sectionId ? { section_id: sectionId } : {}),
-                          }, token).then(() => {
-                            setCompletionMsg(`✅ ${checkedCount} done. ${uncheckedCount} carried forward to tomorrow.`);
-                            setSelectedChunks([]);
-                            loadPending();
-                          }).catch((e: unknown) => {
-                            setCompletionMsg(e instanceof Error ? e.message : 'Failed');
-                          }).finally(() => setSubmittingCompletion(false));
-                        }} loading={submittingCompletion} className="w-full">
-                          ✓ Submit — {checkedCount} done, {uncheckedCount} carry forward
-                        </Button>
-                      </div>
+                      <p className="text-xs text-neutral-400 text-center">Tick topics as you complete them today</p>
                     ) : (
                       <div className="flex flex-col gap-2">
-                        <p className="text-xs text-emerald-600 font-medium text-center">🎉 All activities selected!</p>
-                        {completionMsg && <p className="text-xs text-emerald-600">{completionMsg}</p>}
-                        <Button size="sm" onClick={() => {
-                          const coveredChunkIds = plan.chunks.map((c: any) => c.id);
-                          setSubmittingCompletion(true);
-                          apiPost('/api/v1/teacher/completion', {
-                            covered_chunk_ids: coveredChunkIds,
-                            ...(sectionId ? { section_id: sectionId } : {}),
-                          }, token).then(() => {
-                            setCompletionMsg('✅ All done! Parents notified.');
-                            setSelectedChunks([]);
-                            setTodayCompleted(true);
-                            todayCompletedRef.current = true;
-                            apiPost('/api/v1/ai/reset-limit', {}, token).catch(() => {});
-                            apiGet<any>('/api/v1/teacher/context', token).then(ctx => setTomorrowPlan(ctx.tomorrow_plan || null)).catch(() => {});
-                          }).catch((e: unknown) => {
-                            setCompletionMsg(e instanceof Error ? e.message : 'Failed');
-                          }).finally(() => setSubmittingCompletion(false));
-                        }} loading={submittingCompletion} className="w-full bg-emerald-600 hover:bg-emerald-700 border-0">
-                          ✓ Mark All as Done
+                        {/* Carry-forward notice */}
+                        {uncheckedCount > 0 && (
+                          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                            <p className="text-xs text-amber-700">
+                              <strong>{uncheckedCount} topic{uncheckedCount > 1 ? 's' : ''}</strong> not ticked will automatically move to <strong>tomorrow's plan</strong>.
+                            </p>
+                          </div>
+                        )}
+                        {completionMsg && (
+                          <p className={`text-xs text-center font-medium ${completionMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {completionMsg}
+                          </p>
+                        )}
+                        <Button
+                          size="sm"
+                          onClick={submitCompletion}
+                          loading={submittingCompletion}
+                          className={`w-full ${allChecked ? 'bg-emerald-600 hover:bg-emerald-700 border-0 text-white' : ''}`}
+                        >
+                          {allChecked
+                            ? '✓ Mark All as Done — Parents Notified'
+                            : `✓ Submit — ${checkedCount} done, ${uncheckedCount} carry forward`}
                         </Button>
                       </div>
                     )}
@@ -912,17 +967,23 @@ export default function TeacherPlanner() {
   // ── Chat Tab ──────────────────────────────────────────────────────────
   const chatTabContent = (
       <>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3" style={{ paddingBottom: '8px' }}>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50" style={{ paddingBottom: '8px' }}>
           <div className="flex-1" />
           {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <motion.div key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               {msg.role === 'assistant' && (
-                <img src="/oakie.png" alt="Oakie" className="w-7 h-7 object-contain shrink-0 mr-1.5 mt-1 self-start" style={{ mixBlendMode: 'multiply' }} />
+                <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center shrink-0 mr-2 mt-1 self-start border border-primary-200/50">
+                  <Sparkles className="w-3.5 h-3.5 text-primary-600" />
+                </div>
               )}
               <div className={`max-w-[88%] rounded-2xl text-sm ${
                 msg.role === 'user'
-                  ? 'bg-primary-600 text-white rounded-br-sm px-4 py-2.5 shadow-sm'
-                  : 'bg-white border border-neutral-200/80 text-neutral-800 rounded-bl-sm overflow-hidden shadow-card'
+                  ? 'bg-primary-600 text-white rounded-br-sm px-4 py-2.5 shadow-md shadow-primary-600/20'
+                  : 'bg-white border border-neutral-200/60 text-neutral-800 rounded-bl-sm overflow-hidden shadow-sm'
               }`}>
                 {msg.role === 'user' ? (
                   <span className="whitespace-pre-wrap text-sm">{msg.text}</span>
@@ -1008,26 +1069,29 @@ export default function TeacherPlanner() {
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
           ))}
           {aiLoading && (
-            <div className="flex justify-start">
-              <div className="bg-white border border-neutral-200/80 px-4 py-3 rounded-2xl rounded-bl-sm text-neutral-400 flex items-center gap-2 shadow-card">
-                <span className="text-xs">Oakie is thinking</span>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
+              <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center shrink-0 mr-2 border border-primary-200/50">
+                <Sparkles className="w-3.5 h-3.5 text-primary-600" />
+              </div>
+              <div className="bg-white border border-neutral-200/60 px-4 py-3 rounded-2xl rounded-bl-sm flex items-center gap-2 shadow-sm">
+                <span className="text-xs text-neutral-400 font-medium">Oakie is thinking</span>
                 <span className="inline-flex gap-1">
-                  {[0, 150, 300].map(d => <span key={d} className="w-1.5 h-1.5 bg-neutral-300 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+                  {[0, 150, 300].map(d => <span key={d} className="w-1.5 h-1.5 bg-primary-300 rounded-full animate-bounce-dot" style={{ animationDelay: `${d}ms` }} />)}
                 </span>
               </div>
-            </div>
+            </motion.div>
           )}
           <div ref={chatEndRef} />
         </div>
 
         {/* Chat input */}
-        <div className="border-t border-gray-200 bg-white px-3 pt-2" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+        <div className="border-t border-neutral-100 bg-white px-3 pt-2" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
           {limitReached && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-2 flex items-center gap-2">
-              <span className="text-amber-600">🔒</span>
+              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
               <p className="text-xs text-amber-700 font-medium">Mark activities as completed to ask more questions.</p>
             </div>
           )}
@@ -1066,16 +1130,15 @@ export default function TeacherPlanner() {
                 </span>
               )}
             </div>
-            <button type="submit" disabled={limitReached || aiLoading || !input.trim()}
-              className="w-11 h-11 rounded-full bg-primary-600 text-white flex items-center justify-center shrink-0 disabled:opacity-40 active:scale-95 transition-all">
+            <motion.button type="submit" disabled={limitReached || aiLoading || !input.trim()}
+              whileTap={{ scale: 0.92 }}
+              className="w-11 h-11 rounded-full bg-primary-600 text-white flex items-center justify-center shrink-0 disabled:opacity-40 transition-all shadow-md shadow-primary-600/30 hover:bg-primary-700">
               {aiLoading ? (
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
+                <Send className="w-4 h-4" />
               )}
-            </button>
+            </motion.button>
           </form>
         </div>
       </>
@@ -1084,8 +1147,13 @@ export default function TeacherPlanner() {
   // ── Help Tab ──────────────────────────────────────────────────────────
   const helpTabContent = (
       <div className="p-4 flex flex-col gap-4" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
-          <p className="text-sm font-semibold text-primary mb-3">👋 How to use Oakie</p>
+        <div className="bg-primary-50 border border-primary-100 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg bg-primary-100 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-primary-600" />
+            </div>
+            <p className="text-sm font-semibold text-primary-800">How to use Oakie</p>
+          </div>
           <div className="flex flex-col gap-3">
             {[
               { icon: '📅', title: 'Your plan loads automatically', desc: 'Every morning, Oakie shows your day\'s plan. Tap the Plan tab to see it.' },
@@ -1141,123 +1209,120 @@ export default function TeacherPlanner() {
 
         <div className="text-center py-2">
           <button onClick={() => { clearToken(); router.push('/login'); }}
-            className="text-xs text-gray-400 hover:text-gray-600">Sign out</button>
+            className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-600 mx-auto transition-colors">
+            <LogOut className="w-3.5 h-3.5" /> Sign out
+          </button>
         </div>
       </div>
     );
 
+
   // ── Main render ───────────────────────────────────────────────────────
   return (
     <div className="bg-neutral-50 flex flex-col" style={{ height: '100dvh' }}>
-      {/* Header */}
-      <header className="shrink-0 px-4 py-3 flex items-center justify-between"
-        style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%)', boxShadow: '0 1px 12px rgba(0,0,0,0.15)' }}>
-        <div className="flex items-center gap-3">
+      {/* ── Premium Header ── */}
+      <header className="shrink-0 px-4 py-3 flex items-center justify-between relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%)' }}>
+        <div className="relative flex items-center gap-3">
           <OakitLogo size="xs" variant="light" />
-          {greeting && <span className="text-sm text-white/85 font-medium truncate max-w-[180px] lg:max-w-xs">{greeting}</span>}
+          {greeting && (
+            <span className="text-sm text-white/90 font-medium truncate max-w-[160px] lg:max-w-xs animate-fade-in">
+              {greeting}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          {/* Streak badge — clickable to show explanation */}
+        <div className="relative flex items-center gap-2">
           {streak && streak.current_streak > 0 && (
             <div className="relative">
               <button
                 onClick={() => setShowStreakInfo(s => !s)}
-                className="flex items-center gap-1 bg-amber-500/90 text-white px-2.5 py-1 rounded-full active:scale-95 transition-transform">
-                <span className="text-xs font-bold">🔥 {streak.current_streak}</span>
+                className="flex items-center gap-1.5 bg-white/15 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-full border border-white/20 hover:bg-white/20 transition-colors active:scale-95">
+                <Flame className="w-3.5 h-3.5 text-amber-300" />
+                <span className="text-xs font-bold">{streak.current_streak}</span>
               </button>
               {showStreakInfo && (
-                <div className="absolute right-0 top-9 z-50 bg-white rounded-2xl shadow-xl border border-neutral-100 p-4 w-64 text-left"
+                <div className="absolute right-0 top-10 z-50 bg-white rounded-2xl shadow-xl border border-neutral-100 p-4 w-64 animate-scale-in"
                   onClick={() => setShowStreakInfo(false)}>
-                  <p className="text-sm font-bold text-neutral-800 mb-1">🔥 Teaching Streak</p>
-                  <p className="text-xs text-neutral-600 mb-3">
-                    You've submitted your daily plan completion for <strong>{streak.current_streak} day{streak.current_streak > 1 ? 's' : ''} in a row</strong>! Keep it up.
-                  </p>
-                  <div className="flex items-center justify-between text-xs text-neutral-500 bg-neutral-50 rounded-xl px-3 py-2">
-                    <span>🏆 Best streak</span>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center">
+                      <Flame className="w-4 h-4 text-amber-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-neutral-800">Teaching Streak</p>
+                      <p className="text-xs text-neutral-500">{streak.current_streak} day{streak.current_streak > 1 ? 's' : ''} in a row</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs bg-neutral-50 rounded-xl px-3 py-2 mb-2">
+                    <span className="text-neutral-500">Best streak</span>
                     <span className="font-bold text-neutral-700">{streak.best_streak} days</span>
                   </div>
-                  {streak.badge && (
-                    <div className="mt-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 font-medium">
-                      {streak.badge}
-                    </div>
-                  )}
-                  <p className="text-[10px] text-neutral-400 mt-2 text-center">Tap anywhere to close</p>
+                  {streak.badge && <div className="text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 font-medium">{streak.badge}</div>}
+                  <p className="text-[10px] text-neutral-400 mt-2 text-center">Tap to close</p>
                 </div>
               )}
             </div>
           )}
-          {streak?.badge && !streak.current_streak && (
-            <span className="text-xs bg-white/15 text-white px-2 py-1 rounded-full font-medium hidden sm:block">{streak.badge}</span>
-          )}
           {todayCompleted && (
-            <span className="text-xs bg-emerald-500/90 text-white px-2.5 py-1 rounded-full font-semibold">✓ Done</span>
+            <span className="flex items-center gap-1 text-xs bg-emerald-500/90 text-white px-2.5 py-1.5 rounded-full font-semibold animate-scale-in">
+              <CheckCircle2 className="w-3 h-3" /> Done
+            </span>
           )}
-          <span className="text-xs text-white/60 hidden sm:block">{dateLabel}</span>
-          <button onClick={() => { clearToken(); router.push('/login'); }}
-            className="hidden lg:block text-xs text-white/50 hover:text-white/80 ml-1 transition-colors">Sign out</button>
+          <span className="text-xs text-white/50 hidden sm:block">{dateLabel}</span>
         </div>
       </header>
 
       {/* Desktop: two-column layout | Tablet/Mobile: tab-based */}
       <div className="flex-1 min-h-0 overflow-hidden flex">
 
-        {/* ── Desktop sidebar (Plan + Help) — visible lg+ ── */}
-        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-r border-neutral-200 bg-white overflow-y-auto shrink-0">
-          {/* Desktop tab switcher inside sidebar */}
-          <div className="flex border-b border-neutral-100 shrink-0 px-1 pt-1">
+        {/* ── Desktop sidebar ── */}
+        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-r border-neutral-100 bg-white overflow-y-auto shrink-0">
+          <div className="flex border-b border-neutral-100 shrink-0 px-3 pt-3 gap-1">
             {(['plan', 'help'] as Tab[]).map(t => (
               <button key={t} onClick={() => setActiveTab(t)}
-                className={`flex-1 py-2.5 text-sm font-medium rounded-t-lg transition-all ${
-                  activeTab === t
-                    ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50/50'
-                    : 'text-neutral-400 hover:text-neutral-600'
+                className={`relative flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
+                  activeTab === t ? 'text-primary-600 bg-primary-50' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
                 }`}>
-                {t === 'plan' ? '📅 Plan' : '❓ Help'}
+                <span className="flex items-center justify-center gap-1.5">
+                  {t === 'plan' ? <CalendarDays className="w-3.5 h-3.5" /> : <HelpCircle className="w-3.5 h-3.5" />}
+                  {t === 'plan' ? 'Plan' : 'Help'}
+                </span>
               </button>
             ))}
           </div>
           <div className="flex-1 overflow-y-auto">
             {activeTab !== 'chat' ? (
               activeTab === 'plan' ? planTabContent : helpTabContent
-            ) : (
-              planTabContent
-            )}
+            ) : planTabContent}
           </div>
         </div>
 
         {/* ── Main content area ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
-
-          {/* Tablet: top tab bar (md only) */}
-          <div className="hidden md:flex lg:hidden border-b border-neutral-200 bg-white shrink-0 px-2 pt-1">
+          {/* Tablet top tabs */}
+          <div className="hidden md:flex lg:hidden border-b border-neutral-100 bg-white shrink-0 px-3 pt-2 gap-1">
             {([
-              { id: 'plan', label: '📅 Plan' },
-              { id: 'chat', label: '💬 Oakie' },
-              { id: 'help', label: '❓ Help' },
-            ] as { id: Tab; label: string }[]).map(tab => (
+              { id: 'plan', label: 'Plan', Icon: CalendarDays },
+              { id: 'chat', label: 'Oakie', Icon: MessageCircle },
+              { id: 'help', label: 'Help', Icon: HelpCircle },
+            ] as { id: Tab; label: string; Icon: any }[]).map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 py-2.5 text-sm font-medium rounded-t-lg transition-all ${
-                  activeTab === tab.id
-                    ? 'text-primary-600 border-b-2 border-primary-600'
-                    : 'text-neutral-400 hover:text-neutral-600'
+                className={`relative flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
+                  activeTab === tab.id ? 'text-primary-600 bg-primary-50' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
                 }`}>
-                {tab.label}
+                <span className="flex items-center justify-center gap-1.5">
+                  <tab.Icon className="w-3.5 h-3.5" />
+                  {tab.label}
+                </span>
               </button>
             ))}
           </div>
 
-          {/* Content — on desktop always show chat, on mobile/tablet show active tab */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            {/* Desktop: always show chat in main area */}
-            <div className="hidden lg:flex flex-col flex-1 overflow-hidden">
-              {chatTabContent}
-            </div>
-            {/* Mobile/Tablet: show active tab */}
+            <div className="hidden lg:flex flex-col flex-1 overflow-hidden">{chatTabContent}</div>
             <div className="flex-1 min-h-0 overflow-y-auto lg:hidden">
               {activeTab === 'plan' && planTabContent}
               {activeTab === 'help' && helpTabContent}
             </div>
-            {/* Chat needs its own flex structure for the sticky input */}
             <div className={`flex-1 min-h-0 flex flex-col overflow-hidden lg:hidden ${activeTab === 'chat' ? 'flex' : 'hidden'}`}>
               {chatTabContent}
             </div>
@@ -1265,24 +1330,28 @@ export default function TeacherPlanner() {
         </div>
       </div>
 
-      {/* Bottom tab bar — mobile only */}
-      <nav className="md:hidden bg-white/95 backdrop-blur-xl border-t border-neutral-200/80 flex shrink-0"
+      {/* ── Premium Bottom Nav — mobile only ── */}
+      <nav className="md:hidden bg-white/95 backdrop-blur-xl border-t border-neutral-100 flex shrink-0"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {([
-          { id: 'plan', icon: '📅', label: 'Plan' },
-          { id: 'chat', icon: '💬', label: 'Oakie' },
-          { id: 'help', icon: '❓', label: 'Help' },
-        ] as { id: Tab; icon: string; label: string }[]).map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex flex-col items-center py-3 gap-0.5 transition-all active:scale-95 ${
-              activeTab === tab.id ? 'text-primary-600' : 'text-neutral-400'
-            }`}>
-            <span className={`text-xl transition-transform ${activeTab === tab.id ? 'scale-110' : ''}`}>{tab.icon}</span>
-            <span className={`text-2xs font-semibold tracking-wide ${activeTab === tab.id ? 'text-primary-600' : 'text-neutral-400'}`}>
-              {tab.label}
-            </span>
-          </button>
-        ))}
+          { id: 'plan', Icon: CalendarDays, label: 'Plan' },
+          { id: 'chat', Icon: MessageCircle, label: 'Oakie' },
+          { id: 'help', Icon: HelpCircle, label: 'Help' },
+        ] as { id: Tab; Icon: any; label: string }[]).map(tab => {
+          const active = activeTab === tab.id;
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className="flex-1 flex flex-col items-center py-2.5 gap-0.5 relative transition-all active:scale-95">
+              {active && (
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-600 rounded-full" />
+              )}
+              <tab.Icon className={`w-5 h-5 transition-colors ${active ? 'text-primary-600' : 'text-neutral-400'}`} />
+              <span className={`text-[10px] font-semibold tracking-wide transition-colors ${active ? 'text-primary-600' : 'text-neutral-400'}`}>
+                {tab.label}
+              </span>
+            </button>
+          );
+        })}
       </nav>
     </div>
   );

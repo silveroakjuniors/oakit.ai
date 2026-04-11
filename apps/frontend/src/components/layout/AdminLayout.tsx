@@ -7,19 +7,20 @@ import OakitLogo from '@/components/OakitLogo';
 import { clearToken } from '@/lib/auth';
 
 const navItems = [
-  { href: '/admin',               label: 'Dashboard',     icon: '⊞' },
-  { href: '/admin/users',         label: 'Users & Roles', icon: '👥' },
-  { href: '/admin/classes',       label: 'Classes',       icon: '🏫' },
-  { href: '/admin/students',      label: 'Students',      icon: '🎒' },
-  { href: '/admin/curriculum',    label: 'Curriculum',    icon: '📄' },
-  { href: '/admin/supplementary', label: 'Activities',    icon: '🎵' },
-  { href: '/admin/calendar',      label: 'Calendar',      icon: '📅' },
-  { href: '/admin/plans',         label: 'Plans',         icon: '📋' },
-  { href: '/admin/reports',       label: 'Reports',       icon: '📊' },
-  { href: '/admin/announcements', label: 'Announcements', icon: '📢' },
-  { href: '/admin/audit',         label: 'Audit Log',     icon: '🔍' },
-  { href: '/admin/setup',         label: 'Setup Wizard',  icon: '🧭' },
-  { href: '/admin/settings',      label: 'Settings',      icon: '⚙️' },
+  { href: '/admin',                  label: 'Dashboard',        icon: '⊞' },
+  { href: '/admin/users',            label: 'Users & Roles',    icon: '👥' },
+  { href: '/admin/classes',          label: 'Classes',          icon: '🏫' },
+  { href: '/admin/students',         label: 'Students',         icon: '🎒' },
+  { href: '/admin/curriculum',       label: 'Curriculum',       icon: '📄' },
+  { href: '/admin/textbook-planner', label: 'Textbook Planner', icon: '📚' },
+  { href: '/admin/supplementary',    label: 'Activities',       icon: '🎵' },
+  { href: '/admin/calendar',         label: 'Calendar',         icon: '📅' },
+  { href: '/admin/plans',            label: 'Plans',            icon: '📋' },
+  { href: '/admin/reports',          label: 'Reports',          icon: '📊' },
+  { href: '/admin/announcements',    label: 'Announcements',    icon: '📢' },
+  { href: '/admin/audit',            label: 'Audit Log',        icon: '🔍' },
+  { href: '/admin/setup',            label: 'Setup Wizard',     icon: '🧭' },
+  { href: '/admin/settings',         label: 'Settings',         icon: '⚙️' },
 ];
 
 function SidebarContent({ pathname, onClose }: { pathname: string; onClose?: () => void }) {

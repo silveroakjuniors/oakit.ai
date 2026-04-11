@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks, UploadFile, File, HTTPException
+from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -1186,3 +1186,548 @@ Return JSON:
                     })
 
     return {"evaluations": evaluations}
+
+
+# ---------------------------------------------------------------------------
+# TOC extraction
+# ---------------------------------------------------------------------------
+
+def _parse_toc_lines(lines: list[str]) -> list[dict]:
+    """
+    Parse cleaned TOC lines into chapter dicts using regex.
+    Handles OCR artifacts (l/1 confusion), en-dash ranges, single pages.
+    """
+    import re
+
+    def fix_ocr(s: str) -> str:
+        """Fix common OCR artifacts in page numbers: lowercase l → 1, O → 0."""
+        return s.replace('l', '1').replace('O', '0').replace('o', '0')
+
+    # Page range at end of line: digits (or OCR'd digits) separated by dash/en-dash
+    PAGE_RANGE_RE = re.compile(r'([0-9lLoO]+)\s*[-–—]\s*([0-9lLoO]+)\s*$')
+    PAGE_SINGLE_RE = re.compile(r'\b([0-9lLoO]+)\s*$')
+    SEP_RE = re.compile(r'[\s.·•_\-–—]{2,}')
+
+    chapters = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if re.fullmatch(r'(table\s+of\s+)?contents?', line, re.IGNORECASE):
+            continue
+
+        m_range = PAGE_RANGE_RE.search(line)
+        m_single = PAGE_SINGLE_RE.search(line)
+
+        if m_range:
+            try:
+                page_start = int(fix_ocr(m_range.group(1)))
+                page_end = int(fix_ocr(m_range.group(2)))
+            except ValueError:
+                continue
+            title_raw = line[:m_range.start()]
+        elif m_single:
+            try:
+                page_start = int(fix_ocr(m_single.group(1)))
+                page_end = page_start
+            except ValueError:
+                continue
+            title_raw = line[:m_single.start()]
+        else:
+            continue
+
+        title = SEP_RE.sub(' ', title_raw).strip().strip('.-–—').strip()
+        if not title:
+            continue
+
+        chapters.append({
+            "title": title,
+            "topics": [],
+            "page_start": page_start,
+            "page_end": page_end,
+        })
+
+    return chapters
+
+
+def _parse_toc_two_column(words: list[dict]) -> list[dict]:
+    """
+    Handle TOC layouts where chapter titles and page numbers are in separate
+    columns (like the image: title on left, decorative line in middle, page on right).
+
+    Uses x-position to split words into left/right columns, pairs them by y-row.
+    """
+    import re
+
+    if not words:
+        return []
+
+    # Find the x midpoint of the page to split left (titles) vs right (pages)
+    x_positions = [w["x0"] for w in words]
+    x_mid = (min(x_positions) + max(x_positions)) / 2
+
+    # Group words by y-row (rounded)
+    rows: dict[int, list] = {}
+    for w in words:
+        y_key = round(w["top"] / 4) * 4
+        rows.setdefault(y_key, []).append(w)
+
+    def fix_ocr(s: str) -> str:
+        return s.replace('l', '1').replace('O', '0').replace('o', '0')
+
+    PAGE_RANGE_RE = re.compile(r'^([0-9lLoO]+)\s*[-–—]\s*([0-9lLoO]+)$')
+    PAGE_SINGLE_RE = re.compile(r'^([0-9lLoO]+)$')
+    SEP_RE = re.compile(r'[\s.·•_\-–—]{2,}')
+
+    chapters = []
+    for y_key in sorted(rows.keys()):
+        row_words = sorted(rows[y_key], key=lambda w: w["x0"])
+
+        # Split into left-column words (titles) and right-column words (page numbers)
+        # Filter out purely decorative tokens first
+        meaningful = [w for w in row_words if not re.fullmatch(r'[-–—_.·•\s]+', w["text"])]
+        if not meaningful:
+            continue
+
+        left_words = [w["text"] for w in meaningful if w["x0"] <= x_mid]
+        right_words = [w["text"] for w in meaningful if w["x0"] > x_mid]
+
+        title_raw = " ".join(left_words).strip()
+        page_raw = " ".join(right_words).strip()
+
+        if not title_raw:
+            continue
+
+        # Skip header
+        if re.fullmatch(r'(table\s+of\s+)?contents?', title_raw, re.IGNORECASE):
+            continue
+
+        # Parse page from right column
+        page_start = page_end = None
+        if page_raw:
+            # Remove spaces around dash for matching
+            page_compact = re.sub(r'\s*[-–—]\s*', '–', page_raw)
+            m_range = PAGE_RANGE_RE.match(page_compact)
+            m_single = PAGE_SINGLE_RE.match(page_compact)
+            if m_range:
+                try:
+                    page_start = int(fix_ocr(m_range.group(1)))
+                    page_end = int(fix_ocr(m_range.group(2)))
+                except ValueError:
+                    pass
+            elif m_single:
+                try:
+                    page_start = int(fix_ocr(m_single.group(1)))
+                    page_end = page_start
+                except ValueError:
+                    pass
+
+        # Clean title
+        title = SEP_RE.sub(' ', title_raw).strip().strip('.-–—').strip()
+        if not title:
+            continue
+
+        chapters.append({
+            "title": title,
+            "topics": [],
+            "page_start": page_start,
+            "page_end": page_end,
+        })
+
+    return chapters
+
+
+def _ocr_pdf_page(pdf_path: str, page_index: int) -> list[dict]:
+    """
+    Render a PDF page to an image using PyMuPDF and run Tesseract OCR on it.
+    Returns word dicts with keys: text, x0, top — same shape as pdfplumber's
+    extract_words() so the same parsers can consume the output directly.
+
+    Requires: pytesseract + Tesseract binary installed, Pillow, PyMuPDF.
+    On Windows set TESSERACT_PATH in .env, e.g.:
+      TESSERACT_PATH=C:\\Program Files\\Tesseract-OCR\\tesseract.exe
+    """
+    import os
+    import fitz  # PyMuPDF
+    import pytesseract
+    from PIL import Image
+    import io
+
+    # Windows: pytesseract needs the explicit path to tesseract.exe
+    tesseract_path = os.getenv("TESSERACT_PATH", "")
+    if tesseract_path:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+    doc = fitz.open(pdf_path)
+    page = doc[page_index]
+    # Render at 2x scale for better OCR accuracy on small text
+    mat = fitz.Matrix(2.0, 2.0)
+    pix = page.get_pixmap(matrix=mat)
+    img_bytes = pix.tobytes("png")
+    doc.close()
+
+    img = Image.open(io.BytesIO(img_bytes))
+    data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT, config='--psm 6')
+
+    words = []
+    for i, text in enumerate(data['text']):
+        text = text.strip()
+        if not text or int(data['conf'][i]) < 30:  # skip low-confidence tokens
+            continue
+        # Scale coordinates back to PDF points (rendered at 2x)
+        words.append({
+            'text': text,
+            'x0': data['left'][i] / 2.0,
+            'top': data['top'][i] / 2.0,
+        })
+
+    return words
+
+
+@app.post("/internal/extract-toc")
+async def extract_toc(file: UploadFile = File(...), toc_page: int = Form(1)):
+    """
+    Extract chapter/topic structure from a PDF's Table of Contents page.
+
+    Strategy (in order):
+      1. Render the page to a PNG image and send to vision LLM (Gemini / GPT-4o).
+         This works for ALL PDF types — text-based, scanned, decorative layouts.
+      2. If vision LLM fails or is unavailable, fall back to pdfplumber word
+         extraction + regex parsing (fast, free, no API cost).
+      3. If regex finds < 2 entries, try text LLM with structured row data.
+
+    Returns:
+      { "chapters": [{ "title", "topics": [], "page_start", "page_end" }],
+        "failed": bool, "page_count": int }
+    """
+    import tempfile, os, json, re, base64
+    import fitz  # PyMuPDF — for rendering page to image
+    from query_pipeline import _call_vision_llm, _call_llm
+
+    content = await file.read()
+    suffix = os.path.splitext(file.filename or "upload.pdf")[1].lower() or ".pdf"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        # Get page count
+        import pdfplumber
+        with pdfplumber.open(tmp_path) as pdf:
+            total_pages = len(pdf.pages)
+
+        if toc_page < 1 or toc_page > total_pages:
+            raise HTTPException(
+                status_code=422,
+                detail=f"toc_page {toc_page} is out of range (PDF has {total_pages} pages)",
+            )
+
+        # ── Strategy 1: Vision LLM (works for ALL PDF types) ─────────────────
+        # Render page to PNG at 2x resolution and send to Gemini/GPT-4o vision.
+        # This is the most reliable approach — same as what ChatGPT does.
+        try:
+            doc = fitz.open(tmp_path)
+            pg = doc[toc_page - 1]
+            pix = pg.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))  # 1.5x is sufficient for TOC text
+            img_bytes = pix.tobytes("png")
+            doc.close()
+            image_b64 = base64.b64encode(img_bytes).decode()
+
+            vision_system = (
+                "You are a curriculum assistant reading a textbook Table of Contents page.\n"
+                "Return ONLY valid JSON — no markdown, no explanation outside the JSON.\n"
+                "\n"
+                "Output format:\n"
+                '{"chapters": [{"title": "string", "page_start": int_or_null, "page_end": int_or_null, '
+                '"topics": [{"name": "string", "page_start": int_or_null}]}]}\n'
+                "\n"
+                "Rules:\n"
+                "1. Extract EVERY unit/chapter/section visible in the TOC as a chapter entry.\n"
+                "2. Sub-headings or lessons listed UNDER a chapter (indented or grouped) go into\n"
+                "   that chapter's 'topics' array, each with their own page number if shown.\n"
+                "   Example: 'Unit 4: Seasons' is the chapter; 'The Four Seasons 106' and\n"
+                "   'Anandi's Rainbow 115' are topics with page_start 106 and 115.\n"
+                "3. Page numbers MUST be integers. Look carefully at the right side of each row.\n"
+                "   Ranges '4 - 11', '4–11' → page_start=4, page_end=11.\n"
+                "   Single page '3' → page_start=3, page_end=3.\n"
+                "   No page visible → null.\n"
+                "4. Ignore decorative elements: dots, dashes, lines between title and page number.\n"
+                "5. Titles with dashes like 'Letters A – D' or 'Unit 1 – Forces' are chapter names.\n"
+                "6. If the page does not contain a Table of Contents, return {\"chapters\": []}."
+            )
+            vision_prompt = "Extract the complete Table of Contents from this textbook page."
+
+            result, provider = await _call_vision_llm(image_b64, vision_prompt, vision_system)
+            print(f"[extract-toc] vision LLM ({provider}): {result[:300]}")
+
+            if result:
+                s = result.find("{")
+                e = result.rfind("}") + 1
+                if s >= 0 and e > s:
+                    data = json.loads(result[s:e])
+                    chapters = data.get("chapters") or []
+                    if chapters:
+                        print(f"[extract-toc] vision extracted {len(chapters)} chapters")
+                        return {"chapters": chapters, "failed": False, "page_count": total_pages}
+                    else:
+                        print("[extract-toc] vision returned empty chapters list")
+
+        except Exception as vision_err:
+            print(f"[extract-toc] vision LLM failed: {vision_err}")
+
+        # ── Strategy 2: pdfplumber word extraction + regex ────────────────────
+        # Fast, free, no API. Works well for clean text-based PDFs.
+        print("[extract-toc] falling back to regex parser")
+        try:
+            with pdfplumber.open(tmp_path) as pdf:
+                page = pdf.pages[toc_page - 1]
+                words = page.extract_words(
+                    x_tolerance=5, y_tolerance=5,
+                    keep_blank_chars=False, use_text_flow=False,
+                )
+
+            if words:
+                sample = [(w['text'], round(w['x0']), round(w['top'])) for w in words[:20]]
+                print(f"[extract-toc] pdfplumber words sample: {sample}")
+
+                chapters = _parse_toc_two_column(words)
+                if len(chapters) >= 2:
+                    print(f"[extract-toc] two-column regex found {len(chapters)} chapters")
+                    return {"chapters": chapters, "failed": False, "page_count": total_pages}
+
+                # Build cleaned lines and try line parser
+                lines_map: dict[int, list] = {}
+                for w in words:
+                    y_key = round(w["top"] / 3) * 3
+                    lines_map.setdefault(y_key, []).append(w)
+                cleaned_lines = []
+                for y_key in sorted(lines_map.keys()):
+                    lw = sorted(lines_map[y_key], key=lambda w: w["x0"])
+                    meaningful = [w["text"] for w in lw if not re.fullmatch(r'[-–—_.·•\s]+', w["text"])]
+                    if meaningful:
+                        cleaned_lines.append(" ".join(meaningful))
+
+                chapters = _parse_toc_lines(cleaned_lines)
+                if len(chapters) >= 2:
+                    print(f"[extract-toc] line regex found {len(chapters)} chapters")
+                    return {"chapters": chapters, "failed": False, "page_count": total_pages}
+
+        except Exception as regex_err:
+            print(f"[extract-toc] regex parser failed: {regex_err}")
+            cleaned_lines = []
+
+        # ── Strategy 3: text LLM with structured rows ─────────────────────────
+        print("[extract-toc] falling back to text LLM")
+        try:
+            with pdfplumber.open(tmp_path) as pdf:
+                raw_text = pdf.pages[toc_page - 1].extract_text() or ""
+            page_text = "\n".join(
+                re.sub(r'[-–—_.·•]{3,}', ' ', line).strip()
+                for line in raw_text.splitlines()
+                if re.sub(r'[-–—_.·•]{3,}', ' ', line).strip()
+            )
+
+            if page_text:
+                system = (
+                    "You are a curriculum assistant. Extract the Table of Contents from the text.\n"
+                    "Return ONLY valid JSON: "
+                    '{"chapters": [{"title": "string", "topics": [], "page_start": int_or_null, "page_end": int_or_null}]}\n'
+                    "Page ranges like '4 - 11' → page_start=4, page_end=11. Single '3' → page_start=3, page_end=3.\n"
+                    "Ignore decorative separators. Titles with dashes like 'Letters A – D' are chapter names."
+                )
+                result, _ = await _call_llm(page_text, system)
+                if result:
+                    s = result.find("{")
+                    e = result.rfind("}") + 1
+                    if s >= 0 and e > s:
+                        data = json.loads(result[s:e])
+                        chapters = data.get("chapters") or []
+                        if chapters:
+                            return {"chapters": chapters, "failed": False, "page_count": total_pages}
+        except Exception as text_llm_err:
+            print(f"[extract-toc] text LLM failed: {text_llm_err}")
+
+        return {
+            "chapters": [],
+            "failed": True,
+            "page_count": total_pages,
+            "reason": "Could not extract chapters from this page. Try a different page or use the Excel import option.",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[extract-toc] Error: {e}")
+        return {"chapters": [], "failed": True, "page_count": 0}
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Textbook planner generation
+# ---------------------------------------------------------------------------
+
+class TextbookPlannerRequest(BaseModel):
+    subjects: list = []          # list of subject dicts with chapters, weekly_hours, etc.
+    parameters: dict = {}        # school parameters (timings, breaks, activities)
+    test_config: dict = {}       # test scheduling config
+    academic_year: str = ""
+    working_days: list = []      # isoweekday ints [1..7]
+    holidays: list = []          # ISO date strings
+    special_days: list = []      # list of {day_date, day_type, duration_type}
+    start_date: str = ""         # academic year start (ISO)
+    end_date: str = ""           # academic year end (ISO)
+    preview_only: bool = False   # if True, generate only up to preview_end_date
+    preview_end_date: str = ""   # ISO date — limit entries to this date when preview_only=True
+
+
+@app.post("/internal/generate-textbook-planner")
+async def generate_textbook_planner(req: TextbookPlannerRequest):
+    """
+    Generate a day-by-day textbook planner from session configuration.
+
+    Returns:
+      {
+        "entries": [{ date, subject_id, subject_name, chapter_name, topic_name, duration_minutes }],
+        "summary": { total_teaching_days, total_exam_days, total_revision_days,
+                     subjects: [{ name, coverage_pct }] }
+      }
+    """
+    from planner_engine import (
+        calculate_chapter_weights,
+        calculate_available_minutes,
+        get_teaching_days,
+        insert_test_days,
+        insert_revision_buffers,
+        distribute_topics_with_llm,
+        distribute_topics_across_days,
+    )
+
+    # Parse dates
+    try:
+        start_date = date.fromisoformat(req.start_date)
+        end_date = date.fromisoformat(req.end_date)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=422, detail=f"Invalid start_date or end_date: {e}")
+
+    # Parse holidays
+    holidays: list[date] = []
+    for h in req.holidays:
+        try:
+            holidays.append(date.fromisoformat(str(h)[:10]))
+        except ValueError:
+            pass
+
+    # Parse special_days
+    special_days: list[dict] = []
+    for sd in req.special_days:
+        try:
+            d = date.fromisoformat(str(sd.get("day_date", ""))[:10])
+            special_days.append({
+                "day_date": d,
+                "day_type": sd.get("day_type", "event"),
+                "duration_type": sd.get("duration_type", "full_day"),
+            })
+        except ValueError:
+            pass
+
+    working_days = [int(w) for w in req.working_days] if req.working_days else [1, 2, 3, 4, 5]
+
+    # Calculate available minutes (informational; don't block generation on error)
+    try:
+        if req.parameters:
+            calculate_available_minutes(req.parameters)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Step 1: Get initial teaching days (before exam/revision days are known)
+    initial_teaching_days = get_teaching_days(
+        start_date, end_date, working_days, holidays, special_days
+    )
+
+    # Step 2: Compute chapter weights per subject
+    subjects_with_weights = []
+    for subj in req.subjects:
+        chapters = calculate_chapter_weights(subj.get("chapters") or [])
+        subjects_with_weights.append({**subj, "chapters": chapters})
+
+    # Step 3: Insert test days
+    test_config = req.test_config or {}
+    mode = test_config.get("mode", "manual")
+
+    # Build chapters_by_subject for end-of-chapter mode
+    # (requires last_teaching_day per chapter — computed after distribution)
+    chapters_by_subject: dict[str, list[dict]] = {}
+    for subj in subjects_with_weights:
+        chapters_by_subject[subj.get("subject_name", "")] = subj.get("chapters") or []
+
+    exam_days, _ = insert_test_days(mode, test_config, initial_teaching_days, chapters_by_subject)
+
+    # Step 4: Insert revision buffers
+    revision_days: list[date] = []
+    if test_config.get("revision_buffer", True) and exam_days:
+        revision_days = insert_revision_buffers(exam_days, initial_teaching_days)
+
+    # Step 5: Recompute teaching days excluding exam and revision days
+    exam_revision_special = special_days + [
+        {"day_date": d, "day_type": "exam", "duration_type": "full_day"} for d in exam_days
+    ] + [
+        {"day_date": d, "day_type": "revision", "duration_type": "full_day"} for d in revision_days
+    ]
+
+    teaching_days = get_teaching_days(
+        start_date, end_date, working_days, holidays, exam_revision_special
+    )
+
+    # Step 6: Distribute topics across teaching days using LLM for smart interleaving
+    entries = await distribute_topics_with_llm(
+        subjects_with_weights,
+        teaching_days,
+        exam_days,
+        revision_days,
+        holidays,
+        req.parameters,
+    )
+
+    # Step 7: Build summary
+    total_topics_by_subject: dict[str, int] = {}
+    covered_topics_by_subject: dict[str, int] = {}
+    for subj in subjects_with_weights:
+        name = subj.get("subject_name", "")
+        total = sum(len(ch.get("topics") or []) for ch in subj.get("chapters") or [])
+        total_topics_by_subject[name] = total
+
+    for entry in entries:
+        name = entry.get("subject_name", "")
+        covered_topics_by_subject[name] = covered_topics_by_subject.get(name, 0) + 1
+
+    subjects_summary = []
+    for subj in subjects_with_weights:
+        name = subj.get("subject_name", "")
+        total = total_topics_by_subject.get(name, 0)
+        covered = covered_topics_by_subject.get(name, 0)
+        pct = round(covered / total * 100, 1) if total > 0 else 100.0
+        subjects_summary.append({"name": name, "coverage_pct": pct})
+
+    # If preview_only, filter entries to the preview window only
+    if req.preview_only and req.preview_end_date:
+        try:
+            preview_cutoff = date.fromisoformat(req.preview_end_date)
+            entries = [e for e in entries if date.fromisoformat(e["date"]) <= preview_cutoff]
+        except ValueError:
+            pass  # invalid date — return all entries
+
+    return {
+        "entries": entries,
+        "summary": {
+            "total_teaching_days": len(teaching_days),
+            "total_exam_days": len(exam_days),
+            "total_revision_days": len(revision_days),
+            "subjects": subjects_summary,
+            "preview_only": req.preview_only,
+        },
+    }

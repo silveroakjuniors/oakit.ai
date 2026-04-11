@@ -12,6 +12,7 @@ interface Settings {
   contact_phone: string;
   contact_address: string;
   notes_expiry_days: number;
+  ai_plan_mode: string;
   logo_url: string | null;
   primary_color: string;
   tagline: string;
@@ -221,6 +222,70 @@ function StudentCredentialsSection({ token }: { token: string }) {
   );
 }
 
+function AiPlanModeSection({ token }: { token: string }) {
+  const [classes, setClasses] = useState<{ class_id: string; class_name: string; ai_plan_mode: string }[]>([]);
+  const [schoolDefault, setSchoolDefault] = useState('standard');
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    apiGet<{ school_default: string; classes: any[] }>('/api/v1/admin/settings/ai-plan-mode', token)
+      .then(d => { setClasses(d.classes); setSchoolDefault(d.school_default); })
+      .catch(() => {});
+  }, [token]);
+
+  async function toggle(classId: string | null, current: string) {
+    const next = current === 'ai_enhanced' ? 'standard' : 'ai_enhanced';
+    setToggling(classId || 'school');
+    try {
+      await apiPut('/api/v1/admin/settings/ai-plan-mode', { class_id: classId, ai_plan_mode: next }, token);
+      if (classId) {
+        setClasses(prev => prev.map(c => c.class_id === classId ? { ...c, ai_plan_mode: next } : c));
+      } else {
+        setSchoolDefault(next);
+      }
+      setMsg(`✓ Updated`);
+      setTimeout(() => setMsg(''), 2000);
+    } catch (e: any) { setMsg(e.message || 'Failed'); }
+    finally { setToggling(null); }
+  }
+
+  const Toggle = ({ enabled, loading, onClick }: { enabled: boolean; loading: boolean; onClick: () => void }) => (
+    <button onClick={onClick} disabled={loading}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${enabled ? 'bg-emerald-500' : 'bg-neutral-200'}`}>
+      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+  );
+
+  return (
+    <div className="space-y-2">
+      {/* School default */}
+      <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-100">
+        <div>
+          <p className="text-xs font-semibold text-neutral-700">All classes (default)</p>
+          <p className="text-[10px] text-neutral-400">Applied to any class without a specific setting</p>
+        </div>
+        <Toggle enabled={schoolDefault === 'ai_enhanced'} loading={toggling === 'school'} onClick={() => toggle(null, schoolDefault)} />
+      </div>
+
+      {/* Per-class */}
+      {classes.map(c => (
+        <div key={c.class_id} className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-neutral-100 hover:bg-neutral-50/50">
+          <div>
+            <p className="text-xs font-medium text-neutral-700">{c.class_name}</p>
+            <p className="text-[10px] text-neutral-400">
+              {c.ai_plan_mode === 'ai_enhanced' ? '🤖 AI-enhanced' : '📋 Standard'}
+            </p>
+          </div>
+          <Toggle enabled={c.ai_plan_mode === 'ai_enhanced'} loading={toggling === c.class_id} onClick={() => toggle(c.class_id, c.ai_plan_mode)} />
+        </div>
+      ))}
+
+      {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{msg}</p>}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const token = getToken() || '';
   const [settings, setSettings] = useState<Settings>({
@@ -422,6 +487,21 @@ export default function SettingsPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+
+              {/* AI Plan Mode — per class */}
+              <div className="mt-5 pt-5 border-t border-neutral-100">
+                <p className="text-xs font-medium text-neutral-700 mb-0.5">🤖 AI-Enhanced Daily Plans</p>
+                <p className="text-xs text-neutral-400 mb-3">
+                  When enabled for a class, teachers in that class get a rich AI-generated daily plan with objectives, activities, and offline support instead of raw curriculum chunks.
+                </p>
+                <div className="flex items-start gap-2 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                  <span className="text-amber-500 text-sm mt-0.5">⚠️</span>
+                  <p className="text-xs text-amber-700">
+                    <strong>High AI credit usage.</strong> Each plan view calls the AI API. Enable only for classes where you want the rich format.
+                  </p>
+                </div>
+                <AiPlanModeSection token={token} />
               </div>
             </div>
           </div>

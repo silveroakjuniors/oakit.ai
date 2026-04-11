@@ -51,6 +51,18 @@ export async function apiDelete(path: string, token: string): Promise<void> {
   }
 }
 
+export async function apiPatch<T>(path: string, body: unknown, token: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({ error: 'Invalid response from server' }));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data as T;
+}
+
+
 export async function apiPut<T>(path: string, body: unknown, token: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'PUT',

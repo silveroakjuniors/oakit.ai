@@ -68,6 +68,7 @@ router.get('/', roleGuard('admin'), async (req: Request, res: Response) => {
              s.parent_contact, s.mother_contact,
              s.photo_path,
              s.is_active,
+             s.class_id, s.section_id,
              c.name as class_name, sec.label as section_label
       FROM students s
       JOIN classes c ON s.class_id = c.id
@@ -271,17 +272,39 @@ router.post('/:id/photo', roleGuard('admin'), (req: Request, res: Response, next
 router.post('/:id/activate-parent', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { mobile, name, relation } = req.body; // relation: 'father' | 'mother'
+    const { mobile, name, relation } = req.body; // relation: 'father' | 'mother' | 'guardian'
     if (!mobile) return res.status(400).json({ error: 'mobile is required' });
     if (!/^\d{10}$/.test(mobile)) return res.status(400).json({ error: 'Mobile must be 10 digits' });
 
     const studentRow = await pool.query(
-      'SELECT id, name FROM students WHERE id = $1 AND school_id = $2',
+      'SELECT id, name, parent_contact, mother_contact FROM students WHERE id = $1 AND school_id = $2',
       [req.params.id, school_id]
     );
     if (studentRow.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+    const student = studentRow.rows[0];
 
-    // Check if parent already exists
+    // Enforce one father / one mother:
+    // If relation is 'father', the father slot is student.parent_contact
+    // If relation is 'mother', the mother slot is student.mother_contact
+    // If a different parent is already linked for that slot, unlink them first
+    if (relation === 'father' || relation === 'mother') {
+      const slotMobile = relation === 'father' ? student.parent_contact : student.mother_contact;
+      if (slotMobile && slotMobile !== mobile) {
+        // Find and unlink the existing parent for this slot
+        const existingParent = await pool.query(
+          'SELECT id FROM parent_users WHERE mobile = $1 AND school_id = $2',
+          [slotMobile, school_id]
+        );
+        if (existingParent.rows.length > 0) {
+          await pool.query(
+            'DELETE FROM parent_student_links WHERE student_id = $1 AND parent_id = $2',
+            [req.params.id, existingParent.rows[0].id]
+          );
+        }
+      }
+    }
+
+    // Check if parent account already exists
     let parentRow = await pool.query(
       'SELECT id, is_active FROM parent_users WHERE mobile = $1 AND school_id = $2',
       [mobile, school_id]
@@ -291,14 +314,12 @@ router.post('/:id/activate-parent', roleGuard('admin'), async (req: Request, res
     const hash = await bcrypt.hash(mobile, 12);
 
     if (parentRow.rows.length === 0) {
-      // Create new parent account
       parentRow = await pool.query(
         `INSERT INTO parent_users (school_id, mobile, name, password_hash, force_password_reset, is_active)
          VALUES ($1, $2, $3, $4, true, true) RETURNING id`,
         [school_id, mobile, name || null, hash]
       );
     } else {
-      // Reactivate and reset password
       await pool.query(
         `UPDATE parent_users SET password_hash = $1, force_password_reset = true, is_active = true WHERE id = $2`,
         [hash, parentRow.rows[0].id]
@@ -452,12 +473,45 @@ router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
 router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
+    const studentId = req.params.id;
+
+    // 1. Deactivate the student
     await pool.query(
       'UPDATE students SET is_active = false WHERE id = $1 AND school_id = $2',
-      [req.params.id, school_id]
+      [studentId, school_id]
     );
+
+    // 2. Delete student portal account
+    await pool.query(
+      'DELETE FROM student_accounts WHERE student_id = $1 AND school_id = $2',
+      [studentId, school_id]
+    );
+
+    // 3. Deactivate parent accounts linked ONLY to this student (not to any other active student)
+    const orphaned = await pool.query(
+      `SELECT DISTINCT psl.parent_id
+       FROM parent_student_links psl
+       WHERE psl.student_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM parent_student_links psl2
+           JOIN students s2 ON s2.id = psl2.student_id
+           WHERE psl2.parent_id = psl.parent_id
+             AND psl2.student_id != $1
+             AND s2.is_active = true
+         )`,
+      [studentId]
+    );
+    if (orphaned.rows.length > 0) {
+      const parentIds = orphaned.rows.map((r: any) => r.parent_id);
+      await pool.query(
+        'UPDATE parent_users SET is_active = false WHERE id = ANY($1::uuid[]) AND school_id = $2',
+        [parentIds, school_id]
+      );
+    }
+
     return res.json({ message: 'Student terminated' });
   } catch (err) {
+    console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

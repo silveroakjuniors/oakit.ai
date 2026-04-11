@@ -410,6 +410,98 @@ async def _call_llm(prompt: str, system: str) -> tuple[str, str]:
     return ""
 
 
+async def _call_vision_llm(image_b64: str, prompt: str, system: str) -> tuple[str, str]:
+    """
+    Send a base64-encoded PNG image to a vision LLM.
+    Tries Gemini first (free), falls back to GPT-4o.
+    Retries once on rate limit (429).
+    """
+    import os, httpx, asyncio
+
+    # ── 1. Gemini Flash vision (free tier, try first) ─────────────────────
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    if gemini_key:
+        gemini_vision_model = "gemini-1.5-flash"
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(
+                        f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_vision_model}:generateContent?key={gemini_key}",
+                        json={
+                            "contents": [{
+                                "role": "user",
+                                "parts": [
+                                    {"text": f"{system}\n\n{prompt}"},
+                                    {"inline_data": {"mime_type": "image/png", "data": image_b64}},
+                                ],
+                            }],
+                            "generationConfig": {"maxOutputTokens": 2000, "temperature": 0.1},
+                        },
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                        result = parts[0].get("text", "").strip() if parts else ""
+                        if result:
+                            print(f"[Vision] Gemini responded ({len(result)} chars)")
+                            return result, "gemini-vision"
+                        print(f"[Vision] Gemini empty response")
+                        break
+                    elif resp.status_code == 429:
+                        wait = 10 * (attempt + 1)
+                        print(f"[Vision] Gemini rate limit — waiting {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        print(f"[Vision] Gemini error {resp.status_code} — falling back to GPT-4o")
+                        break
+            except Exception as e:
+                print(f"[Vision] Gemini exception: {e} — falling back to GPT-4o")
+                break
+
+    # ── 2. GPT-4o vision (fallback) ───────────────────────────────────────
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    if openai_key:
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+                        json={
+                            "model": "gpt-4o",
+                            "messages": [
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": [
+                                    {"type": "text", "text": prompt},
+                                    {"type": "image_url", "image_url": {
+                                        "url": f"data:image/png;base64,{image_b64}",
+                                        "detail": "low",
+                                    }},
+                                ]},
+                            ],
+                            "max_tokens": 2000,
+                            "temperature": 0.1,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        result = resp.json()["choices"][0]["message"]["content"].strip()
+                        print(f"[Vision] GPT-4o responded ({len(result)} chars)")
+                        return result, "gpt-4o"
+                    elif resp.status_code == 429:
+                        wait = 15 * (attempt + 1)
+                        print(f"[Vision] GPT-4o rate limit — waiting {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        print(f"[Vision] GPT-4o error {resp.status_code}: {resp.text[:200]}")
+                        break
+            except Exception as e:
+                print(f"[Vision] GPT-4o exception: {e}")
+                break
+
+    print("[Vision] all vision providers failed")
+    return "", "none"
+
+
 async def _llm_fallback(text: str, class_name: str, age_info: dict) -> str:
     """Rule-based fallback when LLM is unavailable."""
     t = text.lower()
@@ -1746,17 +1838,89 @@ Plain text only, no bold, no markdown, short lines for mobile."""
             curriculum_context = _build_chunk_context(chunks)
             pending_context    = _build_pending_context(pending_rows)
 
-            # For daily plan display: build directly from curriculum chunks, no LLM
-            # The LLM tends to hallucinate generic activities instead of using actual content
-            # Only use LLM if teacher asks a specific question (not just "what's my plan")
+            # Check ai_plan_mode: class-level first, then school-level fallback
+            ai_plan_mode = "standard"
+            try:
+                class_row = await pool.fetchrow(
+                    """SELECT cas.ai_plan_mode FROM class_ai_settings cas
+                       JOIN sections s ON s.class_id = cas.class_id
+                       WHERE s.id = $1""",
+                    sec_id,
+                )
+                if class_row:
+                    ai_plan_mode = class_row["ai_plan_mode"] or "standard"
+                else:
+                    settings_row = await pool.fetchrow(
+                        "SELECT ai_plan_mode FROM school_settings WHERE school_id = $1",
+                        UUID(school_id),
+                    )
+                    if settings_row:
+                        ai_plan_mode = settings_row["ai_plan_mode"] or "standard"
+            except Exception:
+                pass  # default to standard if table doesn't exist yet
+
             is_plan_request_only = any(p in text.lower() for p in [
                 "what is my plan", "what's my plan", "show me the plan", "give me the plan",
                 "my plan", "plan for today", "plan today", "what do i teach",
                 "what should i teach", "what are my topics",
             ])
 
-            if is_plan_request_only:
-                # Build plan directly from chunks — no LLM hallucination
+            if ai_plan_mode == "ai_enhanced":
+                # Rich AI-generated plan with objectives, activities, offline support
+                # Build week number for the header
+                week_num = ((target_dt - target_dt.replace(day=1)).days // 7) + 1
+                day_num_in_week = target_dt.weekday() + 1  # 1=Mon
+
+                subjects_list = []
+                for ch in chunks:
+                    subjects = _parse_subjects(ch["content"])
+                    for s in subjects:
+                        subjects_list.append(f"- {s['subject']}: {s['activity']}")
+
+                rich_system = (
+                    f"You are an expert early childhood curriculum planner for {class_full} ({age_info['age']}).\n"
+                    f"Generate a detailed, structured daily plan in the exact format shown.\n"
+                    f"Use emojis for section headers. Be specific and practical.\n"
+                    f"Output plain text only — no markdown bold, no tables.\n"
+                    f"Keep it teacher-friendly for mobile reading."
+                )
+
+                rich_prompt = f"""Generate a detailed daily plan in this EXACT format:
+
+🗓️ {class_full} – Week {week_num}: Day {day_num_in_week} Planner
+📅 Date: {date_label}
+Theme: [derive a theme from the topics below]
+
+🎯 Objective:
+· [3-4 overall objectives for the day based on all subjects]
+
+Then for EACH subject below, create a section like this:
+[emoji] [Subject Name]
+Topic: [topic name]
+Resources: [suggest relevant resources]
+Objective:
+· [2 specific objectives]
+✅ Offline Support:
+· [2-3 specific classroom activities]
+
+Subjects for today:
+{chr(10).join(subjects_list) if subjects_list else "General curriculum activities"}
+
+{f"Pending from previous days: {', '.join(c['topic_label'] for c in pending_rows)}" if pending_rows else ""}
+
+📝 Teacher Note
+· [2-3 practical tips for the day]
+
+CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}
+Keep each section concise. Total under 500 words."""
+
+                response_text, llm_provider = await _call_llm(rich_prompt, rich_system)
+                if not response_text:
+                    response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                    llm_provider = "rule_based"
+
+            elif is_plan_request_only:
+                # Standard: build plan directly from chunks — no LLM cost
                 response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
                 llm_provider = "rule_based"
             else:

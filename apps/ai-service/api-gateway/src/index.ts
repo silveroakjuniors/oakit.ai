@@ -55,6 +55,7 @@ import parentObservationsRouter from './routes/parent/observations';
 import parentHomeworkRouter from './routes/parent/homework';
 import parentStudentAnalyticsRouter from './routes/parent/studentAnalytics';
 import adminStudentPortalRouter from './routes/admin/studentPortal';
+import adminQuizzesRouter from './routes/admin/quizzes';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
 import teacherQuizRouter from './routes/teacher/quiz';
 import studentFeedRouter from './routes/student/feed';
@@ -233,6 +234,7 @@ app.use('/api/v1/parent/student-analytics', parentStudentAnalyticsRouter);
 
 // Admin — Student Portal
 app.use('/api/v1/admin/student-portal', adminStudentPortalRouter);
+app.use('/api/v1/admin/quizzes', adminQuizzesRouter);
 
 // Teacher — Student Credentials & Quiz
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);

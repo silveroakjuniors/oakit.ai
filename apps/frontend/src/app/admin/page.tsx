@@ -36,6 +36,22 @@ interface SetupStatus { complete: boolean; completed_steps: string[]; pending_st
 interface TimeMachine { active: boolean; mock_date: string | null; expires_at: string | null; ttl_seconds: number; }
 interface SafetyAlert { id: string; actor_name: string; actor_role: string; query_text: string; dismissed_at: string | null; created_at: string; }
 
+interface SmartAlert {
+  type: string; severity: 'high' | 'medium'; title: string; detail: string;
+  teacher_id?: string; section_id?: string; section_label?: string; class_name?: string;
+  unlogged_days?: number; attendance_pct?: number; coverage_pct?: number;
+  avg_pct?: number; performance_score?: number; subject?: string;
+}
+interface TeacherScore {
+  teacher_id: string; teacher_name: string; section_label: string; class_name: string;
+  compliance_pct: number; current_streak: number; ai_queries_7d: number;
+  performance_score: number; band: 'green' | 'amber' | 'red';
+}
+interface SmartAlertsData {
+  alerts: SmartAlert[]; teacher_scores: TeacherScore[];
+  summary: { total_alerts: number; high: number; medium: number };
+}
+
 const BAND_COLORS = { green: '#10b981', amber: '#f59e0b', red: '#ef4444' };
 const BAND_BG = { green: 'bg-emerald-100 text-emerald-700', amber: 'bg-amber-100 text-amber-700', red: 'bg-red-100 text-red-600' };
 const STEP_LABELS: Record<string, string> = {
@@ -44,12 +60,13 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 const quickLinks = [
-  { href: '/admin/users',         icon: '👥', label: 'Users & Roles',  desc: 'Manage staff accounts' },
-  { href: '/admin/classes',       icon: '🏫', label: 'Classes',        desc: 'Sections & teachers' },
-  { href: '/admin/curriculum',    icon: '📄', label: 'Curriculum',     desc: 'Upload & manage PDFs' },
-  { href: '/admin/supplementary', icon: '🎵', label: 'Activities',     desc: 'Rhymes, stories & more' },
-  { href: '/admin/calendar',      icon: '📅', label: 'Calendar',       desc: 'Holidays & special days' },
-  { href: '/admin/plans',         icon: '📋', label: 'Plans',          desc: 'View & export plans' },
+  { href: '/admin/users',             icon: '👥', label: 'Users & Roles',      desc: 'Manage staff accounts' },
+  { href: '/admin/classes',           icon: '🏫', label: 'Classes',            desc: 'Sections & teachers' },
+  { href: '/admin/curriculum',        icon: '📄', label: 'Curriculum',         desc: 'Upload & manage PDFs' },
+  { href: '/admin/supplementary',     icon: '🎵', label: 'Activities',         desc: 'Rhymes, stories & more' },
+  { href: '/admin/calendar',          icon: '📅', label: 'Calendar',           desc: 'Holidays & special days' },
+  { href: '/admin/plans',             icon: '📋', label: 'Plans',              desc: 'View & export plans' },
+  { href: '/admin/textbook-planner',  icon: '📚', label: 'Textbook Planner',   desc: 'AI-powered planner wizard' },
 ];
 
 export default function AdminDashboard() {
@@ -70,6 +87,9 @@ export default function AdminDashboard() {
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
   const [safetyAlerts, setSafetyAlerts] = useState<SafetyAlert[]>([]);
   const [alertsExpanded, setAlertsExpanded] = useState(false);
+  const [smartAlerts, setSmartAlerts] = useState<SmartAlertsData | null>(null);
+  const [smartAlertsLoading, setSmartAlertsLoading] = useState(false);
+  const [smartAlertsExpanded, setSmartAlertsExpanded] = useState(false);
 
   const loadSnap = useCallback(async () => {
     try { setTodaySnap(await apiGet<TodaySnap>('/api/v1/admin/dashboard/today', token)); } catch {}
@@ -113,6 +133,12 @@ export default function AdminDashboard() {
         .catch(() => {}),
       loadSnap(),
     ]).finally(() => setStatsLoading(false));
+    // Load smart alerts separately (heavier query, 5-min cache)
+    setSmartAlertsLoading(true);
+    apiGet<SmartAlertsData>('/api/v1/admin/smart-alerts', token)
+      .then(d => { setSmartAlerts(d); if (d.summary.high > 0) setSmartAlertsExpanded(true); })
+      .catch(() => {})
+      .finally(() => setSmartAlertsLoading(false));
     const interval = setInterval(loadSnap, 60000);
     return () => clearInterval(interval);
   }, []);
@@ -202,6 +228,109 @@ export default function AdminDashboard() {
               <div className="px-5 py-3 bg-red-50/50 flex items-center justify-between">
                 <p className="text-xs text-red-600">Review full history in <Link href="/admin/audit" className="font-semibold underline">Audit Log → AI Queries</Link></p>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Smart Alerts — AI School Intelligence */}
+      {(smartAlertsLoading || (smartAlerts && smartAlerts.summary.total_alerts > 0)) && (
+        <div className={`rounded-2xl border overflow-hidden ${
+          smartAlerts && smartAlerts.summary.high > 0
+            ? 'border-orange-200 bg-orange-50'
+            : 'border-amber-200 bg-amber-50'
+        }`}>
+          <button
+            onClick={() => setSmartAlertsExpanded(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-3.5 text-left"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-xl">🧠</span>
+              <div>
+                <p className="text-sm font-bold text-neutral-800">
+                  School Intelligence
+                  {smartAlerts && (
+                    <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${
+                      smartAlerts.summary.high > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {smartAlerts.summary.total_alerts} alert{smartAlerts.summary.total_alerts !== 1 ? 's' : ''}
+                      {smartAlerts.summary.high > 0 && ` · ${smartAlerts.summary.high} urgent`}
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-neutral-500 mt-0.5">AI-detected issues across teachers, attendance, curriculum, and quizzes</p>
+              </div>
+            </div>
+            <span className="text-neutral-400 text-sm">{smartAlertsExpanded ? '▲' : '▼'}</span>
+          </button>
+
+          {smartAlertsExpanded && smartAlerts && (
+            <div className="border-t border-orange-200">
+              {/* Alert list */}
+              <div className="divide-y divide-orange-100">
+                {smartAlerts.alerts.map((alert, i) => {
+                  const icons: Record<string, string> = {
+                    teacher_not_completing: '📋',
+                    low_attendance_trend: '📉',
+                    class_falling_behind: '⏳',
+                    weak_subject: '📝',
+                    low_teacher_performance: '👩‍🏫',
+                  };
+                  return (
+                    <div key={i} className={`flex items-start gap-3 px-5 py-3 ${alert.severity === 'high' ? 'bg-red-50/60' : 'bg-white/60'}`}>
+                      <span className="text-lg shrink-0 mt-0.5">{icons[alert.type] || '⚠️'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-neutral-800">{alert.title}</p>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                            alert.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {alert.severity === 'high' ? 'URGENT' : 'WATCH'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-500 mt-0.5">{alert.detail}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Teacher Performance Scores */}
+              {smartAlerts.teacher_scores.length > 0 && (
+                <div className="border-t border-orange-200 px-5 py-4">
+                  <p className="text-xs font-bold text-neutral-600 uppercase tracking-wide mb-3">Teacher Performance Scores</p>
+                  <div className="space-y-2">
+                    {smartAlerts.teacher_scores
+                      .sort((a, b) => a.performance_score - b.performance_score)
+                      .map((t, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-semibold text-neutral-700 truncate">{t.teacher_name}</p>
+                              <span className="text-[10px] text-neutral-400">{t.class_name} {t.section_label}</span>
+                            </div>
+                            <div className="flex gap-3 text-[10px] text-neutral-400 mt-0.5">
+                              <span>Compliance: {t.compliance_pct}%</span>
+                              <span>Streak: {t.current_streak}d</span>
+                              <span>AI: {t.ai_queries_7d} queries/wk</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="w-16 bg-neutral-200 rounded-full h-1.5">
+                              <div className={`h-1.5 rounded-full ${
+                                t.band === 'green' ? 'bg-emerald-500' : t.band === 'amber' ? 'bg-amber-500' : 'bg-red-500'
+                              }`} style={{ width: `${t.performance_score}%` }} />
+                            </div>
+                            <span className={`text-xs font-bold w-8 text-right ${
+                              t.band === 'green' ? 'text-emerald-600' : t.band === 'amber' ? 'text-amber-600' : 'text-red-600'
+                            }`}>{t.performance_score}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                  <p className="text-[10px] text-neutral-400 mt-3">Score = 60% plan compliance + 20% streak + 20% AI engagement · Refreshes every 5 min</p>
+                </div>
+              )}
             </div>
           )}
         </div>

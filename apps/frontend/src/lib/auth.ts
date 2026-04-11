@@ -32,6 +32,20 @@ export function setSchoolCode(code: string): void {
   localStorage.setItem('oakit_school_code', code);
 }
 
+// Student portal token helpers
+export function getStudentToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('student_token');
+}
+
+export function setStudentToken(token: string): void {
+  localStorage.setItem('student_token', token);
+}
+
+export function clearStudentToken(): void {
+  localStorage.removeItem('student_token');
+}
+
 export function getRoleRedirect(role: string): string {
   const r = role.toLowerCase().trim();
   if (r === 'admin') return '/admin';
