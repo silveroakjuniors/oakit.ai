@@ -213,6 +213,8 @@ export default function TeacherPlanner() {
   const [planViewMode, setPlanViewMode] = useState<'raw' | 'detailed'>('raw');
   const [detailedPlanText, setDetailedPlanText] = useState<string | null>(null);
   const [fetchingDetailedPlan, setFetchingDetailedPlan] = useState(false);
+  const [showRawPlanModal, setShowRawPlanModal] = useState(false);
+  const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
   // Homework submission tracking state
   const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, 'completed' | 'partial' | 'not_submitted'>>({});
@@ -252,6 +254,10 @@ export default function TeacherPlanner() {
     try {
       setAiLoading(true);
       const res = await apiPost<any>('/api/v1/ai/query', { text: "what is my plan for today" }, token);
+      // Capture the plan text for PDF export (only the plan response, not chat messages)
+      if (res.response && res.chunk_ids?.length > 0) {
+        setOakiePlanText(res.response);
+      }
       setMessages(prev => [...prev, {
         role: 'assistant', text: res.response,
         chunk_ids: res.chunk_ids, covered_chunk_ids: res.covered_chunk_ids,
@@ -961,126 +967,89 @@ export default function TeacherPlanner() {
   );
 
   // ── Chat Tab (Right Panel) ────────────────────────────────────────────
-  // Quick View = show today's chunks from DB directly (default)
-  // Oakie's View = Oakie plans your day once, caches it, button disabled after
   const chatTabContent = (
       <>
-        {/* Quick View / Oakie's View toggle — top of right panel */}
-        <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-white border-b border-neutral-100">
-          <span className="text-xs font-semibold text-neutral-600">How would you like to see today?</span>
-          <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 gap-0.5">
+        {/* Header bar with export buttons */}
+        <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-white border-b border-neutral-100 gap-2">
+          <span className="text-xs font-semibold text-neutral-600 truncate">{dateLabel}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Raw Plan popup */}
             <button
-              onClick={() => setPlanViewMode('raw')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${planViewMode === 'raw' ? 'bg-white text-neutral-800 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'}`}
+              onClick={() => setShowRawPlanModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 border border-neutral-200 rounded-lg text-xs text-neutral-600 hover:bg-neutral-50 transition-colors"
             >
-              Quick View
+              <CalendarDays className="w-3.5 h-3.5" />
+              Raw Plan
             </button>
-            <button
-              disabled={fetchingDetailedPlan}
-              onClick={async () => {
-                // If already fetched, just switch view — no API call
-                if (detailedPlanText) { setPlanViewMode('detailed'); return; }
-                // First time: fetch from Oakie once
-                setPlanViewMode('detailed');
-                setFetchingDetailedPlan(true);
-                try {
-                  const res = await apiPost<any>('/api/v1/ai/query', { text: 'what is my plan for today' }, token);
-                  setDetailedPlanText(res.response || '');
-                } catch { setDetailedPlanText("Oakie couldn't reach you right now. Try again later."); }
-                finally { setFetchingDetailedPlan(false); }
-              }}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-60 ${
-                planViewMode === 'detailed' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'
-              }`}
-              title={detailedPlanText ? "Oakie's plan is ready — click to view" : "Ask Oakie to plan your day (fetched once, free to toggle)"}
-            >
-              {fetchingDetailedPlan
-                ? <><span className="w-3 h-3 border border-primary-400 border-t-transparent rounded-full animate-spin" />Oakie is thinking…</>
-                : <><Sparkles className="w-3 h-3" />{detailedPlanText ? "Oakie's View ✓" : "Ask Oakie"}</>
-              }
-            </button>
+            {/* Export Oakie's plan — appears after Oakie has responded with the plan */}
+            {oakiePlanText && (
+              <button
+                onClick={() => exportPdf(today, oakiePlanText)}
+                disabled={exporting}
+                className="flex items-center gap-1 px-2.5 py-1.5 border border-primary-200 bg-primary-50 rounded-lg text-xs text-primary-700 hover:bg-primary-100 transition-colors disabled:opacity-50"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {exporting ? '…' : "↓ Oakie's Plan PDF"}
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Raw plan view — chunks from DB */}
-        {planViewMode === 'raw' && plan?.chunks?.length ? (
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50">
-            <div className="bg-white border border-neutral-100 rounded-2xl overflow-hidden shadow-sm">
-              <div className="px-4 py-3 border-b border-neutral-100 bg-neutral-50/50">
-                <p className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-primary-500" />
-                  {new Date(today + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-                </p>
+        {/* Raw Plan Modal */}
+        {showRawPlanModal && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowRawPlanModal(false)} />
+            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+                <div>
+                  <h2 className="text-base font-semibold text-neutral-900">Today's Raw Plan</h2>
+                  <p className="text-xs text-neutral-500 mt-0.5">{dateLabel} · from curriculum</p>
+                </div>
+                <button onClick={() => setShowRawPlanModal(false)} className="text-neutral-400 hover:text-neutral-600">
+                  <span className="text-lg">×</span>
+                </button>
               </div>
-              {plan.chunks.map((chunk: any, i: number) => (
-                <div key={chunk.id} className="px-4 py-3 border-b border-neutral-50 last:border-0">
-                  <p className="text-sm font-semibold text-neutral-800 mb-1">{chunk.topic_label || `Topic ${i + 1}`}</p>
-                  {chunk.content && (
-                    <p className="text-xs text-neutral-500 leading-relaxed whitespace-pre-wrap">{chunk.content}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-            {plan.supplementary_activities && plan.supplementary_activities.length > 0 && (
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-amber-100">
-                  <p className="text-xs font-semibold text-amber-800">🎵 Today's Activities</p>
-                </div>
-                {plan.supplementary_activities.map((sa: any) => (
-                  <div key={sa.plan_id} className="px-4 py-3 border-b border-amber-50 last:border-0">
-                    <p className="text-xs text-amber-700 font-medium">{sa.pool_name}</p>
-                    <p className="text-sm text-neutral-800">{sa.activity_title}</p>
+              <div className="px-5 py-4 max-h-80 overflow-y-auto flex flex-col gap-2">
+                {plan?.chunks?.length ? plan.chunks.map((chunk: any, i: number) => (
+                  <div key={chunk.id} className="px-3 py-2.5 bg-neutral-50 rounded-xl border border-neutral-100">
+                    <p className="text-sm font-semibold text-neutral-800 mb-1">{chunk.topic_label || `Topic ${i + 1}`}</p>
+                    {chunk.content && (
+                      <p className="text-xs text-neutral-500 leading-relaxed whitespace-pre-wrap">{chunk.content}</p>
+                    )}
+                  </div>
+                )) : <p className="text-sm text-neutral-400 text-center py-4">No plan for today</p>}
+                {plan?.supplementary_activities?.map((sa: any) => (
+                  <div key={sa.plan_id} className="px-3 py-2.5 bg-amber-50 rounded-xl border border-amber-100">
+                    <p className="text-xs text-amber-700 font-semibold mb-0.5">🎵 {sa.pool_name}</p>
+                    <p className="text-sm font-medium text-neutral-800">{sa.activity_title}</p>
                     {sa.activity_description && <p className="text-xs text-neutral-500 mt-0.5">{sa.activity_description}</p>}
                   </div>
                 ))}
               </div>
-            )}
-            {/* Export PDF button */}
-            <button
-              onClick={() => exportPdf(today)}
-              disabled={exporting}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50 transition-colors disabled:opacity-50"
-            >
-              <FileText className="w-4 h-4" />
-              {exporting ? 'Downloading…' : '↓ Download Today\'s Plan as PDF'}
-            </button>
-          </div>
-        ) : planViewMode === 'detailed' ? (
-          /* Oakie's View — planned once, cached */
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-neutral-50/50">
-            {fetchingDetailedPlan ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3">
-                <div className="w-8 h-8 border-2 border-primary-300 border-t-primary-600 rounded-full animate-spin" />
-                <p className="text-sm text-neutral-600 font-medium">Oakie is planning your day…</p>
-                <p className="text-xs text-neutral-400">This only happens once</p>
+              <div className="px-5 pb-5 pt-2 border-t border-neutral-100">
+                <button
+                  onClick={() => {
+                    // Build raw plan text from chunks and export as settling_text
+                    const rawText = [
+                      ...(plan?.chunks || []).map((c: any) => `${c.topic_label || 'Topic'}\n${c.content || ''}`),
+                      ...(plan?.supplementary_activities || []).map((sa: any) => `🎵 ${sa.pool_name}: ${sa.activity_title}${sa.activity_description ? '\n' + sa.activity_description : ''}`),
+                    ].join('\n\n');
+                    exportPdf(today, rawText);
+                    setShowRawPlanModal(false);
+                  }}
+                  disabled={exporting}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  <FileText className="w-4 h-4" />
+                  {exporting ? 'Downloading…' : '↓ Download as PDF'}
+                </button>
               </div>
-            ) : detailedPlanText ? (
-              <div className="bg-white border border-neutral-100 rounded-2xl overflow-hidden shadow-sm">
-                <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-50 border-b border-primary-100">
-                  <Sparkles className="w-3.5 h-3.5 text-primary-500" />
-                  <span className="text-xs font-semibold text-primary-700">Oakie has planned your day</span>
-                  <span className="ml-auto text-[10px] text-primary-400">Oakie says ✓</span>
-                </div>
-                <div className="px-4 py-3">
-                  <AiMessageText text={detailedPlanText} />
-                </div>
-                {/* PDF export for Oakie's plan */}
-                <div className="px-4 pb-4 pt-1 border-t border-neutral-50">
-                  <button
-                    onClick={() => exportPdf(today, detailedPlanText)}
-                    disabled={exporting}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50 transition-colors disabled:opacity-50"
-                  >
-                    <FileText className="w-4 h-4" />
-                    {exporting ? 'Downloading…' : "↓ Download Oakie's Plan as PDF"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
+            </div>
           </div>
-        ) : (
-          /* Default: Oakie chat messages */
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50" style={{ paddingBottom: '8px' }}>
+        )}
+
+        {/* Oakie chat — normal chat, no toggle */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50" style={{ paddingBottom: '8px' }}>
             <div className="flex-1" />
             {messages.map((msg, i) => (
             <motion.div key={i}
@@ -1102,6 +1071,11 @@ export default function TeacherPlanner() {
                   <span className="whitespace-pre-wrap text-sm">{msg.text}</span>
                 ) : (
                   <div>
+                    {/* "Oakie says" label on every assistant response */}
+                    <div className="flex items-center gap-1.5 px-4 pt-2.5 pb-1">
+                      <Sparkles className="w-3 h-3 text-primary-400" />
+                      <span className="text-[10px] font-semibold text-primary-500 uppercase tracking-wide">Oakie says</span>
+                    </div>
                     {msg.is_settling && msg.settling_day && (
                       <div className="px-4 pt-3 pb-1">
                         <span className="text-xs font-semibold bg-green-100 text-green-700 px-2.5 py-1 rounded-full">
@@ -1178,6 +1152,17 @@ export default function TeacherPlanner() {
                         {inlineMsg[String(i)] && <p className="text-xs text-green-600 mt-2">{inlineMsg[String(i)]}</p>}
                       </div>
                     )}
+                    {/* PDF download for each Oakie response */}
+                    <div className="px-4 pb-2 pt-0">
+                      <button
+                        onClick={() => exportPdf(today, msg.text)}
+                        disabled={exporting}
+                        className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-primary-600 transition-colors disabled:opacity-50"
+                      >
+                        <FileText className="w-3 h-3" />
+                        Download as PDF
+                      </button>
+                    </div>
                     {/* Submit + export — removed from chat, completion is in Plan tab */}
                   </div>
                 )}
@@ -1199,10 +1184,8 @@ export default function TeacherPlanner() {
           )}
           <div ref={chatEndRef} />
         </div>
-        )}
 
-        {/* Chat input — only shown in chat/detailed mode */}
-        {planViewMode !== 'raw' && (
+        {/* Chat input — always shown */}
         <div className="border-t border-neutral-100 bg-white px-3 pt-2" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
           {limitReached && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-2 flex items-center gap-2">
@@ -1256,7 +1239,6 @@ export default function TeacherPlanner() {
             </motion.button>
           </form>
         </div>
-        )}
       </>
   );
 
