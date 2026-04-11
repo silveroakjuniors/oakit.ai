@@ -612,7 +612,7 @@ async def export_pdf(req: ExportPdfRequest):
         draw_watermark(c)
         y = height - 2 * cm
         c.setFont("Helvetica-Bold", 14)
-        c.drawString(2 * cm, y, f"Settling Day Plan — {start_date.strftime('%d %B %Y')}")
+        c.drawString(2 * cm, y, f"Oakie's Daily Planner — {start_date.strftime('%d %B %Y')}")
         y -= 0.7 * cm
         c.setFont("Helvetica", 11)
         c.drawString(2 * cm, y, f"Teacher: {req.teacher_name}   |   Section: {req.section_label}")
@@ -670,7 +670,7 @@ async def export_pdf(req: ExportPdfRequest):
     y = height - 2 * cm
 
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(2 * cm, y, f"Day Plan — {start_date.strftime('%d %B %Y')}")
+    c.drawString(2 * cm, y, f"Oakie's Daily Planner — {start_date.strftime('%d %B %Y')}")
     y -= 0.7 * cm
     c.setFont("Helvetica", 11)
     c.drawString(2 * cm, y, f"Teacher: {req.teacher_name}   |   Section: {req.section_label}")

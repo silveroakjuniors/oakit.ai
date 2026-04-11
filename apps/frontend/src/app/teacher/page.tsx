@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button, Card, Badge } from '@/components/ui';
+import { Button, Card, Badge } from '@/UIComponents';
 import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
@@ -670,6 +670,15 @@ export default function TeacherPlanner() {
                                 ? '✓ Mark All as Done — Parents Notified'
                                 : `✓ Submit — ${checkedCount} done, ${uncheckedCount} carry forward`}
                             </Button>
+                            <button
+                              onClick={() => exportPdf(today)}
+                              disabled={exporting}
+                              className="flex items-center justify-center gap-1.5 px-3 py-2 border border-neutral-200 rounded-xl text-xs text-neutral-500 hover:bg-neutral-50 transition-colors disabled:opacity-50 shrink-0"
+                              title="Download today's plan as PDF"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              PDF
+                            </button>
                           </div>
                         )}
                       </div>
@@ -967,9 +976,11 @@ export default function TeacherPlanner() {
               Quick View
             </button>
             <button
-              disabled={fetchingDetailedPlan || !!detailedPlanText}
+              disabled={fetchingDetailedPlan}
               onClick={async () => {
+                // If already fetched, just switch view — no API call
                 if (detailedPlanText) { setPlanViewMode('detailed'); return; }
+                // First time: fetch from Oakie once
                 setPlanViewMode('detailed');
                 setFetchingDetailedPlan(true);
                 try {
@@ -981,7 +992,7 @@ export default function TeacherPlanner() {
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-60 ${
                 planViewMode === 'detailed' ? 'bg-white text-primary-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-700'
               }`}
-              title={detailedPlanText ? "Oakie has your plan ready" : "Ask Oakie to plan your day (once per session)"}
+              title={detailedPlanText ? "Oakie's plan is ready — click to view" : "Ask Oakie to plan your day (fetched once, free to toggle)"}
             >
               {fetchingDetailedPlan
                 ? <><span className="w-3 h-3 border border-primary-400 border-t-transparent rounded-full animate-spin" />Oakie is thinking…</>
@@ -1024,6 +1035,15 @@ export default function TeacherPlanner() {
                 ))}
               </div>
             )}
+            {/* Export PDF button */}
+            <button
+              onClick={() => exportPdf(today)}
+              disabled={exporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50 transition-colors disabled:opacity-50"
+            >
+              <FileText className="w-4 h-4" />
+              {exporting ? 'Downloading…' : '↓ Download Today\'s Plan as PDF'}
+            </button>
           </div>
         ) : planViewMode === 'detailed' ? (
           /* Oakie's View — planned once, cached */
@@ -1043,6 +1063,17 @@ export default function TeacherPlanner() {
                 </div>
                 <div className="px-4 py-3">
                   <AiMessageText text={detailedPlanText} />
+                </div>
+                {/* PDF export for Oakie's plan */}
+                <div className="px-4 pb-4 pt-1 border-t border-neutral-50">
+                  <button
+                    onClick={() => exportPdf(today, detailedPlanText)}
+                    disabled={exporting}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50 transition-colors disabled:opacity-50"
+                  >
+                    <FileText className="w-4 h-4" />
+                    {exporting ? 'Downloading…' : "↓ Download Oakie's Plan as PDF"}
+                  </button>
                 </div>
               </div>
             ) : null}
@@ -1353,6 +1384,13 @@ export default function TeacherPlanner() {
             </span>
           )}
           <span className="text-xs text-white/50 hidden sm:block">{dateLabel}</span>
+          <button
+            onClick={() => { clearToken(); router.push('/login'); }}
+            className="hidden lg:flex items-center gap-1 text-xs text-white/50 hover:text-white/80 transition-colors ml-1"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden xl:block">Sign out</span>
+          </button>
         </div>
       </header>
 
