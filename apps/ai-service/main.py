@@ -753,23 +753,48 @@ class HomeworkFormatRequest(BaseModel):
 
 @app.post("/internal/format-homework")
 async def format_homework(req: HomeworkFormatRequest):
-    """Format raw teacher homework text into a clean, parent-friendly message."""
+    """Format raw teacher homework text into a clean, parent-friendly message.
+    Also checks relevance against today's covered topics and adds a note if mismatched.
+    """
     from query_pipeline import _call_llm
-    import asyncio
+    from db import get_pool
+
+    # Fetch today's covered topics for relevance check
+    covered_topics: list[str] = []
+    try:
+        pool = await get_pool()
+        rows = await pool.fetch(
+            """SELECT cc.topic_label, cc.content
+               FROM daily_completions dc
+               JOIN curriculum_chunks cc ON cc.id = ANY(dc.covered_chunk_ids)
+               WHERE dc.section_id = $1
+               ORDER BY dc.completion_date DESC, cc.chunk_index
+               LIMIT 20""",
+            req.section_id,
+        )
+        covered_topics = [r["topic_label"] for r in rows if r["topic_label"]]
+    except Exception:
+        pass  # non-critical — proceed without relevance check
+
+    topics_context = ""
+    if covered_topics:
+        topics_context = f"\nTopics covered today: {', '.join(covered_topics[:8])}"
 
     system = (
         "You are formatting a homework message from a teacher to parents of preschool/primary school children.\n"
         "Output plain text only — no markdown, no bold, no bullet symbols.\n"
         "Keep it warm, clear, and concise. Under 150 words.\n"
         "Start with 'Homework for today:' then list the tasks clearly numbered.\n"
+        "If the homework is relevant to today's topics, add a short line connecting them (e.g. 'This reinforces what we learned about...').\n"
         "End with one short encouraging line for parents."
     )
     prompt = f"""Teacher's raw homework note:
-\"{req.raw_text}\"
+\"{req.raw_text}\"{topics_context}
 
 Rewrite this as a clear, friendly homework message for parents.
 Format each task as a numbered item.
 Keep the original tasks — do not add or remove any.
+If the homework relates to the topics covered today, add one sentence connecting them.
 Under 150 words."""
 
     try:
@@ -780,6 +805,56 @@ Under 150 words."""
         formatted = f"Homework for today:\n{req.raw_text}"
 
     return {"formatted_text": formatted}
+
+
+# --- Child Journey beautifier ---
+
+class ChildJourneyRequest(BaseModel):
+    raw_text: str
+    student_name: str = ""
+    class_level: str = ""
+    entry_type: str = "daily"  # daily, weekly, highlight
+    entry_date: str = ""
+
+@app.post("/internal/beautify-child-journey")
+async def beautify_child_journey(req: ChildJourneyRequest):
+    """
+    Transform a teacher's short raw notes about a child into a warm,
+    parent-friendly narrative. Keeps it personal, positive, and concise.
+    """
+    from query_pipeline import _call_llm
+
+    entry_label = {
+        "daily": "today",
+        "weekly": "this week",
+        "highlight": "a special moment",
+    }.get(req.entry_type, "today")
+
+    system = (
+        f"You are writing a warm, personal update about a child for their parents.\n"
+        f"The child's name is {req.student_name or 'the child'}.\n"
+        f"Write in second person to the parents (e.g. 'Aarav showed...' or 'Your child...').\n"
+        f"Keep it warm, specific, encouraging, and under 100 words.\n"
+        f"Plain text only — no markdown, no bullet points.\n"
+        f"Focus on what the child did, showed, or achieved — not generic praise."
+    )
+
+    prompt = (
+        f"Teacher's notes about {req.student_name or 'the child'} for {entry_label}"
+        f"{' (' + req.entry_date + ')' if req.entry_date else ''}:\n\n"
+        f"\"{req.raw_text}\"\n\n"
+        f"Rewrite this as a warm, personal update for the parents. "
+        f"Keep it specific to what the teacher observed. Under 100 words."
+    )
+
+    try:
+        beautified, _ = await _call_llm(prompt, system)
+        if not beautified:
+            beautified = req.raw_text
+    except Exception:
+        beautified = req.raw_text
+
+    return {"beautified_text": beautified}
 
 
 # --- Activity suggestions ---

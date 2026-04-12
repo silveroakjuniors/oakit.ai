@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Button } from '../primitives/Button';
+import { Button } from '@/UIComponents/primitives/Button';
 
 interface EmptyStateProps {
   icon?: ReactNode;

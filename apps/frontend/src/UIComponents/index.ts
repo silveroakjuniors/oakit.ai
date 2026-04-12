@@ -44,3 +44,8 @@ export { StatCard } from './patterns/StatCard';
 export { Skeleton, SkeletonCard } from './feedback/Skeleton';
 export { Toast } from './feedback/Toast';
 export type { ToastVariant } from './feedback/Toast';
+
+// Teacher-specific components
+export { OakieMessage, OakieMessageText } from './teacher/OakieMessage';
+export { RawPlanModal } from './teacher/RawPlanModal';
+export { TopicsChecklist } from './teacher/TopicsChecklist';

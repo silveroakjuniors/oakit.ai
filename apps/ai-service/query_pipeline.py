@@ -326,6 +326,30 @@ def _build_chunk_context(chunks) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+# Keywords that identify morning routine / circle time topics — always taught first
+_MORNING_ROUTINE_KEYWORDS = [
+    "circle time", "morning meet", "morning meeting", "morning routine",
+    "additional activities", "welcome", "prayer", "assembly", "morning circle",
+    "morning warm", "warm up", "warm-up", "opening circle",
+]
+
+def _is_morning_routine(chunk) -> bool:
+    """Return True if this chunk is a morning routine / circle time topic."""
+    label = (chunk.get('topic_label') or '').lower()
+    content = (chunk.get('content') or '').lower()
+    return any(kw in label or kw in content for kw in _MORNING_ROUTINE_KEYWORDS)
+
+def _sort_chunks_for_day(chunks: list) -> list:
+    """
+    Sort chunks so morning routine topics (Circle Time, Morning Meet,
+    Additional Activities, Prayer, Welcome) always come first,
+    followed by the rest in their original curriculum order.
+    """
+    morning = [c for c in chunks if _is_morning_routine(c)]
+    rest    = [c for c in chunks if not _is_morning_routine(c)]
+    return morning + rest
+
+
 def _build_pending_context(pending_chunks) -> str:
     if not pending_chunks:
         return "None"
@@ -796,13 +820,27 @@ _CLASS_SETTLING_PROFILE = {
 
 
 def _format_rich_plan(chunks, date_label: str, class_full: str, carried_note: str, pending_rows, age_info: dict) -> str:
-    """Minimal plan display — shows exactly what's in the curriculum chunks, no AI embellishment."""
+    """Minimal plan display — shows exactly what's in the curriculum chunks, no AI embellishment.
+    Morning routine (Circle Time / Morning Meet) is always shown first.
+    """
+    # Sort: morning routine first
+    sorted_chunks = _sort_chunks_for_day(list(chunks))
+
     lines = [f"📅 {date_label} — {class_full}"]
     if carried_note:
         lines.append(f"⏳ {carried_note}")
     lines.append("")
 
-    for i, chunk in enumerate(chunks):
+    # If no morning routine chunk exists, prepend a default one
+    has_morning = any(_is_morning_routine(c) for c in sorted_chunks)
+    if not has_morning:
+        lines.append("⭕ Circle Time / Morning Meet")
+        lines.append("  • Welcome children warmly and say a morning prayer together")
+        lines.append("  • Ask each child: \"What are you happy about today?\"")
+        lines.append("  • Pass a talking object — each child gets 20 seconds")
+        lines.append("")
+
+    for i, chunk in enumerate(sorted_chunks):
         topic = chunk["topic_label"] or f"Topic {i + 1}"
         subjects = _parse_subjects(chunk["content"])
         lines.append(f"📚 {topic}")
@@ -810,10 +848,8 @@ def _format_rich_plan(chunks, date_label: str, class_full: str, carried_note: st
             for subj in subjects:
                 lines.append(f"  • {subj['subject']}: {subj['activity']}")
         else:
-            # No structured subjects — show raw content trimmed
             content = (chunk.get("content") or "").strip()
             if content:
-                # Show first 200 chars
                 preview = content[:200] + ("..." if len(content) > 200 else "")
                 lines.append(f"  {preview}")
         if chunk.get("activity_ids"):
@@ -1835,6 +1871,15 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                         carried_note = pending_note
                         chunks = all_chunks
 
+            # Sort chunks: morning routine always first, then curriculum order
+            chunks = _sort_chunks_for_day(list(chunks))
+            chunk_ids    = [str(c["id"]) for c in chunks]
+            activity_ids = [
+                f"{c['id']}:{subj['subject']}"
+                for c in chunks
+                for subj in _parse_subjects(c["content"])
+            ]
+
             curriculum_context = _build_chunk_context(chunks)
             pending_context    = _build_pending_context(pending_rows)
 
@@ -1894,7 +1939,19 @@ Theme: [derive a theme from the topics below]
 🎯 Objective:
 · [3-4 overall objectives for the day based on all subjects]
 
-Then for EACH subject below, create a section like this:
+CRITICAL ORDERING RULE: The FIRST section must ALWAYS be the morning routine:
+⭕ Circle Time / Morning Meet
+Topic: Welcome & Morning Prayer
+Resources: Talking object (soft toy or ball), prayer card
+Objective:
+· Welcome children warmly and start the day with a positive prayer
+· Build community — each child shares one thing they are happy about
+✅ Offline Support:
+· Begin with a welcome song, then a short prayer together
+· Pass the talking object — each child says one happy thought
+· Ask: "What are you looking forward to today?"
+
+Then for EACH remaining subject below, create a section like this:
 [emoji] [Subject Name]
 Topic: [topic name]
 Resources: [suggest relevant resources]
@@ -1903,7 +1960,7 @@ Objective:
 ✅ Offline Support:
 · [2-3 specific classroom activities]
 
-Subjects for today:
+Subjects for today (in this order after morning routine):
 {chr(10).join(subjects_list) if subjects_list else "General curriculum activities"}
 
 {f"Pending from previous days: {', '.join(c['topic_label'] for c in pending_rows)}" if pending_rows else ""}
@@ -1943,15 +2000,18 @@ TODAY'S CURRICULUM:
 
 Write today's plan as an ordered list of activities.
 
-IMPORTANT: Use ONLY the curriculum content provided above. Do NOT invent activities.
-For any topic marked "[Generate...]", create a short 2-3 step plan for that specific topic.
+IMPORTANT ORDERING RULES:
+1. ALWAYS start with the morning routine — Circle Time / Morning Meet / Additional Activities.
+   If not explicitly in the curriculum, add it as the first activity:
+   "⭕ Circle Time / Morning Meet
+   What to do: Welcome children warmly, say a morning prayer together, ask each child to share one thing they are happy about today.
+   Ask children: "What are you looking forward to today?""
+2. After the morning routine, list all other subjects in the order provided.
+3. Use ONLY the curriculum content provided. Do NOT invent activities for non-morning topics.
+4. For any topic marked "[Generate...]", create a short 2-3 step plan for that specific topic.
 
-RULES:
-- List each subject in the order it should be taught
-- If there are pending topics, put them first
-- Format each activity exactly like this:
-
-📌 Circle Time
+FORMAT each activity exactly like this:
+[emoji] [Subject Name]
 What to do: [specific activity from curriculum, 1 sentence]
 Ask children: "[one specific question]"
 

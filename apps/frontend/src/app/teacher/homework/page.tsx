@@ -1,0 +1,480 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+import {
+  ChevronLeft, BookOpen, Paperclip, Send, CheckCircle2,
+  Clock, AlertCircle, HelpCircle, ChevronDown, ChevronUp, X
+} from 'lucide-react';
+import { Button } from '@/UIComponents';
+
+interface Student { id: string; name: string; }
+interface HomeworkRecord { raw_text: string; formatted_text: string; }
+interface NoteItem { id: string; note_text?: string; file_name?: string; file_size?: number; expires_at: string; }
+
+type HwStatus = 'completed' | 'partial' | 'not_submitted';
+
+export default function HomeworkNotesPage() {
+  const router = useRouter();
+  const token = getToken() || '';
+
+  const [sectionId, setSectionId] = useState('');
+  const [todayCompleted, setTodayCompleted] = useState(false);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [existingHomework, setExistingHomework] = useState<HomeworkRecord | null>(null);
+  const [homeworkText, setHomeworkText] = useState('');
+  const [savingHomework, setSavingHomework] = useState(false);
+  const [homeworkMsg, setHomeworkMsg] = useState('');
+  const [hwSubmissions, setHwSubmissions] = useState<Record<string, HwStatus>>({});
+  const [savingHwSubmissions, setSavingHwSubmissions] = useState(false);
+  const [hwSubmissionsMsg, setHwSubmissionsMsg] = useState('');
+  const [noteText, setNoteText] = useState('');
+  const [noteFile, setNoteFile] = useState<File | null>(null);
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteMsg, setNoteMsg] = useState('');
+  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
+  const [activeSection, setActiveSection] = useState<'homework' | 'tracking' | 'notes'>('homework');
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return; }
+    init();
+  }, []);
+
+  async function init() {
+    setLoading(true);
+    try {
+      const ctx = await apiGet<any>('/api/v1/teacher/context', token);
+      setTodayCompleted(ctx.today_completed || false);
+
+      // Get section_id — from context (now included) or fall back to sections list
+      let sid = ctx.section_id || '';
+      if (!sid) {
+        const secs = await apiGet<{ section_id: string }[]>('/api/v1/teacher/sections', token).catch(() => []);
+        sid = secs?.[0]?.section_id || '';
+      }
+      setSectionId(sid);
+
+      const [hw, ns] = await Promise.all([
+        apiGet<HomeworkRecord>('/api/v1/teacher/notes/homework', token).catch(() => null),
+        apiGet<NoteItem[]>('/api/v1/teacher/notes', token).catch(() => []),
+      ]);
+      if (hw) { setExistingHomework(hw); setHomeworkText(hw.raw_text || ''); }
+      setNotes(ns || []);
+
+      if (sid) {
+        const [studs, subs] = await Promise.all([
+          apiGet<Student[]>(`/api/v1/teacher/sections/${sid}/students`, token).catch(() => []),
+          apiGet<{ student_id: string; status: string }[]>(
+            `/api/v1/teacher/notes/homework/submissions?date=${new Date().toISOString().split('T')[0]}`, token
+          ).catch(() => []),
+        ]);
+        setStudents(studs || []);
+        const map: Record<string, HwStatus> = {};
+        (subs || []).forEach(s => { map[s.student_id] = s.status as HwStatus; });
+        setHwSubmissions(map);
+      }
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }
+
+  async function sendHomework() {
+    if (!homeworkText.trim()) return;
+    setSavingHomework(true); setHomeworkMsg('');
+    try {
+      const res = await apiPost<HomeworkRecord>('/api/v1/teacher/notes/homework', {
+        raw_text: homeworkText, ...(sectionId ? { section_id: sectionId } : {}),
+      }, token);
+      setExistingHomework(res);
+      setHomeworkMsg('✓ Homework sent to parents');
+    } catch (e: unknown) { setHomeworkMsg(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSavingHomework(false); }
+  }
+
+  async function saveSubmissions() {
+    setSavingHwSubmissions(true); setHwSubmissionsMsg('');
+    try {
+      const submissions = Object.entries(hwSubmissions).map(([student_id, status]) => ({ student_id, status }));
+      await apiPost('/api/v1/teacher/notes/homework/submissions', {
+        submissions, ...(sectionId ? { section_id: sectionId } : {}),
+      }, token);
+      setHwSubmissionsMsg('✓ Homework status saved');
+    } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSavingHwSubmissions(false); }
+  }
+
+  async function sendNote() {
+    setSavingNote(true); setNoteMsg('');
+    try {
+      if (noteFile) {
+        const fd = new FormData();
+        fd.append('file', noteFile);
+        if (sectionId) fd.append('section_id', sectionId);
+        const res = await fetch(`${API_BASE}/api/v1/teacher/notes/upload`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+        });
+        if (!res.ok) throw new Error((await res.json()).error);
+      } else {
+        await apiPost('/api/v1/teacher/notes', { note_text: noteText, ...(sectionId ? { section_id: sectionId } : {}) }, token);
+      }
+      setNoteMsg(`✓ Note sent to all parents${students.length > 0 ? ` (${students.length} students)` : ''} · expires in 14 days`);
+      setNoteText(''); setNoteFile(null);
+      const ns = await apiGet<NoteItem[]>('/api/v1/teacher/notes', token).catch(() => []);
+      setNotes(ns || []);
+    } catch (e: unknown) { setNoteMsg(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSavingNote(false); }
+  }
+
+  const tabs = [
+    { id: 'homework' as const, label: '📚 Homework', desc: 'Send & track' },
+    { id: 'tracking' as const, label: '✅ Tracking', desc: 'Student status' },
+    { id: 'notes' as const, label: '📎 Notes', desc: 'Files & messages' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-neutral-50 pb-20">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
+        <button onClick={() => router.back()} className="text-neutral-400 hover:text-neutral-600 transition-colors">
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <div className="flex-1">
+          <h1 className="text-base font-semibold text-neutral-900">Homework & Notes</h1>
+          <p className="text-xs text-neutral-500">Send updates directly to parents</p>
+        </div>
+        <button
+          onClick={() => setShowHelp(h => !h)}
+          className={`p-2 rounded-xl transition-colors ${showHelp ? 'bg-primary-50 text-primary-600' : 'text-neutral-400 hover:text-neutral-600'}`}
+        >
+          <HelpCircle className="w-5 h-5" />
+        </button>
+      </header>
+
+      <div className="p-4 flex flex-col gap-4 max-w-lg mx-auto">
+
+        {/* Help panel */}
+        {showHelp && (
+          <div className="bg-primary-50 border border-primary-100 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-primary-800">How to use Homework & Notes</p>
+              <button onClick={() => setShowHelp(false)} className="text-primary-400 hover:text-primary-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {[
+                { icon: '📚', title: 'Send Homework', desc: 'Type today\'s homework in plain language. Oakie formats it beautifully before sending to all parents in your class.' },
+                { icon: '✅', title: 'Track Completion', desc: 'After sending homework, mark each student as Done, Partial, or Not Submitted. Parents can see their child\'s status in the parent portal.' },
+                { icon: '📎', title: 'Class Notes', desc: 'Send a text note or attach a PDF/Word file. Notes auto-delete after 14 days — remind parents to download attachments.' },
+                { icon: '⚠️', title: 'Best practice', desc: 'Mark today\'s activities as completed first, then send homework. This keeps the parent feed accurate and in order.' },
+              ].map((item, i) => (
+                <div key={i} className="flex gap-3">
+                  <span className="text-xl shrink-0">{item.icon}</span>
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-800">{item.title}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Activities not done warning */}
+        {!todayCompleted && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-amber-800">Today's activities not yet marked done</p>
+              <p className="text-xs text-amber-700 mt-0.5">You can still send homework and notes, but marking activities first keeps the parent feed accurate.</p>
+            </div>
+            <button onClick={() => router.back()} className="text-xs text-amber-700 font-medium shrink-0 hover:underline">
+              Go back
+            </button>
+          </div>
+        )}
+
+        {/* Tab switcher */}
+        <div className="flex gap-1 bg-neutral-100 rounded-2xl p-1">
+          {tabs.map(tab => (
+            <button key={tab.id} onClick={() => setActiveSection(tab.id)}
+              className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${
+                activeSection === tab.id
+                  ? 'bg-white text-neutral-900 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-700'
+              }`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── HOMEWORK TAB ── */}
+        {activeSection === 'homework' && (
+          <div className="flex flex-col gap-3">
+            {/* Already sent */}
+            {existingHomework?.formatted_text && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <p className="text-xs font-semibold text-emerald-700">
+                    Sent to all parents today
+                    {students.length > 0 && <span className="text-emerald-500 font-normal"> · {students.length} students</span>}
+                  </p>
+                </div>
+                <p className="text-sm text-emerald-800 whitespace-pre-wrap leading-relaxed">{existingHomework.formatted_text}</p>
+                <p className="text-xs text-emerald-500 mt-2">You can update this by typing new homework below and sending again.</p>
+              </div>
+            )}
+
+            {/* Input */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-4 flex flex-col gap-3">
+              <div>
+                <p className="text-sm font-semibold text-neutral-800 mb-1">Today's Homework</p>
+                <p className="text-xs text-neutral-400 mb-2">Write in plain language — Oakie will format it nicely for parents.</p>
+              </div>
+
+              {/* Examples */}
+              <div className="bg-neutral-50 border border-neutral-100 rounded-xl p-3">
+                <p className="text-xs font-medium text-neutral-500 mb-2">💡 Examples</p>
+                <div className="flex flex-col gap-1.5">
+                  {[
+                    'Practice writing letters A to E in the notebook',
+                    'Count objects at home up to 10 and write them down',
+                    'Bring a leaf or flower from home tomorrow',
+                    'Read the story on page 12 with parents',
+                  ].map((ex, i) => (
+                    <button key={i} onClick={() => setHomeworkText(ex)}
+                      className="text-left text-xs text-neutral-600 px-2.5 py-2 bg-white rounded-lg border border-neutral-100 hover:border-primary-200 hover:text-primary-700 transition-colors">
+                      "{ex}"
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <textarea
+                value={homeworkText}
+                onChange={e => setHomeworkText(e.target.value)}
+                rows={4}
+                placeholder="e.g. Practice writing A-E, count objects at home up to 10, bring a leaf tomorrow"
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white"
+              />
+
+              {homeworkMsg && (
+                <p className={`text-xs font-medium ${homeworkMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {homeworkMsg}
+                </p>
+              )}
+
+              <Button
+                onClick={sendHomework}
+                loading={savingHomework}
+                disabled={!homeworkText.trim()}
+                fullWidth
+              >
+                <Send className="w-4 h-4 mr-1.5" />
+                {existingHomework ? 'Update & Resend to Parents' : 'Send Homework to Parents'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── TRACKING TAB ── */}
+        {activeSection === 'tracking' && (
+          <div className="flex flex-col gap-3">
+            {!existingHomework ? (
+              <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+                <BookOpen className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
+                <p className="text-sm font-semibold text-neutral-700 mb-1">No homework sent yet</p>
+                <p className="text-xs text-neutral-400 mb-4">Send today's homework first, then come back to track each student's completion.</p>
+                <button onClick={() => setActiveSection('homework')}
+                  className="text-xs text-primary-600 font-semibold hover:underline">
+                  → Go to Homework tab
+                </button>
+              </div>
+            ) : loading ? (
+              <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+                <div className="w-6 h-6 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-xs text-neutral-400">Loading students…</p>
+              </div>
+            ) : students.length === 0 ? (
+              <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+                <BookOpen className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
+                <p className="text-sm font-semibold text-neutral-700 mb-1">Students not loaded</p>
+                <p className="text-xs text-neutral-400 mb-4">This can happen if your section isn't set up yet. Try refreshing.</p>
+                <button onClick={init}
+                  className="text-xs text-primary-600 font-semibold hover:underline">
+                  ↻ Retry
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-neutral-100">
+                  <p className="text-sm font-semibold text-neutral-800">Homework Completion Tracking</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Homework sent to all {students.length} students · mark each student's status below
+                  </p>
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center gap-4 px-4 py-2.5 bg-neutral-50 border-b border-neutral-100">
+                  <span className="flex items-center gap-1.5 text-xs text-neutral-500">
+                    <span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> Done
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-neutral-500">
+                    <span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Partial
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-neutral-500">
+                    <span className="w-3 h-3 rounded bg-red-400 inline-block" /> Not submitted
+                  </span>
+                </div>
+
+                {students.map((student, i) => {
+                  const status = hwSubmissions[student.id] || 'not_submitted';
+                  return (
+                    <div key={student.id}
+                      className={`flex items-center gap-3 px-4 py-3 border-b border-neutral-50 last:border-0 ${
+                        status === 'completed' ? 'bg-emerald-50/40' :
+                        status === 'partial' ? 'bg-amber-50/40' : 'bg-white'
+                      }`}>
+                      <div className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
+                        <span className="text-xs font-bold text-neutral-500">{student.name[0]}</span>
+                      </div>
+                      <span className="text-sm text-neutral-800 flex-1 truncate">{student.name}</span>
+                      <div className="flex gap-1 shrink-0">
+                        {(['completed', 'partial', 'not_submitted'] as const).map(s => (
+                          <button key={s}
+                            onClick={() => setHwSubmissions(prev => ({ ...prev, [student.id]: s }))}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                              status === s
+                                ? s === 'completed' ? 'bg-emerald-500 text-white'
+                                  : s === 'partial' ? 'bg-amber-500 text-white'
+                                  : 'bg-red-400 text-white'
+                                : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'
+                            }`}>
+                            {s === 'completed' ? '✓' : s === 'partial' ? '½' : '✗'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
+                  {hwSubmissionsMsg && (
+                    <p className={`text-xs font-medium mb-2 ${hwSubmissionsMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {hwSubmissionsMsg}
+                    </p>
+                  )}
+                  <Button
+                    onClick={saveSubmissions}
+                    loading={savingHwSubmissions}
+                    disabled={Object.keys(hwSubmissions).length === 0}
+                    fullWidth
+                  >
+                    Save Homework Status
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── NOTES TAB ── */}
+        {activeSection === 'notes' && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-white border border-neutral-200 rounded-2xl p-4 flex flex-col gap-3">
+              <div>
+                <p className="text-sm font-semibold text-neutral-800 mb-1">Class Notes</p>
+                <p className="text-xs text-neutral-400">Send a message or attach a file to all parents in your class.</p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-700">
+                  Notes auto-delete after <strong>14 days</strong>. Remind parents to download any attachments before expiry.
+                </p>
+              </div>
+
+              <textarea
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                rows={3}
+                placeholder="e.g. Tomorrow is picture day — please wear school uniform. Bring ₹50 for the activity kit."
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white"
+              />
+
+              {/* File attach */}
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 px-3 py-2.5 border border-neutral-200 rounded-xl bg-neutral-50 text-xs text-neutral-600 cursor-pointer hover:bg-neutral-100 transition-colors flex-1">
+                  <Paperclip className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="truncate">{noteFile ? noteFile.name : 'Attach PDF or Word file (optional)'}</span>
+                  <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
+                    onChange={e => setNoteFile(e.target.files?.[0] || null)} />
+                </label>
+                {noteFile && (
+                  <button onClick={() => setNoteFile(null)}
+                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-400 hover:bg-red-100 transition-colors shrink-0">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {noteMsg && (
+                <p className={`text-xs font-medium ${noteMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {noteMsg}
+                </p>
+              )}
+
+              <Button
+                onClick={sendNote}
+                loading={savingNote}
+                disabled={!noteText.trim() && !noteFile}
+                fullWidth
+              >
+                <Send className="w-4 h-4 mr-1.5" />
+                Send Note to Parents
+              </Button>
+            </div>
+
+            {/* Sent notes */}
+            {notes.length > 0 && (
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-neutral-100">
+                  <p className="text-sm font-semibold text-neutral-800">Sent Notes</p>
+                </div>
+                {notes.map(n => {
+                  const expiresIn = Math.ceil((new Date(n.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <div key={n.id} className="flex items-start gap-3 px-4 py-3 border-b border-neutral-50 last:border-0">
+                      <div className="w-8 h-8 rounded-xl bg-neutral-100 flex items-center justify-center shrink-0">
+                        {n.file_name ? <Paperclip className="w-3.5 h-3.5 text-neutral-400" /> : <span className="text-sm">📝</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-neutral-700 truncate">
+                          {n.file_name || (n.note_text?.slice(0, 60) + (n.note_text && n.note_text.length > 60 ? '…' : ''))}
+                        </p>
+                        <p className={`text-xs mt-0.5 ${expiresIn <= 3 ? 'text-red-500 font-medium' : 'text-neutral-400'}`}>
+                          {expiresIn <= 0 ? 'Expires today — parents should download now' : `Expires in ${expiresIn} day${expiresIn !== 1 ? 's' : ''}`}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {notes.length === 0 && (
+              <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+                <Paperclip className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
+                <p className="text-sm text-neutral-400">No notes sent yet today</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button, Card, Badge } from '@/UIComponents';
+import { OakieMessageText } from '@/UIComponents/teacher/OakieMessage';
+import { RawPlanModal } from '@/UIComponents/teacher/RawPlanModal';
+import { TopicsChecklist } from '@/UIComponents/teacher/TopicsChecklist';
 import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
@@ -45,7 +48,13 @@ interface SubjectCheckbox {
   onToggle: () => void;
 }
 
+// AiMessageText is the local version that supports inline subject checkboxes.
+// For simple rendering without checkboxes, OakieMessageText from UIComponents is used.
 function AiMessageText({ text, subjectCheckboxes }: { text: string; subjectCheckboxes?: SubjectCheckbox[] }) {
+  // If no checkboxes needed, delegate to the UIComponents version
+  if (!subjectCheckboxes || subjectCheckboxes.length === 0) {
+    return <OakieMessageText text={text} />;
+  }
   const lines = text.split('\n');
   return (
     <div className="flex flex-col gap-1 text-sm leading-relaxed">
@@ -353,7 +362,6 @@ export default function TeacherPlanner() {
     setActiveTab('chat');
     setMessages(m => [...m, { role: 'user', text: question }]);
     setAiLoading(true);
-    // No history — every question is independent
     try {
       const res = await apiPost<any>('/api/v1/ai/query', { text: question }, token);
       setMessages(m => [...m, {
@@ -365,6 +373,32 @@ export default function TeacherPlanner() {
         settling_total: res.settling_total, already_completed: res.already_completed,
         question_limit_reached: res.question_limit_reached,
       }]);
+      // Sync completion to DB if Oakie confirmed it
+      if (res.already_completed || (res.covered_chunk_ids && res.covered_chunk_ids.length > 0 && plan?.chunks)) {
+        const allChunkIds = plan?.chunks?.map((c: any) => c.id) || [];
+        const coveredIds: string[] = res.covered_chunk_ids || [];
+        const allCovered = allChunkIds.length > 0 && allChunkIds.every((id: string) => coveredIds.includes(id));
+        if ((allCovered || res.already_completed) && !res.already_completed && allChunkIds.length > 0) {
+          try {
+            await apiPost('/api/v1/teacher/completion', {
+              covered_chunk_ids: allChunkIds,
+              completion_date: res.plan_date || today,
+              ...(sectionId ? { section_id: sectionId } : {}),
+            }, token);
+            try { await apiPost('/api/v1/ai/reset-limit', {}, token); } catch { /* ignore */ }
+          } catch { /* ignore */ }
+          const allSubjectKeys: string[] = [];
+          (plan?.chunks || []).forEach((chunk: any) => {
+            const subjects = extractSubjects([chunk]);
+            if (subjects.length > 0) subjects.forEach(s => allSubjectKeys.push(`${chunk.id}:${s}`));
+            else allSubjectKeys.push(chunk.id);
+          });
+          setSelectedChunks(allSubjectKeys);
+          setTodayCompleted(true); todayCompletedRef.current = true;
+          try { const ctx = await apiGet<any>('/api/v1/teacher/context', token); setTomorrowPlan(ctx.tomorrow_plan || null); } catch { /* ignore */ }
+          await loadPending();
+        }
+      }
     } catch (e: unknown) {
       setMessages(m => [...m, { role: 'assistant', text: e instanceof Error ? e.message : 'Sorry, try again.' }]);
     } finally { setAiLoading(false); }
@@ -403,6 +437,56 @@ export default function TeacherPlanner() {
         activity_ids: res.activity_ids, completion_date: res.plan_date || today,
         question_limit_reached: res.question_limit_reached,
       }]);
+      // If Oakie confirmed completion, sync the left panel AND persist to DB
+      if (res.already_completed || (res.covered_chunk_ids && res.covered_chunk_ids.length > 0 && plan?.chunks)) {
+        const allChunkIds = plan?.chunks?.map((c: any) => c.id) || [];
+        const coveredIds: string[] = res.covered_chunk_ids || [];
+        const allCovered = allChunkIds.length > 0 && allChunkIds.every((id: string) => coveredIds.includes(id));
+
+        if (allCovered || res.already_completed) {
+          // All done — persist to DB if not already saved
+          if (!res.already_completed && allChunkIds.length > 0) {
+            try {
+              await apiPost('/api/v1/teacher/completion', {
+                covered_chunk_ids: allChunkIds,
+                completion_date: res.plan_date || today,
+                ...(sectionId ? { section_id: sectionId } : {}),
+              }, token);
+              try { await apiPost('/api/v1/ai/reset-limit', {}, token); } catch { /* ignore */ }
+            } catch { /* ignore — may already be saved */ }
+          }
+          // Tick everything in left panel
+          const allSubjectKeys: string[] = [];
+          (plan?.chunks || []).forEach((chunk: any) => {
+            const subjects = extractSubjects([chunk]);
+            if (subjects.length > 0) subjects.forEach(s => allSubjectKeys.push(`${chunk.id}:${s}`));
+            else allSubjectKeys.push(chunk.id);
+          });
+          setSelectedChunks(allSubjectKeys);
+          setTodayCompleted(true); todayCompletedRef.current = true;
+          try { const ctx = await apiGet<any>('/api/v1/teacher/context', token); setTomorrowPlan(ctx.tomorrow_plan || null); } catch { /* ignore */ }
+        } else if (coveredIds.length > 0) {
+          // Partial — persist covered ones to DB
+          try {
+            await apiPost('/api/v1/teacher/completion', {
+              covered_chunk_ids: coveredIds,
+              completion_date: res.plan_date || today,
+              ...(sectionId ? { section_id: sectionId } : {}),
+            }, token);
+          } catch { /* ignore */ }
+          // Tick covered ones in left panel
+          const coveredSubjectKeys: string[] = [];
+          (plan?.chunks || []).forEach((chunk: any) => {
+            if (coveredIds.includes(chunk.id)) {
+              const subjects = extractSubjects([chunk]);
+              if (subjects.length > 0) subjects.forEach(s => coveredSubjectKeys.push(`${chunk.id}:${s}`));
+              else coveredSubjectKeys.push(chunk.id);
+            }
+          });
+          setSelectedChunks(prev => [...new Set([...prev, ...coveredSubjectKeys])]);
+        }
+        await loadPending();
+      }
     } catch (e: unknown) {
       setMessages(m => [...m, { role: 'assistant', text: e instanceof Error ? e.message : 'Sorry, try again.' }]);
     } finally { setAiLoading(false); }
@@ -444,8 +528,36 @@ export default function TeacherPlanner() {
       try { await apiPost('/api/v1/ai/reset-limit', {}, token); } catch { /* ignore */ }
       await loadPending();
       if (pending === 0) {
+        // Mark all topics as done in the left panel too
         setTodayCompleted(true); todayCompletedRef.current = true;
+        // Select all chunks in the left panel to show them as done
+        if (plan?.chunks) {
+          const allSubjectKeys: string[] = [];
+          plan.chunks.forEach((chunk: any) => {
+            const subjects = extractSubjects([chunk]);
+            if (subjects.length > 0) {
+              subjects.forEach(s => allSubjectKeys.push(`${chunk.id}:${s}`));
+            } else {
+              allSubjectKeys.push(chunk.id);
+            }
+          });
+          setSelectedChunks(allSubjectKeys);
+        }
         try { const ctx = await apiGet<any>('/api/v1/teacher/context', token); setTomorrowPlan(ctx.tomorrow_plan || null); } catch { /* ignore */ }
+      } else if (coverageIds.length > 0 && plan?.chunks) {
+        // Partial completion — tick the covered ones in the left panel
+        const coveredSubjectKeys: string[] = [];
+        plan.chunks.forEach((chunk: any) => {
+          if (coverageIds.includes(chunk.id)) {
+            const subjects = extractSubjects([chunk]);
+            if (subjects.length > 0) {
+              subjects.forEach(s => coveredSubjectKeys.push(`${chunk.id}:${s}`));
+            } else {
+              coveredSubjectKeys.push(chunk.id);
+            }
+          }
+        });
+        setSelectedChunks(prev => [...new Set([...prev, ...coveredSubjectKeys])]);
       }
     } catch (err: unknown) {
       setInlineMsg(prev => ({ ...prev, [key]: err instanceof Error ? err.message : 'Failed. Try again.' }));
@@ -490,7 +602,21 @@ export default function TeacherPlanner() {
           <>
             <div className="bg-green-50 border border-green-200 rounded-xl p-4">
               <p className="text-sm font-semibold text-green-800 mb-1">✅ Today's plan is done!</p>
-              <p className="text-xs text-green-700">Great work. Parents have been notified.</p>
+              <p className="text-xs text-green-700 mb-3">Great work. Parents have been notified.</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => router.push('/teacher/homework')}
+                  className="flex-1 py-2 text-xs bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                >
+                  📝 Send Homework & Notes
+                </button>
+                <button
+                  onClick={() => router.push('/teacher/journey')}
+                  className="flex-1 py-2 text-xs border border-green-300 text-green-700 rounded-lg font-medium hover:bg-green-100 transition-colors"
+                >
+                  📖 Child Journey
+                </button>
+              </div>
             </div>
             {tomorrowPlan && (
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
@@ -537,7 +663,7 @@ export default function TeacherPlanner() {
               </div>
             )}
 
-            {/* Today's Topics — collapsible panel like Homework & Notes */}
+            {/* Today's Topics — UIComponents TopicsChecklist */}
             {(() => {
               const activities: { chunkId: string; label: string; subjectKey: string }[] = [];
               plan.chunks.forEach((chunk: any) => {
@@ -549,360 +675,47 @@ export default function TeacherPlanner() {
                 }
               });
               const allKeys = activities.map(a => a.subjectKey);
-              const checkedCount = allKeys.filter(k => selectedChunks.includes(k)).length;
-              const uncheckedCount = allKeys.length - checkedCount;
-              const allChecked = allKeys.length > 0 && checkedCount === allKeys.length;
+              const allChecked = allKeys.length > 0 && allKeys.every(k => selectedChunks.includes(k));
 
-              const submitCompletion = () => {
-                const coveredChunkIds = [...new Set(
-                  allKeys.filter(k => selectedChunks.includes(k)).map(k => k.split(':')[0])
-                )];
+              const handleSubmit = () => {
+                const coveredChunkIds = [...new Set(allKeys.filter(k => selectedChunks.includes(k)).map(k => k.split(':')[0]))];
+                const checkedCount = coveredChunkIds.length;
+                const uncheckedCount = allKeys.length - checkedCount;
                 setSubmittingCompletion(true);
-                apiPost('/api/v1/teacher/completion', {
-                  covered_chunk_ids: coveredChunkIds,
-                  ...(sectionId ? { section_id: sectionId } : {}),
-                }, token).then(() => {
-                  setCompletionMsg(allChecked ? '✅ All done! Parents notified.' : `✅ ${checkedCount} done. ${uncheckedCount} topic${uncheckedCount > 1 ? 's' : ''} carried forward to tomorrow.`);
-                  setSelectedChunks([]);
-                  if (allChecked) {
-                    setTodayCompleted(true); todayCompletedRef.current = true;
-                    apiPost('/api/v1/ai/reset-limit', {}, token).catch(() => {});
-                    apiGet<any>('/api/v1/teacher/context', token).then(ctx => setTomorrowPlan(ctx.tomorrow_plan || null)).catch(() => {});
-                  }
-                  loadPending();
-                }).catch((e: unknown) => {
-                  setCompletionMsg(e instanceof Error ? e.message : 'Failed');
-                }).finally(() => setSubmittingCompletion(false));
+                apiPost('/api/v1/teacher/completion', { covered_chunk_ids: coveredChunkIds, ...(sectionId ? { section_id: sectionId } : {}) }, token)
+                  .then(() => {
+                    setCompletionMsg(allChecked ? '✅ All done! Parents notified.' : `✅ ${checkedCount} done. ${uncheckedCount} topic${uncheckedCount > 1 ? 's' : ''} carried forward.`);
+                    setSelectedChunks([]);
+                    if (allChecked) {
+                      setTodayCompleted(true); todayCompletedRef.current = true;
+                      apiPost('/api/v1/ai/reset-limit', {}, token).catch(() => {});
+                      apiGet<any>('/api/v1/teacher/context', token).then(ctx => setTomorrowPlan(ctx.tomorrow_plan || null)).catch(() => {});
+                    }
+                    loadPending();
+                  })
+                  .catch((e: unknown) => setCompletionMsg(e instanceof Error ? e.message : 'Failed'))
+                  .finally(() => setSubmittingCompletion(false));
               };
 
               return (
-                <div className="border border-neutral-200 rounded-2xl overflow-hidden">
-                  {/* Collapsible header — click to expand/collapse */}
-                  <button
-                    onClick={() => setShowTopicsPanel(p => !p)}
-                    className="w-full flex items-center justify-between px-4 py-3 bg-white text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-primary-500" />
-                      <span>Today's Topics</span>
-                      {checkedCount > 0 && (
-                        <span className="text-xs font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          {checkedCount}/{activities.length} done
-                        </span>
-                      )}
-                    </div>
-                    <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform ${showTopicsPanel ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {showTopicsPanel && (
-                    <>
-                      {/* Mark All row */}
-                      <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-50 border-t border-neutral-100 border-b border-neutral-100">
-                        <span className="text-xs text-neutral-500">{activities.length} topic{activities.length !== 1 ? 's' : ''} today</span>
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <span className="text-xs text-neutral-500 font-medium">Mark all</span>
-                          <div
-                            onClick={() => allChecked ? setSelectedChunks([]) : setSelectedChunks(allKeys)}
-                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${
-                              allChecked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
-                            }`}
-                          >
-                            {allChecked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                          </div>
-                        </label>
-                      </div>
-
-                      {/* Individual topic rows */}
-                      {activities.map((act) => {
-                        const checked = selectedChunks.includes(act.subjectKey);
-                        return (
-                          <div key={act.subjectKey}
-                            className={`flex items-center gap-3 px-4 py-3 border-b border-neutral-50 last:border-0 transition-colors ${
-                              checked ? 'bg-emerald-50/60' : 'bg-white hover:bg-neutral-50'
-                            }`}>
-                            <div
-                              onClick={() => toggleChunk(act.subjectKey)}
-                              className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
-                                checked ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'
-                              }`}
-                            >
-                              {checked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                            </div>
-                            <span
-                              onClick={() => toggleChunk(act.subjectKey)}
-                              className={`text-sm flex-1 cursor-pointer transition-all ${checked ? 'text-emerald-700 line-through opacity-60' : 'text-neutral-800'}`}
-                            >
-                              {act.label}
-                            </span>
-                            {!checked && (
-                              <button
-                                type="button"
-                                onClick={() => { setActiveTab('chat'); askSuggested(`How do I conduct ${act.label} today?`); }}
-                                className="text-xs text-primary-500 hover:text-primary-700 px-2 py-1 rounded-lg hover:bg-primary-50 transition-colors shrink-0"
-                              >
-                                Ask
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-
-                      {/* Footer */}
-                      <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
-                        {checkedCount === 0 ? (
-                          <p className="text-xs text-neutral-400 text-center">Tick topics as you complete them today</p>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            {uncheckedCount > 0 && (
-                              <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                                <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                                <p className="text-xs text-amber-700">
-                                  <strong>{uncheckedCount} topic{uncheckedCount > 1 ? 's' : ''}</strong> not ticked will move to <strong>tomorrow's plan</strong>.
-                                </p>
-                              </div>
-                            )}
-                            {completionMsg && (
-                              <p className={`text-xs text-center font-medium ${completionMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-500'}`}>
-                                {completionMsg}
-                              </p>
-                            )}
-                            <Button
-                              size="sm"
-                              onClick={submitCompletion}
-                              loading={submittingCompletion}
-                              className={`w-full ${allChecked ? 'bg-emerald-600 hover:bg-emerald-700 border-0 text-white' : ''}`}
-                            >
-                              {allChecked
-                                ? '✓ Mark All as Done — Parents Notified'
-                                : `✓ Submit — ${checkedCount} done, ${uncheckedCount} carry forward`}
-                            </Button>
-                            <button
-                              onClick={() => exportPdf(today)}
-                              disabled={exporting}
-                              className="flex items-center justify-center gap-1.5 px-3 py-2 border border-neutral-200 rounded-xl text-xs text-neutral-500 hover:bg-neutral-50 transition-colors disabled:opacity-50 shrink-0"
-                              title="Download today's plan as PDF"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              PDF
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <TopicsChecklist
+                  activities={activities}
+                  selectedChunks={selectedChunks}
+                  onToggle={toggleChunk}
+                  onSelectAll={() => allChecked ? setSelectedChunks([]) : setSelectedChunks(allKeys)}
+                  onSubmit={handleSubmit}
+                  onAsk={label => { setActiveTab('chat'); askSuggested(`How do I conduct ${label} today?`); }}
+                  onExportPdf={() => exportPdf(today)}
+                  submitting={submittingCompletion}
+                  exporting={exporting}
+                  completionMsg={completionMsg}
+                  open={showTopicsPanel}
+                  onToggleOpen={() => setShowTopicsPanel(p => !p)}
+                  chunkLabelOverrides={plan.chunk_label_overrides}
+                  completed={todayCompleted}
+                />
               );
             })()}
-
-            {/* Supplementary Activities */}
-            {plan.supplementary_activities && plan.supplementary_activities.length > 0 && (
-              <div className="mt-1">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">🎵 Today's Activities</h3>
-                <div className="flex flex-col gap-1.5">
-                  {plan.supplementary_activities.map((sa) => (
-                    <div key={sa.plan_id} className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                      <div className="min-w-0">
-                        <p className="text-xs text-amber-700 font-medium">{sa.pool_name}</p>
-                        <p className="text-sm text-gray-800 truncate">{sa.activity_title}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Homework & Notes panel */}
-            <div className="border border-gray-200 rounded-2xl overflow-hidden mt-1">
-              <button onClick={async () => {
-                const opening = !showHomeworkPanel;
-                setShowHomeworkPanel(opening);
-                setShowCompletionNotice(true);
-                if (opening && students.length === 0 && sectionId) {
-                  await loadStudents();
-                  await loadHwSubmissions();
-                }
-              }}
-                className="w-full flex items-center justify-between px-4 py-3 bg-white text-sm font-semibold text-gray-700 active:bg-gray-50">
-                <span>📝 Homework & Notes for Parents</span>
-                <span className="text-gray-400 text-xs">{showHomeworkPanel ? '▲' : '▼'}</span>
-              </button>
-              {showHomeworkPanel && (
-                <div className="border-t border-gray-100 px-4 py-4 flex flex-col gap-4 bg-gray-50/50">
-
-                  {/* Completion notice — shown if today's activities not yet marked done */}
-                  {!todayCompleted && plan?.chunks?.length && showCompletionNotice && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                      <p className="text-xs font-semibold text-amber-800 mb-1">⚠ Activities not yet marked as done</p>
-                      <p className="text-xs text-amber-700 mb-3">Please mark today's activities as completed before sending homework or notes to parents. Partial completion is also fine.</p>
-                      <div className="flex gap-2">
-                        <button onClick={() => setShowCompletionNotice(false)}
-                          className="flex-1 py-2 text-xs border border-amber-300 rounded-lg text-amber-700 hover:bg-amber-100">
-                          I'll complete later
-                        </button>
-                        <button onClick={() => { setShowHomeworkPanel(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                          className="flex-1 py-2 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium">
-                          Mark activities first
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {/* Homework */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-700 mb-1.5">📚 Today's Homework</p>
-                    <p className="text-xs text-gray-400 mb-2">Type the homework — Oakie will format it nicely for parents.</p>
-                    {existingHomework?.formatted_text && (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2">
-                        <p className="text-xs font-medium text-emerald-700 mb-1">✓ Sent to parents:</p>
-                        <p className="text-xs text-emerald-600 whitespace-pre-wrap">{existingHomework.formatted_text}</p>
-                      </div>
-                    )}
-                    <textarea
-                      value={homeworkText}
-                      onChange={e => setHomeworkText(e.target.value)}
-                      rows={3}
-                      placeholder="e.g. Practice writing A-E, count objects at home up to 10, bring a leaf tomorrow"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/40 resize-none bg-white"
-                    />
-                    {homeworkMsg && <p className={`text-xs mt-1 ${homeworkMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
-                    <Button size="sm" className="w-full mt-2" loading={savingHomework} disabled={!homeworkText.trim()}
-                      onClick={async () => {
-                        setSavingHomework(true); setHomeworkMsg('');
-                        try {
-                          const res = await apiPost<any>('/api/v1/teacher/notes/homework', {
-                            raw_text: homeworkText, ...(sectionId ? { section_id: sectionId } : {}),
-                          }, token);
-                          setExistingHomework(res);
-                          setHomeworkMsg('✓ Homework sent to parents');
-                          // Load students for tracking if not loaded
-                          if (students.length === 0) await loadStudents();
-                          await loadHwSubmissions();
-                        } catch (e: unknown) { setHomeworkMsg(e instanceof Error ? e.message : 'Failed'); }
-                        finally { setSavingHomework(false); }
-                      }}>
-                      Send Homework to Parents
-                    </Button>
-                  </div>
-
-                  {/* Homework Completion Tracking */}
-                  {existingHomework && students.length > 0 && (
-                    <div className="border-t border-gray-200 pt-4">
-                      <p className="text-xs font-semibold text-gray-700 mb-1">✅ Homework Completion Tracking</p>
-                      <p className="text-xs text-gray-400 mb-3">Mark each student's homework status. Parents can see this in their portal.</p>
-                      <div className="flex flex-col gap-1.5">
-                        {students.map(student => {
-                          const status = hwSubmissions[student.id] || 'not_submitted';
-                          return (
-                            <div key={student.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3 py-2.5">
-                              <span className="text-sm text-gray-700 truncate flex-1 mr-2">{student.name}</span>
-                              <div className="flex gap-1 shrink-0">
-                                {(['completed', 'partial', 'not_submitted'] as const).map(s => (
-                                  <button key={s} onClick={() => setHwSubmissions(prev => ({ ...prev, [student.id]: s }))}
-                                    className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                                      status === s
-                                        ? s === 'completed' ? 'bg-emerald-500 text-white'
-                                          : s === 'partial' ? 'bg-amber-500 text-white'
-                                          : 'bg-red-400 text-white'
-                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                    }`}>
-                                    {s === 'completed' ? '✓' : s === 'partial' ? '½' : '✗'}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
-                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> Done</span>
-                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Partial</span>
-                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> Not submitted</span>
-                      </div>
-                      {hwSubmissionsMsg && <p className={`text-xs mt-2 ${hwSubmissionsMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
-                      <Button size="sm" className="w-full mt-3" loading={savingHwSubmissions}
-                        disabled={Object.keys(hwSubmissions).length === 0}
-                        onClick={async () => {
-                          setSavingHwSubmissions(true); setHwSubmissionsMsg('');
-                          try {
-                            const submissions = Object.entries(hwSubmissions).map(([student_id, status]) => ({ student_id, status }));
-                            await apiPost('/api/v1/teacher/notes/homework/submissions', {
-                              submissions, ...(sectionId ? { section_id: sectionId } : {}),
-                            }, token);
-                            setHwSubmissionsMsg('✓ Homework status saved');
-                          } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
-                          finally { setSavingHwSubmissions(false); }
-                        }}>
-                        Save Homework Status
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Notes */}
-                  <div className="border-t border-gray-200 pt-4">
-                    <p className="text-xs font-semibold text-gray-700 mb-1.5">📎 Class Notes</p>
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
-                      <p className="text-xs text-amber-700">⚠ Notes are deleted after <strong>14 days</strong>. Please keep a local copy — parents will be notified to download before expiry.</p>
-                    </div>
-                    <textarea
-                      value={noteText}
-                      onChange={e => setNoteText(e.target.value)}
-                      rows={2}
-                      placeholder="Type a note for parents..."
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/40 resize-none bg-white mb-2"
-                    />
-                    <div className="flex items-center gap-2 mb-2">
-                      <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs text-gray-600 cursor-pointer hover:bg-gray-50 flex-1">
-                        <span>📄 {noteFile ? noteFile.name : 'Attach PDF or Word file'}</span>
-                        <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
-                          onChange={e => setNoteFile(e.target.files?.[0] || null)} />
-                      </label>
-                      {noteFile && <button onClick={() => setNoteFile(null)} className="text-xs text-red-400 hover:text-red-600">✕</button>}
-                    </div>
-                    {noteMsg && <p className={`text-xs mb-2 ${noteMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{noteMsg}</p>}
-                    <Button size="sm" className="w-full" loading={savingNote} disabled={!noteText.trim() && !noteFile}
-                      onClick={async () => {
-                        setSavingNote(true); setNoteMsg('');
-                        try {
-                          if (noteFile) {
-                            const fd = new FormData();
-                            fd.append('file', noteFile);
-                            if (sectionId) fd.append('section_id', sectionId);
-                            const res = await fetch(`${API_BASE}/api/v1/teacher/notes/upload`, {
-                              method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
-                            });
-                            if (!res.ok) throw new Error((await res.json()).error);
-                          } else {
-                            await apiPost('/api/v1/teacher/notes', { note_text: noteText, ...(sectionId ? { section_id: sectionId } : {}) }, token);
-                          }
-                          setNoteMsg('✓ Note sent to parents (expires in 14 days)');
-                          setNoteText(''); setNoteFile(null);
-                          loadHomeworkAndNotes();
-                        } catch (e: unknown) { setNoteMsg(e instanceof Error ? e.message : 'Failed'); }
-                        finally { setSavingNote(false); }
-                      }}>
-                      Send Note to Parents
-                    </Button>
-
-                    {/* Existing notes */}
-                    {notes.length > 0 && (
-                      <div className="mt-3 flex flex-col gap-1.5">
-                        <p className="text-xs font-medium text-gray-500">Sent notes:</p>
-                        {notes.map(n => {
-                          const expiresIn = Math.ceil((new Date(n.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                          return (
-                            <div key={n.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3 py-2">
-                              <div className="min-w-0">
-                                <p className="text-xs text-gray-700 truncate">{n.file_name || (n.note_text?.slice(0, 50) + (n.note_text && n.note_text.length > 50 ? '...' : ''))}</p>
-                                <p className={`text-2xs ${expiresIn <= 3 ? 'text-red-500' : 'text-gray-400'}`}>Expires in {expiresIn} day{expiresIn !== 1 ? 's' : ''}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* Quick help chips */}
             <div className="flex flex-col gap-1.5">
@@ -947,6 +760,213 @@ export default function TeacherPlanner() {
         ) : (
           <p className="text-sm text-gray-400 text-center py-8">No plan for today</p>
         )}
+
+        {/* Homework & Notes — dedicated page link */}
+        <button
+          onClick={() => router.push('/teacher/homework')}
+          className="w-full flex items-center justify-between px-4 py-3 bg-white border border-neutral-200 rounded-2xl hover:bg-neutral-50 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <BookOpen className="w-4 h-4 text-primary-500" />
+            <div className="text-left">
+              <p className="text-sm font-semibold text-neutral-800">Homework & Notes</p>
+              <p className="text-xs text-neutral-400">Send homework, track completion, class notes</p>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-neutral-300" />
+        </button>
+
+        {false && (
+          <div>
+
+              {/* Completion notice — shown if today's activities not yet marked done */}
+              {!todayCompleted && plan?.chunks?.length && showCompletionNotice && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-amber-800 mb-1">⚠ Activities not yet marked as done</p>
+                  <p className="text-xs text-amber-700 mb-3">Please mark today's activities as completed before sending homework or notes to parents. Partial completion is also fine.</p>
+                  <div className="flex gap-2">
+                <button onClick={() => setShowCompletionNotice(false)}
+                  className="flex-1 py-2 text-xs border border-amber-300 rounded-lg text-amber-700 hover:bg-amber-100">
+                  I'll complete later
+                </button>
+                <button onClick={() => { setShowHomeworkPanel(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  className="flex-1 py-2 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium">
+                  Mark activities first
+                </button>
+                  </div>
+                </div>
+              )}
+              {/* Homework */}
+              <div>
+                <p className="text-xs font-semibold text-gray-700 mb-1.5">📚 Today's Homework</p>
+                <p className="text-xs text-gray-400 mb-2">Type the homework — Oakie will format it nicely for parents.</p>
+                {existingHomework?.formatted_text && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2">
+                <p className="text-xs font-medium text-emerald-700 mb-1">✓ Sent to parents:</p>
+                <p className="text-xs text-emerald-600 whitespace-pre-wrap">{existingHomework.formatted_text}</p>
+                  </div>
+                )}
+                <textarea
+                  value={homeworkText}
+                  onChange={e => setHomeworkText(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. Practice writing A-E, count objects at home up to 10, bring a leaf tomorrow"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/40 resize-none bg-white"
+                />
+                {homeworkMsg && <p className={`text-xs mt-1 ${homeworkMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
+                <Button size="sm" className="w-full mt-2" loading={savingHomework} disabled={!homeworkText.trim()}
+                  onClick={async () => {
+                setSavingHomework(true); setHomeworkMsg('');
+                try {
+                  const res = await apiPost<any>('/api/v1/teacher/notes/homework', {
+                    raw_text: homeworkText, ...(sectionId ? { section_id: sectionId } : {}),
+                  }, token);
+                  setExistingHomework(res);
+                  setHomeworkMsg('✓ Homework sent to parents');
+                  // Load students for tracking if not loaded
+                  if (students.length === 0) await loadStudents();
+                  await loadHwSubmissions();
+                } catch (e: unknown) { setHomeworkMsg(e instanceof Error ? e.message : 'Failed'); }
+                finally { setSavingHomework(false); }
+                  }}>
+                  Send Homework to Parents
+                </Button>
+              </div>
+
+              {/* Homework Completion Tracking */}
+              {existingHomework && students.length > 0 && (
+                <div className="border-t border-gray-200 pt-4">
+                  <p className="text-xs font-semibold text-gray-700 mb-1">✅ Homework Completion Tracking</p>
+                  <p className="text-xs text-gray-400 mb-3">Mark each student's homework status. Parents can see this in their portal.</p>
+                  <div className="flex flex-col gap-1.5">
+                {students.map(student => {
+                  const status = hwSubmissions[student.id] || 'not_submitted';
+                  return (
+                    <div key={student.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3 py-2.5">
+                      <span className="text-sm text-gray-700 truncate flex-1 mr-2">{student.name}</span>
+                      <div className="flex gap-1 shrink-0">
+                        {(['completed', 'partial', 'not_submitted'] as const).map(s => (
+                          <button key={s} onClick={() => setHwSubmissions(prev => ({ ...prev, [student.id]: s }))}
+                        className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          status === s
+                            ? s === 'completed' ? 'bg-emerald-500 text-white'
+                              : s === 'partial' ? 'bg-amber-500 text-white'
+                              : 'bg-red-400 text-white'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}>
+                        {s === 'completed' ? '✓' : s === 'partial' ? '½' : '✗'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> Done</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Partial</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> Not submitted</span>
+                  </div>
+                  {hwSubmissionsMsg && <p className={`text-xs mt-2 ${hwSubmissionsMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
+                  <Button size="sm" className="w-full mt-3" loading={savingHwSubmissions}
+                disabled={Object.keys(hwSubmissions).length === 0}
+                onClick={async () => {
+                  setSavingHwSubmissions(true); setHwSubmissionsMsg('');
+                  try {
+                    const submissions = Object.entries(hwSubmissions).map(([student_id, status]) => ({ student_id, status }));
+                    await apiPost('/api/v1/teacher/notes/homework/submissions', {
+                      submissions, ...(sectionId ? { section_id: sectionId } : {}),
+                    }, token);
+                    setHwSubmissionsMsg('✓ Homework status saved');
+                  } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
+                  finally { setSavingHwSubmissions(false); }
+                }}>
+                Save Homework Status
+                  </Button>
+                </div>
+              )}
+
+              {/* Notes */}
+              <div className="border-t border-gray-200 pt-4">
+                <p className="text-xs font-semibold text-gray-700 mb-1.5">📎 Class Notes</p>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
+                  <p className="text-xs text-amber-700">⚠ Notes are deleted after <strong>14 days</strong>. Please keep a local copy — parents will be notified to download before expiry.</p>
+                </div>
+                <textarea
+                  value={noteText}
+                  onChange={e => setNoteText(e.target.value)}
+                  rows={2}
+                  placeholder="Type a note for parents..."
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/40 resize-none bg-white mb-2"
+                />
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs text-gray-600 cursor-pointer hover:bg-gray-50 flex-1">
+                <span>📄 {noteFile ? noteFile.name : 'Attach PDF or Word file'}</span>
+                <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
+                  onChange={e => setNoteFile(e.target.files?.[0] || null)} />
+                  </label>
+                  {noteFile && <button onClick={() => setNoteFile(null)} className="text-xs text-red-400 hover:text-red-600">✕</button>}
+                </div>
+                {noteMsg && <p className={`text-xs mb-2 ${noteMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{noteMsg}</p>}
+                <Button size="sm" className="w-full" loading={savingNote} disabled={!noteText.trim() && !noteFile}
+                  onClick={async () => {
+                setSavingNote(true); setNoteMsg('');
+                try {
+                  if (noteFile) {
+                    const fd = new FormData();
+                    fd.append('file', noteFile);
+                    if (sectionId) fd.append('section_id', sectionId);
+                    const res = await fetch(`${API_BASE}/api/v1/teacher/notes/upload`, {
+                      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error);
+                  } else {
+                    await apiPost('/api/v1/teacher/notes', { note_text: noteText, ...(sectionId ? { section_id: sectionId } : {}) }, token);
+                  }
+                  setNoteMsg('✓ Note sent to parents (expires in 14 days)');
+                  setNoteText(''); setNoteFile(null);
+                  loadHomeworkAndNotes();
+                } catch (e: unknown) { setNoteMsg(e instanceof Error ? e.message : 'Failed'); }
+                finally { setSavingNote(false); }
+                  }}>
+                  Send Note to Parents
+                </Button>
+
+                {/* Existing notes */}
+                {notes.length > 0 && (
+                  <div className="mt-3 flex flex-col gap-1.5">
+                <p className="text-xs font-medium text-gray-500">Sent notes:</p>
+                {notes.map(n => {
+                  const expiresIn = Math.ceil((new Date(n.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <div key={n.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-xs text-gray-700 truncate">{n.file_name || (n.note_text?.slice(0, 50) + (n.note_text && n.note_text.length > 50 ? '...' : ''))}</p>
+                        <p className={`text-2xs ${expiresIn <= 3 ? 'text-red-500' : 'text-gray-400'}`}>Expires in {expiresIn} day{expiresIn !== 1 ? 's' : ''}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+                  </div>
+                )}
+              </div>
+          </div>
+        )}
+
+        {/* Child Journey quick link */}
+        <button
+          onClick={() => router.push('/teacher/journey')}
+          className="w-full flex items-center justify-between px-4 py-3 bg-white border border-neutral-200 rounded-2xl hover:bg-neutral-50 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <BookOpen className="w-4 h-4 text-primary-500" />
+            <div className="text-left">
+              <p className="text-sm font-semibold text-neutral-800">Child Journey</p>
+              <p className="text-xs text-neutral-400">Record daily highlights for students</p>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-neutral-300" />
+        </button>
 
         {/* Pending work */}
         {pendingWork.length > 0 && (
@@ -995,58 +1015,23 @@ export default function TeacherPlanner() {
           </div>
         </div>
 
-        {/* Raw Plan Modal */}
-        {showRawPlanModal && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0">
-            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowRawPlanModal(false)} />
-            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
-                <div>
-                  <h2 className="text-base font-semibold text-neutral-900">Today's Raw Plan</h2>
-                  <p className="text-xs text-neutral-500 mt-0.5">{dateLabel} · from curriculum</p>
-                </div>
-                <button onClick={() => setShowRawPlanModal(false)} className="text-neutral-400 hover:text-neutral-600">
-                  <span className="text-lg">×</span>
-                </button>
-              </div>
-              <div className="px-5 py-4 max-h-80 overflow-y-auto flex flex-col gap-2">
-                {plan?.chunks?.length ? plan.chunks.map((chunk: any, i: number) => (
-                  <div key={chunk.id} className="px-3 py-2.5 bg-neutral-50 rounded-xl border border-neutral-100">
-                    <p className="text-sm font-semibold text-neutral-800 mb-1">{chunk.topic_label || `Topic ${i + 1}`}</p>
-                    {chunk.content && (
-                      <p className="text-xs text-neutral-500 leading-relaxed whitespace-pre-wrap">{chunk.content}</p>
-                    )}
-                  </div>
-                )) : <p className="text-sm text-neutral-400 text-center py-4">No plan for today</p>}
-                {plan?.supplementary_activities?.map((sa: any) => (
-                  <div key={sa.plan_id} className="px-3 py-2.5 bg-amber-50 rounded-xl border border-amber-100">
-                    <p className="text-xs text-amber-700 font-semibold mb-0.5">🎵 {sa.pool_name}</p>
-                    <p className="text-sm font-medium text-neutral-800">{sa.activity_title}</p>
-                    {sa.activity_description && <p className="text-xs text-neutral-500 mt-0.5">{sa.activity_description}</p>}
-                  </div>
-                ))}
-              </div>
-              <div className="px-5 pb-5 pt-2 border-t border-neutral-100">
-                <button
-                  onClick={() => {
-                    // Build raw plan text from chunks and export as settling_text
-                    const rawText = [
-                      ...(plan?.chunks || []).map((c: any) => `${c.topic_label || 'Topic'}\n${c.content || ''}`),
-                      ...(plan?.supplementary_activities || []).map((sa: any) => `🎵 ${sa.pool_name}: ${sa.activity_title}${sa.activity_description ? '\n' + sa.activity_description : ''}`),
-                    ].join('\n\n');
-                    exportPdf(today, rawText);
-                    setShowRawPlanModal(false);
-                  }}
-                  disabled={exporting}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-                >
-                  <FileText className="w-4 h-4" />
-                  {exporting ? 'Downloading…' : '↓ Download as PDF'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Raw Plan Modal — from UIComponents */}
+        <RawPlanModal
+          open={showRawPlanModal}
+          onClose={() => setShowRawPlanModal(false)}
+          dateLabel={dateLabel}
+          chunks={plan?.chunks || []}
+          supplementaryActivities={plan?.supplementary_activities}
+          exporting={exporting}
+          onExportPdf={() => {
+            const rawText = [
+              ...(plan?.chunks || []).map((c: any) => `${c.topic_label || 'Topic'}\n${c.content || ''}`),
+              ...(plan?.supplementary_activities || []).map((sa: any) => `🎵 ${sa.pool_name}: ${sa.activity_title}${sa.activity_description ? '\n' + sa.activity_description : ''}`),
+            ].join('\n\n');
+            exportPdf(today, rawText);
+            setShowRawPlanModal(false);
+          }}
+        />
 
         {/* Oakie chat — normal chat, no toggle */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50" style={{ paddingBottom: '8px' }}>
@@ -1071,10 +1056,20 @@ export default function TeacherPlanner() {
                   <span className="whitespace-pre-wrap text-sm">{msg.text}</span>
                 ) : (
                   <div>
-                    {/* "Oakie says" label on every assistant response */}
-                    <div className="flex items-center gap-1.5 px-4 pt-2.5 pb-1">
-                      <Sparkles className="w-3 h-3 text-primary-400" />
-                      <span className="text-[10px] font-semibold text-primary-500 uppercase tracking-wide">Oakie says</span>
+                    {/* "Oakie says" label with PDF download on the right */}
+                    <div className="flex items-center justify-between px-4 pt-2.5 pb-1">
+                      <div className="flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-primary-400" />
+                        <span className="text-[10px] font-semibold text-primary-500 uppercase tracking-wide">Oakie says</span>
+                      </div>
+                      <button
+                        onClick={() => exportPdf(today, msg.text)}
+                        disabled={exporting}
+                        className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-primary-600 transition-colors disabled:opacity-50"
+                      >
+                        <FileText className="w-3 h-3" />
+                        PDF
+                      </button>
                     </div>
                     {msg.is_settling && msg.settling_day && (
                       <div className="px-4 pt-3 pb-1">
@@ -1087,7 +1082,7 @@ export default function TeacherPlanner() {
                       {(() => {
                         // Build subject checkboxes for inline rendering
                         const msgKey = String(i);
-                        const isCompletable = !msg.is_settling && !msg.already_completed &&
+                        const isCompletable = !todayCompleted && !msg.is_settling && !msg.already_completed &&
                           msg.chunk_ids && msg.chunk_ids.length > 0 &&
                           msg.completion_date && msg.completion_date <= today;
 
@@ -1152,17 +1147,6 @@ export default function TeacherPlanner() {
                         {inlineMsg[String(i)] && <p className="text-xs text-green-600 mt-2">{inlineMsg[String(i)]}</p>}
                       </div>
                     )}
-                    {/* PDF download for each Oakie response */}
-                    <div className="px-4 pb-2 pt-0">
-                      <button
-                        onClick={() => exportPdf(today, msg.text)}
-                        disabled={exporting}
-                        className="flex items-center gap-1 text-[10px] text-neutral-400 hover:text-primary-600 transition-colors disabled:opacity-50"
-                      >
-                        <FileText className="w-3 h-3" />
-                        Download as PDF
-                      </button>
-                    </div>
                     {/* Submit + export — removed from chat, completion is in Plan tab */}
                   </div>
                 )}
@@ -1245,48 +1229,54 @@ export default function TeacherPlanner() {
   // ── Help Tab ──────────────────────────────────────────────────────────
   const helpTabContent = (
       <div className="p-4 flex flex-col gap-4" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+
+        {/* How Oakie works */}
         <div className="bg-primary-50 border border-primary-100 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-lg bg-primary-100 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-primary-600" />
             </div>
-            <p className="text-sm font-semibold text-primary-800">How to use Oakie</p>
+            <p className="text-sm font-semibold text-primary-800">How Oakie works</p>
           </div>
           <div className="flex flex-col gap-3">
             {[
-              { icon: '📅', title: 'Oakie plans your day automatically', desc: 'Every morning, Oakie has your day ready. Tap the Plan tab to see it.' },
-              { icon: '💬', title: 'Ask Oakie about any activity', desc: 'Tap a subject button or type your question. Oakie answers based on your plan only.' },
-              { icon: '✅', title: 'Mark activities as done', desc: 'Use the checkboxes in the chat to tick off each activity. Parents are notified automatically.' },
-              { icon: '⏳', title: 'Oakie carries topics forward', desc: "If you don't complete a topic, Oakie moves it to tomorrow's plan automatically." },
-              { icon: '🔒', title: 'Oakie has a daily limit', desc: 'Oakie can answer up to 5 activity questions per day. Classroom situations (crying child, not listening) are always allowed.' },
-              { icon: '📄', title: 'Export your plan', desc: "Download today's plan as a PDF using the export button in the chat." },
+              { icon: '📅', title: 'Oakie plans your day on login', desc: 'Every morning when you log in, Oakie automatically loads your day\'s plan from the curriculum.' },
+              { icon: '📋', title: 'Raw Plan button', desc: 'Tap "Raw Plan" in the chat header to see today\'s topics from the curriculum database and download as PDF.' },
+              { icon: '💬', title: 'Ask Oakie anything', desc: 'Type any question about your class — how to teach a subject, handle a situation, or get activity ideas.' },
+              { icon: '✅', title: 'Mark topics done in Plan tab', desc: 'Go to the Plan tab (left panel) to tick off topics as you complete them. Parents are notified automatically.' },
+              { icon: '⏳', title: 'Oakie carries topics forward', desc: "Unticked topics automatically move to tomorrow's plan. You'll see them in Pending." },
+              { icon: '📄', title: 'Download any response as PDF', desc: 'Every Oakie response has a PDF button in the top-right corner of the message. Tap it to download.' },
+              { icon: '📝', title: 'Homework & Notes', desc: 'Tap "Homework & Notes" in the Plan tab to open the dedicated page — send homework, track each student\'s completion, and send class notes to parents.' },
+              { icon: '🔥', title: 'Teaching streak', desc: 'Your streak badge in the header shows how many consecutive days you\'ve submitted completion.' },
             ].map((item, i) => (
               <div key={i} className="flex gap-3">
                 <span className="text-xl shrink-0">{item.icon}</span>
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">{item.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{item.desc}</p>
+                  <p className="text-sm font-semibold text-neutral-800">{item.title}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">{item.desc}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-          <p className="text-sm font-semibold text-gray-800 mb-3">💬 What you can ask Oakie</p>
+        {/* Ask Oakie examples */}
+        <div className="bg-white border border-neutral-200 rounded-2xl p-4">
+          <p className="text-sm font-semibold text-neutral-800 mb-3">💬 Try asking Oakie</p>
           <div className="flex flex-col gap-3">
             {[
-              { category: '📋 About your plan', questions: ['What is my plan for today?', 'What topics are pending?', 'Am I on track with the curriculum?', 'What is my plan for tomorrow?'] },
+              { category: '📋 Your plan', questions: ['What is my plan for today?', 'What topics are pending?', 'Am I on track with the curriculum?', 'What is my plan for tomorrow?'] },
               { category: '🏫 Classroom situations', questions: ['A child is crying, what do I do?', 'Children are not listening', 'What if a child finishes early?', 'How do I handle a shy child?'] },
-              { category: '📚 Activity guidance', questions: ['How do I conduct Circle Time today?', 'How do I teach Math today?', 'What questions should I ask during English?', 'Give me a story for story time'] },
+              { category: '📚 Teaching help', questions: ['How do I conduct Circle Time today?', 'How do I teach Math today?', 'What questions should I ask during English?', 'Give me a story for story time'] },
+              { category: '📊 Progress', questions: ['Am I on track with the curriculum?', 'What did I cover last week?', 'What topics are still pending?'] },
             ].map((section, i) => (
               <div key={i}>
-                <p className="text-xs font-semibold text-gray-600 mb-1.5">{section.category}</p>
+                <p className="text-xs font-semibold text-neutral-500 mb-1.5">{section.category}</p>
                 <div className="flex flex-col gap-1">
                   {section.questions.map((q, j) => (
-                    <button key={j} onClick={() => askSuggested(q)}
-                      className="text-left text-xs text-primary px-3 py-2 rounded-lg bg-white border border-gray-100 active:bg-primary/5 transition-colors">
-                      → {q}
+                    <button key={j} onClick={() => { setActiveTab('chat'); askSuggested(q); }}
+                      className="text-left text-xs text-primary-600 px-3 py-2 rounded-lg bg-primary-50 border border-primary-100 hover:bg-primary-100 transition-colors flex items-center gap-1.5">
+                      <ArrowRight className="w-3 h-3 shrink-0" /> {q}
                     </button>
                   ))}
                 </div>
@@ -1295,13 +1285,15 @@ export default function TeacherPlanner() {
           </div>
         </div>
 
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <p className="text-sm font-semibold text-amber-800 mb-2">⚠️ What Oakie won't do</p>
-          <ul className="text-xs text-amber-700 flex flex-col gap-1">
-            <li>• Answer questions outside today's plan</li>
-            <li>• Provide YouTube links or external URLs</li>
-            <li>• Help more than 5 times before you mark completion</li>
-            <li>• Show tomorrow's plan before today is marked as done</li>
+        {/* Oakie's limits */}
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <p className="text-sm font-semibold text-amber-800 mb-2">⚠️ Good to know</p>
+          <ul className="text-xs text-amber-700 flex flex-col gap-1.5">
+            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">•</span> Oakie answers based on your curriculum only — not general knowledge</li>
+            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">•</span> Oakie can answer up to 5 activity questions per day — resets when you mark completion</li>
+            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">•</span> Classroom situation questions (crying child, not listening) are always unlimited</li>
+            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">•</span> Tomorrow's plan is only shown after today is marked as done</li>
+            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">•</span> Oakie won't provide external links or YouTube URLs</li>
           </ul>
         </div>
 

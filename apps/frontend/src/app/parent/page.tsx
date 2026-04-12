@@ -581,6 +581,26 @@ function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTa
         </div>
       </div>
 
+      {/* Child Journey */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <BookOpen size={16} className="text-primary-500" />
+            <p className="text-sm font-semibold text-neutral-800">{activeChild.name.split(' ')[0]}'s Journey</p>
+          </div>
+          <span className="flex items-center gap-1 text-[10px] text-primary-500 bg-primary-50 px-2 py-0.5 rounded-full">
+            <Sparkles size={10} /> by Oakie
+          </span>
+        </div>
+        <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
+          See daily highlights and special moments recorded by {activeChild.name.split(' ')[0]}'s teacher — beautifully written by Oakie.
+        </p>
+        <a href={`/parent/journey?student_id=${activeChild.id}`}
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-colors">
+          <BookOpen size={14} /> View {activeChild.name.split(' ')[0]}'s Journey
+        </a>
+      </div>
+
       {/* Teacher notes */}
       {feed?.notes && feed.notes.length > 0 && (
         <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
