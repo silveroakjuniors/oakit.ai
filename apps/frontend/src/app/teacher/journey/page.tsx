@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import { Sparkles, ChevronLeft, Send, BookOpen } from 'lucide-react';
+import { ChevronLeft, Send, BookOpen } from 'lucide-react';
 
 interface Student { id: string; name: string; }
 interface JourneyEntry {
@@ -78,7 +78,7 @@ export default function ChildJourneyPage() {
         raw_text: rawText.trim(),
         send_to_parent: true,
       }, token);
-      setMsg('✓ Journey entry saved and beautified by Oakie!');
+      setMsg('✓ Journey entry saved and sent to parents');
       setRawText('');
       if (sectionId) loadRecentEntries(sectionId);
     } catch (e: any) { setMsg(e.message || 'Failed'); }
@@ -97,10 +97,6 @@ export default function ChildJourneyPage() {
         <div className="flex-1">
           <h1 className="text-base font-semibold text-neutral-900">Child Journey</h1>
           <p className="text-xs text-neutral-500">Record moments from your students' day</p>
-        </div>
-        <div className="flex items-center gap-1 text-xs text-primary-600 bg-primary-50 px-2.5 py-1 rounded-full">
-          <Sparkles className="w-3 h-3" />
-          Oakie beautifies
         </div>
       </header>
 
@@ -136,7 +132,7 @@ export default function ChildJourneyPage() {
         {/* Text input */}
         <div>
           <label className="text-xs font-medium text-neutral-600 mb-1.5 block">
-            Your notes <span className="text-neutral-400 font-normal">(Oakie will make it beautiful for parents)</span>
+            Your notes
           </label>
           <textarea
             value={rawText}
@@ -169,7 +165,7 @@ export default function ChildJourneyPage() {
           className="w-full flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
         >
           {saving ? (
-            <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Oakie is writing…</>
+            <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
           ) : (
             <><Send className="w-4 h-4" />Save & Send to Parents</>
           )}

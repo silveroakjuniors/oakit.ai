@@ -52,6 +52,32 @@ interface SmartAlertsData {
   summary: { total_alerts: number; high: number; medium: number };
 }
 
+interface TeacherEngagement {
+  id: string; name: string; mobile: string;
+  section_label: string; class_name: string;
+  days_completed_30d: number; last_completion: string | null;
+  days_attendance_30d: number; homework_sent_30d: number;
+  notes_sent_30d: number; messages_sent_30d: number;
+  streak: number; activity_status: 'active' | 'low' | 'inactive';
+}
+interface ParentEngagement {
+  id: string; name: string; mobile: string;
+  children_count: number; children_names: string;
+  messages_sent_30d: number; notifications_read_30d: number;
+  unread_notifications: number; last_message_at: string | null;
+  activity_status: 'active' | 'inactive' | 'never_logged_in';
+}
+interface HwHistory {
+  date: string; section_label: string; class_name: string; teacher_name: string;
+  completed: number; partial: number; not_submitted: number; total_students: number;
+}
+interface EngagementData {
+  teachers: { total: number; active: number; low: number; inactive: number; list: TeacherEngagement[] };
+  parents: { total: number; active: number; inactive: number; never_logged_in: number; list: ParentEngagement[] };
+  homework: { days_sent: number; completed: number; partial: number; not_submitted: number; history: HwHistory[] };
+  messages: { total: number; teacher_sent: number; parent_sent: number; active_threads: number };
+}
+
 const BAND_COLORS = { green: '#10b981', amber: '#f59e0b', red: '#ef4444' };
 const BAND_BG = { green: 'bg-emerald-100 text-emerald-700', amber: 'bg-amber-100 text-amber-700', red: 'bg-red-100 text-red-600' };
 const STEP_LABELS: Record<string, string> = {
@@ -90,6 +116,10 @@ export default function AdminDashboard() {
   const [smartAlerts, setSmartAlerts] = useState<SmartAlertsData | null>(null);
   const [smartAlertsLoading, setSmartAlertsLoading] = useState(false);
   const [smartAlertsExpanded, setSmartAlertsExpanded] = useState(false);
+  const [engagement, setEngagement] = useState<EngagementData | null>(null);
+  const [engagementLoading, setEngagementLoading] = useState(false);
+  const [engagementTab, setEngagementTab] = useState<'teachers' | 'parents' | 'homework' | 'messages'>('teachers');
+  const [engagementFilter, setEngagementFilter] = useState<string>('all');
 
   const loadSnap = useCallback(async () => {
     try { setTodaySnap(await apiGet<TodaySnap>('/api/v1/admin/dashboard/today', token)); } catch {}
@@ -139,6 +169,10 @@ export default function AdminDashboard() {
       .then(d => { setSmartAlerts(d); if (d.summary.high > 0) setSmartAlertsExpanded(true); })
       .catch(() => {})
       .finally(() => setSmartAlertsLoading(false));
+    // Load engagement stats
+    setEngagementLoading(true);
+    apiGet<EngagementData>('/api/v1/admin/dashboard/engagement', token)
+      .then(setEngagement).catch(() => {}).finally(() => setEngagementLoading(false));
     const interval = setInterval(loadSnap, 60000);
     return () => clearInterval(interval);
   }, []);
@@ -167,9 +201,20 @@ export default function AdminDashboard() {
   return (
     <div className="p-5 lg:p-7 max-w-6xl space-y-6">
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900 tracking-tight">Dashboard</h1>
-        <p className="text-sm text-neutral-500 mt-0.5">Manage your school from one place</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {todaySnap && (
+            <span className="pill bg-emerald-50 text-emerald-700 border border-emerald-100">
+              🟢 Live
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Safety alerts banner */}
@@ -234,101 +279,120 @@ export default function AdminDashboard() {
       )}
 
       {/* Smart Alerts — AI School Intelligence */}
-      {(smartAlertsLoading || (smartAlerts && smartAlerts.summary.total_alerts > 0)) && (
-        <div className={`rounded-2xl border overflow-hidden ${
+      {(smartAlertsLoading || smartAlerts) && (
+        <div className={`rounded-2xl border-2 overflow-hidden shadow-sm ${
           smartAlerts && smartAlerts.summary.high > 0
-            ? 'border-orange-200 bg-orange-50'
-            : 'border-amber-200 bg-amber-50'
+            ? 'border-red-200 bg-gradient-to-br from-red-50 to-orange-50'
+            : 'border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50'
         }`}>
+          {/* Header — always visible, click to collapse */}
           <button
             onClick={() => setSmartAlertsExpanded(v => !v)}
-            className="w-full flex items-center justify-between px-5 py-3.5 text-left"
+            className="w-full flex items-center justify-between px-5 py-4 text-left"
           >
             <div className="flex items-center gap-3">
-              <span className="text-xl">🧠</span>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+                smartAlerts && smartAlerts.summary.high > 0 ? 'bg-red-100' : 'bg-amber-100'
+              }`}>🧠</div>
               <div>
-                <p className="text-sm font-bold text-neutral-800">
-                  School Intelligence
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-bold text-neutral-900">School Intelligence</p>
                   {smartAlerts && (
-                    <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${
-                      smartAlerts.summary.high > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {smartAlerts.summary.total_alerts} alert{smartAlerts.summary.total_alerts !== 1 ? 's' : ''}
-                      {smartAlerts.summary.high > 0 && ` · ${smartAlerts.summary.high} urgent`}
-                    </span>
+                    <>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        smartAlerts.summary.high > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {smartAlerts.summary.total_alerts} alert{smartAlerts.summary.total_alerts !== 1 ? 's' : ''}
+                      </span>
+                      {smartAlerts.summary.high > 0 && (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-600 text-white animate-pulse">
+                          {smartAlerts.summary.high} urgent
+                        </span>
+                      )}
+                    </>
                   )}
-                </p>
-                <p className="text-xs text-neutral-500 mt-0.5">AI-detected issues across teachers, attendance, curriculum, and quizzes</p>
+                  {smartAlertsLoading && <span className="text-xs text-neutral-400">Analysing…</span>}
+                </div>
+                <p className="text-xs text-neutral-500 mt-0.5">Oakie-detected issues across teachers, attendance, curriculum, and quizzes</p>
               </div>
             </div>
-            <span className="text-neutral-400 text-sm">{smartAlertsExpanded ? '▲' : '▼'}</span>
+            <span className={`text-neutral-400 text-sm transition-transform ${smartAlertsExpanded ? 'rotate-180' : ''}`}>▼</span>
           </button>
 
           {smartAlertsExpanded && smartAlerts && (
-            <div className="border-t border-orange-200">
+            <div className="border-t border-orange-200/60">
               {/* Alert list */}
-              <div className="divide-y divide-orange-100">
-                {smartAlerts.alerts.map((alert, i) => {
-                  const icons: Record<string, string> = {
-                    teacher_not_completing: '📋',
-                    low_attendance_trend: '📉',
-                    class_falling_behind: '⏳',
-                    weak_subject: '📝',
-                    low_teacher_performance: '👩‍🏫',
-                  };
-                  return (
-                    <div key={i} className={`flex items-start gap-3 px-5 py-3 ${alert.severity === 'high' ? 'bg-red-50/60' : 'bg-white/60'}`}>
-                      <span className="text-lg shrink-0 mt-0.5">{icons[alert.type] || '⚠️'}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold text-neutral-800">{alert.title}</p>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            alert.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {alert.severity === 'high' ? 'URGENT' : 'WATCH'}
-                          </span>
+              {smartAlerts.alerts.length > 0 ? (
+                <div className="divide-y divide-orange-100/60">
+                  {smartAlerts.alerts.map((alert, i) => {
+                    const icons: Record<string, string> = {
+                      teacher_not_completing: '📋',
+                      low_attendance_trend: '📉',
+                      class_falling_behind: '⏳',
+                      weak_subject: '📝',
+                      low_teacher_performance: '👩‍🏫',
+                    };
+                    return (
+                      <div key={i} className={`flex items-start gap-3 px-5 py-3.5 ${alert.severity === 'high' ? 'bg-red-50/70' : 'bg-white/50'}`}>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 mt-0.5 ${
+                          alert.severity === 'high' ? 'bg-red-100' : 'bg-amber-100'
+                        }`}>{icons[alert.type] || '⚠️'}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-neutral-800">{alert.title}</p>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                              alert.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {alert.severity === 'high' ? '🔴 URGENT' : '🟡 WATCH'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{alert.detail}</p>
                         </div>
-                        <p className="text-xs text-neutral-500 mt-0.5">{alert.detail}</p>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-5 py-6 text-center">
+                  <p className="text-2xl mb-2">✅</p>
+                  <p className="text-sm font-semibold text-emerald-700">All clear — no issues detected</p>
+                  <p className="text-xs text-neutral-400 mt-1">Oakie is monitoring your school in real time</p>
+                </div>
+              )}
 
               {/* Teacher Performance Scores */}
               {smartAlerts.teacher_scores.length > 0 && (
-                <div className="border-t border-orange-200 px-5 py-4">
-                  <p className="text-xs font-bold text-neutral-600 uppercase tracking-wide mb-3">Teacher Performance Scores</p>
-                  <div className="space-y-2">
+                <div className="border-t border-orange-200/60 px-5 py-4 bg-white/40">
+                  <p className="text-xs font-bold text-neutral-600 uppercase tracking-wide mb-3">Teacher Performance</p>
+                  <div className="space-y-3">
                     {smartAlerts.teacher_scores
                       .sort((a, b) => a.performance_score - b.performance_score)
                       .map((t, i) => (
-                        <div key={i} className="flex items-center gap-3">
+                        <div key={i} className="flex items-center gap-3 bg-white/80 rounded-xl px-3 py-2.5 border border-neutral-100">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                            t.band === 'green' ? 'bg-emerald-100 text-emerald-700' :
+                            t.band === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                          }`}>{t.performance_score}</div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-xs font-semibold text-neutral-700 truncate">{t.teacher_name}</p>
-                              <span className="text-[10px] text-neutral-400">{t.class_name} {t.section_label}</span>
+                              <span className="text-[10px] text-neutral-400 shrink-0">{t.class_name} {t.section_label}</span>
                             </div>
                             <div className="flex gap-3 text-[10px] text-neutral-400 mt-0.5">
-                              <span>Compliance: {t.compliance_pct}%</span>
-                              <span>Streak: {t.current_streak}d</span>
-                              <span>AI: {t.ai_queries_7d} queries/wk</span>
+                              <span>📋 {t.compliance_pct}% compliance</span>
+                              <span>🔥 {t.current_streak}d streak</span>
+                              <span>💬 {t.ai_queries_7d} AI/wk</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <div className="w-16 bg-neutral-200 rounded-full h-1.5">
-                              <div className={`h-1.5 rounded-full ${
-                                t.band === 'green' ? 'bg-emerald-500' : t.band === 'amber' ? 'bg-amber-500' : 'bg-red-500'
-                              }`} style={{ width: `${t.performance_score}%` }} />
-                            </div>
-                            <span className={`text-xs font-bold w-8 text-right ${
-                              t.band === 'green' ? 'text-emerald-600' : t.band === 'amber' ? 'text-amber-600' : 'text-red-600'
-                            }`}>{t.performance_score}</span>
+                          <div className="w-20 bg-neutral-200 rounded-full h-2 shrink-0">
+                            <div className={`h-2 rounded-full transition-all ${
+                              t.band === 'green' ? 'bg-emerald-500' : t.band === 'amber' ? 'bg-amber-500' : 'bg-red-500'
+                            }`} style={{ width: `${Math.min(t.performance_score, 100)}%` }} />
                           </div>
                         </div>
                       ))}
                   </div>
-                  <p className="text-[10px] text-neutral-400 mt-3">Score = 60% plan compliance + 20% streak + 20% AI engagement · Refreshes every 5 min</p>
+                  <p className="text-[10px] text-neutral-400 mt-3">Score = 60% plan compliance + 20% streak + 20% AI engagement</p>
                 </div>
               )}
             </div>
@@ -366,45 +430,103 @@ export default function AdminDashboard() {
         <StatCard label="" value="" loading className="h-20" />
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard label="Total Students" value={stats?.students ?? '—'} colorScheme="neutral" />
-          <StatCard label="Present Today" value={todaySnap?.students_present ?? '—'} colorScheme="green"
-            sub={todaySnap ? `of ${stats?.students ?? '?'} students` : undefined} />
-          <StatCard label="Attendance Submitted" value={todaySnap ? `${todaySnap.sections_attendance_submitted}/${todaySnap.total_sections}` : '—'} colorScheme="blue" sub="sections" />
-          <StatCard label="Plans Completed" value={todaySnap ? `${todaySnap.sections_plans_completed}/${todaySnap.total_sections}` : '—'} colorScheme="primary" sub="sections today" />
+          <div className="bg-white border border-neutral-100 rounded-2xl p-4 shadow-sm flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-xl shrink-0">🎓</div>
+            <div>
+              <p className="text-xs text-neutral-500">Total Students</p>
+              <p className="text-2xl font-black text-neutral-800">{stats?.students ?? '—'}</p>
+              <p className="text-[10px] text-neutral-400">{stats?.classes ?? 0} classes · {stats?.sections ?? 0} sections</p>
+            </div>
+          </div>
+          <div className={`border rounded-2xl p-4 shadow-sm flex items-center gap-3 ${(todaySnap?.students_present ?? 0) > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-neutral-100'}`}>
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-xl shrink-0">✅</div>
+            <div>
+              <p className="text-xs text-neutral-500">Present Today</p>
+              <p className="text-2xl font-black text-emerald-700">{todaySnap?.students_present ?? '—'}</p>
+              <p className="text-[10px] text-neutral-400">of {stats?.students ?? '?'} students</p>
+            </div>
+          </div>
+          <div className={`border rounded-2xl p-4 shadow-sm flex items-center gap-3 ${
+            todaySnap && todaySnap.sections_attendance_submitted === todaySnap.total_sections
+              ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'
+          }`}>
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-xl shrink-0">📋</div>
+            <div>
+              <p className="text-xs text-neutral-500">Attendance</p>
+              <p className={`text-2xl font-black ${todaySnap && todaySnap.sections_attendance_submitted === todaySnap.total_sections ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {todaySnap ? `${todaySnap.sections_attendance_submitted}/${todaySnap.total_sections}` : '—'}
+              </p>
+              <p className="text-[10px] text-neutral-400">sections submitted</p>
+            </div>
+          </div>
+          <div className={`border rounded-2xl p-4 shadow-sm flex items-center gap-3 ${
+            todaySnap && todaySnap.sections_plans_completed === todaySnap.total_sections
+              ? 'bg-primary-50 border-primary-100' : 'bg-white border-neutral-100'
+          }`}>
+            <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center text-xl shrink-0">📚</div>
+            <div>
+              <p className="text-xs text-neutral-500">Plans Done</p>
+              <p className="text-2xl font-black text-primary-700">
+                {todaySnap ? `${todaySnap.sections_plans_completed}/${todaySnap.total_sections}` : '—'}
+              </p>
+              <p className="text-[10px] text-neutral-400">sections today</p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Coverage chart */}
-      <Card padding="md">
-        <p className="text-sm font-semibold text-neutral-800 mb-4">📊 Curriculum Coverage by Section</p>
-        {coverage.length === 0 ? (
-          <EmptyState emoji="📚" heading="No curriculum data yet" description="Upload curriculum PDFs and generate plans to see coverage." />
-        ) : (
-          <>
-            <div className="flex flex-col gap-2.5">
-              {coverage.map(row => (
-                <button key={row.section_id} type="button"
-                  onClick={() => loadDrillDown(row.section_id)}
-                  className="flex items-center gap-3 w-full text-left rounded-xl px-2 py-1.5 hover:bg-neutral-50 transition-colors group">
-                  <div className="w-20 shrink-0 text-xs text-neutral-600 font-medium truncate">{row.class_name} {row.section_label}</div>
-                  <div className="flex-1 bg-neutral-100 rounded-full h-5 overflow-hidden">
-                    <div className="h-5 rounded-full transition-all duration-500"
-                      style={{ width: `${Math.max(row.coverage_pct, 2)}%`, backgroundColor: BAND_COLORS[row.band] }} />
-                  </div>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${BAND_BG[row.band]}`}>{row.coverage_pct}%</span>
-                  {row.alert && <span className="text-red-500 text-xs shrink-0">⚠</span>}
-                  <span className="text-neutral-300 group-hover:text-neutral-500 text-xs shrink-0 transition-colors">›</span>
-                </button>
-              ))}
+      {/* Coverage chart — collapsible */}
+      <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+        <button
+          onClick={() => setExpandedDocs(prev => { const n = new Set(prev); n.has('__coverage__') ? n.delete('__coverage__') : n.add('__coverage__'); return n; })}
+          className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-neutral-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-xl shrink-0">📊</div>
+            <div>
+              <p className="text-sm font-bold text-neutral-900">Curriculum Coverage by Section</p>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                {coverage.length > 0
+                  ? `${coverage.filter(r => r.band === 'green').length} on track · ${coverage.filter(r => r.alert).length} need attention`
+                  : 'Click to view coverage breakdown'}
+              </p>
             </div>
-            <div className="flex gap-4 mt-3 text-xs text-neutral-400">
-              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400 inline-block" />≥75%</span>
-              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />40–74%</span>
-              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" />&lt;40%</span>
-            </div>
-          </>
+          </div>
+          <span className={`text-neutral-400 text-sm transition-transform ${expandedDocs.has('__coverage__') ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+
+        {expandedDocs.has('__coverage__') && (
+          <div className="border-t border-neutral-100 px-5 py-4">
+            {coverage.length === 0 ? (
+              <EmptyState emoji="📚" heading="No curriculum data yet" description="Upload curriculum PDFs and generate plans to see coverage." />
+            ) : (
+              <>
+                <div className="flex flex-col gap-2.5">
+                  {coverage.map(row => (
+                    <button key={row.section_id} type="button"
+                      onClick={() => loadDrillDown(row.section_id)}
+                      className="flex items-center gap-3 w-full text-left rounded-xl px-2 py-1.5 hover:bg-neutral-50 transition-colors group">
+                      <div className="w-20 shrink-0 text-xs text-neutral-600 font-medium truncate">{row.class_name} {row.section_label}</div>
+                      <div className="flex-1 bg-neutral-100 rounded-full h-5 overflow-hidden">
+                        <div className="h-5 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.max(Math.min(row.coverage_pct, 100), 2)}%`, backgroundColor: BAND_COLORS[row.band] }} />
+                      </div>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${BAND_BG[row.band]}`}>{row.coverage_pct}%</span>
+                      {row.alert && <span className="text-red-500 text-xs shrink-0">⚠</span>}
+                      <span className="text-neutral-300 group-hover:text-neutral-500 text-xs shrink-0 transition-colors">›</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-4 mt-3 text-xs text-neutral-400">
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-400 inline-block" />≥75%</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />40–74%</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" />&lt;40%</span>
+                </div>
+              </>
+            )}
+          </div>
         )}
-      </Card>
+      </div>
 
       {/* Drill-down panel */}
       {(drillDown || drillLoading) && (
@@ -495,7 +617,10 @@ export default function AdminDashboard() {
 
       {/* Attendance trend */}
       <Card padding="md">
-        <p className="text-sm font-semibold text-neutral-800 mb-4">📈 Attendance Trend (Last 30 Days)</p>
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm font-semibold text-neutral-800">Attendance Trend</p>
+          <span className="section-header">Last 30 days</span>
+        </div>
         {trend.length === 0 ? (
           <EmptyState emoji="📅" heading="No attendance data yet" description="Attendance records will appear here once teachers start marking." />
         ) : (
@@ -503,21 +628,322 @@ export default function AdminDashboard() {
         )}
       </Card>
 
-      {/* Quick links */}
-      <div>
-        <p className="text-sm font-semibold text-neutral-700 mb-3">Quick Access</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {quickLinks.map(({ href, icon, label, desc }) => (
-            <Link key={href} href={href}>
-              <Card hover padding="sm" className="h-full">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl shrink-0">{icon}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-neutral-800">{label}</p>
-                    <p className="text-xs text-neutral-400 mt-0.5">{desc}</p>
+      {/* Engagement Intelligence */}
+      <div className="rounded-2xl border-2 border-primary-100 bg-gradient-to-br from-primary-50 to-white overflow-hidden shadow-sm">
+        <div className="px-5 py-4 flex items-center gap-3 border-b border-primary-100">
+          <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center text-xl shrink-0">📊</div>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-neutral-900">Engagement Intelligence</p>
+            <p className="text-xs text-neutral-500">Last 30 days · Teachers, Parents, Homework, Messages</p>
+          </div>
+          {engagementLoading && <span className="text-xs text-neutral-400 animate-pulse">Loading…</span>}
+        </div>
+
+        {/* Summary pills */}
+        {engagement && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-4 border-b border-primary-100">
+            <button onClick={() => setEngagementTab('teachers')}
+              className={`rounded-xl p-3 text-left transition-all border-2 ${engagementTab === 'teachers' ? 'border-primary-400 bg-white shadow-sm' : 'border-transparent bg-white/60 hover:bg-white'}`}>
+              <p className="text-xs text-neutral-500 mb-1">👩‍🏫 Teachers</p>
+              <div className="flex items-end gap-1.5">
+                <span className="text-xl font-black text-emerald-600">{engagement.teachers.active}</span>
+                <span className="text-xs text-neutral-400 mb-0.5">active</span>
+              </div>
+              <div className="flex gap-2 mt-1">
+                {engagement.teachers.low > 0 && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{engagement.teachers.low} low</span>}
+                {engagement.teachers.inactive > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{engagement.teachers.inactive} inactive</span>}
+              </div>
+            </button>
+            <button onClick={() => setEngagementTab('parents')}
+              className={`rounded-xl p-3 text-left transition-all border-2 ${engagementTab === 'parents' ? 'border-primary-400 bg-white shadow-sm' : 'border-transparent bg-white/60 hover:bg-white'}`}>
+              <p className="text-xs text-neutral-500 mb-1">👨‍👩‍👧 Parents</p>
+              <div className="flex items-end gap-1.5">
+                <span className="text-xl font-black text-emerald-600">{engagement.parents.active}</span>
+                <span className="text-xs text-neutral-400 mb-0.5">active</span>
+              </div>
+              <div className="flex gap-2 mt-1">
+                {engagement.parents.never_logged_in > 0 && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{engagement.parents.never_logged_in} never logged in</span>}
+                {engagement.parents.inactive > 0 && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{engagement.parents.inactive} inactive</span>}
+              </div>
+            </button>
+            <button onClick={() => setEngagementTab('homework')}
+              className={`rounded-xl p-3 text-left transition-all border-2 ${engagementTab === 'homework' ? 'border-primary-400 bg-white shadow-sm' : 'border-transparent bg-white/60 hover:bg-white'}`}>
+              <p className="text-xs text-neutral-500 mb-1">📚 Homework</p>
+              <div className="flex items-end gap-1.5">
+                <span className="text-xl font-black text-primary-600">{engagement.homework.days_sent}</span>
+                <span className="text-xs text-neutral-400 mb-0.5">days sent</span>
+              </div>
+              <div className="flex gap-2 mt-1">
+                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">{engagement.homework.completed} ✓</span>
+                <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{engagement.homework.not_submitted} ✗</span>
+              </div>
+            </button>
+            <button onClick={() => setEngagementTab('messages')}
+              className={`rounded-xl p-3 text-left transition-all border-2 ${engagementTab === 'messages' ? 'border-primary-400 bg-white shadow-sm' : 'border-transparent bg-white/60 hover:bg-white'}`}>
+              <p className="text-xs text-neutral-500 mb-1">💬 Messages</p>
+              <div className="flex items-end gap-1.5">
+                <span className="text-xl font-black text-primary-600">{engagement.messages.total}</span>
+                <span className="text-xs text-neutral-400 mb-0.5">total</span>
+              </div>
+              <div className="flex gap-2 mt-1">
+                <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{engagement.messages.active_threads} threads</span>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* Drill-down content */}
+        {engagement && (
+          <div className="px-5 py-4">
+
+            {/* TEACHERS tab */}
+            {engagementTab === 'teachers' && (
+              <div>
+                <div className="flex gap-2 mb-3">
+                  {(['all','active','low','inactive'] as const).map(f => (
+                    <button key={f} onClick={() => setEngagementFilter(f)}
+                      className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                        engagementFilter === f ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                      }`}>
+                      {f === 'all' ? `All (${engagement.teachers.total})` :
+                       f === 'active' ? `🟢 Active (${engagement.teachers.active})` :
+                       f === 'low' ? `🟡 Low (${engagement.teachers.low})` :
+                       `🔴 Inactive (${engagement.teachers.inactive})`}
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  {engagement.teachers.list
+                    .filter(t => engagementFilter === 'all' || t.activity_status === engagementFilter)
+                    .map(t => (
+                      <div key={t.id} className={`rounded-xl border px-4 py-3 ${
+                        t.activity_status === 'active' ? 'bg-emerald-50/50 border-emerald-100' :
+                        t.activity_status === 'low' ? 'bg-amber-50/50 border-amber-100' :
+                        'bg-red-50/50 border-red-100'
+                      }`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-semibold text-neutral-800">{t.name}</p>
+                              <span className="text-[10px] text-neutral-400">{t.class_name} {t.section_label}</span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                t.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                                t.activity_status === 'low' ? 'bg-amber-100 text-amber-700' :
+                                'bg-red-100 text-red-600'
+                              }`}>
+                                {t.activity_status === 'active' ? '🟢 Active' : t.activity_status === 'low' ? '🟡 Low' : '🔴 Inactive'}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-3 mt-1.5 text-[11px] text-neutral-500">
+                              <span title="Days plan completed in last 30 days">📋 {t.days_completed_30d} completions</span>
+                              <span title="Homework sent in last 30 days">📚 {t.homework_sent_30d} homework</span>
+                              <span title="Notes sent in last 30 days">📎 {t.notes_sent_30d} notes</span>
+                              <span title="Messages sent in last 30 days">💬 {t.messages_sent_30d} messages</span>
+                              <span title="Current streak">🔥 {t.streak}d streak</span>
+                            </div>
+                            {/* Activity bar — capped at 100% */}
+                            {(() => {
+                              const pct = Math.min(Math.round((t.days_completed_30d / 22) * 100), 100);
+                              return (
+                                <div className="mt-2">
+                                  <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
+                                    <div className={`h-1.5 rounded-full transition-all ${
+                                      pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-400'
+                                    }`} style={{ width: `${pct}%` }} />
+                                  </div>
+                                  <p className="text-[10px] text-neutral-400 mt-0.5">{pct}% activity rate (30-day)</p>
+                                </div>
+                              );
+                            })()}
+                            {t.last_completion && (
+                              <p className="text-[10px] text-neutral-400 mt-1">
+                                Last completion: {new Date(t.last_completion + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                              </p>
+                            )}
+                            {!t.last_completion && (
+                              <p className="text-[10px] text-red-500 mt-1 font-medium">⚠ No completions logged in 30 days</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {engagement.teachers.list.filter(t => engagementFilter === 'all' || t.activity_status === engagementFilter).length === 0 && (
+                    <p className="text-sm text-neutral-400 text-center py-4">No teachers in this category</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* PARENTS tab */}
+            {engagementTab === 'parents' && (
+              <div>
+                <div className="flex gap-2 mb-3 flex-wrap">
+                  {(['all','active','inactive','never_logged_in'] as const).map(f => (
+                    <button key={f} onClick={() => setEngagementFilter(f)}
+                      className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                        engagementFilter === f ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                      }`}>
+                      {f === 'all' ? `All (${engagement.parents.total})` :
+                       f === 'active' ? `🟢 Active (${engagement.parents.active})` :
+                       f === 'inactive' ? `🟡 Inactive (${engagement.parents.inactive})` :
+                       `🔴 Never logged in (${engagement.parents.never_logged_in})`}
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  {engagement.parents.list
+                    .filter(p => engagementFilter === 'all' || p.activity_status === engagementFilter)
+                    .map(p => (
+                      <div key={p.id} className={`rounded-xl border px-4 py-3 ${
+                        p.activity_status === 'active' ? 'bg-emerald-50/50 border-emerald-100' :
+                        p.activity_status === 'never_logged_in' ? 'bg-red-50/50 border-red-100' :
+                        'bg-amber-50/50 border-amber-100'
+                      }`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-semibold text-neutral-800">{p.name || 'Unknown'}</p>
+                              <span className="text-[10px] text-neutral-400">📱 {p.mobile}</span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                                p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' :
+                                'bg-amber-100 text-amber-700'
+                              }`}>
+                                {p.activity_status === 'active' ? '🟢 Active' :
+                                 p.activity_status === 'never_logged_in' ? '🔴 Never logged in' : '🟡 Inactive'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-neutral-500 mt-1">
+                              👶 {p.children_names || 'No children linked'}
+                            </p>
+                            <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500">
+                              <span>💬 {p.messages_sent_30d} messages</span>
+                              <span>🔔 {p.notifications_read_30d} notifications read</span>
+                              {p.unread_notifications > 0 && (
+                                <span className="text-amber-600 font-medium">⚠ {p.unread_notifications} unread</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {engagement.parents.list.filter(p => engagementFilter === 'all' || p.activity_status === engagementFilter).length === 0 && (
+                    <p className="text-sm text-neutral-400 text-center py-4">No parents in this category</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* HOMEWORK tab */}
+            {engagementTab === 'homework' && (
+              <div>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-emerald-700">{engagement.homework.completed}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">✓ Completed</p>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-amber-700">{engagement.homework.partial}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">½ Partial</p>
+                  </div>
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-red-600">{engagement.homework.not_submitted}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">✗ Not submitted</p>
                   </div>
                 </div>
-              </Card>
+                <p className="text-xs font-semibold text-neutral-600 mb-2">Recent homework days</p>
+                <div className="space-y-2">
+                  {engagement.homework.history.slice(0, 10).map((hw, i) => {
+                    const total = hw.completed + hw.partial + hw.not_submitted;
+                    const pct = total > 0 ? Math.round((hw.completed / total) * 100) : 0;
+                    const rawDate = (hw.date || '').split('T')[0];
+                    return (
+                      <div key={i} className="bg-white border border-neutral-100 rounded-xl px-4 py-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div>
+                            <span className="text-xs font-semibold text-neutral-700">
+                              {rawDate ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '—'}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 ml-2">{hw.class_name} {hw.section_label} · {hw.teacher_name}</span>
+                          </div>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
+                            {pct}% done
+                          </span>
+                        </div>
+                        <div className="flex gap-3 text-[11px]">
+                          <span className="text-emerald-600">✓ {hw.completed}</span>
+                          <span className="text-amber-600">½ {hw.partial}</span>
+                          <span className="text-red-500">✗ {hw.not_submitted}</span>
+                        </div>
+                        <div className="w-full bg-neutral-100 rounded-full h-1.5 mt-2">
+                          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {engagement.homework.history.length === 0 && (
+                    <p className="text-sm text-neutral-400 text-center py-4">No homework sent in the last 30 days</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* MESSAGES tab */}
+            {engagementTab === 'messages' && (
+              <div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                  <div className="bg-white border border-neutral-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-primary-700">{engagement.messages.total}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">Total messages</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-blue-700">{engagement.messages.teacher_sent}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">👩‍🏫 By teachers</p>
+                  </div>
+                  <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-purple-700">{engagement.messages.parent_sent}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">👨‍👩‍👧 By parents</p>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-emerald-700">{engagement.messages.active_threads}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">Active threads</p>
+                  </div>
+                </div>
+                <div className="bg-neutral-50 border border-neutral-100 rounded-xl p-4 text-center">
+                  <p className="text-xs text-neutral-500">
+                    {engagement.messages.total === 0
+                      ? 'No messages exchanged in the last 30 days. Encourage teachers to message parents!'
+                      : `${engagement.messages.active_threads} teacher-parent conversation${engagement.messages.active_threads !== 1 ? 's' : ''} active in the last 30 days.`}
+                  </p>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {!engagement && !engagementLoading && (
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm text-neutral-400">No engagement data yet</p>
+          </div>
+        )}
+      </div>
+
+      {/* Quick links */}
+      <div>
+        <p className="section-header mb-3">Quick Access</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {quickLinks.map(({ href, icon, label, desc }) => (
+            <Link key={href} href={href}>
+              <div className="metric-card flex items-start gap-3 cursor-pointer group">
+                <div className="w-9 h-9 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center text-lg shrink-0 group-hover:bg-primary-50 group-hover:border-primary-100 transition-colors">
+                  {icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-neutral-800 group-hover:text-primary-700 transition-colors">{label}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5 leading-snug">{desc}</p>
+                </div>
+              </div>
             </Link>
           ))}
         </div>

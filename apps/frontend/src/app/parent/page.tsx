@@ -588,12 +588,9 @@ function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTa
             <BookOpen size={16} className="text-primary-500" />
             <p className="text-sm font-semibold text-neutral-800">{activeChild.name.split(' ')[0]}'s Journey</p>
           </div>
-          <span className="flex items-center gap-1 text-[10px] text-primary-500 bg-primary-50 px-2 py-0.5 rounded-full">
-            <Sparkles size={10} /> by Oakie
-          </span>
         </div>
         <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
-          See daily highlights and special moments recorded by {activeChild.name.split(' ')[0]}'s teacher — beautifully written by Oakie.
+          Daily highlights and special moments recorded by {activeChild.name.split(' ')[0]}'s teacher.
         </p>
         <a href={`/parent/journey?student_id=${activeChild.id}`}
           className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-colors">
@@ -776,25 +773,37 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
         ) : (
           <div className="space-y-2">
             {hwHistory.map((hw, i) => {
-              const dateStr = new Date(hw.homework_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+              const rawDate = (hw.homework_date || '').toString().split('T')[0];
+              const dateStr = rawDate
+                ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+                : '—';
               const statusConfig = {
                 completed: { label: '✓ Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
                 partial: { label: '½ Partial', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
                 not_submitted: { label: '✗ Not submitted', cls: 'bg-red-50 text-red-600 border-red-100' },
               }[hw.status] || { label: hw.status, cls: 'bg-neutral-50 text-neutral-600 border-neutral-100' };
               return (
-                <div key={i} className={`rounded-xl px-3 py-2.5 border ${statusConfig.cls}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium">{dateStr}</span>
+                <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
+                  <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
+                    <div className="flex items-center gap-2">
+                      <ChevronRight size={14} className="shrink-0 transition-transform group-open:rotate-90" />
+                      <span className="text-xs font-medium">{dateStr}</span>
+                    </div>
                     <span className="text-xs font-bold">{statusConfig.label}</span>
+                  </summary>
+                  <div className="px-3 pb-3 pt-1 border-t border-current/10">
+                    {hw.homework_text ? (
+                      <p className="text-xs leading-relaxed whitespace-pre-wrap">{hw.homework_text}</p>
+                    ) : (
+                      <p className="text-xs opacity-50 italic">No homework text recorded for this date.</p>
+                    )}
+                    {hw.teacher_note && (
+                      <p className="text-xs mt-2 italic opacity-70 border-t border-current/10 pt-2">
+                        Teacher note: {hw.teacher_note}
+                      </p>
+                    )}
                   </div>
-                  {hw.homework_text && (
-                    <p className="text-xs mt-1 opacity-70 line-clamp-1">{hw.homework_text}</p>
-                  )}
-                  {hw.teacher_note && (
-                    <p className="text-xs mt-1 italic opacity-60">Note: {hw.teacher_note}</p>
-                  )}
-                </div>
+                </details>
               );
             })}
           </div>

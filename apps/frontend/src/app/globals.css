@@ -92,6 +92,150 @@ input:focus, textarea:focus, select:focus {
 /* ── Button press effect ── */
 button:active:not(:disabled) { transform: scale(0.98); }
 
+/* ── Stat card number ── */
+.stat-number {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+/* ── Section header ── */
+.section-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9E9690;
+}
+
+/* ── Premium gradient border ── */
+.gradient-border {
+  position: relative;
+  background: white;
+  border-radius: 16px;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ── Pill badge ── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* ── Table row hover ── */
+.table-row-hover:hover {
+  background: #FAFAF9;
+}
+
+/* ── Subtle divider ── */
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #ECEAE7 20%, #ECEAE7 80%, transparent);
+}
+
+/* ── Page title ── */
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #1C1917;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: #9E9690;
+}
+
+/* ── Tooltip ── */
+[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1C1917;
+  color: white;
+  font-size: 0.6875rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* ── Admin layout wrapper ── */
+.admin-layout {
+  min-height: 100vh;
+  background: #F7F6F4;
+}
+
+/* ── Dashboard header ── */
+.dash-header {
+  background: white;
+  border-bottom: 1px solid #ECEAE7;
+  padding: 1.25rem 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(8px);
+  background: rgba(255,255,255,0.95);
+}
+
+/* ── Metric card ── */
+.metric-card {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #ECEAE7;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04);
+  transition: box-shadow 150ms, transform 150ms;
+}
+.metric-card:hover {
+  box-shadow: 0 4px 12px 0 rgb(0 0 0 / 0.08);
+  transform: translateY(-1px);
+}
+
+/* ── Progress bar ── */
+.progress-track {
+  height: 6px;
+  background: #ECEAE7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
 /* ── Animated gradient background for login ── */
 @keyframes gradientShift {
   0%   { background-position: 0% 50%; }

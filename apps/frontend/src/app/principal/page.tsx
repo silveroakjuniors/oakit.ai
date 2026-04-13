@@ -1,36 +1,30 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef, FormEvent } from 'react';
-import { Card, Badge, Button } from '@/components/ui';
-import ProgressBar from '@/components/ui/ProgressBar';
+import { Button } from '@/components/ui';
 import OakitLogo from '@/components/OakitLogo';
 import { apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken, getRoleRedirect } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { ChevronDown } from 'lucide-react';
 
+// ── Types ────────────────────────────────────────────────────
 interface SectionSummary {
-  section_id: string;
-  section_label: string;
-  class_name: string;
-  class_teacher_name: string | null;
-  total_students: number;
-  present_today: number;
-  absent_today: number;
-  attendance_submitted: boolean;
+  section_id: string; section_label: string; class_name: string;
+  class_teacher_name: string | null; total_students: number;
+  present_today: number; absent_today: number; attendance_submitted: boolean;
+  plan_completed: boolean; homework_sent: boolean;
+  coverage_pct: number | null; coverage_total: number; coverage_covered: number;
 }
+interface TeacherStreak { teacher_id: string; teacher_name: string; current_streak: number; best_streak: number; }
+interface BirthdayKid { id: string; name: string; class_name: string; section_label: string; days_until: number; }
 interface PrincipalContext {
-  principal_name: string;
-  greeting: string;
-  thought_for_day: string;
-  today: string;
-  sections: SectionSummary[];
+  principal_name: string; greeting: string; thought_for_day: string; today: string;
+  sections: SectionSummary[]; teacher_streaks: TeacherStreak[];
   summary: {
-    total_students: number;
-    total_present: number;
-    total_absent: number;
-    attendance_submitted: number;
-    total_sections: number;
+    total_students: number; total_present: number; total_absent: number;
+    attendance_submitted: number; plans_completed: number; homework_sent: number; total_sections: number;
   };
 }
 interface Message { role: 'user' | 'assistant'; text: string; }
@@ -39,9 +33,47 @@ const SUGGESTED = [
   'Which sections are lagging behind?',
   "Who hasn't submitted attendance today?",
   'What is the overall curriculum progress?',
-  'Which sections are flagged?',
 ];
 
+// ── Mini donut (SVG, no deps) ─────────────────────────────────
+function Donut({ pct, color, size = 64 }: { pct: number; color: string; size?: number }) {
+  const r = size / 2 - 6;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - Math.min(pct, 100) / 100);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="6"
+        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${size/2} ${size/2})`} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+      <text x={size/2} y={size/2+4} textAnchor="middle" fontSize="11" fontWeight="800" fill="#111">{pct}%</text>
+    </svg>
+  );
+}
+
+// ── Collapsible wrapper ───────────────────────────────────────
+function Collapsible({ title, subtitle, badge, defaultOpen = false, children, accent }:
+  { title: string; subtitle?: string; badge?: React.ReactNode; defaultOpen?: boolean; children: React.ReactNode; accent?: string }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${accent || 'border-neutral-100'}`}>
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-neutral-50/60 transition-colors">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-neutral-800 truncate">{title}</p>
+            {subtitle && <p className="text-xs text-neutral-400 mt-0.5">{subtitle}</p>}
+          </div>
+          {badge}
+        </div>
+        <ChevronDown className={`w-4 h-4 text-neutral-400 shrink-0 ml-2 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="border-t border-neutral-100">{children}</div>}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────
 export default function PrincipalDashboard() {
   const router = useRouter();
   const token = getToken() || '';
@@ -50,8 +82,16 @@ export default function PrincipalDashboard() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
-  const [safetyAlerts, setSafetyAlerts] = useState<{ id: string; actor_name: string; actor_role: string; query_text: string; created_at: string }[]>([]);
+  const [safetyAlerts, setSafetyAlerts] = useState<any[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Birthday state
+  const [birthdays, setBirthdays] = useState<BirthdayKid[]>([]);
+  const [birthdayMsg, setBirthdayMsg] = useState('');
+  const [formattedBirthdayMsg, setFormattedBirthdayMsg] = useState('');
+  const [formattingBirthday, setFormattingBirthday] = useState(false);
+  const [sendingBirthday, setSendingBirthday] = useState(false);
+  const [birthdaySent, setBirthdaySent] = useState('');
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
@@ -66,10 +106,14 @@ export default function PrincipalDashboard() {
       })
       .catch(() => setMessages([{ role: 'assistant', text: 'Hello! Ask me about your school.' }]))
       .finally(() => setLoading(false));
-    // Load safety alerts
-    apiGet<{ alerts: any[]; unread_count: number }>('/api/v1/admin/audit/safety-alerts', token)
-      .then(d => setSafetyAlerts(d.alerts))
-      .catch(() => {});
+    apiGet<{ alerts: any[] }>('/api/v1/admin/audit/safety-alerts', token)
+      .then(d => setSafetyAlerts(d.alerts)).catch(() => {});
+    apiGet<BirthdayKid[]>('/api/v1/principal/birthdays?days=7', token)
+      .then(data => {
+        // Only set if data looks like real student records (has name + days_until is a number)
+        const valid = (data || []).filter(k => k.name && typeof k.days_until === 'number' && k.id);
+        setBirthdays(valid);
+      }).catch(() => {});
   }, []);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -84,13 +128,13 @@ export default function PrincipalDashboard() {
     try {
       const res = await apiPost<{ response: string }>('/api/v1/ai/query', { text: userMsg }, token);
       setMessages(m => [...m, { role: 'assistant', text: res.response }]);
-    } catch (err: any) {
-      setMessages(m => [...m, { role: 'assistant', text: 'Sorry, try again.' }]);
-    } finally { setAiLoading(false); }
+    } catch { setMessages(m => [...m, { role: 'assistant', text: 'Sorry, try again.' }]); }
+    finally { setAiLoading(false); }
   }
 
-  const today = ctx?.today ? new Date(ctx.today + 'T12:00:00') : new Date();
-  const todayLabel = today.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  const todayLabel = ctx?.today
+    ? new Date(ctx.today + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
 
   // Group sections by class
   const byClass: Record<string, SectionSummary[]> = {};
@@ -99,6 +143,17 @@ export default function PrincipalDashboard() {
     byClass[s.class_name].push(s);
   });
 
+  // School health derived stats
+  const totalSections = ctx?.summary.total_sections ?? 0;
+  const attPct = ctx ? Math.round((ctx.summary.attendance_submitted / Math.max(totalSections, 1)) * 100) : 0;
+  const planPct = ctx ? Math.round(((ctx.summary.plans_completed ?? 0) / Math.max(totalSections, 1)) * 100) : 0;
+  const avgCovPct = ctx?.sections.length
+    ? Math.round(ctx.sections.reduce((s, sec) => s + (sec.coverage_pct ?? 0), 0) / ctx.sections.length)
+    : 0;
+
+  const todayBirthdays = birthdays.filter(b => b.days_until === 0);
+  const upcomingBirthdays = birthdays.filter(b => b.days_until > 0);
+
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col">
       {/* Header */}
@@ -106,200 +161,375 @@ export default function PrincipalDashboard() {
         style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%)', boxShadow: '0 1px 12px rgba(0,0,0,0.15)' }}>
         <OakitLogo size="xs" variant="light" />
         <div className="flex items-center gap-3">
-          {ctx && <span className="text-sm text-white/80 hidden sm:block">Welcome, {ctx.principal_name}</span>}
+          {ctx && <span className="text-sm text-white/80 hidden sm:block">{ctx.principal_name}</span>}
           <button onClick={() => { clearToken(); router.push('/login'); }}
             className="text-xs text-white/55 hover:text-white/80 transition-colors">Sign out</button>
         </div>
       </header>
 
-      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
-
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
         {/* ── Left / Main ── */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0">
 
           {/* Welcome banner */}
           {ctx && (
             <div className="bg-white border-b border-neutral-100 px-5 py-3">
               <p className="text-xs text-neutral-400">{todayLabel}</p>
               <p className="text-sm font-semibold text-neutral-800 mt-0.5">{ctx.greeting}</p>
-              <p className="text-xs text-neutral-500 italic mt-0.5">"{ctx.thought_for_day}"</p>
             </div>
           )}
 
-          <div className="p-4 space-y-4">
+          <div className="p-4 space-y-3">
+
             {/* Safety alerts */}
             {safetyAlerts.length > 0 && (
               <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-xl animate-pulse">🚨</span>
-                  <div>
-                    <p className="text-sm font-bold text-red-800">{safetyAlerts.length} Inappropriate Content Alert{safetyAlerts.length > 1 ? 's' : ''}</p>
-                    <p className="text-xs text-red-600">Review in Admin → Audit Log</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {safetyAlerts.slice(0, 3).map(alert => (
-                    <div key={alert.id} className="bg-white border border-red-200 rounded-xl px-3 py-2.5">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-semibold text-red-800">{alert.actor_name}</span>
-                        <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full capitalize">{alert.actor_role}</span>
-                        <span className="text-xs text-neutral-400 ml-auto">
-                          {new Date(alert.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <p className="text-xs text-red-700 font-medium">"{alert.query_text}"</p>
-                    </div>
-                  ))}
-                  {safetyAlerts.length > 3 && <p className="text-xs text-red-500 text-center">+{safetyAlerts.length - 3} more alerts</p>}
-                </div>
+                <p className="text-sm font-bold text-red-800">🚨 {safetyAlerts.length} Content Alert{safetyAlerts.length > 1 ? 's' : ''}</p>
+                <p className="text-xs text-red-600 mt-0.5">Review in Admin → Audit Log</p>
               </div>
             )}
 
-            {/* Summary stat cards */}
+            {/* 6 stat cards */}
             {ctx && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-white border border-neutral-100 rounded-2xl p-4 shadow-sm">
-                  <p className="text-xs text-neutral-500 mb-1">Students</p>
-                  <p className="text-2xl font-bold text-neutral-800">{ctx.summary.total_students}</p>
-                </div>
-                <div className={`border rounded-2xl p-4 shadow-sm ${ctx.summary.total_present > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-neutral-100'}`}>
-                  <p className="text-xs text-neutral-500 mb-1">Present</p>
-                  <p className="text-2xl font-bold text-emerald-700">{ctx.summary.total_present}</p>
-                </div>
-                <div className={`border rounded-2xl p-4 shadow-sm ${ctx.summary.total_absent > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-neutral-100'}`}>
-                  <p className="text-xs text-neutral-500 mb-1">Absent</p>
-                  <p className="text-2xl font-bold text-red-600">{ctx.summary.total_absent}</p>
-                </div>
-                <div className={`border rounded-2xl p-4 shadow-sm ${ctx.summary.attendance_submitted === ctx.summary.total_sections ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
-                  <p className="text-xs text-neutral-500 mb-1">Attendance</p>
-                  <p className={`text-2xl font-bold ${ctx.summary.attendance_submitted === ctx.summary.total_sections ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {ctx.summary.attendance_submitted}/{ctx.summary.total_sections}
-                  </p>
-                  <p className="text-xs text-neutral-400">sections</p>
-                </div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {[
+                  { label: 'Students', value: ctx.summary.total_students, sub: `${totalSections} sections`, color: 'text-neutral-800' },
+                  { label: 'Present', value: ctx.summary.total_present, sub: `${ctx.summary.total_students > 0 ? Math.round((ctx.summary.total_present/ctx.summary.total_students)*100) : 0}% today`, color: 'text-emerald-700', bg: ctx.summary.total_present > 0 ? 'bg-emerald-50 border-emerald-100' : '' },
+                  { label: 'Absent', value: ctx.summary.total_absent, sub: 'today', color: 'text-red-600', bg: ctx.summary.total_absent > 0 ? 'bg-red-50 border-red-100' : '' },
+                  { label: 'Attendance', value: `${ctx.summary.attendance_submitted}/${totalSections}`, sub: 'sections', color: ctx.summary.attendance_submitted === totalSections ? 'text-emerald-700' : 'text-amber-700', bg: ctx.summary.attendance_submitted === totalSections ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100' },
+                  { label: 'Plans Done', value: `${ctx.summary.plans_completed ?? 0}/${totalSections}`, sub: 'sections', color: 'text-primary-700', bg: (ctx.summary.plans_completed ?? 0) === totalSections ? 'bg-primary-50 border-primary-100' : '' },
+                  { label: 'Homework', value: `${ctx.summary.homework_sent ?? 0}/${totalSections}`, sub: 'sent', color: 'text-blue-700', bg: (ctx.summary.homework_sent ?? 0) > 0 ? 'bg-blue-50 border-blue-100' : '' },
+                ].map((s, i) => (
+                  <div key={i} className={`border rounded-2xl p-2.5 shadow-sm flex flex-col gap-0.5 ${s.bg || 'bg-white border-neutral-100'}`}>
+                    <p className="text-[9px] text-neutral-500 uppercase tracking-wide leading-none">{s.label}</p>
+                    <p className={`text-lg font-black leading-tight ${s.color}`}>{s.value}</p>
+                    <p className="text-[9px] text-neutral-400 leading-none">{s.sub}</p>
+                  </div>
+                ))}
               </div>
             )}
 
             {/* Quick nav */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {[
                 { href: '/principal/attendance', label: 'Attendance', icon: '📋' },
-                { href: '/principal/teachers', label: 'Teachers', icon: '👩‍🏫' },
-                { href: '/principal/coverage', label: 'Coverage', icon: '📊' },
+                { href: '/principal/teachers',   label: 'Teachers',   icon: '👩‍🏫' },
+                { href: '/principal/coverage',   label: 'Coverage',   icon: '📊' },
+                { href: '/principal/overview',   label: 'Reports',    icon: '📄' },
               ].map(({ href, label, icon }) => (
                 <Link key={href} href={href}
-                  className="bg-white border border-neutral-200 rounded-2xl p-3 flex flex-col items-center gap-1.5 hover:shadow-md hover:-translate-y-0.5 transition-all text-center">
-                  <span className="text-2xl">{icon}</span>
-                  <span className="text-xs font-semibold text-neutral-700">{label}</span>
+                  className="bg-white border border-neutral-200 rounded-2xl p-3 flex flex-col items-center gap-1 hover:shadow-md hover:-translate-y-0.5 transition-all text-center">
+                  <span className="text-xl">{icon}</span>
+                  <span className="text-[10px] font-semibold text-neutral-700">{label}</span>
                 </Link>
               ))}
             </div>
-          </div>
 
-          {/* Section cards by class */}
-          {loading ? (
-            <p className="px-4 text-sm text-gray-400">Loading...</p>
-          ) : (
-            <div className="px-4 pb-6 flex flex-col gap-4">
-              {Object.entries(byClass).map(([className, sections]) => (
-                <div key={className}>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{className}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {sections.map(sec => (
-                      <div key={sec.section_id} className="bg-white border border-gray-200 rounded-xl p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">
-                              {sec.class_name} – Section {sec.section_label}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {sec.class_teacher_name ? `👩‍🏫 ${sec.class_teacher_name}` : '⚠ No class teacher'}
-                            </p>
-                          </div>
-                          {sec.attendance_submitted
-                            ? <Badge label="✓ Attendance" variant="success" />
-                            : <Badge label="⏳ Pending" variant="warning" />}
-                        </div>
-
-                        {/* Student count */}
-                        <div className="flex items-center gap-3 text-sm">
-                          <span className="text-gray-500 text-xs">Students:</span>
-                          <span className="font-semibold text-gray-800">{sec.total_students}</span>
-                          {sec.attendance_submitted && (
-                            <>
-                              <span className="text-green-600 text-xs font-medium">{sec.present_today}P</span>
-                              <span className="text-red-500 text-xs font-medium">{sec.absent_today}A</span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Attendance bar */}
-                        {sec.attendance_submitted && sec.total_students > 0 && (
-                          <div className="mt-2">
-                            <div className="w-full bg-gray-100 rounded-full h-1.5">
-                              <div
-                                className="bg-green-500 h-1.5 rounded-full"
-                                style={{ width: `${Math.round((sec.present_today / sec.total_students) * 100)}%` }}
-                              />
-                            </div>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              {Math.round((sec.present_today / sec.total_students) * 100)}% present
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+            {/* ── School Health — always visible on landing ── */}
+            {ctx && (
+              <div className="bg-white border border-neutral-100 rounded-2xl shadow-sm p-4">
+                <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">School Health</p>
+                <div className="flex justify-around mb-4">
+                  <div className="flex flex-col items-center gap-1">
+                    <Donut pct={avgCovPct} color="#10b981" />
+                    <p className="text-[10px] text-neutral-500 text-center">Curriculum</p>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <Donut pct={attPct} color="#6366f1" />
+                    <p className="text-[10px] text-neutral-500 text-center">Attendance<br/>Submitted</p>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <Donut pct={planPct} color="#f59e0b" />
+                    <p className="text-[10px] text-neutral-500 text-center">Plans<br/>Completed</p>
                   </div>
                 </div>
-              ))}
-              {!loading && Object.keys(byClass).length === 0 && (
-                <p className="text-sm text-gray-400">No sections found</p>
-              )}
-            </div>
-          )}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { icon: '🎓', label: 'Students', value: ctx.summary.total_students },
+                    { icon: '👩‍🏫', label: 'Teachers', value: ctx.sections.filter(s => s.class_teacher_name).length },
+                    { icon: '🏫', label: 'Classes', value: Object.keys(byClass).length },
+                  ].map((s, i) => (
+                    <div key={i} className="bg-neutral-50 rounded-xl p-2.5 text-center">
+                      <p className="text-base">{s.icon}</p>
+                      <p className="text-lg font-black text-neutral-800">{s.value}</p>
+                      <p className="text-[9px] text-neutral-400">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Birthdays — collapsible ── */}
+            {birthdays.length > 0 && (
+              <Collapsible
+                title={todayBirthdays.length > 0 ? `🎂 Birthdays Today (${todayBirthdays.length})` : `🎂 Upcoming Birthdays`}
+                subtitle={todayBirthdays.length > 0 ? 'Tap to send wishes' : `${upcomingBirthdays.length} in next 7 days`}
+                defaultOpen={todayBirthdays.length > 0}
+                accent={todayBirthdays.length > 0 ? 'border-pink-200' : 'border-neutral-100'}
+              >
+                <div className="p-4 space-y-2">
+                  {birthdays.map(kid => (
+                    <div key={kid.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl ${kid.days_until === 0 ? 'bg-pink-50 border border-pink-100' : 'bg-neutral-50'}`}>
+                      <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center text-xs font-bold text-pink-700 shrink-0">
+                        {kid.name?.[0] ?? '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-neutral-800 truncate">{kid.name}</p>
+                        <p className="text-[10px] text-neutral-400">{kid.class_name} · {kid.section_label}</p>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${kid.days_until === 0 ? 'bg-pink-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                        {kid.days_until === 0 ? '🎂 Today' : `in ${kid.days_until}d`}
+                      </span>
+                    </div>
+                  ))}
+
+                  {todayBirthdays.length > 0 && (
+                    <div className="pt-2 border-t border-pink-100">
+                      {!formattedBirthdayMsg ? (
+                        <div className="flex gap-2">
+                          <input value={birthdayMsg} onChange={e => setBirthdayMsg(e.target.value)}
+                            placeholder="Write a birthday wish — Oakie will format it"
+                            className="flex-1 px-3 py-2 border border-pink-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-pink-300/40" />
+                          <button onClick={async () => {
+                            if (!birthdayMsg.trim()) return;
+                            setFormattingBirthday(true);
+                            try {
+                              const names = todayBirthdays.map(k => k.name).join(', ');
+                              const res = await apiPost<{ response: string }>('/api/v1/ai/query', {
+                                text: `Write a warm birthday message for ${names} from the school principal. Under 50 words, joyful, school-appropriate. Birthday message only.`,
+                              }, token);
+                              setFormattedBirthdayMsg(res.response.split('\n\n')[0].trim() || birthdayMsg);
+                            } catch { setFormattedBirthdayMsg(birthdayMsg); }
+                            finally { setFormattingBirthday(false); }
+                          }} disabled={formattingBirthday || !birthdayMsg.trim()}
+                            className="px-3 py-2 bg-pink-500 text-white rounded-xl text-xs font-bold hover:bg-pink-600 disabled:opacity-50 shrink-0">
+                            {formattingBirthday ? '…' : '✨'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="bg-white border border-pink-200 rounded-xl p-3">
+                          <p className="text-xs font-semibold text-pink-700 mb-1.5">Review before sending</p>
+                          <p className="text-sm text-neutral-800 leading-relaxed">{formattedBirthdayMsg}</p>
+                          <div className="flex gap-2 mt-3">
+                            <button onClick={async () => {
+                              setSendingBirthday(true);
+                              try {
+                                await apiPost('/api/v1/principal/birthdays/send', {
+                                  student_ids: todayBirthdays.map(b => b.id), message: formattedBirthdayMsg,
+                                }, token);
+                                setBirthdaySent(`✓ Sent to ${todayBirthdays.length} student${todayBirthdays.length > 1 ? 's' : ''} and parents!`);
+                                setFormattedBirthdayMsg(''); setBirthdayMsg('');
+                              } catch { setBirthdaySent('Failed — try again'); }
+                              finally { setSendingBirthday(false); }
+                            }} disabled={sendingBirthday}
+                              className="flex-1 py-2 bg-pink-500 text-white rounded-xl text-xs font-bold hover:bg-pink-600 disabled:opacity-50">
+                              {sendingBirthday ? '…' : '🎉 Send'}
+                            </button>
+                            <button onClick={() => setFormattedBirthdayMsg('')}
+                              className="px-3 py-2 border border-neutral-200 rounded-xl text-xs text-neutral-600">Edit</button>
+                          </div>
+                        </div>
+                      )}
+                      {birthdaySent && <p className="text-xs text-emerald-600 font-medium mt-2">{birthdaySent}</p>}
+                    </div>
+                  )}
+                </div>
+              </Collapsible>
+            )}
+
+            {/* ── Teacher Streaks — collapsible ── */}
+            {ctx?.teacher_streaks && ctx.teacher_streaks.length > 0 && (
+              <Collapsible title="🔥 Teacher Streaks" subtitle={`Top ${Math.min(ctx.teacher_streaks.length, 5)} teachers`} defaultOpen={false}>
+                <div className="divide-y divide-neutral-50">
+                  {ctx.teacher_streaks.slice(0, 5).map((t, i) => (
+                    <div key={t.teacher_id} className="flex items-center gap-3 px-4 py-3">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${i === 0 ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>{i + 1}</div>
+                      <p className="text-sm text-neutral-700 flex-1 truncate">{t.teacher_name}</p>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-sm font-black text-amber-600">{t.current_streak ?? 0}</span>
+                        <span className="text-xs text-neutral-400">days</span>
+                        {(t.best_streak ?? 0) > (t.current_streak ?? 0) && (
+                          <span className="text-[10px] text-neutral-400 ml-1">· best {t.best_streak}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Collapsible>
+            )}
+
+            {/* ── Classes & Sections — single collapsible, collapsed by default ── */}
+            {loading ? (
+              <div className="py-8 text-center"><p className="text-sm text-neutral-400">Loading…</p></div>
+            ) : (
+              <Collapsible
+                title="🏫 Classes & Sections"
+                subtitle={`${Object.keys(byClass).length} classes · ${(ctx?.sections || []).length} sections · ${ctx?.summary.total_students ?? 0} students`}
+                defaultOpen={false}
+              >
+                <div className="divide-y divide-neutral-50">
+                  {Object.entries(byClass).map(([className, sections]) => {
+                    const allAttDone = sections.every(s => s.attendance_submitted);
+                    const classCovPct = sections.length > 0
+                      ? Math.round(sections.reduce((s, sec) => s + (sec.coverage_pct ?? 0), 0) / sections.length)
+                      : 0;
+                    return (
+                      <details key={className} className="group">
+                        <summary className="flex items-center justify-between px-4 py-3 cursor-pointer list-none hover:bg-neutral-50 transition-colors">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ChevronDown className="w-3.5 h-3.5 text-neutral-300 shrink-0 transition-transform group-open:rotate-180" />
+                            <div>
+                              <p className="text-sm font-bold text-neutral-800">{className}</p>
+                              <p className="text-[10px] text-neutral-400">
+                                {sections.length} section{sections.length !== 1 ? 's' : ''} · {sections.reduce((s, sec) => s + sec.total_students, 0)} students
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${allAttDone ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {allAttDone ? '✓ Att' : '⏳ Att'}
+                            </span>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${classCovPct >= 75 ? 'bg-emerald-100 text-emerald-700' : classCovPct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                              {classCovPct}% cov
+                            </span>
+                          </div>
+                        </summary>
+
+                        {/* Sections inside this class */}
+                        <div className="border-t border-neutral-50 divide-y divide-neutral-50 bg-neutral-50/30">
+                          {sections.map(sec => {
+                            const attPctSec = sec.total_students > 0 ? Math.round((sec.present_today / sec.total_students) * 100) : 0;
+                            const covPctSec = sec.coverage_pct ?? 0;
+                            return (
+                              <details key={sec.section_id} className="group/sec">
+                                <summary className="flex items-center justify-between pl-10 pr-4 py-2.5 cursor-pointer list-none hover:bg-neutral-100/50 transition-colors">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <ChevronDown className="w-3 h-3 text-neutral-300 shrink-0 transition-transform group-open/sec:rotate-180" />
+                                    <div className="min-w-0">
+                                      <span className="text-xs font-semibold text-neutral-700">Section {sec.section_label}</span>
+                                      <span className="text-[10px] text-neutral-400 ml-2">
+                                        {sec.class_teacher_name ? `👩‍🏫 ${sec.class_teacher_name}` : '⚠ No teacher'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-1 shrink-0">
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.attendance_submitted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                      {sec.attendance_submitted ? '✓ Att' : '⏳'}
+                                    </span>
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.plan_completed ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                                      {sec.plan_completed ? '✓ Plan' : '— Plan'}
+                                    </span>
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.homework_sent ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                                      {sec.homework_sent ? '✓ HW' : '— HW'}
+                                    </span>
+                                  </div>
+                                </summary>
+
+                                {/* Section metrics */}
+                                <div className="pl-10 pr-4 pb-3 pt-1 grid grid-cols-3 gap-3">
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-[10px] text-neutral-400">Attendance</span>
+                                      <span className={`text-[10px] font-bold ${attPctSec >= 90 ? 'text-emerald-600' : attPctSec >= 75 ? 'text-amber-600' : 'text-red-500'}`}>
+                                        {sec.attendance_submitted ? `${attPctSec}%` : '—'}
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
+                                      <div className="h-1.5 rounded-full" style={{ width: sec.attendance_submitted ? `${attPctSec}%` : '0%', background: attPctSec >= 90 ? '#10b981' : attPctSec >= 75 ? '#f59e0b' : '#ef4444' }} />
+                                    </div>
+                                    {sec.attendance_submitted && <p className="text-[9px] text-neutral-400 mt-0.5">{sec.present_today}P · {sec.absent_today}A of {sec.total_students}</p>}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-[10px] text-neutral-400">Curriculum</span>
+                                      <span className={`text-[10px] font-bold ${covPctSec >= 75 ? 'text-emerald-600' : covPctSec >= 40 ? 'text-amber-600' : covPctSec > 0 ? 'text-red-500' : 'text-neutral-400'}`}>
+                                        {sec.coverage_total > 0 ? `${covPctSec}%` : 'No data'}
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
+                                      <div className="h-1.5 rounded-full" style={{ width: `${Math.min(covPctSec, 100)}%`, background: covPctSec >= 75 ? '#10b981' : covPctSec >= 40 ? '#f59e0b' : '#ef4444' }} />
+                                    </div>
+                                    {sec.coverage_total > 0 && <p className="text-[9px] text-neutral-400 mt-0.5">{sec.coverage_covered}/{sec.coverage_total} topics</p>}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-[10px] text-neutral-400">Students</span>
+                                      <span className="text-[10px] font-bold text-neutral-600">{sec.total_students}</span>
+                                    </div>
+                                    <div className="w-full bg-neutral-200 rounded-full h-1.5" />
+                                    <p className="text-[9px] text-neutral-400 mt-0.5">enrolled</p>
+                                  </div>
+                                </div>
+                              </details>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
+              </Collapsible>
+            )}
+          </div>
         </div>
 
-        {/* ── Right: AI Chat ── */}
-        <div className="lg:w-80 shrink-0 border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col bg-white" style={{ minHeight: '300px', maxHeight: '100vh' }}>
-          <div className="px-4 py-3 border-b border-gray-100">
-            <p className="text-sm font-semibold text-gray-700">Ask Oakie</p>
-            <p className="text-xs text-gray-400">Ask about attendance, coverage, or any section</p>
+        {/* ── Right: Ask Oakie ── */}
+        <div className="lg:w-80 xl:w-96 shrink-0 flex flex-col bg-white border-t lg:border-t-0 lg:border-l border-neutral-100"
+          style={{ height: 'calc(100vh - 56px)', position: 'sticky', top: '56px' }}>
+          {/* Header */}
+          <div className="px-4 py-3 border-b border-neutral-100 shrink-0">
+            <p className="text-sm font-bold text-neutral-800">Ask Oakie</p>
+            <p className="text-xs text-neutral-400 mt-0.5">Attendance, coverage, any section</p>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2" style={{ maxHeight: '400px' }}>
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[88%] px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
-                  msg.role === 'user' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-800'
+                {msg.role === 'assistant' && (
+                  <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center shrink-0 mr-2 mt-0.5 self-start">
+                    <span className="text-xs">🌳</span>
+                  </div>
+                )}
+                <div className={`max-w-[85%] px-3 py-2.5 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
+                  msg.role === 'user'
+                    ? 'bg-primary-600 text-white rounded-br-sm'
+                    : 'bg-neutral-100 text-neutral-800 rounded-bl-sm'
                 }`}>{msg.text}</div>
               </div>
             ))}
             {aiLoading && (
               <div className="flex justify-start">
-                <div className="bg-gray-100 px-3 py-2 rounded-xl text-xs text-gray-400">Thinking...</div>
+                <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center shrink-0 mr-2">
+                  <span className="text-xs">🌳</span>
+                </div>
+                <div className="bg-neutral-100 px-3 py-2.5 rounded-2xl rounded-bl-sm flex gap-1 items-center">
+                  {[0,150,300].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce inline-block" style={{ animationDelay: `${d}ms` }} />)}
+                </div>
               </div>
             )}
             <div ref={chatEndRef} />
           </div>
 
           {/* Suggested questions */}
-          <div className="px-3 py-2 flex flex-col gap-1.5 border-t border-gray-100">
+          <div className="px-3 py-2 border-t border-neutral-100 flex flex-col gap-1.5 shrink-0">
             {SUGGESTED.map(q => (
               <button key={q} onClick={() => sendMessage(undefined, q)}
-                className="text-left text-xs px-3 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                className="text-left text-xs px-3 py-2 rounded-xl border border-neutral-100 text-neutral-600 hover:bg-neutral-50 hover:border-neutral-200 transition-colors">
                 {q}
               </button>
             ))}
           </div>
 
-          <form onSubmit={sendMessage} className="border-t border-gray-100 p-3 flex gap-2">
+          {/* Input */}
+          <form onSubmit={sendMessage} className="border-t border-neutral-100 p-3 flex gap-2 shrink-0">
             <input
-              className="flex-1 px-3 py-1.5 rounded-lg border border-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
-              placeholder="Ask about your school..."
+              className="flex-1 px-3 py-2 rounded-xl border border-neutral-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary-400/20 bg-neutral-50 placeholder:text-neutral-400"
+              placeholder="Ask about your school…"
               value={input}
               onChange={e => setInput(e.target.value)}
             />
-            <Button type="submit" size="sm" loading={aiLoading}>→</Button>
+            <Button type="submit" size="sm" loading={aiLoading} disabled={!input.trim()}>→</Button>
           </form>
         </div>
       </div>

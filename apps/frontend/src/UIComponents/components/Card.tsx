@@ -23,10 +23,10 @@ export function Card({ children, className = '', padding = 'md', hover = false, 
       onClick={onClick}
       className={`
         bg-white rounded-2xl
-        ${border ? 'border border-neutral-200/80' : ''}
-        shadow-card
-        transition-all duration-150
-        ${hover || onClick ? 'hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer' : ''}
+        ${border ? 'border border-neutral-100' : ''}
+        shadow-sm
+        transition-all duration-200
+        ${hover || onClick ? 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer' : ''}
         ${paddingMap[padding]}
         ${className}
       `}

@@ -98,6 +98,139 @@ router.get('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /parent/child-journey/:studentId/snapshot — daily AI snapshot ───────
+// Generates a warm 3-sentence child snapshot based on age + recent journey entries.
+// Cached per student per day — regenerates next day automatically.
+router.get('/parent/:studentId/snapshot', async (req: Request, res: Response) => {
+  try {
+    const { school_id, user_id } = req.user!;
+    const { studentId } = req.params;
+
+    // Verify parent access via parent_student_links
+    const accessCheck = await pool.query(
+      `SELECT s.id, s.name, s.date_of_birth
+       FROM students s
+       JOIN parent_student_links psl ON psl.student_id = s.id
+       WHERE s.id = $1 AND s.school_id = $2 AND psl.parent_id = $3`,
+      [studentId, school_id, user_id]
+    );
+    if (accessCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const student = accessCheck.rows[0];
+
+    // Cache key: per student per calendar date
+    const { redis } = await import('../../lib/redis');
+    const today = new Date().toISOString().split('T')[0];
+    const cacheKey = `snapshot:${studentId}:${today}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json(JSON.parse(cached));
+
+    // Calculate age
+    let ageText = '';
+    if (student.date_of_birth) {
+      const dob = new Date(student.date_of_birth);
+      const now = new Date();
+      const years = now.getFullYear() - dob.getFullYear();
+      const months = now.getMonth() - dob.getMonth() + (now.getDate() < dob.getDate() ? -1 : 0);
+      const totalMonths = years * 12 + months;
+      const y = Math.floor(totalMonths / 12);
+      const m = totalMonths % 12;
+      ageText = y > 0 ? `${y} year${y > 1 ? 's' : ''}${m > 0 ? ` and ${m} month${m > 1 ? 's' : ''}` : ''}` : `${m} month${m > 1 ? 's' : ''}`;
+    }
+
+    // Get recent journey entries (last 14 days)
+    const entriesRow = await pool.query(
+      `SELECT entry_type, beautified_text, entry_date
+       FROM child_journey_entries
+       WHERE student_id = $1 AND school_id = $2
+         AND entry_date >= CURRENT_DATE - 14
+       ORDER BY entry_date DESC LIMIT 5`,
+      [studentId, school_id]
+    );
+
+    // Get class info
+    const classRow = await pool.query(
+      `SELECT c.name as class_name FROM students s
+       JOIN classes c ON c.id = s.class_id
+       WHERE s.id = $1`,
+      [studentId]
+    );
+    const className = classRow.rows[0]?.class_name || 'preschool';
+
+    // Get attendance this month
+    const attRow = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE status='present')::int as present,
+              COUNT(*) FILTER (WHERE status='absent')::int as absent
+       FROM attendance_records
+       WHERE student_id = $1 AND attend_date >= date_trunc('month', CURRENT_DATE)`,
+      [studentId]
+    );
+    const att = attRow.rows[0];
+
+    // Build context for AI
+    const recentHighlights = entriesRow.rows
+      .map(e => e.beautified_text?.slice(0, 120))
+      .filter(Boolean)
+      .join(' | ');
+
+    const attContext = att.present > 0
+      ? `Attendance this month: ${att.present} days present${att.absent > 0 ? `, ${att.absent} absent` : ', perfect attendance'}.`
+      : '';
+
+    const prompt = `Write a warm, positive daily snapshot for parents about their child.
+
+Child: ${student.name}
+Age: ${ageText || 'preschool age'}
+Class: ${className}
+${attContext}
+${recentHighlights ? `Recent classroom highlights: ${recentHighlights}` : ''}
+
+Write exactly 3 sentences:
+1. A warm observation about the child's age/developmental stage and what to expect
+2. How the child is doing based on recent highlights (positive, specific)
+3. One encouraging note for parents
+
+Rules:
+- Warm, personal, parent-friendly tone
+- No bullet points, no headings — flowing sentences only
+- Do NOT mention "Oakie" or "AI" — write as if from the school
+- Keep it under 80 words total
+- Always positive and encouraging`;
+
+    let snapshot = '';
+    try {
+      const aiResp = await axios.post(`${AI_SERVICE_URL()}/internal/query`, {
+        teacher_id: user_id,
+        school_id,
+        text: prompt,
+        query_date: today,
+        role: 'parent',
+        context: `Generate a child snapshot. ${attContext} ${recentHighlights}`,
+      }, { timeout: 20000 });
+      snapshot = aiResp.data?.response || '';
+    } catch { /* fallback below */ }
+
+    // Fallback if AI unavailable
+    if (!snapshot) {
+      const firstName = student.name.split(' ')[0];
+      snapshot = `At ${ageText || 'this age'}, children like ${firstName} are developing curiosity, language, and social skills rapidly — every day brings new discoveries. ${recentHighlights ? `${firstName} has been showing wonderful engagement in the classroom recently.` : `${firstName} is settling in beautifully and growing every day.`} Keep encouraging conversations about school — your involvement makes all the difference!`;
+    }
+
+    const result = { snapshot, student_name: student.name, age: ageText, generated_at: today };
+    // Cache until midnight (TTL = seconds until end of day)
+    const now = new Date();
+    const midnight = new Date(now); midnight.setHours(24, 0, 0, 0);
+    const ttl = Math.floor((midnight.getTime() - now.getTime()) / 1000);
+    await redis.setEx(cacheKey, ttl, JSON.stringify(result));
+
+    return res.json(result);
+  } catch (err) {
+    console.error('[childJourney] snapshot', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /parent/child-journey/:studentId — parent views child's journey ─────
 router.get('/parent/:studentId', async (req: Request, res: Response) => {
   try {
@@ -108,9 +241,8 @@ router.get('/parent/:studentId', async (req: Request, res: Response) => {
     // Verify parent has access to this student
     const accessCheck = await pool.query(
       `SELECT s.id, s.name FROM students s
-       JOIN parent_students ps ON ps.student_id = s.id
-       JOIN users u ON u.id = ps.parent_id
-       WHERE s.id = $1 AND s.school_id = $2 AND u.id = $3`,
+       JOIN parent_student_links psl ON psl.student_id = s.id
+       WHERE s.id = $1 AND s.school_id = $2 AND psl.parent_id = $3`,
       [studentId, school_id, req.user!.user_id]
     );
     if (accessCheck.rows.length === 0) {

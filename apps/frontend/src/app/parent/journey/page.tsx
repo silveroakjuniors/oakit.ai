@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import { ChevronLeft, Sparkles, Calendar, BookOpen } from 'lucide-react';
+import { ChevronLeft, Calendar, BookOpen, Sparkles } from 'lucide-react';
 
 interface JourneyEntry {
   id: string;
@@ -13,16 +13,21 @@ interface JourneyEntry {
   beautified_text: string;
   created_at: string;
 }
-
 interface JourneyData {
   student: { id: string; name: string };
   entries: JourneyEntry[];
   total: number;
 }
+interface Snapshot {
+  snapshot: string;
+  student_name: string;
+  age: string;
+  generated_at: string;
+}
 
 const TYPE_LABELS = {
-  daily: { label: 'Daily', color: 'bg-blue-50 text-blue-700 border-blue-100' },
-  weekly: { label: 'Weekly', color: 'bg-purple-50 text-purple-700 border-purple-100' },
+  daily:     { label: 'Daily',        color: 'bg-blue-50 text-blue-700 border-blue-100' },
+  weekly:    { label: 'Weekly',       color: 'bg-purple-50 text-purple-700 border-purple-100' },
   highlight: { label: '⭐ Highlight', color: 'bg-amber-50 text-amber-700 border-amber-100' },
 };
 
@@ -33,16 +38,24 @@ export default function ChildJourneyParentPage() {
   const token = getToken() || '';
 
   const [data, setData] = useState<JourneyData | null>(null);
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [snapshotLoading, setSnapshotLoading] = useState(true);
   const [fromDate, setFromDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().split('T')[0];
+    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split('T')[0];
   });
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     if (!token || !studentId) { router.push('/parent'); return; }
+    // Load snapshot once (cached per day)
+    setSnapshotLoading(true);
+    apiGet<Snapshot>(`/api/v1/parent/child-journey/${studentId}/snapshot`, token)
+      .then(setSnapshot).catch(() => {}).finally(() => setSnapshotLoading(false));
+  }, [studentId]);
+
+  useEffect(() => {
+    if (!token || !studentId) return;
     load();
   }, [studentId, fromDate, toDate]);
 
@@ -58,7 +71,8 @@ export default function ChildJourneyParentPage() {
     finally { setLoading(false); }
   }
 
-  const studentName = data?.student?.name || 'Your child';
+  const studentName = data?.student?.name || snapshot?.student_name || 'Your child';
+  const firstName = studentName.split(' ')[0];
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-20">
@@ -68,16 +82,38 @@ export default function ChildJourneyParentPage() {
           <ChevronLeft className="w-5 h-5" />
         </button>
         <div className="flex-1">
-          <h1 className="text-base font-semibold text-neutral-900">{studentName}'s Journey</h1>
-          <p className="text-xs text-neutral-500">How {studentName.split(' ')[0]} is growing at school</p>
-        </div>
-        <div className="flex items-center gap-1 text-xs text-primary-600 bg-primary-50 px-2.5 py-1 rounded-full">
-          <Sparkles className="w-3 h-3" />
-          by Oakie
+          <h1 className="text-base font-semibold text-neutral-900">{firstName}'s Journey</h1>
+          <p className="text-xs text-neutral-500">Notes from the classroom</p>
         </div>
       </header>
 
       <div className="p-4 flex flex-col gap-4 max-w-lg mx-auto">
+
+        {/* ── Daily Snapshot ── */}
+        {snapshotLoading ? (
+          <div className="bg-white border border-neutral-100 rounded-2xl p-4 animate-pulse">
+            <div className="h-3 bg-neutral-100 rounded w-1/3 mb-3" />
+            <div className="h-3 bg-neutral-100 rounded w-full mb-2" />
+            <div className="h-3 bg-neutral-100 rounded w-5/6 mb-2" />
+            <div className="h-3 bg-neutral-100 rounded w-4/5" />
+          </div>
+        ) : snapshot?.snapshot ? (
+          <div className="bg-gradient-to-br from-primary-50 to-emerald-50 border border-primary-100 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-xl bg-primary-100 flex items-center justify-center shrink-0">
+                <span className="text-base">🌱</span>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-primary-800">{firstName} today</p>
+                {snapshot.age && (
+                  <p className="text-[10px] text-primary-500">{snapshot.age} old</p>
+                )}
+              </div>
+            </div>
+            <p className="text-sm text-neutral-800 leading-relaxed">{snapshot.snapshot}</p>
+          </div>
+        ) : null}
+
         {/* Date range filter */}
         <div className="flex gap-2 items-center bg-white border border-neutral-100 rounded-xl px-3 py-2.5">
           <Calendar className="w-4 h-4 text-neutral-400 shrink-0" />
@@ -88,6 +124,7 @@ export default function ChildJourneyParentPage() {
             className="flex-1 text-xs text-neutral-700 bg-transparent focus:outline-none" />
         </div>
 
+        {/* Journey entries */}
         {loading ? (
           <div className="flex flex-col gap-3">
             {[1, 2, 3].map(i => (
@@ -104,10 +141,10 @@ export default function ChildJourneyParentPage() {
               <BookOpen className="w-6 h-6 text-primary-400" />
             </div>
             <p className="text-sm font-semibold text-neutral-800 mb-1">
-              {studentName.split(' ')[0]}'s journey is just beginning!
+              {firstName}'s journey is just beginning!
             </p>
             <p className="text-xs text-neutral-500 leading-relaxed">
-              {studentName.split(' ')[0]} is doing wonderfully — no specific highlights have been recorded for this period yet.
+              No specific highlights have been recorded for this period yet.
               Check back soon as the teacher shares more moments from the classroom.
             </p>
           </div>
@@ -115,9 +152,10 @@ export default function ChildJourneyParentPage() {
           <div className="flex flex-col gap-3">
             {data?.entries?.map(entry => {
               const typeStyle = TYPE_LABELS[entry.entry_type] || TYPE_LABELS.daily;
-              const dateStr = new Date(entry.entry_date + 'T12:00:00').toLocaleDateString('en-IN', {
-                weekday: 'long', day: 'numeric', month: 'long',
-              });
+              const rawDate = (entry.entry_date || '').split('T')[0];
+              const dateStr = rawDate
+                ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
+                : '—';
               return (
                 <div key={entry.id} className="bg-white border border-neutral-100 rounded-2xl p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
@@ -127,10 +165,6 @@ export default function ChildJourneyParentPage() {
                     </span>
                   </div>
                   <p className="text-sm text-neutral-800 leading-relaxed">{entry.beautified_text}</p>
-                  <div className="flex items-center gap-1 mt-2">
-                    <Sparkles className="w-3 h-3 text-primary-400" />
-                    <span className="text-[10px] text-primary-400">Written by Oakie</span>
-                  </div>
                 </div>
               );
             })}
