@@ -175,4 +175,194 @@ router.get('/today', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/admin/dashboard/engagement
+// Returns teacher usage, parent usage, homework stats, messages — all drillable
+router.get('/engagement', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const cacheKey = `dashboard:engagement:${school_id}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json(JSON.parse(cached));
+
+    const today = await getToday(school_id);
+    const thirtyDaysAgo = `(DATE '${today}' - INTERVAL '30 days')::date`;
+
+    const [
+      teacherUsage,
+      parentUsage,
+      homeworkStats,
+      messageStats,
+      hwSubmissions,
+    ] = await Promise.all([
+
+      // Teacher usage: last_login proxy = last completion or attendance submission
+      pool.query(`
+        SELECT
+          u.id, u.name, u.mobile,
+          sec.label as section_label, c.name as class_name,
+          COUNT(DISTINCT dc.completion_date)::int as days_completed_30d,
+          MAX(dc.completion_date)::text as last_completion,
+          COUNT(DISTINCT ar.attend_date)::int as days_attendance_30d,
+          MAX(ar.attend_date)::text as last_attendance,
+          COUNT(DISTINCT th.homework_date)::int as homework_sent_30d,
+          COUNT(DISTINCT tn.id)::int as notes_sent_30d,
+          COUNT(DISTINCT m.id)::int as messages_sent_30d,
+          COALESCE(ts.current_streak, 0) as streak,
+          CASE
+            WHEN MAX(dc.completion_date) >= (DATE '${today}' - INTERVAL '3 days') THEN 'active'
+            WHEN MAX(dc.completion_date) >= (DATE '${today}' - INTERVAL '7 days') THEN 'low'
+            ELSE 'inactive'
+          END as activity_status
+        FROM users u
+        JOIN roles r ON r.id = u.role_id AND r.name = 'teacher'
+        LEFT JOIN teacher_sections tsec ON tsec.teacher_id = u.id
+        LEFT JOIN sections sec ON sec.id = tsec.section_id
+        LEFT JOIN classes c ON c.id = sec.class_id
+        LEFT JOIN daily_completions dc ON dc.teacher_id = u.id
+          AND dc.school_id = u.school_id
+          AND dc.completion_date >= ${thirtyDaysAgo}
+        LEFT JOIN attendance_records ar ON ar.teacher_id = u.id
+          AND ar.school_id = u.school_id
+          AND ar.attend_date >= ${thirtyDaysAgo}
+        LEFT JOIN teacher_homework th ON th.teacher_id = u.id
+          AND th.school_id = u.school_id
+          AND th.homework_date >= ${thirtyDaysAgo}
+        LEFT JOIN teacher_notes tn ON tn.teacher_id = u.id
+          AND tn.school_id = u.school_id
+          AND tn.note_date >= ${thirtyDaysAgo}
+        LEFT JOIN messages m ON m.teacher_id = u.id
+          AND m.school_id = u.school_id
+          AND m.sent_at >= ${thirtyDaysAgo}
+        LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = u.school_id
+        WHERE u.school_id = $1 AND u.is_active = true
+        GROUP BY u.id, u.name, u.mobile, sec.label, c.name, ts.current_streak
+        ORDER BY days_completed_30d DESC, u.name`,
+        [school_id]
+      ),
+
+      // Parent usage: last login proxy = last message sent or notification read
+      pool.query(`
+        SELECT
+          pu.id, pu.name, pu.mobile,
+          COUNT(DISTINCT psl.student_id)::int as children_count,
+          STRING_AGG(DISTINCT s.name, ', ') as children_names,
+          COUNT(DISTINCT m.id)::int as messages_sent_30d,
+          COUNT(DISTINCT pn.id) FILTER (WHERE pn.is_read = true)::int as notifications_read_30d,
+          COUNT(DISTINCT pn.id) FILTER (WHERE pn.is_read = false)::int as unread_notifications,
+          MAX(m.sent_at)::text as last_message_at,
+          CASE
+            WHEN COUNT(DISTINCT m.id) > 0 OR COUNT(DISTINCT pn.id) FILTER (WHERE pn.is_read = true) > 0
+              THEN 'active'
+            WHEN pu.force_password_reset = true THEN 'never_logged_in'
+            ELSE 'inactive'
+          END as activity_status
+        FROM parent_users pu
+        LEFT JOIN parent_student_links psl ON psl.parent_id = pu.id
+        LEFT JOIN students s ON s.id = psl.student_id
+        LEFT JOIN messages m ON m.parent_id = pu.id
+          AND m.school_id = pu.school_id
+          AND m.sent_at >= ${thirtyDaysAgo}
+        LEFT JOIN parent_notifications pn ON pn.parent_id = pu.id
+          AND pn.completion_date >= ${thirtyDaysAgo}
+        WHERE pu.school_id = $1 AND pu.is_active = true
+        GROUP BY pu.id, pu.name, pu.mobile, pu.force_password_reset
+        ORDER BY messages_sent_30d DESC, pu.name`,
+        [school_id]
+      ),
+
+      // Homework stats: sent vs completion rates
+      pool.query(`
+        SELECT
+          th.homework_date::text as date,
+          sec.label as section_label, c.name as class_name,
+          u.name as teacher_name,
+          COUNT(DISTINCT hs.student_id) FILTER (WHERE hs.status = 'completed')::int as completed,
+          COUNT(DISTINCT hs.student_id) FILTER (WHERE hs.status = 'partial')::int as partial,
+          COUNT(DISTINCT hs.student_id) FILTER (WHERE hs.status = 'not_submitted')::int as not_submitted,
+          COUNT(DISTINCT st.id)::int as total_students
+        FROM teacher_homework th
+        JOIN sections sec ON sec.id = th.section_id
+        JOIN classes c ON c.id = sec.class_id
+        JOIN users u ON u.id = th.teacher_id
+        LEFT JOIN homework_submissions hs ON hs.section_id = th.section_id
+          AND hs.homework_date = th.homework_date
+        LEFT JOIN students st ON st.section_id = th.section_id AND st.is_active = true
+        WHERE th.school_id = $1
+          AND th.homework_date >= ${thirtyDaysAgo}
+        GROUP BY th.homework_date, sec.label, c.name, u.name
+        ORDER BY th.homework_date DESC
+        LIMIT 30`,
+        [school_id]
+      ),
+
+      // Message stats
+      pool.query(`
+        SELECT
+          COUNT(DISTINCT id)::int as total_messages_30d,
+          COUNT(DISTINCT id) FILTER (WHERE sender_role = 'teacher')::int as teacher_messages,
+          COUNT(DISTINCT id) FILTER (WHERE sender_role = 'parent')::int as parent_messages,
+          COUNT(DISTINCT CONCAT(teacher_id::text, parent_id::text))::int as active_threads
+        FROM messages
+        WHERE school_id = $1 AND sent_at >= ${thirtyDaysAgo}`,
+        [school_id]
+      ),
+
+      // Homework submission summary
+      pool.query(`
+        SELECT
+          COUNT(DISTINCT hs.student_id) FILTER (WHERE hs.status = 'completed')::int as completed,
+          COUNT(DISTINCT hs.student_id) FILTER (WHERE hs.status = 'partial')::int as partial,
+          COUNT(DISTINCT hs.student_id) FILTER (WHERE hs.status = 'not_submitted')::int as not_submitted,
+          COUNT(DISTINCT th.id)::int as homework_days
+        FROM teacher_homework th
+        LEFT JOIN homework_submissions hs ON hs.section_id = th.section_id
+          AND hs.homework_date = th.homework_date
+        WHERE th.school_id = $1 AND th.homework_date >= ${thirtyDaysAgo}`,
+        [school_id]
+      ),
+    ]);
+
+    const teachers = teacherUsage.rows;
+    const parents = parentUsage.rows;
+    const msgStats = messageStats.rows[0] || {};
+    const hwSummary = hwSubmissions.rows[0] || {};
+
+    const data = {
+      teachers: {
+        total: teachers.length,
+        active: teachers.filter((t: any) => t.activity_status === 'active').length,
+        low: teachers.filter((t: any) => t.activity_status === 'low').length,
+        inactive: teachers.filter((t: any) => t.activity_status === 'inactive').length,
+        list: teachers,
+      },
+      parents: {
+        total: parents.length,
+        active: parents.filter((p: any) => p.activity_status === 'active').length,
+        inactive: parents.filter((p: any) => p.activity_status === 'inactive').length,
+        never_logged_in: parents.filter((p: any) => p.activity_status === 'never_logged_in').length,
+        list: parents,
+      },
+      homework: {
+        days_sent: Number(hwSummary.homework_days) || 0,
+        completed: Number(hwSummary.completed) || 0,
+        partial: Number(hwSummary.partial) || 0,
+        not_submitted: Number(hwSummary.not_submitted) || 0,
+        history: homeworkStats.rows,
+      },
+      messages: {
+        total: Number(msgStats.total_messages_30d) || 0,
+        teacher_sent: Number(msgStats.teacher_messages) || 0,
+        parent_sent: Number(msgStats.parent_messages) || 0,
+        active_threads: Number(msgStats.active_threads) || 0,
+      },
+    };
+
+    await redis.setEx(cacheKey, 300, JSON.stringify(data)); // 5-min cache
+    return res.json(data);
+  } catch (err) {
+    console.error('[engagement]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

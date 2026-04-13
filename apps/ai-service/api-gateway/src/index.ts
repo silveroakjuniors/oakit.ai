@@ -209,6 +209,8 @@ app.use('/api/v1/teacher/announcements', teacherAnnouncementsRouter);
 
 // Principal
 app.use('/api/v1/principal', principalDashboardRouter);
+app.use('/api/v1/principal/sections', principalDashboardRouter);
+app.use('/api/v1/principal/birthdays', principalDashboardRouter);
 app.use('/api/v1/principal/attendance', principalAttendanceRouter);
 app.use('/api/v1/principal/teachers', principalTeachersRouter);
 app.use('/api/v1/principal/coverage', principalCoverageRouter);

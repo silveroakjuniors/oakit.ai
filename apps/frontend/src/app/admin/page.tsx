@@ -120,6 +120,7 @@ export default function AdminDashboard() {
   const [engagementLoading, setEngagementLoading] = useState(false);
   const [engagementTab, setEngagementTab] = useState<'teachers' | 'parents' | 'homework' | 'messages'>('teachers');
   const [engagementFilter, setEngagementFilter] = useState<string>('all');
+  const [engagementExpanded, setEngagementExpanded] = useState(false);
 
   const loadSnap = useCallback(async () => {
     try { setTodaySnap(await apiGet<TodaySnap>('/api/v1/admin/dashboard/today', token)); } catch {}
@@ -166,7 +167,7 @@ export default function AdminDashboard() {
     // Load smart alerts separately (heavier query, 5-min cache)
     setSmartAlertsLoading(true);
     apiGet<SmartAlertsData>('/api/v1/admin/smart-alerts', token)
-      .then(d => { setSmartAlerts(d); if (d.summary.high > 0) setSmartAlertsExpanded(true); })
+      .then(d => { setSmartAlerts(d); }) // collapsed by default — never auto-expand
       .catch(() => {})
       .finally(() => setSmartAlertsLoading(false));
     // Load engagement stats
@@ -630,18 +631,24 @@ export default function AdminDashboard() {
 
       {/* Engagement Intelligence */}
       <div className="rounded-2xl border-2 border-primary-100 bg-gradient-to-br from-primary-50 to-white overflow-hidden shadow-sm">
-        <div className="px-5 py-4 flex items-center gap-3 border-b border-primary-100">
+        <button
+          onClick={() => setEngagementExpanded(v => !v)}
+          className="w-full px-5 py-4 flex items-center gap-3 text-left hover:bg-primary-50/60 transition-colors"
+        >
           <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center text-xl shrink-0">📊</div>
           <div className="flex-1">
             <p className="text-sm font-bold text-neutral-900">Engagement Intelligence</p>
             <p className="text-xs text-neutral-500">Last 30 days · Teachers, Parents, Homework, Messages</p>
           </div>
           {engagementLoading && <span className="text-xs text-neutral-400 animate-pulse">Loading…</span>}
-        </div>
+          <span className={`text-neutral-400 text-sm transition-transform duration-200 ${engagementExpanded ? 'rotate-180' : ''}`}>▼</span>
+        </button>
 
+        {engagementExpanded && (
+        <>
         {/* Summary pills */}
         {engagement && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-4 border-b border-primary-100">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-5 py-4 border-t border-primary-100 border-b border-primary-100">
             <button onClick={() => setEngagementTab('teachers')}
               className={`rounded-xl p-3 text-left transition-all border-2 ${engagementTab === 'teachers' ? 'border-primary-400 bg-white shadow-sm' : 'border-transparent bg-white/60 hover:bg-white'}`}>
               <p className="text-xs text-neutral-500 mb-1">👩‍🏫 Teachers</p>
@@ -926,6 +933,8 @@ export default function AdminDashboard() {
           <div className="px-5 py-8 text-center">
             <p className="text-sm text-neutral-400">No engagement data yet</p>
           </div>
+        )}
+        </>
         )}
       </div>
 
