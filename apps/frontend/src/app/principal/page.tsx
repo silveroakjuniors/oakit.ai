@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown } from 'lucide-react';
 
-// ── Types ────────────────────────────────────────────────────
+// -- Types ----------------------------------------------------
 interface SectionSummary {
   section_id: string; section_label: string; class_name: string;
   class_teacher_name: string | null; total_students: number;
@@ -18,6 +18,11 @@ interface SectionSummary {
   coverage_pct: number | null; coverage_total: number; coverage_covered: number;
 }
 interface TeacherStreak { teacher_id: string; teacher_name: string; current_streak: number; best_streak: number; }
+interface EngagementTeacher {
+  id: string; name: string; role_name: string;
+  current_streak: number; best_streak: number; last_completed_date: string | null;
+  completions_30d: number; completion_rate_30d: number; days_since_last: number; amber_warning: boolean;
+}
 interface BirthdayKid { id: string; name: string; class_name: string; section_label: string; days_until: number; }
 interface PrincipalContext {
   principal_name: string; greeting: string; thought_for_day: string; today: string;
@@ -35,7 +40,7 @@ const SUGGESTED = [
   'What is the overall curriculum progress?',
 ];
 
-// ── Mini donut (SVG, no deps) ─────────────────────────────────
+// -- Mini donut (SVG, no deps) ---------------------------------
 function Donut({ pct, color, size = 64 }: { pct: number; color: string; size?: number }) {
   const r = size / 2 - 6;
   const circ = 2 * Math.PI * r;
@@ -51,7 +56,7 @@ function Donut({ pct, color, size = 64 }: { pct: number; color: string; size?: n
   );
 }
 
-// ── Collapsible wrapper ───────────────────────────────────────
+// -- Collapsible wrapper ---------------------------------------
 function Collapsible({ title, subtitle, badge, defaultOpen = false, children, accent }:
   { title: string; subtitle?: string; badge?: React.ReactNode; defaultOpen?: boolean; children: React.ReactNode; accent?: string }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -73,7 +78,7 @@ function Collapsible({ title, subtitle, badge, defaultOpen = false, children, ac
   );
 }
 
-// ── Main component ────────────────────────────────────────────
+// -- Main component --------------------------------------------
 export default function PrincipalDashboard() {
   const router = useRouter();
   const token = getToken() || '';
@@ -87,6 +92,9 @@ export default function PrincipalDashboard() {
 
   // Birthday state
   const [birthdays, setBirthdays] = useState<BirthdayKid[]>([]);
+  const [engagement, setEngagement] = useState<EngagementTeacher[]>([]);
+  const [schoolDays30d, setSchoolDays30d] = useState(0);
+  const [engagementDrillDown, setEngagementDrillDown] = useState<string | null>(null);
   const [birthdayMsg, setBirthdayMsg] = useState('');
   const [formattedBirthdayMsg, setFormattedBirthdayMsg] = useState('');
   const [formattingBirthday, setFormattingBirthday] = useState(false);
@@ -102,7 +110,7 @@ export default function PrincipalDashboard() {
     apiGet<PrincipalContext>('/api/v1/principal/context', token)
       .then(data => {
         setCtx(data);
-        setMessages([{ role: 'assistant', text: `${data.greeting}\n\n💡 ${data.thought_for_day}` }]);
+        setMessages([{ role: 'assistant', text: `${data.greeting}\n\n?? ${data.thought_for_day}` }]);
       })
       .catch(() => setMessages([{ role: 'assistant', text: 'Hello! Ask me about your school.' }]))
       .finally(() => setLoading(false));
@@ -114,6 +122,9 @@ export default function PrincipalDashboard() {
         const valid = (data || []).filter(k => k.name && typeof k.days_until === 'number' && k.id);
         setBirthdays(valid);
       }).catch(() => {});
+    apiGet<{ teachers: EngagementTeacher[]; school_days_30d: number }>('/api/v1/principal/teachers/engagement', token)
+      .then(d => { setEngagement(d.teachers || []); setSchoolDays30d(d.school_days_30d || 0); })
+      .catch(() => {});
   }, []);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -168,7 +179,7 @@ export default function PrincipalDashboard() {
       </header>
 
       <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-        {/* ── Left / Main ── */}
+        {/* -- Left / Main -- */}
         <div className="flex-1 overflow-y-auto min-h-0">
 
           {/* Welcome banner */}
@@ -184,8 +195,8 @@ export default function PrincipalDashboard() {
             {/* Safety alerts */}
             {safetyAlerts.length > 0 && (
               <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4">
-                <p className="text-sm font-bold text-red-800">🚨 {safetyAlerts.length} Content Alert{safetyAlerts.length > 1 ? 's' : ''}</p>
-                <p className="text-xs text-red-600 mt-0.5">Review in Admin → Audit Log</p>
+                <p className="text-sm font-bold text-red-800"> {safetyAlerts.length} Content Alert{safetyAlerts.length > 1 ? 's' : ''}</p>
+                <p className="text-xs text-red-600 mt-0.5">Review in Admin  Audit Log</p>
               </div>
             )}
 
@@ -213,9 +224,9 @@ export default function PrincipalDashboard() {
             <div className="grid grid-cols-4 gap-2">
               {[
                 { href: '/principal/attendance', label: 'Attendance', icon: '📋' },
-                { href: '/principal/teachers',   label: 'Teachers',   icon: '👩‍🏫' },
-                { href: '/principal/coverage',   label: 'Coverage',   icon: '📊' },
-                { href: '/principal/overview',   label: 'Reports',    icon: '📄' },
+                { href: '/principal/teachers',   label: 'Teachers',   icon: '' },
+                { href: '/principal/coverage',   label: 'Coverage',   icon: '' },
+                { href: '/principal/overview',   label: 'Reports',    icon: '' },
               ].map(({ href, label, icon }) => (
                 <Link key={href} href={href}
                   className="bg-white border border-neutral-200 rounded-2xl p-3 flex flex-col items-center gap-1 hover:shadow-md hover:-translate-y-0.5 transition-all text-center">
@@ -225,7 +236,7 @@ export default function PrincipalDashboard() {
               ))}
             </div>
 
-            {/* ── School Health — always visible on landing ── */}
+            {/* -- School Health � always visible on landing -- */}
             {ctx && (
               <div className="bg-white border border-neutral-100 rounded-2xl shadow-sm p-4">
                 <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">School Health</p>
@@ -245,9 +256,9 @@ export default function PrincipalDashboard() {
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { icon: '🎓', label: 'Students', value: ctx.summary.total_students },
-                    { icon: '👩‍🏫', label: 'Teachers', value: ctx.sections.filter(s => s.class_teacher_name).length },
-                    { icon: '🏫', label: 'Classes', value: Object.keys(byClass).length },
+                    { icon: '', label: 'Students', value: ctx.summary.total_students },
+                    { icon: '', label: 'Teachers', value: ctx.sections.filter(s => s.class_teacher_name).length },
+                    { icon: '', label: 'Classes', value: Object.keys(byClass).length },
                   ].map((s, i) => (
                     <div key={i} className="bg-neutral-50 rounded-xl p-2.5 text-center">
                       <p className="text-base">{s.icon}</p>
@@ -259,10 +270,10 @@ export default function PrincipalDashboard() {
               </div>
             )}
 
-            {/* ── Birthdays — collapsible ── */}
+            {/* -- Birthdays � collapsible -- */}
             {birthdays.length > 0 && (
               <Collapsible
-                title={todayBirthdays.length > 0 ? `🎂 Birthdays Today (${todayBirthdays.length})` : `🎂 Upcoming Birthdays`}
+                title={todayBirthdays.length > 0 ? ` Birthdays Today (${todayBirthdays.length})` : `?? Upcoming Birthdays`}
                 subtitle={todayBirthdays.length > 0 ? 'Tap to send wishes' : `${upcomingBirthdays.length} in next 7 days`}
                 defaultOpen={todayBirthdays.length > 0}
                 accent={todayBirthdays.length > 0 ? 'border-pink-200' : 'border-neutral-100'}
@@ -271,11 +282,11 @@ export default function PrincipalDashboard() {
                   {birthdays.map(kid => (
                     <div key={kid.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl ${kid.days_until === 0 ? 'bg-pink-50 border border-pink-100' : 'bg-neutral-50'}`}>
                       <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center text-xs font-bold text-pink-700 shrink-0">
-                        {kid.name?.[0] ?? '?'}
+                        {kid.name?.[0] ?? '⏳'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-neutral-800 truncate">{kid.name}</p>
-                        <p className="text-[10px] text-neutral-400">{kid.class_name} · {kid.section_label}</p>
+                        <p className="text-[10px] text-neutral-400">{kid.class_name} � {kid.section_label}</p>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${kid.days_until === 0 ? 'bg-pink-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
                         {kid.days_until === 0 ? '🎂 Today' : `in ${kid.days_until}d`}
@@ -288,7 +299,7 @@ export default function PrincipalDashboard() {
                       {!formattedBirthdayMsg ? (
                         <div className="flex gap-2">
                           <input value={birthdayMsg} onChange={e => setBirthdayMsg(e.target.value)}
-                            placeholder="Write a birthday wish — Oakie will format it"
+                            placeholder="Write a birthday wish � Oakie will format it"
                             className="flex-1 px-3 py-2 border border-pink-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-pink-300/40" />
                           <button onClick={async () => {
                             if (!birthdayMsg.trim()) return;
@@ -303,7 +314,7 @@ export default function PrincipalDashboard() {
                             finally { setFormattingBirthday(false); }
                           }} disabled={formattingBirthday || !birthdayMsg.trim()}
                             className="px-3 py-2 bg-pink-500 text-white rounded-xl text-xs font-bold hover:bg-pink-600 disabled:opacity-50 shrink-0">
-                            {formattingBirthday ? '…' : '✨'}
+                            {formattingBirthday ? '�' : '⏳'}
                           </button>
                         </div>
                       ) : (
@@ -317,13 +328,13 @@ export default function PrincipalDashboard() {
                                 await apiPost('/api/v1/principal/birthdays/send', {
                                   student_ids: todayBirthdays.map(b => b.id), message: formattedBirthdayMsg,
                                 }, token);
-                                setBirthdaySent(`✓ Sent to ${todayBirthdays.length} student${todayBirthdays.length > 1 ? 's' : ''} and parents!`);
+                                setBirthdaySent(`? Sent to ${todayBirthdays.length} student${todayBirthdays.length > 1 ? 's' : ''} and parents!`);
                                 setFormattedBirthdayMsg(''); setBirthdayMsg('');
-                              } catch { setBirthdaySent('Failed — try again'); }
+                              } catch { setBirthdaySent('Failed � try again'); }
                               finally { setSendingBirthday(false); }
                             }} disabled={sendingBirthday}
                               className="flex-1 py-2 bg-pink-500 text-white rounded-xl text-xs font-bold hover:bg-pink-600 disabled:opacity-50">
-                              {sendingBirthday ? '…' : '🎉 Send'}
+                              {sendingBirthday ? '�' : '?? Send'}
                             </button>
                             <button onClick={() => setFormattedBirthdayMsg('')}
                               className="px-3 py-2 border border-neutral-200 rounded-xl text-xs text-neutral-600">Edit</button>
@@ -337,10 +348,13 @@ export default function PrincipalDashboard() {
               </Collapsible>
             )}
 
-            {/* ── Teacher Streaks — collapsible ── */}
+            {/* ── Teaching Consistency — collapsible ── */}
             {ctx?.teacher_streaks && ctx.teacher_streaks.length > 0 && (
-              <Collapsible title="🔥 Teacher Streaks" subtitle={`Top ${Math.min(ctx.teacher_streaks.length, 5)} teachers`} defaultOpen={false}>
+              <Collapsible title="🏆 Teaching Consistency" subtitle={`Daily plan completion · top ${Math.min(ctx.teacher_streaks.length, 5)}`} defaultOpen={false}>
                 <div className="divide-y divide-neutral-50">
+                  <div className="px-4 py-2 bg-amber-50/60 border-b border-amber-100">
+                    <p className="text-[10px] text-amber-700">Consistency = consecutive school days with a completed lesson plan. Resets if a plan is missed on a working day.</p>
+                  </div>
                   {ctx.teacher_streaks.slice(0, 5).map((t, i) => (
                     <div key={t.teacher_id} className="flex items-center gap-3 px-4 py-3">
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${i === 0 ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>{i + 1}</div>
@@ -349,7 +363,7 @@ export default function PrincipalDashboard() {
                         <span className="text-sm font-black text-amber-600">{t.current_streak ?? 0}</span>
                         <span className="text-xs text-neutral-400">days</span>
                         {(t.best_streak ?? 0) > (t.current_streak ?? 0) && (
-                          <span className="text-[10px] text-neutral-400 ml-1">· best {t.best_streak}</span>
+                          <span className="text-[10px] text-neutral-400 ml-1">� best {t.best_streak}</span>
                         )}
                       </div>
                     </div>
@@ -358,13 +372,104 @@ export default function PrincipalDashboard() {
               </Collapsible>
             )}
 
-            {/* ── Classes & Sections — single collapsible, collapsed by default ── */}
+            {/* -- Teaching Engagement (30d) � collapsible -- */}
+            {engagement.length > 0 && (
+              <Collapsible
+                title=" Teaching Engagement (30d)"
+                subtitle={`Plan completion rate over last ${schoolDays30d} school days`}
+                defaultOpen={false}
+              >
+                <div className="divide-y divide-neutral-50">
+                  {/* How it's calculated */}
+                  <div className="px-4 py-2.5 bg-primary-50/60 border-b border-primary-100">
+                    <p className="text-[10px] text-primary-700 font-medium mb-0.5">How it's calculated</p>
+                    <p className="text-[10px] text-primary-600 leading-relaxed">
+                      Engagement % = (lesson plans completed � school working days in last 30 days) � 100.
+                      A plan counts if it was marked complete on that day. Weekends & holidays are excluded.
+                    </p>
+                  </div>
+                  {engagement.map(t => (
+                    <div key={t.id}>
+                      <button
+                        onClick={() => setEngagementDrillDown(engagementDrillDown === t.id ? null : t.id)}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 transition-colors text-left"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-neutral-800">{t.name}</p>
+                            {t.amber_warning && (
+                              <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">
+                                ? {t.days_since_last}d no plan
+                              </span>
+                            )}
+                            {t.current_streak >= 5 && (
+                              <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">
+                                 {t.current_streak} consistency
+                              </span>
+                            )}
+                          </div>
+                          {/* Mini progress bar */}
+                          <div className="mt-1.5 w-full bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className={`h-1.5 rounded-full transition-all ${t.completion_rate_30d >= 80 ? 'bg-emerald-500' : t.completion_rate_30d >= 50 ? 'bg-amber-500' : 'bg-red-400'}`}
+                              style={{ width: `${t.completion_rate_30d}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-base font-black ${t.completion_rate_30d >= 80 ? 'text-emerald-600' : t.completion_rate_30d >= 50 ? 'text-amber-600' : 'text-red-500'}`}>
+                            {t.completion_rate_30d}%
+                          </p>
+                          <p className="text-[9px] text-neutral-400">{t.completions_30d}/{schoolDays30d} days</p>
+                        </div>
+                        <ChevronDown className={`w-3.5 h-3.5 text-neutral-300 shrink-0 transition-transform duration-200 ${engagementDrillDown === t.id ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {/* Drill-down */}
+                      {engagementDrillDown === t.id && (
+                        <div className="px-4 pb-3 bg-neutral-50/60 border-t border-neutral-100">
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            <div className="bg-white rounded-xl p-2.5 border border-neutral-100">
+                              <p className="text-[9px] text-neutral-400 uppercase tracking-wide">Plans completed</p>
+                              <p className="text-lg font-black text-neutral-800">{t.completions_30d}</p>
+                              <p className="text-[9px] text-neutral-400">out of {schoolDays30d} school days</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-2.5 border border-neutral-100">
+                              <p className="text-[9px] text-neutral-400 uppercase tracking-wide">Current streak</p>
+                              <p className="text-lg font-black text-amber-600">{t.current_streak} <span className="text-xs font-normal text-neutral-400">days</span></p>
+                              <p className="text-[9px] text-neutral-400">best: {t.best_streak} days</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-2.5 border border-neutral-100">
+                              <p className="text-[9px] text-neutral-400 uppercase tracking-wide">Last plan</p>
+                              <p className="text-sm font-bold text-neutral-700">{t.last_completed_date ?? 'Never'}</p>
+                              <p className="text-[9px] text-neutral-400">{t.days_since_last < 999 ? `${t.days_since_last}d ago` : 'no record'}</p>
+                            </div>
+                            <div className={`rounded-xl p-2.5 border ${t.completion_rate_30d >= 80 ? 'bg-emerald-50 border-emerald-100' : t.completion_rate_30d >= 50 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'}`}>
+                              <p className="text-[9px] text-neutral-400 uppercase tracking-wide">Status</p>
+                              <p className={`text-sm font-bold ${t.completion_rate_30d >= 80 ? 'text-emerald-700' : t.completion_rate_30d >= 50 ? 'text-amber-700' : 'text-red-600'}`}>
+                                {t.completion_rate_30d >= 80 ? '? Excellent' : t.completion_rate_30d >= 50 ? '~ Moderate' : '? Needs attention'}
+                              </p>
+                              <p className="text-[9px] text-neutral-400">30-day engagement</p>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
+                            <strong>Formula:</strong> {t.completions_30d} plans � {schoolDays30d} school days � 100 = <strong>{t.completion_rate_30d}%</strong>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Collapsible>
+            )}
+
+            {/* -- Classes & Sections � single collapsible, collapsed by default -- */}
             {loading ? (
-              <div className="py-8 text-center"><p className="text-sm text-neutral-400">Loading…</p></div>
+              <div className="py-8 text-center"><p className="text-sm text-neutral-400">Loading�</p></div>
             ) : (
               <Collapsible
-                title="🏫 Classes & Sections"
-                subtitle={`${Object.keys(byClass).length} classes · ${(ctx?.sections || []).length} sections · ${ctx?.summary.total_students ?? 0} students`}
+                title=" Classes & Sections"
+                subtitle={`${Object.keys(byClass).length} classes � ${(ctx?.sections || []).length} sections � ${ctx?.summary.total_students ?? 0} students`}
                 defaultOpen={false}
               >
                 <div className="divide-y divide-neutral-50">
@@ -381,13 +486,13 @@ export default function PrincipalDashboard() {
                             <div>
                               <p className="text-sm font-bold text-neutral-800">{className}</p>
                               <p className="text-[10px] text-neutral-400">
-                                {sections.length} section{sections.length !== 1 ? 's' : ''} · {sections.reduce((s, sec) => s + sec.total_students, 0)} students
+                                {sections.length} section{sections.length !== 1 ? 's' : ''} � {sections.reduce((s, sec) => s + sec.total_students, 0)} students
                               </p>
                             </div>
                           </div>
                           <div className="flex gap-1 shrink-0">
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${allAttDone ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                              {allAttDone ? '✓ Att' : '⏳ Att'}
+                              {allAttDone ? '✓ Att' : '✓ Att'}
                             </span>
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${classCovPct >= 75 ? 'bg-emerald-100 text-emerald-700' : classCovPct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
                               {classCovPct}% cov
@@ -408,7 +513,7 @@ export default function PrincipalDashboard() {
                                     <div className="min-w-0">
                                       <span className="text-xs font-semibold text-neutral-700">Section {sec.section_label}</span>
                                       <span className="text-[10px] text-neutral-400 ml-2">
-                                        {sec.class_teacher_name ? `👩‍🏫 ${sec.class_teacher_name}` : '⚠ No teacher'}
+                                        {sec.class_teacher_name ? `????? ${sec.class_teacher_name}` : ' No teacher'}
                                       </span>
                                     </div>
                                   </div>
@@ -417,10 +522,10 @@ export default function PrincipalDashboard() {
                                       {sec.attendance_submitted ? '✓ Att' : '⏳'}
                                     </span>
                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.plan_completed ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                                      {sec.plan_completed ? '✓ Plan' : '— Plan'}
+                                      {sec.plan_completed ? '? Plan' : '� Plan'}
                                     </span>
                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.homework_sent ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                                      {sec.homework_sent ? '✓ HW' : '— HW'}
+                                      {sec.homework_sent ? '? HW' : '� HW'}
                                     </span>
                                   </div>
                                 </summary>
@@ -431,13 +536,13 @@ export default function PrincipalDashboard() {
                                     <div className="flex items-center justify-between mb-1">
                                       <span className="text-[10px] text-neutral-400">Attendance</span>
                                       <span className={`text-[10px] font-bold ${attPctSec >= 90 ? 'text-emerald-600' : attPctSec >= 75 ? 'text-amber-600' : 'text-red-500'}`}>
-                                        {sec.attendance_submitted ? `${attPctSec}%` : '—'}
+                                        {sec.attendance_submitted ? `${attPctSec}%` : '�'}
                                       </span>
                                     </div>
                                     <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
                                       <div className="h-1.5 rounded-full" style={{ width: sec.attendance_submitted ? `${attPctSec}%` : '0%', background: attPctSec >= 90 ? '#10b981' : attPctSec >= 75 ? '#f59e0b' : '#ef4444' }} />
                                     </div>
-                                    {sec.attendance_submitted && <p className="text-[9px] text-neutral-400 mt-0.5">{sec.present_today}P · {sec.absent_today}A of {sec.total_students}</p>}
+                                    {sec.attendance_submitted && <p className="text-[9px] text-neutral-400 mt-0.5">{sec.present_today}P � {sec.absent_today}A of {sec.total_students}</p>}
                                   </div>
                                   <div>
                                     <div className="flex items-center justify-between mb-1">
@@ -473,7 +578,7 @@ export default function PrincipalDashboard() {
           </div>
         </div>
 
-        {/* ── Right: Ask Oakie ── */}
+        {/* -- Right: Ask Oakie -- */}
         <div className="lg:w-80 xl:w-96 shrink-0 flex flex-col bg-white border-t lg:border-t-0 lg:border-l border-neutral-100"
           style={{ height: 'calc(100vh - 56px)', position: 'sticky', top: '56px' }}>
           {/* Header */}
@@ -525,7 +630,7 @@ export default function PrincipalDashboard() {
           <form onSubmit={sendMessage} className="border-t border-neutral-100 p-3 flex gap-2 shrink-0">
             <input
               className="flex-1 px-3 py-2 rounded-xl border border-neutral-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary-400/20 bg-neutral-50 placeholder:text-neutral-400"
-              placeholder="Ask about your school…"
+              placeholder="Ask about your school�"
               value={input}
               onChange={e => setInput(e.target.value)}
             />

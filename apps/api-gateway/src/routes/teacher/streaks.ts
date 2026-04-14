@@ -13,7 +13,7 @@ function getMilestoneBadge(streak: number): string | null {
   const earned = MILESTONE_THRESHOLDS.filter(t => streak >= t);
   if (earned.length === 0) return null;
   const top = earned[earned.length - 1];
-  return `${top}-Day Streak 🔥`;
+  return `${top}-Day Consistency 🏆`;
 }
 
 // GET /api/v1/teacher/streaks/me
