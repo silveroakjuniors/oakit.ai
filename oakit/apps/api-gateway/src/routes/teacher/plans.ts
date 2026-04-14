@@ -8,11 +8,12 @@ const router = Router();
 router.use(jwtVerify, schoolScope, roleGuard('teacher', 'principal'));
 
 const PLAN_QUERY = `
-  SELECT dp.id, dp.plan_date, dp.status, dp.chunk_ids, dp.section_id,
+  SELECT dp.id, dp.plan_date::text AS plan_date, dp.status, dp.chunk_ids, dp.section_id,
+         dp.admin_note, dp.chunk_label_overrides,
          COALESCE(json_agg(json_build_object(
            'id', cc.id,
            'chunk_index', cc.chunk_index,
-           'topic_label', cc.topic_label,
+           'topic_label', COALESCE((dp.chunk_label_overrides->>(cc.id::text)), cc.topic_label),
            'content', cc.content,
            'page_start', cc.page_start,
            'page_end', cc.page_end,
@@ -50,7 +51,20 @@ router.get('/today', async (req: Request, res: Response) => {
 
     if (result.rows.length === 0) {
       console.log(`[Plans] no row found`);
-      return res.json({ plan_date: today, status: 'no_plan', chunks: [], section_id });
+      // Still check for supplementary activities
+      const suppResult = await pool.query(
+        `SELECT sp.id AS plan_id, sp.status, sp.override_note,
+                a.title AS activity_title, a.description AS activity_description,
+                ap.name AS pool_name
+         FROM supplementary_plans sp
+         JOIN activities a ON a.id = sp.activity_id
+         JOIN pool_assignments pa ON pa.id = sp.pool_assignment_id
+         JOIN activity_pools ap ON ap.id = pa.activity_pool_id
+         WHERE sp.section_id = $1 AND sp.plan_date = $2
+         ORDER BY ap.name, a.position`,
+        [section_id, today]
+      );
+      return res.json({ plan_date: today, status: 'no_plan', chunks: [], section_id, supplementary_activities: suppResult.rows });
     }
 
     const row = result.rows[0];
@@ -67,6 +81,21 @@ router.get('/today', async (req: Request, res: Response) => {
         row.special_label = special.rows[0].label;
       }
     }
+
+    // Attach supplementary activities for this section + date
+    const suppResult = await pool.query(
+      `SELECT sp.id AS plan_id, sp.status, sp.override_note,
+              a.title AS activity_title, a.description AS activity_description,
+              ap.name AS pool_name
+       FROM supplementary_plans sp
+       JOIN activities a ON a.id = sp.activity_id
+       JOIN pool_assignments pa ON pa.id = sp.pool_assignment_id
+       JOIN activity_pools ap ON ap.id = pa.activity_pool_id
+       WHERE sp.section_id = $1 AND sp.plan_date = $2
+       ORDER BY ap.name, a.position`,
+      [section_id, today]
+    );
+    row.supplementary_activities = suppResult.rows;
 
     return res.json(row);
   } catch (err) {

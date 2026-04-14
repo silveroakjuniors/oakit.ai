@@ -481,21 +481,44 @@ router.get('/plans/:section_id', async (req: Request, res: Response) => {
     const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
 
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // last day of month
-
     const result = await pool.query(
-      `SELECT dp.plan_date, dp.status,
-              COALESCE(json_agg(json_build_object('topic_label', cc.topic_label) ORDER BY cc.chunk_index)
-                FILTER (WHERE cc.id IS NOT NULL), '[]') as chunks
+      `SELECT
+         dp.plan_date::text AS plan_date,
+         dp.status,
+         dp.chunk_ids,
+         dp.chunk_label_overrides,
+         -- chunk details (apply per-section label overrides)
+         COALESCE(json_agg(
+           json_build_object(
+             'id', cc.id,
+             'topic_label', COALESCE((dp.chunk_label_overrides->>(cc.id::text)), cc.topic_label),
+             'original_label', cc.topic_label,
+             'content', cc.content,
+             'chunk_index', cc.chunk_index
+           )
+           ORDER BY cc.chunk_index
+         ) FILTER (WHERE cc.id IS NOT NULL), '[]') AS chunks,
+         -- special day on this date
+         sd.label   AS special_day_label,
+         sd.day_type AS special_day_type,
+         sd.activity_note AS special_day_note,
+         dp.admin_note,
+         -- teacher completion
+         dc.id          AS completion_id,
+         dc.submitted_at::text AS completed_at,
+         submitter.name  AS completed_by
        FROM day_plans dp
        LEFT JOIN curriculum_chunks cc ON cc.id = ANY(dp.chunk_ids)
+       LEFT JOIN special_days sd ON sd.school_id = dp.school_id AND sd.day_date = dp.plan_date
+       LEFT JOIN daily_completions dc ON dc.section_id = dp.section_id AND dc.completion_date = dp.plan_date
+       LEFT JOIN users submitter ON submitter.id = dc.teacher_id
        WHERE dp.section_id = $1 AND dp.school_id = $2
-         AND EXTRACT(MONTH FROM dp.plan_date) = $3
-         AND EXTRACT(YEAR FROM dp.plan_date) = $4
-         AND dp.chunk_ids != '{}'
-       GROUP BY dp.plan_date, dp.status
-       ORDER BY dp.plan_date`,
+         AND dp.plan_date >= make_date($4, $3, 1)
+         AND dp.plan_date < make_date(CASE WHEN $3 = 12 THEN $4 + 1 ELSE $4 END, CASE WHEN $3 = 12 THEN 1 ELSE $3 + 1 END, 1)
+       GROUP BY dp.id, dp.plan_date::text, dp.status, dp.chunk_ids, dp.chunk_label_overrides,
+                dp.admin_note, sd.label, sd.day_type, sd.activity_note,
+                dc.id, dc.submitted_at, submitter.name
+       ORDER BY dp.plan_date::text`,
       [section_id, school_id, month, year]
     );
     return res.json(result.rows);
@@ -625,7 +648,8 @@ router.post('/', async (req: Request, res: Response) => {
        ON CONFLICT (school_id, academic_year) DO UPDATE
        SET working_days = EXCLUDED.working_days, start_date = EXCLUDED.start_date,
            end_date = EXCLUDED.end_date
-       RETURNING *`,
+       RETURNING id, school_id, academic_year, working_days,
+                 start_date::text AS start_date, end_date::text AS end_date`,
       [school_id, academic_year, working_days, start_date, end_date]
     );
 
@@ -700,7 +724,11 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
     const result = await pool.query(
-      'SELECT * FROM school_calendar WHERE school_id = $1 ORDER BY academic_year DESC',
+      `SELECT id, school_id, academic_year, working_days,
+              start_date::text AS start_date,
+              end_date::text   AS end_date,
+              holidays
+       FROM school_calendar WHERE school_id = $1 ORDER BY academic_year DESC`,
       [school_id]
     );
     return res.json(result.rows);
@@ -873,6 +901,156 @@ router.post('/absence', async (req: Request, res: Response) => {
   } catch (err: unknown) {
     const msg = axios.isAxiosError(err) ? err.message : 'Internal server error';
     return res.status(500).json({ error: msg });
+  }
+});
+
+// PUT /api/v1/admin/calendar/plans/:section_id/:plan_date — edit a day plan's chunk_ids and admin note
+router.put('/plans/:section_id/:plan_date', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { section_id, plan_date } = req.params;
+    const { chunk_ids, admin_note, chunk_label_overrides } = req.body;
+
+    // Check if teacher has already completed this day
+    const completed = await pool.query(
+      'SELECT id FROM daily_completions WHERE section_id = $1 AND completion_date = $2',
+      [section_id, plan_date]
+    );
+    if (completed.rows.length > 0) {
+      return res.status(409).json({ error: 'This day has already been completed by the teacher and cannot be edited.' });
+    }
+
+    // Check if date is in the past
+    const today = new Date().toISOString().split('T')[0];
+    if (plan_date < today) {
+      return res.status(409).json({ error: 'Cannot edit plans for past dates.' });
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (Array.isArray(chunk_ids)) {
+      params.push(chunk_ids);
+      updates.push(`chunk_ids = $${params.length}::uuid[]`);
+    }
+    if (admin_note !== undefined) {
+      params.push(admin_note);
+      updates.push(`admin_note = $${params.length}`);
+    }
+    if (chunk_label_overrides !== undefined && typeof chunk_label_overrides === 'object') {
+      params.push(JSON.stringify(chunk_label_overrides));
+      updates.push(`chunk_label_overrides = $${params.length}::jsonb`);
+    }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+    params.push(section_id, plan_date, school_id);
+    const result = await pool.query(
+      `UPDATE day_plans SET ${updates.join(', ')}
+       WHERE section_id = $${params.length - 2} AND plan_date = $${params.length - 1} AND school_id = $${params.length}
+       RETURNING id, plan_date, chunk_ids, chunk_label_overrides`,
+      params
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Plan not found' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/calendar/plans/class/:class_id/stats — preview what will be deleted
+router.get('/plans/class/:class_id/stats', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id } = req.params;
+
+    const sections = await pool.query(
+      'SELECT id FROM sections WHERE class_id = $1 AND school_id = $2',
+      [class_id, school_id]
+    );
+    const sectionIds = sections.rows.map((r: any) => r.id);
+    if (sectionIds.length === 0) return res.json({ plans: 0, completions: 0, first_date: null, last_date: null });
+
+    const planStats = await pool.query(
+      `SELECT COUNT(*)::int as plans, MIN(plan_date)::text as first_date, MAX(plan_date)::text as last_date
+       FROM day_plans WHERE section_id = ANY($1::uuid[]) AND school_id = $2`,
+      [sectionIds, school_id]
+    );
+    const completionStats = await pool.query(
+      `SELECT COUNT(*)::int as completions FROM daily_completions
+       WHERE section_id = ANY($1::uuid[]) AND school_id = $2`,
+      [sectionIds, school_id]
+    );
+
+    return res.json({
+      plans: planStats.rows[0].plans,
+      completions: completionStats.rows[0].completions,
+      first_date: planStats.rows[0].first_date,
+      last_date: planStats.rows[0].last_date,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/v1/admin/calendar/plans/class/:class_id — delete all plans for a class
+router.delete('/plans/class/:class_id', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id } = req.params;
+
+    // Get all sections for this class
+    const sections = await pool.query(
+      'SELECT id FROM sections WHERE class_id = $1 AND school_id = $2',
+      [class_id, school_id]
+    );
+    const sectionIds = sections.rows.map((r: any) => r.id);
+    if (sectionIds.length === 0) return res.json({ deleted: 0, message: 'No sections found' });
+
+    // Delete daily_completions first (they reference sections)
+    await pool.query(
+      'DELETE FROM daily_completions WHERE section_id = ANY($1::uuid[]) AND school_id = $2',
+      [sectionIds, school_id]
+    );
+
+    // Delete day_plans
+    const result = await pool.query(
+      'DELETE FROM day_plans WHERE section_id = ANY($1::uuid[]) AND school_id = $2 RETURNING id',
+      [sectionIds, school_id]
+    );
+
+    return res.json({ deleted: result.rows.length, message: `Deleted ${result.rows.length} day plans` });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/v1/admin/calendar/plans/:section_id/month — delete plans for a specific month/year
+router.delete('/plans/:section_id/month', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { section_id } = req.params;
+    const month = parseInt(req.query.month as string);
+    const year = parseInt(req.query.year as string);
+    if (!month || !year) return res.status(400).json({ error: 'month and year are required' });
+
+    await pool.query(
+      `DELETE FROM daily_completions WHERE section_id = $1 AND school_id = $2
+       AND EXTRACT(MONTH FROM completion_date) = $3 AND EXTRACT(YEAR FROM completion_date) = $4`,
+      [section_id, school_id, month, year]
+    );
+    const result = await pool.query(
+      `DELETE FROM day_plans WHERE section_id = $1 AND school_id = $2
+       AND EXTRACT(MONTH FROM plan_date) = $3 AND EXTRACT(YEAR FROM plan_date) = $4 RETURNING id`,
+      [section_id, school_id, month, year]
+    );
+    return res.json({ deleted: result.rows.length, message: `Deleted ${result.rows.length} day plans for this month` });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1133,17 +1311,51 @@ router.post('/:year/special-days', async (req: Request, res: Response) => {
     }
 
     // Build list of dates to insert
-    const dates: string[] = [];
+    const allDates: string[] = [];
     if (from_date && to_date) {
       const start = new Date(from_date);
       const end = new Date(to_date);
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        dates.push(d.toISOString().split('T')[0]);
+        allDates.push(d.toISOString().split('T')[0]);
       }
     } else if (day_date) {
-      dates.push(day_date);
+      allDates.push(day_date);
     } else {
       return res.status(400).json({ error: 'Either day_date or from_date+to_date is required' });
+    }
+
+    // Filter out non-working days (weekends + holidays) using school calendar
+    const calRow = await pool.query(
+      'SELECT working_days FROM school_calendar WHERE school_id = $1 AND academic_year = $2',
+      [school_id, req.params.year]
+    );
+    const workingDayNums: Set<number> = calRow.rows.length > 0
+      ? new Set<number>(calRow.rows[0].working_days)
+      : new Set<number>([1, 2, 3, 4, 5]); // default Mon-Fri
+
+    const holidayRows = await pool.query(
+      'SELECT holiday_date::text FROM holidays WHERE school_id = $1 AND academic_year = $2',
+      [school_id, req.params.year]
+    );
+    const holidaySet = new Set<string>(holidayRows.rows.map((r: any) => r.holiday_date.split('T')[0]));
+
+    const dates: string[] = [];
+    const skipped: string[] = [];
+    for (const d of allDates) {
+      const dt = new Date(d + 'T12:00:00');
+      const dow = dt.getDay() === 0 ? 7 : dt.getDay(); // 1=Mon..7=Sun
+      if (!workingDayNums.has(dow) || holidaySet.has(d)) {
+        skipped.push(d);
+      } else {
+        dates.push(d);
+      }
+    }
+
+    if (dates.length === 0) {
+      return res.status(400).json({
+        error: 'None of the selected dates are working days. Please select dates that fall on school working days.',
+        skipped,
+      });
     }
 
     const inserted: any[] = [];
@@ -1169,10 +1381,13 @@ router.post('/:year/special-days', async (req: Request, res: Response) => {
 
     return res.status(201).json({
       created: inserted.length,
+      skipped_non_working: skipped,
       plans_affected: impacted,
-      message: impacted > 0
-        ? `${inserted.length} day(s) added. ${impacted} section plan(s) carried forward.`
-        : `${inserted.length} day(s) added.`,
+      message: skipped.length > 0
+        ? `${inserted.length} day(s) added (${skipped.length} non-working day(s) skipped). ${impacted > 0 ? `${impacted} section plan(s) carried forward.` : ''}`
+        : impacted > 0
+          ? `${inserted.length} day(s) added. ${impacted} section plan(s) carried forward.`
+          : `${inserted.length} day(s) added.`,
     });
   } catch (err) {
     console.error(err);

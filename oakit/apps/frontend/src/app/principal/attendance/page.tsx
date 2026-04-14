@@ -1,13 +1,15 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/auth';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import Badge from '@/components/ui/Badge';
 
 interface AttendanceItem {
   section_id: string;
-  section_name: string;
+  section_label: string;
+  class_name: string;
+  class_teacher_name: string | null;
   status: 'submitted' | 'pending';
   present_count: number;
   absent_count: number;
@@ -34,7 +36,7 @@ export default function AttendanceOverviewPage() {
     if (!token) return;
     try {
       if (item.flagged) {
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/v1/principal/flags/${item.section_id}`, {
+        await fetch(`${API_BASE}/api/v1/principal/flags/${item.section_id}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -63,7 +65,9 @@ export default function AttendanceOverviewPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="text-left px-4 py-3 text-gray-600 font-medium">Class</th>
                 <th className="text-left px-4 py-3 text-gray-600 font-medium">Section</th>
+                <th className="text-left px-4 py-3 text-gray-600 font-medium">Class Teacher</th>
                 <th className="text-left px-4 py-3 text-gray-600 font-medium">Status</th>
                 <th className="text-left px-4 py-3 text-gray-600 font-medium">Present</th>
                 <th className="text-left px-4 py-3 text-gray-600 font-medium">Absent</th>
@@ -73,10 +77,12 @@ export default function AttendanceOverviewPage() {
             <tbody>
               {items.map((item) => (
                 <tr key={item.section_id} className="border-b border-gray-100">
-                  <td className="px-4 py-3 font-medium text-gray-800">
-                    {item.section_name}
+                  <td className="px-4 py-3 font-medium text-gray-800">{item.class_name}</td>
+                  <td className="px-4 py-3 text-gray-700">
+                    Section {item.section_label}
                     {item.flagged && <span className="ml-2 text-xs text-red-500">⚑ {item.flag_note}</span>}
                   </td>
+                  <td className="px-4 py-3 text-gray-600 text-sm">{item.class_teacher_name || <span className="text-gray-400">—</span>}</td>
                   <td className="px-4 py-3">
                     <Badge label={item.status} variant={item.status === 'submitted' ? 'success' : 'warning'} />
                   </td>
@@ -93,7 +99,7 @@ export default function AttendanceOverviewPage() {
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No sections found</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No sections found</td></tr>
               )}
             </tbody>
           </table>

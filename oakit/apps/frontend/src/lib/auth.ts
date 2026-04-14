@@ -32,12 +32,27 @@ export function setSchoolCode(code: string): void {
   localStorage.setItem('oakit_school_code', code);
 }
 
+// Student portal token helpers
+export function getStudentToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('student_token');
+}
+
+export function setStudentToken(token: string): void {
+  localStorage.setItem('student_token', token);
+}
+
+export function clearStudentToken(): void {
+  localStorage.removeItem('student_token');
+}
+
 export function getRoleRedirect(role: string): string {
-  switch (role) {
-    case 'admin': return '/admin';
-    case 'principal': return '/principal';
-    case 'teacher': return '/teacher';
-    case 'parent': return '/parent';
-    default: return '/login';
-  }
+  const r = role.toLowerCase().trim();
+  if (r === 'admin') return '/admin';
+  if (['principal', 'vice principal', 'head teacher', 'center head'].includes(r)) return '/principal';
+  if (['teacher', 'class teacher', 'supporting teacher'].includes(r)) return '/teacher';
+  if (r === 'parent') return '/parent';
+  if (r === 'super_admin') return '/super-admin';
+  // Any unrecognised role — fall back to login so they don't get stuck
+  return '/login';
 }

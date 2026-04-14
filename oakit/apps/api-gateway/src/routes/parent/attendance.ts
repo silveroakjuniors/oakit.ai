@@ -27,7 +27,11 @@ router.get('/', async (req: Request, res: Response) => {
       const { student_id, student_name } = link;
 
       const records = await pool.query(
-        `SELECT attend_date, status
+        `SELECT
+           attend_date,
+           status,
+           COALESCE(is_late, false)  AS is_late,
+           arrived_at
          FROM attendance_records
          WHERE student_id = $1
            AND attend_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
@@ -37,13 +41,19 @@ router.get('/', async (req: Request, res: Response) => {
 
       const total = records.rows.length;
       const present = records.rows.filter((r: any) => r.status === 'present').length;
+      const absent = records.rows.filter((r: any) => r.status === 'absent').length;
+      const late = records.rows.filter((r: any) => r.is_late).length;
+      const onTime = present - late;
       const attendance_pct = total > 0 ? Math.round((present / total) * 100 * 10) / 10 : 0;
+      const punctuality_pct = present > 0 ? Math.round((onTime / present) * 100 * 10) / 10 : 0;
 
       result.push({
         student_id,
         student_name,
         records: records.rows,
         attendance_pct,
+        punctuality_pct,
+        stats: { total, present, absent, late, on_time: onTime },
       });
     }
 

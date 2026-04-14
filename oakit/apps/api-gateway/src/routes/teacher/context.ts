@@ -99,7 +99,7 @@ router.get('/', async (req: Request, res: Response) => {
       thought_for_day = aiResp.data.thought_for_day || thought_for_day;
     } catch { /* use defaults */ }
 
-    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan });
+    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }

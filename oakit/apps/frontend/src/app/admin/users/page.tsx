@@ -1,22 +1,97 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { Button, Card, Badge, Input } from '@/components/ui';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Section { section_id: string; section_label: string; class_name: string; }
 interface User { id: string; name: string; mobile?: string; role: string; is_active: boolean; sections: Section[]; class_teacher_section?: { label: string; class_name: string } | null; }
-interface Role { id: string; name: string; permissions: string[]; }
+interface Role { id: string; name: string; permissions: string[]; portal_access: string | null; }
 
-const ALL_PERMISSIONS = [
-  'read:all', 'write:all',
-  'manage:users', 'manage:classes', 'manage:curriculum', 'manage:calendar',
-  'read:dashboard', 'query:ai',
-  'read:own_plan', 'write:coverage_log',
-  'create_students', 'mark:attendance',
+// Grouped permissions for clarity
+const PERMISSION_GROUPS: { label: string; perms: { key: string; desc: string }[] }[] = [
+  {
+    label: 'Admin — Full Access',
+    perms: [
+      { key: 'read:all',          desc: 'View all data' },
+      { key: 'write:all',         desc: 'Edit all data' },
+    ],
+  },
+  {
+    label: 'Admin — Manage',
+    perms: [
+      { key: 'manage:users',      desc: 'Create / edit / deactivate staff' },
+      { key: 'manage:classes',    desc: 'Create classes & sections, assign teachers' },
+      { key: 'manage:curriculum', desc: 'Upload & manage curriculum documents' },
+      { key: 'manage:calendar',   desc: 'Set holidays, special days & academic year' },
+      { key: 'manage:students',   desc: 'Add / edit / import students' },
+      { key: 'manage:plans',      desc: 'Generate & edit day plans' },
+      { key: 'manage:activities', desc: 'Create supplementary activity pools' },
+      { key: 'manage:settings',   desc: 'Change school settings & branding' },
+      { key: 'manage:announcements', desc: 'Post school-wide announcements' },
+    ],
+  },
+  {
+    label: 'Reports & Dashboard',
+    perms: [
+      { key: 'read:dashboard',    desc: 'View admin dashboard & stats' },
+      { key: 'read:reports',      desc: 'View coverage & attendance reports' },
+      { key: 'read:students',     desc: 'View student list & profiles' },
+    ],
+  },
+  {
+    label: 'Teacher',
+    perms: [
+      { key: 'read:own_plan',     desc: 'View own daily plan' },
+      { key: 'write:coverage_log',desc: 'Mark topics as covered' },
+      { key: 'mark:attendance',   desc: 'Submit class attendance' },
+      { key: 'query:ai',          desc: 'Use Oakie AI assistant' },
+      { key: 'write:notes',       desc: 'Post homework & notes for parents' },
+      { key: 'write:observations',desc: 'Record student observations' },
+      { key: 'write:milestones',  desc: 'Log student milestones' },
+      { key: 'write:messages',    desc: 'Message parents' },
+    ],
+  },
+  {
+    label: 'Principal / Management',
+    perms: [
+      { key: 'read:all_sections',     desc: 'View all sections & attendance' },
+      { key: 'read:coverage',         desc: 'View curriculum coverage across school' },
+      { key: 'read:teacher_activity', desc: 'View teacher engagement & streaks' },
+      { key: 'read:audit',            desc: 'View audit log — uploads & communications' },
+    ],
+  },
+];
+
+const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap(g => g.perms.map(p => p.key));
+
+// Preset role templates for common school roles
+const ROLE_PRESETS: { label: string; name: string; portal_access: string; permissions: string[] }[] = [
+  {
+    label: 'Accountant',
+    name: 'Accountant',
+    portal_access: 'admin',
+    permissions: ['read:dashboard', 'read:reports', 'read:students', 'read:all'],
+  },
+  {
+    label: 'Center Head',
+    name: 'Center Head',
+    portal_access: 'principal',
+    permissions: ['read:all', 'read:dashboard', 'read:reports', 'read:all_sections', 'read:coverage', 'read:teacher_activity', 'read:audit', 'query:ai'],
+  },
+  {
+    label: 'Coordinator',
+    name: 'Coordinator',
+    portal_access: 'admin',
+    permissions: ['read:all', 'read:dashboard', 'read:reports', 'manage:plans', 'manage:calendar', 'manage:curriculum', 'manage:students', 'manage:announcements'],
+  },
+  {
+    label: 'Vice Principal',
+    name: 'Vice Principal',
+    portal_access: 'principal',
+    permissions: ['read:all', 'read:dashboard', 'read:reports', 'read:all_sections', 'read:coverage', 'read:teacher_activity', 'read:audit', 'manage:announcements', 'query:ai'],
+  },
 ];
 
 function RoleModal({ role, onClose, onSaved, token }: {
@@ -24,6 +99,7 @@ function RoleModal({ role, onClose, onSaved, token }: {
 }) {
   const [name, setName] = useState(role?.name || '');
   const [perms, setPerms] = useState<string[]>(role?.permissions || []);
+  const [portalAccess, setPortalAccess] = useState<string>(role?.portal_access || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,18 +107,25 @@ function RoleModal({ role, onClose, onSaved, token }: {
     setPerms(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
   }
 
+  function applyPreset(preset: typeof ROLE_PRESETS[0]) {
+    setName(preset.name);
+    setPortalAccess(preset.portal_access);
+    setPerms(preset.permissions);
+  }
+
   async function save() {
     if (!name.trim()) { setError('Role name is required'); return; }
     setLoading(true); setError('');
     try {
+      const body = { name, permissions: perms, portal_access: portalAccess || null };
       if (role) {
         await fetch(`${API_BASE}/api/v1/admin/users/roles/${role.id}`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, permissions: perms }),
+          body: JSON.stringify(body),
         });
       } else {
-        await apiPost('/api/v1/admin/users/roles', { name, permissions: perms }, token);
+        await apiPost('/api/v1/admin/users/roles', body, token);
       }
       onSaved();
       onClose();
@@ -56,16 +139,63 @@ function RoleModal({ role, onClose, onSaved, token }: {
       <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">{role ? 'Edit Role' : 'Create Role'}</h2>
         <div className="flex flex-col gap-4">
-          <Input label="Role Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. class_teacher" />
+
+          {/* Quick presets — only when creating */}
+          {!role && (
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">Quick presets</p>
+              <div className="flex flex-wrap gap-2">
+                {ROLE_PRESETS.map(p => (
+                  <button key={p.label} type="button" onClick={() => applyPreset(p)}
+                    className="text-xs px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 hover:border-primary/40 hover:bg-primary/5 transition-colors">
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <Input label="Role Name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Center Head, Accountant" />
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Portal Access</label>
+            <select
+              value={portalAccess}
+              onChange={e => setPortalAccess(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">Use role name (default)</option>
+              <option value="admin">Admin Portal</option>
+              <option value="principal">Principal Portal</option>
+              <option value="teacher">Teacher Portal</option>
+              <option value="parent">Parent Portal</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Set this if the role name doesn't match a portal. E.g. "Center Head" → Principal Portal, "Accountant" → Admin Portal.
+            </p>
+          </div>
+
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">Permissions</p>
-            <div className="grid grid-cols-2 gap-2">
-              {ALL_PERMISSIONS.map(p => (
-                <label key={p} className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={perms.includes(p)} onChange={() => togglePerm(p)}
-                    className="rounded border-gray-300 text-primary focus:ring-primary" />
-                  <span className="text-xs text-gray-700">{p}</span>
-                </label>
+            <div className="flex flex-col gap-4">
+              {PERMISSION_GROUPS.map(group => (
+                <div key={group.label}>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">{group.label}</p>
+                  <div className="grid grid-cols-1 gap-1">
+                    {group.perms.map(p => (
+                      <label key={p.key} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                        perms.includes(p.key) ? 'bg-primary/5 border border-primary/20' : 'hover:bg-gray-50 border border-transparent'
+                      }`}>
+                        <input type="checkbox" checked={perms.includes(p.key)} onChange={() => togglePerm(p.key)}
+                          className="rounded border-gray-300 text-primary focus:ring-primary shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-xs font-semibold text-gray-700 font-mono">{p.key}</span>
+                          <span className="text-xs text-gray-400 ml-2">{p.desc}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -290,10 +420,17 @@ export default function UsersPage() {
             <Card key={role.id}>
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="font-semibold text-gray-800 capitalize">{role.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-800 capitalize">{role.name}</p>
+                    {role.portal_access && (
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                        → {role.portal_access} portal
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-1 mt-2">
                     {(role.permissions || []).map(p => (
-                      <span key={p} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{p}</span>
+                      <span key={p} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{p}</span>
                     ))}
                     {(!role.permissions || role.permissions.length === 0) && (
                       <span className="text-xs text-gray-400">No permissions</span>

@@ -29,15 +29,15 @@ router.get('/activity', async (req: Request, res: Response) => {
          u.id          AS teacher_id,
          u.name        AS teacher_name,
          s.id          AS section_id,
-         s.name        AS section_name,
+         s.label        AS section_name,
          dc.id         AS completion_id,
          COALESCE(array_length(dc.covered_chunk_ids, 1), 0) AS chunks_covered
        FROM users u
        JOIN teacher_sections ts ON ts.teacher_id = u.id
-       JOIN sections s ON s.id = ts.section_id AND s.school_id = $1 AND s.is_active = true
+       JOIN sections s ON s.id = ts.section_id AND s.school_id = $1
        LEFT JOIN daily_completions dc ON dc.section_id = s.id AND dc.completion_date = $2
        WHERE u.school_id = $1 AND u.role = 'teacher'
-       ORDER BY u.name, s.name`,
+       ORDER BY u.name, s.label`,
       [school_id, today]
     );
 

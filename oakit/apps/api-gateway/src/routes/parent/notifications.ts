@@ -17,7 +17,7 @@ router.get('/', async (req: Request, res: Response) => {
          pn.chunks_covered,
          pn.is_read,
          pn.created_at,
-         s.name AS section_name
+         s.label AS section_name
        FROM parent_notifications pn
        JOIN sections s ON s.id = pn.section_id
        WHERE pn.parent_id = $1 AND pn.is_read = false

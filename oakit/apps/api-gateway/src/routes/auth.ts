@@ -3,16 +3,33 @@ import bcrypt from 'bcryptjs';
 import { pool } from '../lib/db';
 import { signToken, verifyToken, SuperAdminJwtPayload } from '../lib/jwt';
 import { jwtVerify } from '../middleware/auth';
+import { loginThrottle } from '../middleware/rateLimit';
 
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 const RESET_TOKEN_EXPIRES = 15 * 60; // 15 minutes in seconds
 
-// POST /api/v1/auth/login
-router.post('/login', async (req: Request, res: Response) => {
+// GET /api/v1/auth/school-info?code=sojs — public endpoint to get school name
+router.get('/school-info', async (req: Request, res: Response) => {
   try {
-    const { school_code, mobile, email, password, role: roleHint } = req.body;
+    const code = (req.query.code as string || '').toLowerCase().trim();
+    if (!code) return res.status(400).json({ error: 'code is required' });
+    const result = await pool.query(
+      'SELECT name, subdomain FROM schools WHERE subdomain = $1 AND status != $2',
+      [code, 'inactive']
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'School not found' });
+    return res.json({ name: result.rows[0].name, code: result.rows[0].subdomain });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/auth/login
+router.post('/login', loginThrottle, async (req: Request, res: Response) => {
+  try {
+    const { school_code, mobile, email, password } = req.body;
     const identifier = mobile || email;
     if (!identifier || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -53,89 +70,153 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'School account is inactive' });
     }
 
-    // Parent login path
-    if (roleHint === 'parent') {
-      const parentResult = await pool.query(
-        `SELECT id, password_hash, is_active, force_password_reset FROM parent_users
-         WHERE mobile = $1 AND school_id = $2`,
-        [identifier, school_id]
-      );
-      if (parentResult.rows.length === 0) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
-      const parent = parentResult.rows[0];
-      if (!parent.is_active) return res.status(401).json({ error: 'Invalid credentials' });
-      if (!parent.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
-      const valid = await bcrypt.compare(password, parent.password_hash);
-      if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-
-      const token = signToken({
-        user_id: parent.id,
-        school_id,
-        role: 'parent',
-        permissions: [],
-        force_password_reset: parent.force_password_reset,
-      } as any);
-      return res.json({ token, role: 'parent', force_password_reset: parent.force_password_reset });
-    }
-
-    // Regular user: check mobile first, fall back to email
+    // Try staff users first
     const userResult = await pool.query(
       `SELECT u.id, u.password_hash, u.is_active, u.force_password_reset, u.mobile,
-              r.name as role, r.permissions
+              r.name as role, r.permissions, COALESCE(r.portal_access, r.name) as portal_role
        FROM users u
        JOIN roles r ON u.role_id = r.id
        WHERE (u.mobile = $1 OR u.email = $1) AND u.school_id = $2`,
       [identifier, school_id]
     );
-    if (userResult.rows.length === 0) {
+
+    if (userResult.rows.length > 0) {
+      const user = userResult.rows[0];
+      if (!user.is_active) return res.status(401).json({ error: 'Invalid credentials' });
+      if (!user.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+      const token = signToken({
+        user_id: user.id,
+        school_id,
+        role: user.portal_role,
+        permissions: user.permissions || [],
+        force_password_reset: user.force_password_reset,
+      } as any);
+
+      // Attendance prompt for teachers
+      let attendance_prompt = false;
+      if (user.role === 'teacher') {
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          const sectionRow = await pool.query(
+            'SELECT section_id FROM teacher_sections WHERE teacher_id = $1 LIMIT 1',
+            [user.id]
+          );
+          if (sectionRow.rows.length > 0) {
+            const section_id = sectionRow.rows[0].section_id;
+            const attRow = await pool.query(
+              'SELECT id FROM attendance_records WHERE section_id = $1 AND attend_date = $2 LIMIT 1',
+              [section_id, today]
+            );
+            const hour = new Date().getHours();
+            attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17;
+          }
+        } catch { /* ignore */ }
+      }
+
+      return res.json({
+        token,
+        role: user.portal_role,
+        display_role: user.role,
+        force_password_reset: user.force_password_reset,
+        attendance_prompt,
+      });
+    }
+
+    // Fallback: try parent_users table
+    const parentResult = await pool.query(
+      `SELECT id, password_hash, is_active, force_password_reset
+       FROM parent_users WHERE mobile = $1 AND school_id = $2`,
+      [identifier, school_id]
+    );
+    if (parentResult.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    const parent = parentResult.rows[0];
+    if (!parent.is_active) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!parent.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
+    const parentValid = await bcrypt.compare(password, parent.password_hash);
+    if (!parentValid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const user = userResult.rows[0];
-    if (!user.is_active) return res.status(401).json({ error: 'Invalid credentials' });
-    if (!user.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
+    const parentToken = signToken({
+      user_id: parent.id,
+      school_id,
+      role: 'parent',
+      permissions: [],
+      force_password_reset: parent.force_password_reset,
+    } as any);
+    return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset });
 
-    const valid = await bcrypt.compare(password, user.password_hash);
+  } catch (err) {
+    console.error('Login error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/auth/student-login
+router.post('/student-login', loginThrottle, async (req: Request, res: Response) => {
+  try {
+    const { school_code, username, password } = req.body;
+    if (!school_code || !username || !password) {
+      return res.status(400).json({ error: 'school_code, username, and password are required' });
+    }
+
+    // Find school
+    const schoolResult = await pool.query(
+      'SELECT id, status FROM schools WHERE subdomain = $1',
+      [school_code.toLowerCase()]
+    );
+    if (schoolResult.rows.length === 0 || schoolResult.rows[0].status === 'inactive') {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const school_id = schoolResult.rows[0].id;
+
+    // Find student account
+    const accountResult = await pool.query(
+      `SELECT sa.id, sa.student_id, sa.password_hash, sa.force_password_reset, sa.is_active,
+              s.section_id, s.class_id
+       FROM student_accounts sa
+       JOIN students s ON s.id = sa.student_id
+       WHERE sa.school_id = $1 AND sa.username = $2`,
+      [school_id, username.toLowerCase().trim()]
+    );
+    if (accountResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const account = accountResult.rows[0];
+    if (!account.is_active) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const valid = await bcrypt.compare(password, account.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = signToken({
-      user_id: user.id,
-      school_id,
-      role: user.role,
-      permissions: user.permissions,
-      force_password_reset: user.force_password_reset,
-    } as any);
-
-    // Attendance prompt for teachers
-    let attendance_prompt = false;
-    if (user.role === 'teacher') {
-      try {
-        const today = new Date().toISOString().split('T')[0];
-        const sectionRow = await pool.query(
-          'SELECT section_id FROM teacher_sections WHERE teacher_id = $1 LIMIT 1',
-          [user.id]
-        );
-        if (sectionRow.rows.length > 0) {
-          const section_id = sectionRow.rows[0].section_id;
-          const attRow = await pool.query(
-            'SELECT id FROM attendance_records WHERE section_id = $1 AND attend_date = $2 LIMIT 1',
-            [section_id, today]
-          );
-          const hour = new Date().getHours();
-          attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17;
-        }
-      } catch { /* ignore */ }
+    // Check portal is enabled for this class
+    const configResult = await pool.query(
+      'SELECT enabled FROM student_portal_config WHERE school_id = $1 AND class_id = $2',
+      [school_id, account.class_id]
+    );
+    if (!configResult.rows[0]?.enabled) {
+      return res.status(403).json({ error: 'Your school has not enabled the student portal for your class.' });
     }
+
+    const token = signToken({
+      user_id: account.id,
+      school_id,
+      role: 'student',
+      permissions: [],
+      force_password_reset: account.force_password_reset,
+      ...(account.student_id ? { student_id: account.student_id } : {}),
+      ...(account.section_id ? { section_id: account.section_id } : {}),
+    } as any);
 
     return res.json({
       token,
-      role: user.role,
-      force_password_reset: user.force_password_reset,
-      attendance_prompt,
+      role: 'student',
+      force_password_reset: account.force_password_reset,
     });
   } catch (err) {
-    console.error('Login error:', err);
+    console.error('Student login error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -148,10 +229,38 @@ router.post('/logout', async (_req: Request, res: Response) => {
 // POST /api/v1/auth/change-password
 router.post('/change-password', jwtVerify, async (req: Request, res: Response) => {
   try {
-    const { user_id, school_id } = req.user!;
+    const { user_id, school_id, role } = req.user!;
     const { new_password } = req.body;
     if (!new_password) return res.status(400).json({ error: 'new_password is required' });
     if (new_password.length < 6) return res.status(400).json({ error: 'Password too short' });
+
+    if ((role as string) === 'student') {
+      const hash = await bcrypt.hash(new_password, 12);
+      const result = await pool.query(
+        'UPDATE student_accounts SET password_hash = $1, force_password_reset = false, updated_at = now() WHERE id = $2 AND school_id = $3 RETURNING id',
+        [hash, user_id, school_id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Account not found' });
+      return res.json({ message: 'Password changed successfully' });
+    }
+
+    if ((role as string) === 'parent') {
+      // Parent password change
+      const parentRow = await pool.query(
+        'SELECT mobile FROM parent_users WHERE id = $1 AND school_id = $2',
+        [user_id, school_id]
+      );
+      if (parentRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+      if (new_password === parentRow.rows[0].mobile) {
+        return res.status(400).json({ error: 'New password must differ from your mobile number' });
+      }
+      const hash = await bcrypt.hash(new_password, 12);
+      await pool.query(
+        'UPDATE parent_users SET password_hash = $1, force_password_reset = false WHERE id = $2',
+        [hash, user_id]
+      );
+      return res.json({ message: 'Password changed successfully' });
+    }
 
     // Get user's mobile to validate new password ≠ mobile
     const userRow = await pool.query(

@@ -4,13 +4,15 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
 import { apiPost, apiGet } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { getToken, getRole } from '@/lib/auth';
 
 interface SecurityQuestion { id: string; text: string; }
 
 export default function ChangePasswordPage() {
   const router = useRouter();
   const token = getToken() || '';
+  const role = getRole() || '';
+  const isParent = role === 'parent';
   const [step, setStep] = useState<'password' | 'security'>('password');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -22,9 +24,11 @@ export default function ChangePasswordPage() {
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
-    apiGet<SecurityQuestion[]>('/api/v1/auth/security-questions', token)
-      .then(setQuestions)
-      .catch(console.error);
+    if (!isParent) {
+      apiGet<SecurityQuestion[]>('/api/v1/auth/security-questions', token)
+        .then(setQuestions)
+        .catch(console.error);
+    }
   }, []);
 
   async function handlePasswordChange(e: FormEvent) {
@@ -41,7 +45,11 @@ export default function ChangePasswordPage() {
     setLoading(true);
     try {
       await apiPost('/api/v1/auth/change-password', { new_password: newPassword }, token);
-      setStep('security');
+      if (isParent) {
+        router.push('/parent');
+      } else {
+        setStep('security');
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to change password');
     } finally {
@@ -62,7 +70,11 @@ export default function ChangePasswordPage() {
         security_question_id: selectedQuestion,
         answer: answer.trim(),
       }, token);
-      router.push('/teacher');
+      // Redirect based on role
+      const redirectMap: Record<string, string> = {
+        admin: '/admin', principal: '/principal', teacher: '/teacher',
+      };
+      router.push(redirectMap[role] || '/teacher');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to set security question');
     } finally {

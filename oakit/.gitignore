@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+# Node
+node_modules/
+.next/
+=======
 # System
 .DS_Store
 Thumbs.db
@@ -13,6 +18,7 @@ node_modules/
 # Next.js
 .next/
 **/.next/
+>>>>>>> b227f76 (Oakit Pahse1 Complete)
 out/
 
 # Python
@@ -24,8 +30,17 @@ __pycache__/
 .env
 .env.local
 
+<<<<<<< HEAD
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+=======
 # Logs
 *.log
 
 # Misc
 git
+>>>>>>> b227f76 (Oakit Pahse1 Complete)

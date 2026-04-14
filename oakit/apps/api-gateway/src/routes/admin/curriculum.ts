@@ -164,6 +164,104 @@ router.get('/:doc_id/chunks', async (req: Request, res: Response) => {
   }
 });
 
+// PATCH /api/v1/admin/curriculum/chunks/:chunk_id — edit a chunk's label and content
+router.patch('/chunks/:chunk_id', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { topic_label, content } = req.body;
+    if (!topic_label && !content) {
+      return res.status(400).json({ error: 'topic_label or content is required' });
+    }
+    const result = await pool.query(
+      `UPDATE curriculum_chunks
+       SET topic_label = COALESCE($1, topic_label),
+           content     = COALESCE($2, content)
+       WHERE id = $3 AND school_id = $4
+       RETURNING id, chunk_index, topic_label, content`,
+      [topic_label ?? null, content ?? null, req.params.chunk_id, school_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Chunk not found' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/curriculum/by-section/:section_id/chunks — all chunks for a section's class (for day plan editing)
+router.get('/by-section/:section_id/chunks', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+
+    // Resolve class_id from section
+    const secRow = await pool.query(
+      'SELECT class_id FROM sections WHERE id = $1 AND school_id = $2',
+      [req.params.section_id, school_id]
+    );
+    if (secRow.rows.length === 0) return res.status(404).json({ error: 'Section not found' });
+    const class_id = secRow.rows[0].class_id;
+
+    const docRow = await pool.query(
+      `SELECT id FROM curriculum_documents
+       WHERE class_id = $1 AND school_id = $2 AND status = 'ready'
+       ORDER BY uploaded_at DESC LIMIT 1`,
+      [class_id, school_id]
+    );
+    if (docRow.rows.length === 0) return res.status(404).json({ error: 'No curriculum found for this class' });
+
+    const result = await pool.query(
+      `SELECT id, chunk_index, topic_label
+       FROM curriculum_chunks WHERE document_id = $1 AND school_id = $2
+       ORDER BY chunk_index`,
+      [docRow.rows[0].id, school_id]
+    );
+    return res.json({ chunks: result.rows });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/curriculum/by-class/:class_id/chunks — paginated chunks for a class (5 per page = 5 days)
+router.get('/by-class/:class_id/chunks', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = 5;
+    const offset = (page - 1) * limit;
+
+    // Find the latest ready document for this class
+    const docRow = await pool.query(
+      `SELECT id FROM curriculum_documents
+       WHERE class_id = $1 AND school_id = $2 AND status = 'ready'
+       ORDER BY uploaded_at DESC LIMIT 1`,
+      [req.params.class_id, school_id]
+    );
+    if (docRow.rows.length === 0) return res.status(404).json({ error: 'No curriculum found for this class' });
+    const doc_id = docRow.rows[0].id;
+
+    const result = await pool.query(
+      `SELECT id, chunk_index, topic_label, content, page_start, page_end
+       FROM curriculum_chunks WHERE document_id = $1 AND school_id = $2
+       ORDER BY chunk_index LIMIT $3 OFFSET $4`,
+      [doc_id, school_id, limit, offset]
+    );
+    const count = await pool.query(
+      'SELECT COUNT(*) FROM curriculum_chunks WHERE document_id = $1',
+      [doc_id]
+    );
+    return res.json({
+      doc_id,
+      chunks: result.rows,
+      total: parseInt(count.rows[0].count),
+      page,
+      limit,
+      total_pages: Math.ceil(parseInt(count.rows[0].count) / limit),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/v1/admin/curriculum — list all docs for school
 router.get('/', async (req: Request, res: Response) => {
   try {
