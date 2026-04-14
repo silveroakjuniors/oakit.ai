@@ -84,14 +84,12 @@ export default function AdminStudentsPagePremium() {
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2"
-                style={{ focusRingColor: palette.primary }}
               />
             </div>
             <select
               value={filterClass}
               onChange={e => setFilterClass(e.target.value)}
               className="px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 bg-white"
-              style={{ focusRingColor: palette.primary }}
             >
               <option value="">All Classes</option>
               {classes.map(cls => <option key={cls} value={cls}>{cls}</option>)}

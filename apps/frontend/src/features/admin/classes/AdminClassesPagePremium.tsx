@@ -69,7 +69,6 @@ export default function AdminClassesPagePremium() {
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               className="w-full px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2"
-              style={{ focusRingColor: palette.primary }}
             />
           </div>
         </PremiumCard>

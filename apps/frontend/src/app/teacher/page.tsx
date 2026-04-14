@@ -803,7 +803,7 @@ export default function TeacherPlanner() {
                 {existingHomework?.formatted_text && (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2">
                 <p className="text-xs font-medium text-emerald-700 mb-1">✓ Sent to parents:</p>
-                <p className="text-xs text-emerald-600 whitespace-pre-wrap">{existingHomework.formatted_text}</p>
+                <p className="text-xs text-emerald-600 whitespace-pre-wrap">{existingHomework?.formatted_text}</p>
                   </div>
                 )}
                 <textarea
@@ -901,7 +901,7 @@ export default function TeacherPlanner() {
                 />
                 <div className="flex items-center gap-2 mb-2">
                   <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs text-gray-600 cursor-pointer hover:bg-gray-50 flex-1">
-                <span>📄 {noteFile ? noteFile.name : 'Attach PDF or Word file'}</span>
+                <span>📄 {noteFile ? (noteFile as File).name : 'Attach PDF or Word file'}</span>
                 <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
                   onChange={e => setNoteFile(e.target.files?.[0] || null)} />
                   </label>

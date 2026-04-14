@@ -7,7 +7,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
-import { Tab } from '../types';
+import { Tab } from './types';
 import {
   TodayTab,
   HomeworkTab,
@@ -15,26 +15,27 @@ import {
   QuizTab,
   ProgressTab,
   StudentLayout,
-} from '../components';
+} from './components';
 import {
   useStudentAuth,
   useQuizState,
   useChat,
   useTimer,
-} from '../hooks';
+} from './hooks';
 import {
+  StudentAuthService,
   studentFeedService,
   studentHomeworkService,
   studentChatService,
   studentQuizService,
   studentAuthService,
-} from '../api';
+} from './api';
 import {
   getTodayISO,
   addDays,
   isValidDateRange,
-} from '../utils';
-import { FeedDay, HomeworkRecord, AssignedTest, ProgressStats } from '../types';
+} from './utils';
+import { FeedDay, HomeworkRecord, AssignedTest, ProgressStats } from './types';
 
 /**
  * Main Student Portal Page
@@ -77,7 +78,7 @@ export default function StudentPage() {
   useEffect(() => {
     if (!isAuthenticated || authLoading) return;
 
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (!token) return;
 
     // Load initial data
@@ -127,7 +128,7 @@ export default function StudentPage() {
     setCurrentTab(tab);
 
     // Load data on tab change
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (!token) return;
 
     if (tab === 'homework' && hwHistory.length === 0) {
@@ -163,7 +164,7 @@ export default function StudentPage() {
     if (next > maxFuture) return;
 
     setFeedDate(next);
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (token) loadFeed(next, token);
   };
 
@@ -186,7 +187,7 @@ export default function StudentPage() {
 
   const handleRefreshHomework = () => {
     setHwHistory([]);
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (token) loadHomework(token);
   };
 
@@ -200,7 +201,7 @@ export default function StudentPage() {
     chatState.setInput('');
     chatState.addMessage({ role: 'user', text, ts: Date.now() });
 
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (!token) return;
 
     try {
@@ -230,7 +231,7 @@ export default function StudentPage() {
     setQuizLoading(true);
     quizState.setError('');
 
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (!token) return;
 
     try {
@@ -262,7 +263,7 @@ export default function StudentPage() {
     setQuizLoading(true);
     quizState.setError('');
 
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (!token) return;
 
     try {
@@ -287,7 +288,7 @@ export default function StudentPage() {
     setQuizLoading(true);
     quizState.setError('');
 
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (!token) return;
 
     try {
@@ -311,7 +312,7 @@ export default function StudentPage() {
 
     setQuizLoading(true);
 
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (!token) return;
 
     try {
@@ -369,7 +370,7 @@ export default function StudentPage() {
 
   const handleRefreshProgress = () => {
     setProgress(null);
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
     if (token) loadProgress(token);
   };
 

@@ -129,7 +129,6 @@ export default function AdminSettingsThemePage() {
                     onChange={e => setCustomColor(e.target.value.toUpperCase())}
                     placeholder="#1F5636"
                     className="w-full px-4 py-2 border border-neutral-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2"
-                    style={{ focusRingColor: palette.primary }}
                   />
                 </div>
                 <input

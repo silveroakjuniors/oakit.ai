@@ -291,7 +291,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     school_name: '', subdomain: '', contact_email: '',
     contact_phone: '', contact_address: '', notes_expiry_days: 14,
-    logo_url: null, primary_color: '#1A3C2E', tagline: '',
+    ai_plan_mode: 'standard', logo_url: null, primary_color: '#1A3C2E', tagline: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

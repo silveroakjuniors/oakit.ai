@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { LogOut, Home, BookOpen, Sparkles, ClipboardList, TrendingUp } from 'lucide-react';
-import { Tab } from '../../types';
+import { Tab } from '../types';
 import OakitLogo from '@/components/OakitLogo';
 
 interface StudentLayoutProps {
