@@ -460,13 +460,13 @@ export default function StudentPage() {
           onToChange={quizState.setTo}
           onLoadTopics={handleLoadQuizTopics}
           onToggleTopic={quizState.toggleTopic}
-          onToggleQType={quizState.toggleQType}
+          onToggleQType={(id) => quizState.toggleQType(id as import('./types').QuizQuestionType)}
           onGenerate={handleGenerateQuiz}
           onAnswerChange={quizState.updateAnswer}
           onSubmit={() => handleSubmitQuiz(false)}
           onReset={quizState.reset}
           onStartAssigned={handleStartAssignedTest}
-          onStepChange={quizState.setStep}
+          onStepChange={(s) => quizState.setStep(s as import('./types').QuizStep)}
         />
       )}
 

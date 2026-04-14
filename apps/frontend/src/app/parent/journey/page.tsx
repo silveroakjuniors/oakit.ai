@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet } from '@/lib/api';
@@ -31,7 +32,15 @@ const TYPE_LABELS = {
   highlight: { label: '⭐ Highlight', color: 'bg-amber-50 text-amber-700 border-amber-100' },
 };
 
-export default function ChildJourneyParentPage() {
+export default function ChildJourneyParentPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-neutral-50 flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" /></div>}>
+      <ChildJourneyParentPage />
+    </Suspense>
+  );
+}
+
+function ChildJourneyParentPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const studentId = searchParams.get('student_id') || '';
