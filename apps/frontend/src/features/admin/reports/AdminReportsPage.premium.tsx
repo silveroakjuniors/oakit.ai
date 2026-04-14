@@ -374,6 +374,33 @@ export default function AdminReportsPage() {
         </div>
       )}
 
+      {/* Single Report Generation Progress Modal */}
+      {(loading || termLoading) && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-4">
+              <Sparkles className="w-7 h-7 text-primary-600 animate-pulse" />
+            </div>
+            <p className="text-base font-bold text-neutral-900 mb-2">
+              Generating {termLoading ? (termType === 'annual' ? 'Annual' : 'Term') : 'Progress'} Report
+            </p>
+            <p className="text-sm text-neutral-500 mb-4">
+              Oakie is analysing curriculum, attendance, and observations for{' '}
+              <span className="font-semibold text-neutral-700">
+                {students.find(s => s.id === selectedStudent)?.name || 'the student'}
+              </span>
+            </p>
+            <div className="flex items-center justify-center gap-1.5">
+              {[0, 150, 300].map(d => (
+                <span key={d} className="w-2 h-2 rounded-full bg-primary-400 animate-bounce inline-block"
+                  style={{ animationDelay: `${d}ms` }} />
+              ))}
+            </div>
+            <p className="text-xs text-neutral-400 mt-3">This may take up to 30 seconds…</p>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Progress Modal */}
       {bulkProgress && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
@@ -503,14 +530,20 @@ export default function AdminReportsPage() {
 
             {/* Action Buttons */}
             <div className="space-y-3">
-              <button onClick={activeTab === 'progress' ? generateProgressReport : generateTermReport} 
-                disabled={!selectedStudent || loading} 
-                className="w-full flex items-center justify-center gap-2 py-3 sm:py-3.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-lg disabled:opacity-50 transition-colors">
-                {loading ? (<><Sparkles className="w-4 h-4 animate-spin" />Generating...</>) : (<><Sparkles className="w-4 h-4" />Generate Report</>)}
+              <button
+                onClick={activeTab === 'progress' ? generateProgressReport : generateTermReport}
+                disabled={!selectedStudent || loading || termLoading}
+                className="w-full flex items-center justify-center gap-2 py-3 sm:py-3.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                {(loading || termLoading) ? (
+                  <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Generating…</>
+                ) : (
+                  <><Sparkles className="w-4 h-4" />Generate {activeTab === 'term' ? (termType === 'annual' ? 'Annual' : 'Term') : ''} Report</>
+                )}
               </button>
               {selectedSection && students.length > 1 && (
-                <button onClick={bulkGenerate} 
-                  className="w-full flex items-center justify-center gap-2 py-2.5 sm:py-3 border-2 border-primary-200 bg-primary-50 text-primary-700 text-sm font-semibold rounded-lg hover:bg-primary-100 transition-colors">
+                <button onClick={bulkGenerate}
+                  disabled={!!bulkProgress || loading || termLoading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 sm:py-3 border-2 border-primary-200 bg-primary-50 text-primary-700 text-sm font-semibold rounded-lg hover:bg-primary-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   <Users className="w-4 h-4" />Generate for {students.length} Students
                 </button>
               )}

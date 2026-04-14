@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Loader2, Calendar, BookOpen, Trophy, MessageSquare, TrendingUp } from 'lucide-react';
 import { PremiumHeader, PremiumTabNav, PremiumCard, PremiumStatPill } from '@/components/PremiumComponents';
-import { Tab } from '../types';
+import { Tab } from './types';
 import {
   TodayTab,
   HomeworkTab,
@@ -12,18 +12,18 @@ import {
   QuizTab,
   ProgressTab,
   StudentLayout,
-} from '../components';
+} from './components';
 import {
   useStudentAuth,
   useQuizState,
   useChat,
-} from '../hooks';
+} from './hooks';
 import {
   studentFeedService,
   studentHomeworkService,
   studentAuthService,
-} from '../api';
-import { getTodayISO } from '../utils';
+} from './api';
+import { getTodayISO } from './utils';
 
 export default function StudentPagePremium() {
   const { palette } = useTheme();
