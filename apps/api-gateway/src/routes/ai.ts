@@ -459,10 +459,61 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         );
         if (compRow.rows.length > 0 && compRow.rows[0].covered_chunk_ids?.length > 0) {
           const chunks = await pool.query(
-            'SELECT topic_label FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
+            `SELECT topic_label, content FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
             [compRow.rows[0].covered_chunk_ids]
           );
-          context += `Topics covered today: ${chunks.rows.map((r: any) => r.topic_label).join(', ')}\n`;
+          // Use content to extract subject names if topic_label is generic
+          const topicNames = chunks.rows.map((r: any) => {
+            const label = r.topic_label || '';
+            // If label looks generic (Week X Day Y), extract subject from content
+            if (/week\s*\d|day\s*\d/i.test(label) && r.content) {
+              const subjectMatch = r.content.match(/^(English Speaking|English|Math|GK|General Knowledge|Writing|Art|Circle Time|Morning Meet)/im);
+              return subjectMatch ? subjectMatch[1] : label;
+            }
+            return label;
+          }).filter(Boolean);
+          context += `Topics covered today: ${topicNames.join(', ')}\n`;
+        }
+
+        // Topics covered on absent days (last 30 days)
+        const absentDaysRow = await pool.query(
+          `SELECT ar.attend_date::text
+           FROM attendance_records ar
+           WHERE ar.student_id = $1 AND ar.status = 'absent'
+             AND ar.attend_date >= CURRENT_DATE - 30
+           ORDER BY ar.attend_date DESC LIMIT 5`,
+          [student_id]
+        );
+        if (absentDaysRow.rows.length > 0) {
+          const absentDates = absentDaysRow.rows.map((r: any) => r.attend_date);
+          const absentTopicsRows = await pool.query(
+            `SELECT dc.completion_date::text as date,
+                    array_agg(cc.topic_label ORDER BY cc.chunk_index) as topic_labels,
+                    array_agg(cc.content ORDER BY cc.chunk_index) as contents
+             FROM daily_completions dc
+             JOIN LATERAL unnest(dc.covered_chunk_ids) AS cid ON true
+             JOIN curriculum_chunks cc ON cc.id = cid
+             WHERE dc.section_id = (SELECT section_id FROM students WHERE id = $1)
+               AND dc.completion_date = ANY($2::date[])
+             GROUP BY dc.completion_date
+             ORDER BY dc.completion_date DESC`,
+            [student_id, absentDates]
+          );
+          if (absentTopicsRows.rows.length > 0) {
+            const absentSummary = absentTopicsRows.rows.map((r: any) => {
+              const dateStr = new Date(r.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+              const topics = (r.topic_labels as string[]).map((label, i) => {
+                if (/week\s*\d|day\s*\d/i.test(label) && r.contents?.[i]) {
+                  const m = r.contents[i].match(/^(English Speaking|English|Math|GK|General Knowledge|Writing|Art|Circle Time|Morning Meet)/im);
+                  return m ? m[1] : label;
+                }
+                return label;
+              }).filter(Boolean);
+              return `${dateStr}: ${topics.join(', ')}`;
+            });
+            context += `Topics covered on days ${student_id ? 'Priya' : 'the child'} was absent:\n${absentSummary.join('\n')}\n`;
+            context += `Note: These are topics the child missed and may need to catch up on.\n`;
+          }
         }
 
         // Attendance this month
@@ -537,13 +588,20 @@ router.post('/parent-query', async (req: Request, res: Response) => {
     }
 
     try {
+      // Get student first name for personalised response
+      let studentFirstName = 'your child';
+      if (student_id) {
+        const nameRow = await pool.query('SELECT name FROM students WHERE id = $1', [student_id]);
+        if (nameRow.rows[0]?.name) studentFirstName = nameRow.rows[0].name.split(' ')[0];
+      }
+
       const aiResp = await axios.post(`${AI()}/internal/query`, {
         teacher_id: section_teacher_id,
         school_id,
         text: cleanText,
         query_date: today,
         role: 'parent',
-        context,
+        context: `You are answering a parent's question about their child ${studentFirstName}.\nAlways use the child's name (${studentFirstName}) in your response — never say "your child".\nBe warm, reassuring, and specific. Keep the response under 100 words.\nIf the parent asks about absence, tell them exactly which subjects were covered that day and suggest they can help ${studentFirstName} catch up at home.\n\n${context}`,
       }, { timeout: AI_TIMEOUT_MS });
       await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
       return res.json(aiResp.data);

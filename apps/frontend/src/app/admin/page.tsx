@@ -44,8 +44,11 @@ interface SmartAlert {
 }
 interface TeacherScore {
   teacher_id: string; teacher_name: string; section_label: string; class_name: string;
-  compliance_pct: number; current_streak: number; ai_queries_7d: number;
+  compliance_pct: number; current_streak: number; best_streak: number; ai_queries_7d: number;
   performance_score: number; band: 'green' | 'amber' | 'red';
+  att_days_marked: number; homework_days_sent: number; notes_sent: number;
+  journey_entries: number; observations_made: number; working_days: number;
+  factors?: Record<string, { score: number; weight: number; label: string; detail: string }>;
 }
 interface SmartAlertsData {
   alerts: SmartAlert[]; teacher_scores: TeacherScore[];
@@ -121,6 +124,7 @@ export default function AdminDashboard() {
   const [engagementTab, setEngagementTab] = useState<'teachers' | 'parents' | 'homework' | 'messages'>('teachers');
   const [engagementFilter, setEngagementFilter] = useState<string>('all');
   const [engagementExpanded, setEngagementExpanded] = useState(false);
+  const [teacherDrillDown, setTeacherDrillDown] = useState<TeacherScore | null>(null);
 
   const loadSnap = useCallback(async () => {
     try { setTodaySnap(await apiGet<TodaySnap>('/api/v1/admin/dashboard/today', token)); } catch {}
@@ -364,13 +368,14 @@ export default function AdminDashboard() {
               {/* Teacher Performance Scores */}
               {smartAlerts.teacher_scores.length > 0 && (
                 <div className="border-t border-orange-200/60 px-5 py-4 bg-white/40">
-                  <p className="text-xs font-bold text-neutral-600 uppercase tracking-wide mb-3">Teacher Performance</p>
+                  <p className="text-xs font-bold text-neutral-600 uppercase tracking-wide mb-3">Teacher Performance · click a score for breakdown</p>
                   <div className="space-y-3">
                     {smartAlerts.teacher_scores
                       .sort((a, b) => a.performance_score - b.performance_score)
                       .map((t, i) => (
-                        <div key={i} className="flex items-center gap-3 bg-white/80 rounded-xl px-3 py-2.5 border border-neutral-100">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        <button key={i} onClick={() => setTeacherDrillDown(teacherDrillDown?.teacher_id === t.teacher_id ? null : t)}
+                          className="w-full flex items-center gap-3 bg-white/80 rounded-xl px-3 py-2.5 border border-neutral-100 hover:border-primary-200 hover:bg-primary-50/30 transition-colors text-left">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0 ${
                             t.band === 'green' ? 'bg-emerald-100 text-emerald-700' :
                             t.band === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
                           }`}>{t.performance_score}</div>
@@ -380,20 +385,105 @@ export default function AdminDashboard() {
                               <span className="text-[10px] text-neutral-400 shrink-0">{t.class_name} {t.section_label}</span>
                             </div>
                             <div className="flex gap-3 text-[10px] text-neutral-400 mt-0.5">
-                              <span>📋 {t.compliance_pct}% compliance</span>
-                              <span>🔥 {t.current_streak}d streak</span>
-                              <span>💬 {t.ai_queries_7d} AI/wk</span>
+                              <span>📋 {t.compliance_pct}%</span>
+                              <span>🔥 {t.current_streak}d</span>
+                              <span>💬 {t.ai_queries_7d} AI</span>
+                              <span>📚 {t.homework_days_sent} HW</span>
+                              <span>📎 {t.notes_sent} notes</span>
                             </div>
                           </div>
-                          <div className="w-20 bg-neutral-200 rounded-full h-2 shrink-0">
+                          <div className="w-20 bg-neutral-200 rounded-full h-2 shrink-0 overflow-hidden">
                             <div className={`h-2 rounded-full transition-all ${
                               t.band === 'green' ? 'bg-emerald-500' : t.band === 'amber' ? 'bg-amber-500' : 'bg-red-500'
                             }`} style={{ width: `${Math.min(t.performance_score, 100)}%` }} />
                           </div>
-                        </div>
+                          <span className="text-neutral-300 text-xs shrink-0">›</span>
+                        </button>
                       ))}
                   </div>
-                  <p className="text-[10px] text-neutral-400 mt-3">Score = 60% plan compliance + 20% streak + 20% AI engagement</p>
+
+                  {/* Drill-down panel */}
+                  {teacherDrillDown && (
+                    <div className="mt-4 bg-white border border-neutral-200 rounded-2xl overflow-hidden shadow-sm">
+                      <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-100 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-neutral-800">{teacherDrillDown.teacher_name} — Score Breakdown</p>
+                          <p className="text-xs text-neutral-400">{teacherDrillDown.class_name} · Section {teacherDrillDown.section_label} · Last 30 days</p>
+                        </div>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base font-black ${
+                          teacherDrillDown.band === 'green' ? 'bg-emerald-100 text-emerald-700' :
+                          teacherDrillDown.band === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                        }`}>{teacherDrillDown.performance_score}</div>
+                      </div>
+
+                      {/* Formula explanation */}
+                      <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
+                        <p className="text-xs font-semibold text-blue-800 mb-1">How this score is calculated</p>
+                        <p className="text-xs text-blue-700">7 factors measured over the last 30 working days. Each factor has a weight. Score = sum of (factor% × weight).</p>
+                      </div>
+
+                      {/* Factor breakdown */}
+                      <div className="divide-y divide-neutral-50">
+                        {teacherDrillDown.factors ? Object.entries(teacherDrillDown.factors).map(([key, f]) => (
+                          <div key={key} className="px-4 py-3 flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <p className="text-xs font-semibold text-neutral-700">{f.label}</p>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-[10px] text-neutral-400">weight {f.weight}%</span>
+                                  <span className={`text-xs font-bold w-8 text-right ${
+                                    f.score >= 75 ? 'text-emerald-600' : f.score >= 50 ? 'text-amber-600' : 'text-red-500'
+                                  }`}>{f.score}%</span>
+                                </div>
+                              </div>
+                              <div className="w-full bg-neutral-100 rounded-full h-1.5 overflow-hidden mb-1">
+                                <div className={`h-1.5 rounded-full transition-all ${
+                                  f.score >= 75 ? 'bg-emerald-500' : f.score >= 50 ? 'bg-amber-500' : 'bg-red-400'
+                                }`} style={{ width: `${Math.min(f.score, 100)}%` }} />
+                              </div>
+                              <p className="text-[10px] text-neutral-400">{f.detail}</p>
+                            </div>
+                            <div className="text-xs font-bold text-neutral-500 shrink-0 w-12 text-right">
+                              +{Math.round(f.score * f.weight / 100)}pts
+                            </div>
+                          </div>
+                        )) : (
+                          // Fallback for old data without factors
+                          <div className="px-4 py-3 space-y-2">
+                            {[
+                              { label: 'Plan Completion', value: teacherDrillDown.compliance_pct, weight: 30, detail: `${teacherDrillDown.compliance_pct}% of working days logged` },
+                              { label: 'Teaching Streak', value: Math.min(Math.round((teacherDrillDown.current_streak/30)*100),100), weight: 10, detail: `${teacherDrillDown.current_streak} day streak` },
+                              { label: 'Oakie AI Engagement', value: Math.min(Math.round((teacherDrillDown.ai_queries_7d/20)*100),100), weight: 10, detail: `${teacherDrillDown.ai_queries_7d} queries this week` },
+                            ].map((f, i) => (
+                              <div key={i} className="flex items-center gap-3">
+                                <div className="flex-1">
+                                  <div className="flex justify-between mb-0.5">
+                                    <span className="text-xs font-medium text-neutral-700">{f.label}</span>
+                                    <span className="text-xs text-neutral-400">weight {f.weight}% · {f.value}%</span>
+                                  </div>
+                                  <div className="w-full bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                                    <div className={`h-1.5 rounded-full ${f.value >= 75 ? 'bg-emerald-500' : f.value >= 50 ? 'bg-amber-500' : 'bg-red-400'}`}
+                                      style={{ width: `${f.value}%` }} />
+                                  </div>
+                                  <p className="text-[10px] text-neutral-400 mt-0.5">{f.detail}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="px-4 py-2.5 bg-neutral-50 border-t border-neutral-100">
+                        <p className="text-[10px] text-neutral-400">
+                          Refreshes every 5 minutes · Scores above 75 = 🟢 Green · 50-74 = 🟡 Amber · Below 50 = 🔴 Red
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-neutral-400 mt-3">
+                    Score = Plan Completion (30%) + Attendance (15%) + Homework (15%) + Streak (10%) + AI (10%) + Student Tracking (10%) + Parent Comms (10%)
+                  </p>
                 </div>
               )}
             </div>
@@ -499,7 +589,7 @@ export default function AdminDashboard() {
         {expandedDocs.has('__coverage__') && (
           <div className="border-t border-neutral-100 px-5 py-4">
             {coverage.length === 0 ? (
-              <EmptyState emoji="📚" heading="No curriculum data yet" description="Upload curriculum PDFs and generate plans to see coverage." />
+              <EmptyState title="No curriculum data yet" description="Upload curriculum PDFs and generate plans to see coverage." />
             ) : (
               <>
                 <div className="flex flex-col gap-2.5">
@@ -623,7 +713,7 @@ export default function AdminDashboard() {
           <span className="section-header">Last 30 days</span>
         </div>
         {trend.length === 0 ? (
-          <EmptyState emoji="📅" heading="No attendance data yet" description="Attendance records will appear here once teachers start marking." />
+          <EmptyState title="No attendance data yet" description="Attendance records will appear here once teachers start marking." />
         ) : (
           <AttendanceTrendChart data={trend} />
         )}

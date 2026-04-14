@@ -131,7 +131,8 @@ export default function AnnouncementsPage() {
 
       <div className="flex flex-col gap-3">
         {announcements.length === 0 && (
-          <EmptyState emoji="📢" heading="No announcements yet"
+          <EmptyState
+            title="No announcements yet"
             description="Create your first announcement to communicate with teachers and parents."
             action={{ label: '+ New Announcement', onClick: () => setShowForm(true) }} />
         )}

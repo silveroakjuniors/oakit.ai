@@ -715,6 +715,220 @@ async def export_pdf(req: ExportPdfRequest):
     return Response(content=buf.read(), media_type="application/pdf")
 
 
+# --- Progress Report PDF export ---
+
+class ProgressReportPdfRequest(BaseModel):
+    student_name: str
+    age: str = ""
+    class_name: str
+    section_label: str
+    teacher_name: str = ""
+    father_name: str = ""
+    mother_name: str = ""
+    school_name: str
+    from_date: str
+    to_date: str
+    attendance_pct: int = 0
+    attendance_present: int = 0
+    attendance_total: int = 0
+    curriculum_covered: int = 0
+    milestones_achieved: int = 0
+    milestones_total: int = 0
+    homework_completed: int = 0
+    homework_total: int = 0
+    ai_report: str
+
+@app.post("/internal/export-progress-report-pdf")
+async def export_progress_report_pdf(req: ProgressReportPdfRequest):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.colors import HexColor, Color, white, black
+    from reportlab.platypus import Paragraph, Frame
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    import io, re, textwrap
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    BRAND = HexColor('#1A3C2E')
+    BRAND_LIGHT = HexColor('#2E7D5E')
+    NEUTRAL = HexColor('#9E9690')
+    LIGHT_BG = HexColor('#F5F4F2')
+    BORDER = HexColor('#ECEAE7')
+    GREEN_BG = HexColor('#F0FDF4')
+    GREEN_TEXT = HexColor('#15803D')
+    AMBER_BG = HexColor('#FFFBEB')
+    AMBER_TEXT = HexColor('#B45309')
+    BLUE_BG = HexColor('#EFF6FF')
+    BLUE_TEXT = HexColor('#1D4ED8')
+
+    margin = 1.8 * cm
+    col_w = width - 2 * margin
+
+    def new_page():
+        c.showPage()
+        # Subtle header on continuation pages
+        c.setFillColor(BRAND)
+        c.rect(0, height - 0.8*cm, width, 0.8*cm, fill=1, stroke=0)
+        c.setFillColor(white)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(margin, height - 0.55*cm, f"{req.student_name} — Progress Report · {req.school_name}")
+        return height - 1.5*cm
+
+    # ── Header ──────────────────────────────────────────────────
+    c.setFillColor(BRAND)
+    c.rect(0, height - 4.5*cm, width, 4.5*cm, fill=1, stroke=0)
+    # Subtle gradient overlay
+    c.setFillColor(BRAND_LIGHT)
+    c.setFillAlpha(0.3)
+    c.rect(width*0.6, height - 4.5*cm, width*0.4, 4.5*cm, fill=1, stroke=0)
+    c.setFillAlpha(1.0)
+
+    c.setFillColor(white)
+    c.setFont("Helvetica", 8)
+    c.setFillAlpha(0.65)
+    c.drawString(margin, height - 1.2*cm, req.school_name.upper())
+    c.setFillAlpha(1.0)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(margin, height - 2.1*cm, f"Progress Report — {req.student_name}")
+    c.setFont("Helvetica", 10)
+    c.setFillAlpha(0.75)
+    c.drawString(margin, height - 2.8*cm, f"{req.from_date}  to  {req.to_date}")
+    c.setFillAlpha(1.0)
+    c.setFont("Helvetica", 9)
+    c.setFillAlpha(0.6)
+    c.drawString(margin, height - 3.5*cm, f"Generated on {datetime.now().strftime('%d %B %Y')}")
+    c.setFillAlpha(1.0)
+
+    y = height - 5.2*cm
+
+    # ── Profile strip ────────────────────────────────────────────
+    c.setFillColor(LIGHT_BG)
+    c.roundRect(margin, y - 1.4*cm, col_w, 1.6*cm, 6, fill=1, stroke=0)
+    fields = [
+        ("Student", f"{req.student_name}{' (' + req.age + ')' if req.age else ''}"),
+        ("Class", f"{req.class_name} · {req.section_label}"),
+        ("Teacher", req.teacher_name or "—"),
+        ("Father", req.father_name or "—"),
+    ]
+    fw = col_w / 4
+    for i, (lbl, val) in enumerate(fields):
+        x = margin + i * fw + 0.3*cm
+        c.setFont("Helvetica", 7)
+        c.setFillColor(NEUTRAL)
+        c.drawString(x, y - 0.5*cm, lbl.upper())
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(black)
+        # Truncate long values
+        v = val[:22] if len(val) > 22 else val
+        c.drawString(x, y - 1.0*cm, v)
+    y -= 2.0*cm
+
+    # ── Stat cards ───────────────────────────────────────────────
+    stats = [
+        (f"{req.attendance_pct}%", f"Attendance\n{req.attendance_present}/{req.attendance_total} days",
+         GREEN_BG if req.attendance_pct >= 90 else AMBER_BG, GREEN_TEXT if req.attendance_pct >= 90 else AMBER_TEXT),
+        (str(req.curriculum_covered), "Topics\nCovered", BLUE_BG, BLUE_TEXT),
+        (f"{req.milestones_achieved}/{req.milestones_total}", "Milestones\nAchieved", AMBER_BG, AMBER_TEXT),
+        (f"{req.homework_completed}/{req.homework_total}", "Homework\nCompleted", LIGHT_BG, NEUTRAL),
+    ]
+    sw = (col_w - 0.3*cm * 3) / 4
+    for i, (val, lbl, bg, fg) in enumerate(stats):
+        sx = margin + i * (sw + 0.3*cm)
+        c.setFillColor(bg)
+        c.roundRect(sx, y - 1.5*cm, sw, 1.7*cm, 5, fill=1, stroke=0)
+        c.setFont("Helvetica-Bold", 16)
+        c.setFillColor(fg)
+        c.drawCentredString(sx + sw/2, y - 0.8*cm, val)
+        c.setFont("Helvetica", 7.5)
+        c.setFillColor(NEUTRAL)
+        for j, line in enumerate(lbl.split('\n')):
+            c.drawCentredString(sx + sw/2, y - 1.15*cm - j*0.28*cm, line)
+    y -= 2.2*cm
+
+    # ── Report sections ──────────────────────────────────────────
+    clean = re.sub(r'\*\*([^*]+)\*\*', r'\1', req.ai_report)
+    clean = re.sub(r'\*([^*]+)\*', r'\1', clean)
+    sections = [s for s in re.split(r'\n##\s+', clean) if s.strip()]
+
+    for section in sections:
+        lines = section.split('\n')
+        heading = lines[0].strip()
+        body_lines = [l.strip() for l in lines[1:] if l.strip()]
+
+        # Estimate height needed
+        est_h = 0.7*cm + len(body_lines) * 0.45*cm + 0.4*cm
+        if y - est_h < 2.5*cm:
+            y = new_page()
+
+        # Section box
+        box_h = 0.65*cm + len(body_lines) * 0.48*cm + 0.3*cm
+        c.setFillColor(LIGHT_BG)
+        c.roundRect(margin, y - box_h, col_w, box_h, 5, fill=1, stroke=0)
+        c.setStrokeColor(BORDER)
+        c.setLineWidth(0.5)
+        c.roundRect(margin, y - box_h, col_w, box_h, 5, fill=0, stroke=1)
+
+        # Heading
+        c.setFillColor(black)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(margin + 0.4*cm, y - 0.5*cm, heading)
+        c.setStrokeColor(BORDER)
+        c.line(margin, y - 0.7*cm, margin + col_w, y - 0.7*cm)
+
+        # Body lines
+        by = y - 1.05*cm
+        for line in body_lines:
+            if by < 2.5*cm:
+                y = new_page()
+                by = y - 0.3*cm
+            # Check for "Label: content" pattern
+            sub = re.match(r'^([A-Za-z\s&/]+?):\s+(.+)', line)
+            if sub and len(sub.group(1)) < 35:
+                c.setFont("Helvetica-Bold", 8.5)
+                c.setFillColor(NEUTRAL)
+                c.drawString(margin + 0.4*cm, by, sub.group(1) + ":")
+                c.setFont("Helvetica", 8.5)
+                c.setFillColor(black)
+                # Wrap long text
+                wrapped = textwrap.fill(sub.group(2), width=72)
+                for wl in wrapped.split('\n'):
+                    c.drawString(margin + 4.5*cm, by, wl[:90])
+                    by -= 0.42*cm
+            else:
+                c.setFont("Helvetica", 8.5)
+                c.setFillColor(black)
+                wrapped = textwrap.fill(line, width=95)
+                for wl in wrapped.split('\n'):
+                    c.drawString(margin + 0.4*cm, by, wl[:100])
+                    by -= 0.42*cm
+            by -= 0.06*cm
+
+        y = by - 0.4*cm
+
+    # ── Footer ───────────────────────────────────────────────────
+    if y < 2.5*cm:
+        c.showPage()
+        y = height - 2*cm
+    c.setStrokeColor(BORDER)
+    c.line(margin, 1.8*cm, margin + col_w, 1.8*cm)
+    c.setFont("Helvetica", 7.5)
+    c.setFillColor(NEUTRAL)
+    c.drawCentredString(width/2, 1.3*cm, f"Generated by Oakit.ai  ·  {req.school_name}  ·  {datetime.now().strftime('%d %B %Y')}")
+
+    c.save()
+    buf.seek(0)
+    from fastapi.responses import Response as FastResponse
+    fname = f"Progress_Report_{req.student_name.replace(' ', '_')}.pdf"
+    return FastResponse(
+        content=buf.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
 # --- Greeting ---
 
 @app.get("/internal/greeting")
