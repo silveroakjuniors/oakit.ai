@@ -289,8 +289,45 @@ export default function ReportsPage() {
   }
 
   function downloadReport() {
-    if (!progressReport?.report_id) return;
-    downloadReportById(progressReport.report_id, progressReport.student_name);
+    if (!progressReport) return;
+    if (progressReport.report_id) {
+      // Use saved PDF endpoint
+      downloadReportById(progressReport.report_id, progressReport.student_name);
+    } else {
+      // Fallback: download as formatted text if not yet saved
+      downloadAsText(progressReport);
+    }
+  }
+
+  function downloadAsText(report: ProgressReport) {
+    const clean = (report.ai_report || '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
+    const lines = [
+      report.school_name,
+      `PROGRESS REPORT — ${report.student_name}`,
+      `Period: ${report.from_date} to ${report.to_date}`,
+      `Class: ${report.class_name} · Section ${report.section_label}`,
+      `Teacher: ${report.teacher_name || '—'}`,
+      `Generated: ${new Date().toLocaleDateString('en-IN')}`,
+      '',
+      '─'.repeat(50),
+      '',
+      clean,
+      '',
+      '─'.repeat(50),
+      `Attendance: ${report.attendance.present}/${report.attendance.total} days (${report.attendance.pct}%)`,
+      `Milestones: ${report.milestones.achieved}/${report.milestones.total}`,
+      `Homework: ${report.homework.completed}/${report.homework.total} completed`,
+      '',
+      'Powered by Oakit.ai',
+    ].join('\n');
+    const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Report_${report.student_name.replace(/\s+/g, '_')}_${report.from_date}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Report downloaded as text. Run migration 046 to enable PDF download.');
   }
 
   async function downloadReportById(reportId: string, studentName: string) {
@@ -724,7 +761,43 @@ export default function ReportsPage() {
               {loading ? 'Generating...' : 'Generate School Report'}
             </button>
           </div>
-          {schoolReport && <SchoolReportCard report={schoolReport} />}
+          {schoolReport && (
+            <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
+              <div className="bg-primary-700 text-white px-6 py-4">
+                <h2 className="text-lg font-bold">{schoolReport.school_name}</h2>
+                <p className="text-sm text-white/70">School Summary Report</p>
+              </div>
+              <div className="p-5">
+                <div className="grid grid-cols-3 gap-3 mb-5">
+                  <div className="bg-neutral-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-neutral-800">{schoolReport.total_students}</p>
+                    <p className="text-xs text-neutral-500">Total Students</p>
+                  </div>
+                  <div className={`${schoolReport.overall_attendance_pct >= 75 ? 'bg-green-50' : 'bg-red-50'} rounded-xl p-3 text-center`}>
+                    <p className={`text-2xl font-bold ${schoolReport.overall_attendance_pct >= 75 ? 'text-green-700' : 'text-red-600'}`}>{schoolReport.overall_attendance_pct}%</p>
+                    <p className="text-xs text-neutral-500">Avg Attendance</p>
+                  </div>
+                  <div className="bg-primary-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-bold text-primary-700">{schoolReport.overall_coverage_pct}%</p>
+                    <p className="text-xs text-neutral-500">Avg Coverage</p>
+                  </div>
+                </div>
+                <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Section Breakdown</p>
+                <div className="flex flex-col gap-2">
+                  {schoolReport.sections.map((s, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <span className="text-xs text-neutral-600 w-24 shrink-0">{s.class_name} {s.section_label}</span>
+                      <div className="flex-1 bg-neutral-100 rounded-full h-4 overflow-hidden">
+                        <div className="h-4 rounded-full transition-all"
+                          style={{ width: `${Math.max(s.coverage_pct, 2)}%`, backgroundColor: s.coverage_pct >= 75 ? '#22c55e' : s.coverage_pct >= 40 ? '#f59e0b' : '#ef4444' }} />
+                      </div>
+                      <span className="text-xs font-bold text-neutral-600 w-10 text-right shrink-0">{s.coverage_pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -935,9 +1008,17 @@ function ProgressReportCard({ report, onDownload, onShare, onDelete }: {
 
       {/* Footer */}
       <div className="px-6 py-4 border-t border-neutral-100 flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-xs text-neutral-400">Powered by Oakit.ai · Generated {new Date().toLocaleDateString('en-IN')}</p>
+        <div>
+          <p className="text-xs text-neutral-400">Powered by Oakit.ai · Generated {new Date().toLocaleDateString('en-IN')}</p>
+          {!report.report_id && (
+            <p className="text-[10px] text-amber-600 mt-0.5">⚠ Not saved to DB — run migration 046 to enable save, PDF & share</p>
+          )}
+          {report.report_id && (
+            <p className="text-[10px] text-emerald-600 mt-0.5">✓ Saved · ID: {report.report_id.slice(0, 8)}…</p>
+          )}
+        </div>
         <div className="flex gap-2 flex-wrap">
-          {onDelete && (
+          {onDelete && report.report_id && (
             <button onClick={onDelete}
               className="flex items-center gap-1.5 px-3 py-2 border border-red-200 bg-red-50 text-red-600 text-xs font-bold rounded-xl hover:bg-red-100 transition-colors">
               🗑 Delete
@@ -952,7 +1033,7 @@ function ProgressReportCard({ report, onDownload, onShare, onDelete }: {
           <button onClick={onDownload}
             className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition-colors">
             <Download className="w-3.5 h-3.5" />
-            Download PDF
+            {report.report_id ? 'Download PDF' : 'Download'}
           </button>
         </div>
       </div>

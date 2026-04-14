@@ -965,6 +965,38 @@ class HomeworkFormatRequest(BaseModel):
     school_id: str = ""
     section_id: str = ""
 
+class GenerateReportRequest(BaseModel):
+    prompt: str
+    student_name: str = ""
+
+@app.post("/internal/generate-report")
+async def generate_report(req: GenerateReportRequest):
+    """Generate a student progress report — bypasses query pipeline filters.
+    Called directly by the admin reports endpoint."""
+    from query_pipeline import _call_llm
+
+    system = (
+        f"You are an expert school report writer generating a formal progress report for {req.student_name or 'a student'}.\n"
+        "Write in warm, professional, parent-friendly language.\n"
+        "Use the section headings provided (## heading). Write flowing sentences — NO bullet points, NO bold markdown, NO asterisks.\n"
+        "Be specific, positive, and encouraging. Keep each section to 2-4 sentences.\n"
+        "Always use the student's name — never 'the child' or 'your child'."
+    )
+
+    try:
+        response, provider = await _call_llm(req.prompt, system)
+        if not response:
+            response = f"Progress report for {req.student_name} could not be generated at this time. Please try again."
+        # Strip any markdown bold that slipped through
+        import re
+        response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
+        response = re.sub(r'\*([^*]+)\*', r'\1', response)
+    except Exception as e:
+        response = f"Report generation failed: {str(e)}"
+
+    return {"response": response}
+
+
 @app.post("/internal/format-homework")
 async def format_homework(req: HomeworkFormatRequest):
     """Format raw teacher homework text into a clean, parent-friendly message.
