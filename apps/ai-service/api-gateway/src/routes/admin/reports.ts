@@ -383,10 +383,10 @@ ${missedSubjects.length > 0 ? `## 📅 Absence Impact\n[Warm note: ${att.absent}
     let aiReport = '';
     let aiError = '';
     try {
-      const aiResp = await axios.post(`${AI_URL}/internal/query`,
-        { teacher_id: user_id, school_id, text: aiPrompt, query_date: toDate, role: 'admin',
-          context: 'Generate a student progress report with specific learning content. No markdown bold or asterisks.' },
-        { timeout: 60000 });
+      const aiResp = await axios.post(`${AI_URL}/internal/generate-report`, {
+        prompt: aiPrompt,
+        student_name: student.name,
+      }, { timeout: 60000 });
       aiReport = (aiResp.data?.response || '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
     } catch (err: any) {
       aiError = err?.message || 'AI unavailable';
@@ -632,11 +632,10 @@ Generate a comprehensive ${report_type==='annual'?'Annual':'Term'} report synthe
 
     let termReport = '';
     try {
-      const aiResp = await axios.post(`${AI_URL}/internal/query`,
-        { teacher_id: user_id, school_id, text: termPrompt, query_date: toDate, role: 'admin',
-          context: `Generate a ${report_type} combined report.` }, { timeout: 90000 });
+      const aiResp = await axios.post(`${AI_URL}/internal/generate-report`,
+        { prompt: termPrompt, student_name: firstData.student_name }, { timeout: 90000 });
       termReport = aiResp.data?.response || '';
-    } catch { termReport = reports.map((r,i)=>`=== Period ${i+1} ===\n${r.ai_report}`).join('\n\n'); }
+    } catch { termReport = reports.map((r: any, i: number) => `=== Period ${i+1} ===\n${r.ai_report}`).join('\n\n'); }
 
     const termData = { ...firstData, from_date: fromDate, to_date: toDate,
       attendance: { present: totalPresent, absent: totalAbsent, total: totalDays, pct: att_pct },
