@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Download, Sparkles, CheckCircle2, X, Edit2, Save, Users, ChevronDown, ChevronUp, AlertCircle, Share2, Trash2 } from 'lucide-react';
@@ -56,7 +56,7 @@ function ReportViewer({ report }: { report: AdminProgressReport }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {[
           { label: 'Attendance', val: `${report.attendance.pct}%`, sub: `${report.attendance.present}/${report.attendance.total}d`, color: report.attendance.pct >= 90 ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50' },
-          { label: 'Topics', val: String(report.curriculum.covered), sub: 'covered', color: 'text-blue-700 bg-blue-50' },
+          { label: 'Topics', val: String(report.curriculum.covered), sub: 'covered', color: 'text-primary-700 bg-primary-50' },
           { label: 'Milestones', val: `${report.milestones.achieved}/${report.milestones.total}`, sub: 'achieved', color: 'text-amber-700 bg-amber-50' },
           { label: 'Homework', val: `${report.homework.completed}/${report.homework.total}`, sub: 'done', color: 'text-neutral-700 bg-neutral-100' },
         ].map((s, i) => (
@@ -70,7 +70,7 @@ function ReportViewer({ report }: { report: AdminProgressReport }) {
 
       {/* Intro */}
       {intro && (
-        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+        <div className="bg-primary-50 border border-primary-100 rounded-lg p-3">
           <p className="text-xs text-neutral-700 leading-relaxed">{intro.trim()}</p>
         </div>
       )}
@@ -118,6 +118,7 @@ export default function AdminReportsPage() {
   const [savedReports, setSavedReports] = useState<AdminSavedReport[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
   const [termType, setTermType] = useState<'term' | 'annual'>('term');
+  const [termSuccessModal, setTermSuccessModal] = useState<{ reportId: string; studentName: string } | null>(null);
   const [termLoading, setTermLoading] = useState(false);
   const [termReport, setTermReport] = useState<AdminProgressReport | null>(null);
   const [termFrom, setTermFrom] = useState(() => {
@@ -234,6 +235,10 @@ export default function AdminReportsPage() {
       const data = await fetchProgressReport(selectedStudent, termFrom, termTo, token, termType);
       setTermReport(data);
       await loadSavedReports(selectedStudent);
+      // Show success modal with share prompt
+      if (data.report_id) {
+        setTermSuccessModal({ reportId: data.report_id, studentName: data.student_name });
+      }
     } catch (error: any) {
       showToast(error?.message || 'Failed to generate', 'error');
     } finally {
@@ -329,20 +334,57 @@ export default function AdminReportsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-50 via-blue-50/30 to-neutral-100">
+    <div className="min-h-screen bg-gradient-to-br from-neutral-50 via-primary-50/30 to-neutral-100">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* Term Report Success Modal */}
+      {termSuccessModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-7 h-7 text-primary-600" />
+            </div>
+            <h3 className="text-base font-bold text-neutral-900 mb-2">
+              {termType === 'annual' ? 'Annual' : 'Term'} Report Generated!
+            </h3>
+            <p className="text-sm text-neutral-600 mb-1">
+              <span className="font-semibold">{termSuccessModal.studentName}</span>'s {termType} report is ready.
+            </p>
+            <p className="text-xs text-neutral-400 mb-6">
+              The report is saved. Click <strong>Share with Parents</strong> to send it to the parent portal, or <strong>OK</strong> to view it in Saved Reports.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  await shareReport(termSuccessModal.reportId);
+                  setTermSuccessModal(null);
+                  setActiveTab('saved');
+                }}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl transition-colors">
+                <Share2 className="w-4 h-4" />
+                Share with Parents
+              </button>
+              <button
+                onClick={() => { setTermSuccessModal(null); setActiveTab('saved'); }}
+                className="flex-1 py-2.5 border-2 border-neutral-200 text-neutral-700 text-sm font-semibold rounded-xl hover:bg-neutral-50 transition-colors">
+                OK — View Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Progress Modal */}
       {bulkProgress && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-2xl w-full max-w-sm">
-            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
-              <Sparkles className="w-6 h-6 text-blue-600 animate-pulse" />
+            <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-4">
+              <Sparkles className="w-6 h-6 text-primary-600 animate-pulse" />
             </div>
             <p className="text-base font-bold text-center text-neutral-900">Generating Reports</p>
             <p className="text-xs text-center text-neutral-500 mt-2">{bulkProgress.current}</p>
             <div className="w-full bg-neutral-200 rounded-full h-2 mt-4 mb-2 overflow-hidden">
-              <div className="h-2 bg-blue-600 transition-all" style={{ width: `${Math.round((bulkProgress.done / bulkProgress.total) * 100)}%` }} />
+              <div className="h-2 bg-primary-600 transition-all" style={{ width: `${Math.round((bulkProgress.done / bulkProgress.total) * 100)}%` }} />
             </div>
             <p className="text-xs text-center text-neutral-500">{bulkProgress.done} of {bulkProgress.total}</p>
           </div>
@@ -374,7 +416,7 @@ export default function AdminReportsPage() {
                 if (t.id === 'saved') loadSavedReports(selectedStudent || undefined, selectedSection || undefined);
               }} className={`px-3 sm:px-4 py-2.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
                 activeTab === t.id
-                  ? 'bg-blue-100 text-blue-700 shadow-sm'
+                  ? 'bg-primary-100 text-primary-700 shadow-sm'
                   : 'text-neutral-600 hover:bg-neutral-100'
               }`}>
                 {t.label}
@@ -392,20 +434,20 @@ export default function AdminReportsPage() {
             <p className="text-sm font-semibold text-neutral-700 mb-4">Select Student</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <select value={selectedClass} onChange={e => {setSelectedClass(e.target.value); setSelectedSection(''); setSelectedStudent('');}} 
-                className="px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                className="px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 <option value="">Class</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               {cls && (
                 <select value={selectedSection} onChange={e => {setSelectedSection(e.target.value); setSelectedStudent('');}} 
-                  className="px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                  className="px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                   <option value="">Section</option>
                   {cls.sections.map(s => <option key={s.id} value={s.id}>Section {s.label}</option>)}
                 </select>
               )}
               {students.length > 0 && (
                 <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)} 
-                  className="px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                  className="px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                   <option value="">Student</option>
                   {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -418,12 +460,12 @@ export default function AdminReportsPage() {
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">From</label>
                   <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} 
-                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">To</label>
                   <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} 
-                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
               </div>
             )}
@@ -435,7 +477,7 @@ export default function AdminReportsPage() {
                   <button key={t} onClick={() => setTermType(t)} 
                     className={`flex-1 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold border-2 transition-all ${
                       termType === t
-                        ? 'bg-blue-600 text-white border-blue-600'
+                        ? 'bg-primary-600 text-white border-primary-600'
                         : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-300'
                     }`}>
                     {t === 'term' ? 'Term Report' : 'Annual Report'}
@@ -449,12 +491,12 @@ export default function AdminReportsPage() {
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Start</label>
                   <input type="date" value={termFrom} onChange={e => setTermFrom(e.target.value)} 
-                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">End</label>
                   <input type="date" value={termTo} onChange={e => setTermTo(e.target.value)} 
-                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
               </div>
             )}
@@ -463,12 +505,12 @@ export default function AdminReportsPage() {
             <div className="space-y-3">
               <button onClick={activeTab === 'progress' ? generateProgressReport : generateTermReport} 
                 disabled={!selectedStudent || loading} 
-                className="w-full flex items-center justify-center gap-2 py-3 sm:py-3.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg disabled:opacity-50 transition-colors">
+                className="w-full flex items-center justify-center gap-2 py-3 sm:py-3.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-lg disabled:opacity-50 transition-colors">
                 {loading ? (<><Sparkles className="w-4 h-4 animate-spin" />Generating...</>) : (<><Sparkles className="w-4 h-4" />Generate Report</>)}
               </button>
               {selectedSection && students.length > 1 && (
                 <button onClick={bulkGenerate} 
-                  className="w-full flex items-center justify-center gap-2 py-2.5 sm:py-3 border-2 border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold rounded-lg hover:bg-blue-100 transition-colors">
+                  className="w-full flex items-center justify-center gap-2 py-2.5 sm:py-3 border-2 border-primary-200 bg-primary-50 text-primary-700 text-sm font-semibold rounded-lg hover:bg-primary-100 transition-colors">
                   <Users className="w-4 h-4" />Generate for {students.length} Students
                 </button>
               )}
@@ -479,9 +521,9 @@ export default function AdminReportsPage() {
         {/* Saved Reports */}
         {activeTab === 'saved' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-xs sm:text-sm text-blue-700">📌 {savedReports.length} report{savedReports.length !== 1 ? 's' : ''} available</p>
-              <button onClick={() => loadSavedReports()} className="text-xs text-blue-600 hover:underline font-medium">Refresh</button>
+            <div className="flex items-center justify-between px-4 py-3 bg-primary-50 border border-primary-200 rounded-lg">
+              <p className="text-xs sm:text-sm text-primary-700">📌 {savedReports.length} report{savedReports.length !== 1 ? 's' : ''} available</p>
+              <button onClick={() => loadSavedReports()} className="text-xs text-primary-600 hover:underline font-medium">Refresh</button>
             </div>
 
             {savedLoading ? (
@@ -504,7 +546,7 @@ export default function AdminReportsPage() {
                             <p className="text-sm font-semibold text-neutral-800 truncate">{r.student_name}</p>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                               r.report_type === 'annual' ? 'bg-purple-100 text-purple-700' :
-                              r.report_type === 'term' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                              r.report_type === 'term' ? 'bg-primary-100 text-primary-700' : 'bg-emerald-100 text-emerald-700'
                             }`}>{r.report_type}</span>
                             {r.shared_with_parent
                               ? <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">✓ Sent to parents</span>
@@ -517,7 +559,7 @@ export default function AdminReportsPage() {
                       </div>
                       <div className="flex gap-1.5 flex-wrap">
                         <button onClick={() => viewReport(r.id)}
-                          className="text-xs px-2.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors font-medium">
+                          className="text-xs px-2.5 py-1.5 bg-primary-50 text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors font-medium">
                           {viewLoading === r.id ? '…' : viewingReport?.report_id === r.id ? '▲ Hide' : '👁 View'}
                         </button>
                         <button onClick={() => downloadReportPdf(r.id, r.student_name)}
@@ -556,10 +598,10 @@ export default function AdminReportsPage() {
                       <div className="border-t border-neutral-100 p-4">
                         <p className="text-xs font-semibold text-neutral-600 mb-2">Edit Report</p>
                         <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={12}
-                          className="w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-y bg-white" />
+                          className="w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary-500/30 resize-y bg-white" />
                         <div className="flex gap-2 mt-2">
                           <button onClick={() => saveEdit(r.id)} disabled={savingEdit}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                            className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-lg hover:bg-primary-700 disabled:opacity-50">
                             <Save className="w-3.5 h-3.5" />{savingEdit ? 'Saving…' : 'Save'}
                           </button>
                           <button onClick={() => setEditingReportId(null)}
@@ -581,14 +623,14 @@ export default function AdminReportsPage() {
           <div className="space-y-4">
             <button onClick={async () => {setLoading(true); fetchSchoolReport(token).then(setSchoolReport).finally(() => setLoading(false));}} 
               disabled={loading} 
-              className="w-full py-3 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+              className="w-full py-3 bg-primary-600 text-white text-sm font-bold rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50">
               {loading ? 'Generating...' : 'Generate School Report'}
             </button>
             {schoolReport && (
               <div className="bg-white rounded-2xl overflow-hidden border border-neutral-200 shadow-sm">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 sm:px-6 py-4 sm:py-5 text-white">
+                <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-4 sm:px-6 py-4 sm:py-5 text-white">
                   <h2 className="text-lg sm:text-xl font-bold">{schoolReport.school_name}</h2>
-                  <p className="text-xs sm:text-sm text-blue-100 mt-1">School Summary Report</p>
+                  <p className="text-xs sm:text-sm text-primary-100 mt-1">School Summary Report</p>
                 </div>
                 <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-4">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -600,8 +642,8 @@ export default function AdminReportsPage() {
                       <p className="text-2xl font-bold text-emerald-700">{schoolReport.overall_attendance_pct}%</p>
                       <p className="text-xs text-neutral-500 mt-0.5">Attendance</p>
                     </div>
-                    <div className="bg-blue-50 rounded-lg p-3">
-                      <p className="text-2xl font-bold text-blue-700">{schoolReport.overall_coverage_pct}%</p>
+                    <div className="bg-primary-50 rounded-lg p-3">
+                      <p className="text-2xl font-bold text-primary-700">{schoolReport.overall_coverage_pct}%</p>
                       <p className="text-xs text-neutral-500 mt-0.5">Coverage</p>
                     </div>
                   </div>
@@ -674,3 +716,5 @@ export default function AdminReportsPage() {
     </div>
   );
 }
+
+
