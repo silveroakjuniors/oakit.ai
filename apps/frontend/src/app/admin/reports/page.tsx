@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
+import axios from 'axios';
 import { Download, Sparkles, FileText, CheckCircle2, X, Edit2, Save, Users } from 'lucide-react';
 interface Class { id: string; name: string; sections: { id: string; label: string }[]; }
 interface Student { id: string; name: string; class_name: string; section_label: string; }
