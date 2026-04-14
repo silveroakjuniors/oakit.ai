@@ -44,6 +44,66 @@ function Toast({ message, type, onClose }: { message: string; type: 'success' | 
   );
 }
 
+function ReportViewer({ report }: { report: AdminProgressReport }) {
+  const clean = (report.ai_report || '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
+  const sections = clean.split(/\n##\s+/).filter(Boolean);
+  const intro = sections[0] || '';
+  const rest = sections.slice(1);
+
+  return (
+    <div className="space-y-3">
+      {/* Stats strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { label: 'Attendance', val: `${report.attendance.pct}%`, sub: `${report.attendance.present}/${report.attendance.total}d`, color: report.attendance.pct >= 90 ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50' },
+          { label: 'Topics', val: String(report.curriculum.covered), sub: 'covered', color: 'text-blue-700 bg-blue-50' },
+          { label: 'Milestones', val: `${report.milestones.achieved}/${report.milestones.total}`, sub: 'achieved', color: 'text-amber-700 bg-amber-50' },
+          { label: 'Homework', val: `${report.homework.completed}/${report.homework.total}`, sub: 'done', color: 'text-neutral-700 bg-neutral-100' },
+        ].map((s, i) => (
+          <div key={i} className={`rounded-lg p-2.5 text-center ${s.color}`}>
+            <p className="text-lg font-black">{s.val}</p>
+            <p className="text-[10px] font-medium">{s.label}</p>
+            <p className="text-[9px] opacity-70">{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Intro */}
+      {intro && (
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+          <p className="text-xs text-neutral-700 leading-relaxed">{intro.trim()}</p>
+        </div>
+      )}
+
+      {/* Sections */}
+      {rest.map((section, i) => {
+        const heading = section.split('\n')[0].trim();
+        const body = section.split('\n').slice(1).join('\n').trim();
+        const lines = body.split('\n').filter(l => l.trim());
+        return (
+          <div key={i} className="border border-neutral-100 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-neutral-50 border-b border-neutral-100">
+              <p className="text-xs font-bold text-neutral-800">{heading}</p>
+            </div>
+            <div className="px-3 py-2.5 space-y-1.5">
+              {lines.map((line, j) => {
+                const sub = line.match(/^([A-Za-z\s&\/]+?):\s+(.+)/);
+                if (sub && sub[1].length < 40) return (
+                  <div key={j} className="flex gap-2">
+                    <span className="text-[10px] font-semibold text-neutral-500 shrink-0 mt-0.5 min-w-[120px]">{sub[1]}:</span>
+                    <span className="text-xs text-neutral-700 leading-relaxed">{sub[2]}</span>
+                  </div>
+                );
+                return <p key={j} className="text-xs text-neutral-700 leading-relaxed">{line.trim()}</p>;
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function AdminReportsPage() {
   const token = getToken() || '';
   const [classes, setClasses] = useState<AdminClass[]>([]);
@@ -77,6 +137,8 @@ export default function AdminReportsPage() {
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [viewingReport, setViewingReport] = useState<AdminProgressReport | null>(null);
+  const [viewLoading, setViewLoading] = useState<string | null>(null); // reportId being loaded
 
   const cls = classes.find(c => c.id === selectedClass);
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
@@ -228,21 +290,41 @@ export default function AdminReportsPage() {
     }
   }
 
+  async function downloadReportPdf(reportId: string, studentName: string) {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/reports/saved/${reportId}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('PDF generation failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Report_${studentName.replace(/\s+/g, '_')}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      showToast(e.message || 'PDF download failed', 'error');
+    }
+  }
+
+  async function viewReport(reportId: string) {
+    if (viewingReport?.report_id === reportId) { setViewingReport(null); return; }
+    setViewLoading(reportId);
+    try {
+      const data = await fetchSavedReportById(reportId, token);
+      setViewingReport({ ...data, report_id: reportId });
+    } catch { showToast('Failed to load report', 'error'); }
+    finally { setViewLoading(null); }
+  }
+
   function downloadReportAsText(report: AdminProgressReport) {
     const clean = (report.ai_report || '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
-    const lines = [
-      report.school_name,
-      `PROGRESS REPORT — ${report.student_name}`,
-      `Period: ${report.from_date} to ${report.to_date}`,
-      '',
-      clean,
-    ].join('\n');
+    const lines = [report.school_name, `PROGRESS REPORT — ${report.student_name}`, `Period: ${report.from_date} to ${report.to_date}`, '', clean].join('\n');
     const blob = new Blob([lines], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Report_${report.student_name}_${report.from_date}.txt`;
-    a.click();
+    const a = document.createElement('a'); a.href = url;
+    a.download = `Report_${report.student_name}_${report.from_date}.txt`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -414,31 +496,79 @@ export default function AdminReportsPage() {
             ) : (
               <div className="space-y-3">
                 {savedReports.map(r => (
-                  <div key={r.id} className="bg-white rounded-lg border border-neutral-200 p-3 sm:p-4 hover:shadow-md transition-all">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-neutral-800 truncate">{r.student_name}</p>
-                        <p className="text-xs text-neutral-500 mt-0.5">{r.class_name} · {r.from_date} to {r.to_date}</p>
+                  <div key={r.id} className="bg-white rounded-lg border border-neutral-200 overflow-hidden hover:shadow-md transition-all">
+                    <div className="p-3 sm:p-4">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <p className="text-sm font-semibold text-neutral-800 truncate">{r.student_name}</p>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              r.report_type === 'annual' ? 'bg-purple-100 text-purple-700' :
+                              r.report_type === 'term' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                            }`}>{r.report_type}</span>
+                            {r.shared_with_parent
+                              ? <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">✓ Sent to parents</span>
+                              : <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Not sent yet</span>
+                            }
+                          </div>
+                          <p className="text-xs text-neutral-500">{r.class_name} · {r.from_date} → {r.to_date}</p>
+                          <p className="text-xs text-neutral-400 mt-0.5">{r.created_at?.split('T')[0]}</p>
+                        </div>
                       </div>
-                      <div className="flex gap-1 shrink-0">
-                        {r.shared_with_parent && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-medium">✓ Sent</span>}
-                        {!r.shared_with_parent && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-1 rounded">Draft</span>}
+                      <div className="flex gap-1.5 flex-wrap">
+                        <button onClick={() => viewReport(r.id)}
+                          className="text-xs px-2.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors font-medium">
+                          {viewLoading === r.id ? '…' : viewingReport?.report_id === r.id ? '▲ Hide' : '👁 View'}
+                        </button>
+                        <button onClick={() => downloadReportPdf(r.id, r.student_name)}
+                          className="text-xs px-2.5 py-1.5 bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors font-medium">
+                          ↓ PDF
+                        </button>
+                        {!r.shared_with_parent && (
+                          <button onClick={() => shareReport(r.id)}
+                            className="text-xs px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors font-medium">
+                            <Share2 className="w-3 h-3 inline mr-1" />Share
+                          </button>
+                        )}
+                        <button onClick={async () => {
+                          const full = await fetchSavedReportById(r.id, token).catch(() => null);
+                          if (full) { setEditingReportId(r.id); setEditText(full.ai_report || ''); }
+                        }}
+                          className="text-xs px-2.5 py-1.5 bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors font-medium">
+                          <Edit2 className="w-3 h-3 inline mr-1" />Edit
+                        </button>
+                        <button onClick={() => deleteReport(r.id)}
+                          className="text-xs px-2.5 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors font-medium">
+                          <Trash2 className="w-3 h-3 inline mr-1" />Delete
+                        </button>
                       </div>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <button onClick={() => shareReport(r.id)} 
-                        className="text-xs px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 transition-colors font-medium">
-                        <Share2 className="w-3 h-3 inline mr-1" />Share
-                      </button>
-                      <button onClick={() => updateSavedReport(r.id, '')} 
-                        className="text-xs px-2.5 py-1.5 bg-neutral-50 text-neutral-700 border border-neutral-200 rounded hover:bg-neutral-100 transition-colors font-medium">
-                        <Edit2 className="w-3 h-3 inline mr-1" />Edit
-                      </button>
-                      <button onClick={() => deleteReport(r.id)} 
-                        className="text-xs px-2.5 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 transition-colors font-medium">
-                        <Trash2 className="w-3 h-3 inline mr-1" />Delete
-                      </button>
-                    </div>
+
+                    {/* Inline report view */}
+                    {viewingReport?.report_id === r.id && (
+                      <div className="border-t border-neutral-100 bg-neutral-50/50 p-4">
+                        <ReportViewer report={viewingReport} />
+                      </div>
+                    )}
+
+                    {/* Inline edit */}
+                    {editingReportId === r.id && (
+                      <div className="border-t border-neutral-100 p-4">
+                        <p className="text-xs font-semibold text-neutral-600 mb-2">Edit Report</p>
+                        <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={12}
+                          className="w-full px-3 py-2.5 border border-neutral-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-y bg-white" />
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={() => saveEdit(r.id)} disabled={savingEdit}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                            <Save className="w-3.5 h-3.5" />{savingEdit ? 'Saving…' : 'Save'}
+                          </button>
+                          <button onClick={() => setEditingReportId(null)}
+                            className="px-4 py-2 border border-neutral-200 text-neutral-600 text-xs rounded-lg hover:bg-neutral-50">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
