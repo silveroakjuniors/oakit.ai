@@ -1,15 +1,9 @@
-<<<<<<< HEAD
-# Node
-node_modules/
-.next/
-=======
 # System
 .DS_Store
 Thumbs.db
 
 # IDE
 .vscode/
-.kiro/
 
 # Node
 node_modules/
@@ -18,7 +12,6 @@ node_modules/
 # Next.js
 .next/
 **/.next/
->>>>>>> b227f76 (Oakit Pahse1 Complete)
 out/
 
 # Python
@@ -28,19 +21,25 @@ __pycache__/
 
 # Env
 .env
-.env.local
 
-<<<<<<< HEAD
-# OS
-.DS_Store
-Thumbs.db
+# Tests & test output — kept in oakit-tests/ outside project
+tests/
+test-results/
+playwright-report/
+playwright.config.ts
+jest.config.*
+vitest.config.*
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+*.property.test.ts
+tsconfig.test.json
 
-# Logs
-*.log
-=======
-# Logs
-*.log
-
-# Misc
-git
->>>>>>> b227f76 (Oakit Pahse1 Complete)
+# Guides & docs not needed for deployment
+COMPLETE_SUMMARY.md
+QUICK_START*.md
+ROUTE_UPDATE*.md
+ROUTE_INTEGRATION_GUIDE.js
+WHAT_IS_ROUTE_UPDATE.md
+update-routes.ps1
