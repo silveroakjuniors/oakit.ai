@@ -514,9 +514,14 @@ export default function SettingsPage() {
                       const newVal = !settings.voice_enabled;
                       setSettings(s => ({ ...s, voice_enabled: newVal }));
                       try {
-                        await apiPut('/api/v1/admin/settings', { voice_enabled: newVal }, token);
-                      } catch {
-                        setSettings(s => ({ ...s, voice_enabled: !newVal })); // revert
+                        const updated = await apiPut<any>('/api/v1/admin/settings', { voice_enabled: newVal }, token);
+                        // Sync from server response to confirm save
+                        if (typeof updated?.voice_enabled === 'boolean') {
+                          setSettings(s => ({ ...s, voice_enabled: updated.voice_enabled }));
+                        }
+                      } catch (e: any) {
+                        setSettings(s => ({ ...s, voice_enabled: !newVal })); // revert on error
+                        alert('Failed to save voice setting: ' + (e?.message || 'Unknown error'));
                       }
                     }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.voice_enabled ? 'bg-emerald-600' : 'bg-neutral-200'}`}>

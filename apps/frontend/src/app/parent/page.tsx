@@ -270,9 +270,11 @@ export default function ParentPage() {
             <OakitLogo size="sm" variant="light" />
             <div className="flex items-center justify-between mt-1">
               <p className="text-white/40 text-xs">Parent Portal</p>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[9px] font-bold">
+              <button
+                onClick={() => router.push('/parent/premium')}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[9px] font-bold hover:bg-amber-400/30 transition-colors">
                 ✨ Premium
-              </span>
+              </button>
             </div>
           </div>
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
@@ -325,9 +327,11 @@ export default function ParentPage() {
             <div className="relative z-10 flex items-center justify-between mb-4">
               <OakitLogo size="sm" variant="light" />
               <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-bold">
+                <button
+                  onClick={() => router.push('/parent/premium')}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-bold hover:bg-amber-400/30 transition-colors">
                   ✨ Premium
-                </span>
+                </button>
                 <button onClick={() => { clearToken(); router.push('/login'); }} className="text-white/50 hover:text-white/80 text-xs transition-colors">Sign out</button>
               </div>
             </div>

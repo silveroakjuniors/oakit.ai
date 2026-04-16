@@ -157,6 +157,52 @@ async def query_endpoint(req: QueryRequest):
     return result
 
 
+# ─── Session transcript formatter ────────────────────────────────────────────
+
+class FormatSessionRequest(BaseModel):
+    raw_transcript: str
+    class_context: str = ""
+
+@app.post("/internal/format-session")
+async def format_session(req: FormatSessionRequest):
+    """
+    Format a raw speech transcript into clean class notes using Gemini.
+    Falls back to structured plain text if Gemini is unavailable.
+    """
+    from query_pipeline import _call_llm
+
+    prompt = f"""You are a school assistant helping a teacher format their classroom session notes.
+
+{f"Context: {req.class_context}" if req.class_context else ""}
+
+The teacher recorded this session transcript using voice recognition:
+---
+{req.raw_transcript[:8000]}
+---
+
+Please format this into clean, structured class notes that can be shared with parents. Include:
+1. A brief summary of what was covered today (2-3 sentences)
+2. Key topics discussed (bullet points)
+3. Any activities or exercises mentioned
+4. Homework or follow-up items if mentioned
+
+Keep it concise, clear, and parent-friendly. Use simple language.
+Format with clear sections using emoji headers like 📚 Topics Covered, 🎯 Activities, 📝 Homework."""
+
+    system = "You are a helpful school assistant. Format classroom notes clearly and concisely for parents."
+
+    formatted, _ = await _call_llm(prompt, system)
+
+    if not formatted:
+        # Fallback: basic structure without AI
+        lines = req.raw_transcript.strip().split('. ')
+        formatted = f"📚 Class Session Notes\n\n"
+        formatted += f"📝 Session Summary:\n{req.raw_transcript[:500]}{'...' if len(req.raw_transcript) > 500 else ''}\n\n"
+        formatted += f"ℹ️ Note: This is the raw transcript from today's session."
+
+    return {"formatted": formatted}
+
+
 # ─── Voice transcription ──────────────────────────────────────────────────────
 
 @app.post("/internal/transcribe")
@@ -216,38 +262,21 @@ async def transcribe_audio(
     )
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}",
-                json={
-                    "contents": [{
-                        "role": "user",
-                        "parts": [
-                            {"text": prompt},
-                            {"inline_data": {"mime_type": mime_type, "data": audio_b64}},
-                        ],
-                    }],
-                    "generationConfig": {
-                        "maxOutputTokens": 500,
-                        "temperature": 0.1,
-                    },
-                },
-            )
+        # ── PHASE 2: Real Gemini transcription (not yet available on this API key)
+        # For now, return a mock transcript to demonstrate the voice flow in demos.
+        # The audio IS recorded and received correctly — only the transcription step is mocked.
+        print(f"[Transcribe] DEMO MODE — received {len(audio_bytes)} bytes of {mime_type} audio, returning mock transcript")
 
-            if resp.status_code == 200:
-                data = resp.json()
-                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                transcript = parts[0].get("text", "").strip() if parts else ""
-                # Clean up — remove any meta-commentary Gemini might add
-                if transcript.lower().startswith("transcription:"):
-                    transcript = transcript[14:].strip()
-                if transcript.lower().startswith("transcript:"):
-                    transcript = transcript[11:].strip()
-                print(f"[Transcribe] Success: '{transcript[:80]}...' ({len(audio_bytes)} bytes, {mime_type})")
-                return {"transcript": transcript, "language": language}
-            else:
-                print(f"[Transcribe] Gemini error {resp.status_code}: {resp.text[:200]}")
-                raise HTTPException(status_code=502, detail="Transcription service error")
+        # Pick a contextual demo response based on language
+        demo_transcripts = {
+            "hi": "आज का पाठ्यक्रम क्या है?",
+            "te": "ఈరోజు పాఠ్యప్రణాళిక ఏమిటి?",
+            "kn": "ಇಂದಿನ ಪಾಠ್ಯಕ್ರಮ ಏನು?",
+            "ta": "இன்றைய பாடத்திட்டம் என்ன?",
+            "en": "What is today's plan for my child?",
+        }
+        mock_transcript = demo_transcripts.get(language, demo_transcripts["en"])
+        return {"transcript": mock_transcript, "language": language, "demo_mode": True}
 
     except HTTPException:
         raise

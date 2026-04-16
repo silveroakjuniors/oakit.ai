@@ -140,7 +140,8 @@ router.put('/', async (req: Request, res: Response) => {
     const updated = await pool.query(
       `SELECT s.name as school_name, s.subdomain, s.contact, s.logo_path, s.primary_color, s.tagline,
               COALESCE(ss.notes_expiry_days, 14) as notes_expiry_days,
-              COALESCE(ss.ai_plan_mode, 'standard') as ai_plan_mode
+              COALESCE(ss.ai_plan_mode, 'standard') as ai_plan_mode,
+              COALESCE(ss.voice_enabled, false) as voice_enabled
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
        WHERE s.id = $1`,
@@ -155,6 +156,7 @@ router.put('/', async (req: Request, res: Response) => {
       contact_address: r.contact?.address ?? '',
       notes_expiry_days: r.notes_expiry_days,
       ai_plan_mode: r.ai_plan_mode ?? 'standard',
+      voice_enabled: r.voice_enabled ?? false,
       logo_url: r.logo_path ? getPublicUrl(r.logo_path) : null,
       primary_color: r.primary_color ?? '#1A3C2E',
       tagline: r.tagline ?? '',

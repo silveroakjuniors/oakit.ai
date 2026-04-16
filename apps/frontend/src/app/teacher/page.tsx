@@ -10,6 +10,7 @@ import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
 import VoiceMicButton from '@/components/VoiceMicButton';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
+import SessionRecorder from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
@@ -227,6 +228,7 @@ export default function TeacherPlanner() {
   const [showRawPlanModal, setShowRawPlanModal] = useState(false);
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
   // Voice input hook
   const { state: voiceState, startRecording, stopRecording, isSupported: voiceSupported } = useVoiceInput({
@@ -1006,6 +1008,14 @@ export default function TeacherPlanner() {
         <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-white border-b border-neutral-100 gap-2">
           <span className="text-xs font-semibold text-neutral-600 truncate">{dateLabel}</span>
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Session Recorder */}
+            <button
+              onClick={() => setShowSessionRecorder(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 border border-red-200 bg-red-50 rounded-lg text-xs text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+              Record Session
+            </button>
             {/* Raw Plan popup */}
             <button
               onClick={() => setShowRawPlanModal(true)}
@@ -1014,7 +1024,7 @@ export default function TeacherPlanner() {
               <CalendarDays className="w-3.5 h-3.5" />
               Raw Plan
             </button>
-            {/* Export Oakie's plan � appears after Oakie has responded with the plan */}
+            {/* Export Oakie's plan */}
             {oakiePlanText && (
               <button
                 onClick={() => exportPdf(today, oakiePlanText)}
@@ -1022,13 +1032,13 @@ export default function TeacherPlanner() {
                 className="flex items-center gap-1 px-2.5 py-1.5 border border-primary-200 bg-primary-50 rounded-lg text-xs text-primary-700 hover:bg-primary-100 transition-colors disabled:opacity-50"
               >
                 <FileText className="w-3.5 h-3.5" />
-                {exporting ? '�' : " Oakie's Plan PDF"}
+                {exporting ? '…' : "Oakie's Plan PDF"}
               </button>
             )}
           </div>
         </div>
 
-        {/* Raw Plan Modal � from UIComponents */}
+        {/* Raw Plan Modal */}
         <RawPlanModal
           open={showRawPlanModal}
           onClose={() => setShowRawPlanModal(false)}
@@ -1045,6 +1055,15 @@ export default function TeacherPlanner() {
             setShowRawPlanModal(false);
           }}
         />
+
+        {/* Session Recorder Modal */}
+        {showSessionRecorder && (
+          <SessionRecorder
+            token={token}
+            sectionId={sectionId}
+            onClose={() => setShowSessionRecorder(false)}
+          />
+        )}
 
         {/* Oakie chat � normal chat, no toggle */}
         <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3 bg-neutral-50/50" style={{ paddingBottom: '8px' }}>

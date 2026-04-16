@@ -81,7 +81,7 @@ export function useVoiceInput({
           if (data.transcript) {
             onTranscript(data.transcript);
           }
-          if (onResponse && data.response) {
+          if (onResponse) {
             onResponse(data);
           }
           setState('idle');
@@ -118,7 +118,13 @@ export function useVoiceInput({
     }
   }, []);
 
-  const isSupported = typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+  // isSupported: true on HTTPS, true on localhost (browsers allow mic on localhost over HTTP)
+  // false only on non-localhost HTTP in production
+  const isSupported = typeof window !== 'undefined' && (
+    !!navigator.mediaDevices?.getUserMedia ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  );
 
   return { state, error, startRecording, stopRecording, isSupported };
 }
