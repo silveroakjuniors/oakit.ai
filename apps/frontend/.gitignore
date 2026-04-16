@@ -43,3 +43,5 @@ ROUTE_UPDATE*.md
 ROUTE_INTEGRATION_GUIDE.js
 WHAT_IS_ROUTE_UPDATE.md
 update-routes.ps1
+run-regression.ps1
+update-routes.ps1
