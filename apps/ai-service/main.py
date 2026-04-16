@@ -164,11 +164,14 @@ class FormatSessionRequest(BaseModel):
     class_context: str = ""
     topics_covered: list = []
     session_date: str = ""
+    is_refinement: bool = False
 
 @app.post("/internal/format-session")
 async def format_session(req: FormatSessionRequest):
     """
     Format a raw speech transcript into clean class notes using Gemini.
+    When is_refinement=True, the input is already-formatted notes that the teacher
+    has edited — refine and improve them rather than starting from scratch.
     Falls back to structured plain text if Gemini is unavailable.
     """
     from query_pipeline import _call_llm
@@ -176,7 +179,30 @@ async def format_session(req: FormatSessionRequest):
     topics_str = ", ".join(req.topics_covered) if req.topics_covered else "General session"
     date_str = req.session_date or ""
 
-    prompt = f"""You are a school assistant helping a teacher format their classroom session notes.
+    if req.is_refinement:
+        # Teacher edited the AI output — refine the edited version
+        prompt = f"""You are a school assistant helping a teacher refine their classroom session notes.
+
+{f"Context: {req.class_context}" if req.class_context else ""}
+{f"Session Date: {date_str}" if date_str else ""}
+Topics covered today: {topics_str}
+
+The teacher has edited these session notes and wants them refined and improved:
+---
+{req.raw_transcript[:8000]}
+---
+
+Please improve these notes while keeping the teacher's edits and intent intact:
+1. Fix any grammar or spelling issues
+2. Improve clarity and flow
+3. Ensure it reads well for parents
+4. Keep all the teacher's specific content and changes
+5. Format with clear sections using emoji headers
+
+Do NOT remove or change the teacher's specific additions — only improve the presentation."""
+    else:
+        # First-time formatting from raw transcript
+        prompt = f"""You are a school assistant helping a teacher format their classroom session notes.
 
 {f"Context: {req.class_context}" if req.class_context else ""}
 {f"Session Date: {date_str}" if date_str else ""}

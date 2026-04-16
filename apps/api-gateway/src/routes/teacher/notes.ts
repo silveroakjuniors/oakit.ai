@@ -295,7 +295,7 @@ router.get('/homework/submissions', async (req: Request, res: Response) => {
 router.post('/format-session', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
-    const { raw_transcript, section_id } = req.body;
+    const { raw_transcript, section_id, is_refinement } = req.body;
 
     if (!raw_transcript?.trim()) {
       return res.status(400).json({ error: 'raw_transcript is required' });
@@ -319,6 +319,7 @@ router.post('/format-session', async (req: Request, res: Response) => {
       class_context: classContext,
       topics_covered: req.body.topics_covered || [],
       session_date: req.body.session_date || '',
+      is_refinement: Boolean(is_refinement),
     }, { timeout: 30000 });
 
     return res.json({ formatted: aiResp.data.formatted });
