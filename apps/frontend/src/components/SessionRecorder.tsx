@@ -166,9 +166,17 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
   }, []);
 
   async function formatWithOakie(sourceOverride?: string) {
-    // If called from the 'formatted' step (re-format after editing),
-    // use the edited formatted notes as input. Otherwise use the raw transcript.
-    const raw = (sourceOverride ?? (step === 'formatted' ? formattedNotes : editedTranscript)).trim();
+    // Capture current step before any async operations
+    const currentStep = step;
+    // Determine input: override > edited formatted notes (if re-formatting) > raw transcript
+    let raw: string;
+    if (sourceOverride !== undefined) {
+      raw = sourceOverride.trim();
+    } else if (currentStep === 'formatted') {
+      raw = formattedNotes.trim();
+    } else {
+      raw = editedTranscript.trim();
+    }
     if (!raw) return;
     setStep('formatting');
 
@@ -184,7 +192,7 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
           section_id: sectionId,
           topics_covered: selectedLabels,
           session_date: today,
-          is_refinement: step === 'formatted', // true when refining edited AI output
+          is_refinement: currentStep === 'formatted',
         },
         token
       );
@@ -194,8 +202,7 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
       setStep('formatted');
     } catch (e: any) {
       setError(e.message || 'Formatting failed. Please try again.');
-      // Go back to whichever step we came from
-      setStep(step === 'formatting' && formattedNotes ? 'formatted' : 'review');
+      setStep(currentStep === 'formatted' ? 'formatted' : 'review');
     }
   }
 
