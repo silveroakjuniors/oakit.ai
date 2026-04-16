@@ -204,6 +204,7 @@ export default function AdminDashboardPage() {
   const todayBdays = birthdays.filter(b => b.days_until === 0);
 
   return (
+    <>
     <div className="min-h-screen bg-neutral-50/80">
 
       {/* ── PAGE HEADER ─────────────────────────────────────────── */}
@@ -795,15 +796,15 @@ export default function AdminDashboardPage() {
     </div>
 
     {/* ── MODALS ── */}
-    <>
-      {drillModal && (
-        <StatDrillModal type={drillModal} todaySnap={todaySnap} stats={stats} onClose={() => setDrillModal(null)} />
-      )}
-      {birthdayModal && (
-        <BirthdayWishModal birthdays={birthdays} onClose={() => setBirthdayModal(false)} />
-      )}
+    {drillModal && (
+      <StatDrillModal type={drillModal} todaySnap={todaySnap} stats={stats} onClose={() => setDrillModal(null)} />
+    )}
+    {birthdayModal && (
+      <BirthdayWishModal birthdays={birthdays} onClose={() => setBirthdayModal(false)} />
+    )}
     </>
   );
+}
 }
 
 /* ── Attendance chart ─────────────────────────────────────────── */
