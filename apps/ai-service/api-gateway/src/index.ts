@@ -301,7 +301,7 @@ app.listen(PORT, () => {
             console.error('[token-refresh] failed for', r.parent_id, await resp.text());
             continue;
           }
-          const data = await resp.json();
+          const data: any = await resp.json();
           const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000) : null;
           await pool.query(
             `UPDATE parent_calendar_tokens SET access_token = $1, expires_at = $2, status = 'authorized', updated_at = now() WHERE parent_id = $3 AND provider = $4`,

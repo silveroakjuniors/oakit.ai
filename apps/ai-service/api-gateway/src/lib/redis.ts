@@ -1,3 +1,4 @@
+// @ts-ignore: optional runtime dependency without types in some dev environments
 import { createClient } from 'redis';
 
 type RedisClient = ReturnType<typeof createClient>;
