@@ -642,3 +642,363 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
     </div>
   );
 }
+
+// ─── Home Tab ─────────────────────────────────────────────────────────────────
+function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate }: {
+  feed: ChildFeed | null; progress: ProgressData | null; activeChild: Child | null;
+  announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
+  token: string; onChildUpdate: (url: string) => void;
+}) {
+  if (!activeChild) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <User size={48} className="text-neutral-300 mb-3" />
+      <p className="text-neutral-500 font-medium">No child selected</p>
+    </div>
+  );
+
+  const att = feed?.attendance;
+  const attColor = !att ? 'text-neutral-500' : att.status === 'present' && !att.is_late ? 'text-emerald-700' : att.status === 'present' ? 'text-amber-700' : 'text-red-600';
+  const attBg = !att ? 'bg-neutral-50' : att.status === 'present' && !att.is_late ? 'bg-emerald-50' : att.status === 'present' ? 'bg-amber-50' : 'bg-red-50';
+  const attLabel = !att ? 'Not marked' : att.status === 'present' && att.is_late ? '⏰ Late' : att.status === 'present' ? '✓ Present' : '✗ Absent';
+  const pct = progress?.coverage_pct ?? 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Child profile card */}
+      <div className="bg-gradient-to-r from-[#0f2417] to-[#1e5c3a] rounded-2xl p-5 flex items-center gap-4">
+        <div className="shrink-0">
+          <ChildAvatar child={activeChild} size="lg" token={token} onUploaded={onChildUpdate} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-white font-bold text-lg leading-tight truncate">{activeChild.name}</p>
+          <p className="text-white/60 text-sm mt-0.5">{activeChild.class_name} · Section {activeChild.section_label}</p>
+          <p className="text-white/40 text-xs mt-2">Tap photo to preview or change</p>
+        </div>
+        {/* Top-right: attendance badge + translate button */}
+        <div className="shrink-0 flex flex-col items-end gap-2">
+          <div className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
+            !att ? 'bg-white/10 text-white/60' :
+            att.status === 'present' && !att.is_late ? 'bg-emerald-500/20 text-emerald-300' :
+            att.status === 'present' ? 'bg-amber-500/20 text-amber-300' :
+            'bg-red-500/20 text-red-300'
+          }`}>
+            {attLabel}
+          </div>
+          <button onClick={() => onTabChange('settings')}
+            className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-[10px] font-medium transition-colors">
+            🌐 Translate
+          </button>
+        </div>
+      </div>
+
+      {/* Bento grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-12 gap-3">
+        <div className={`${attBg} rounded-2xl p-4 border border-neutral-100 col-span-1 lg:col-span-3`}>
+          <div className="flex items-center gap-2 mb-2">
+            <Calendar size={16} className="text-neutral-400" />
+            <p className="text-xs font-medium text-neutral-500">Attendance</p>
+          </div>
+          <p className={`text-xl font-bold ${attColor}`}>{attLabel}</p>
+          {att?.arrived_at && <p className="text-xs text-neutral-400 mt-1">Arrived {att.arrived_at.slice(0, 5)}</p>}
+          {!att && <p className="text-xs text-neutral-400 mt-1">Not yet marked</p>}
+        </div>
+
+        <div className="bg-[#0f2417] rounded-2xl p-4 col-span-1 lg:col-span-3 relative overflow-hidden">
+          <div className="absolute -right-4 -bottom-4 opacity-10">
+            <TrendingUp size={80} className="text-white" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp size={16} className="text-emerald-400" />
+              <p className="text-xs font-medium text-white/60">Progress</p>
+            </div>
+            <p className="text-3xl font-black text-white">{pct}%</p>
+            <p className="text-xs text-white/50 mt-0.5">syllabus covered</p>
+            <div className="w-full bg-white/10 h-1.5 rounded-full mt-2">
+              <div className="bg-emerald-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <BookOpen size={16} className="text-amber-500" />
+              <p className="text-sm font-semibold text-neutral-800">Homework</p>
+            </div>
+            <button onClick={() => onTabChange('progress')} className="text-xs text-primary-600 font-medium hover:underline">History →</button>
+          </div>
+          {feed?.homework ? (
+            <p className="text-sm text-neutral-700 leading-relaxed line-clamp-3 italic border-l-4 border-amber-200 pl-3">
+              &ldquo;{feed.homework.formatted_text || feed.homework.raw_text}&rdquo;
+            </p>
+          ) : (
+            <div className="flex items-center gap-2 text-emerald-600">
+              <CheckCircle2 size={16} />
+              <p className="text-sm font-medium">No pending homework — great job!</p>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={16} className="text-primary-600" />
+            <p className="text-sm font-semibold text-neutral-800">Today&apos;s Learning</p>
+          </div>
+          {feed?.special_label ? (
+            <div className="bg-blue-50 rounded-xl px-3 py-2.5"><p className="text-sm text-blue-700 font-medium">{feed.special_label}</p></div>
+          ) : feed?.topics && feed.topics.length > 0 ? (
+            <div className="space-y-2">
+              {feed.topics.map((topic, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{i + 1}</span>
+                  <p className="text-sm text-neutral-700">{topic}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400">No topics recorded yet for today</p>
+          )}
+        </div>
+
+        <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 col-span-2 lg:col-span-4 flex flex-col justify-between">
+          <div>
+            <p className="font-bold text-emerald-900 text-sm mb-1">Need Help?</p>
+            <p className="text-xs text-emerald-700/80 leading-snug">Ask Oakie AI or message {activeChild.name.split(' ')[0]}&apos;s teacher directly.</p>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <button onClick={() => onTabChange('chat')} className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-700 transition-colors">
+              <Sparkles size={14} /> Oakie
+            </button>
+            <button onClick={() => onTabChange('messages')} className="flex-1 bg-white text-emerald-800 py-2.5 rounded-xl text-xs font-bold border border-emerald-200 flex items-center justify-center gap-1.5 hover:bg-emerald-50 transition-colors">
+              <MessageSquare size={14} /> Teacher
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Child Journey */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <BookOpen size={16} className="text-primary-500" />
+            <p className="text-sm font-semibold text-neutral-800">{activeChild.name.split(' ')[0]}&apos;s Journey</p>
+          </div>
+        </div>
+        <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
+          Daily highlights and special moments recorded by {activeChild.name.split(' ')[0]}&apos;s teacher.
+        </p>
+        <a href={`/parent/journey?student_id=${activeChild.id}`}
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-colors">
+          <BookOpen size={14} /> View {activeChild.name.split(' ')[0]}&apos;s Journey
+        </a>
+      </div>
+
+      {/* Teacher notes */}
+      {feed?.notes && feed.notes.length > 0 && (
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+          <p className="text-sm font-semibold text-neutral-800 mb-3">📋 Teacher Notes</p>
+          <div className="space-y-2">
+            {feed.notes.map(note => {
+              const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
+              return (
+                <button key={note.id} onClick={() => onNoteClick(note)}
+                  className="w-full text-left bg-neutral-50 hover:bg-neutral-100 rounded-xl px-3 py-3 transition-colors border border-neutral-100">
+                  {note.note_text && <p className="text-sm text-neutral-700 line-clamp-2 mb-1">{note.note_text}</p>}
+                  {note.file_name && <div className="flex items-center gap-2"><span>📎</span><p className="text-xs font-medium text-neutral-700 truncate flex-1">{note.file_name}</p><span className="text-xs text-primary-600 font-medium">Download ↓</span></div>}
+                  <p className={`text-xs mt-1 ${dl <= 3 ? 'text-red-500 font-medium' : 'text-neutral-400'}`}>{dl <= 0 ? 'Expires today' : `Expires in ${dl} day${dl === 1 ? '' : 's'}`}</p>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-amber-600 mt-3">⚠ Notes auto-delete after expiry. Download attachments you need to keep.</p>
+        </div>
+      )}
+
+      {/* Announcements */}
+      {announcements.length > 0 && (
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+          <p className="text-sm font-semibold text-neutral-800 mb-3">📢 School Announcements</p>
+          <div className="space-y-3">
+            {announcements.slice(0, 3).map(a => (
+              <div key={a.id} className="border-l-4 border-primary-400 pl-3">
+                <p className="text-sm font-medium text-neutral-800">{a.title}</p>
+                <p className="text-xs text-neutral-600 mt-0.5 line-clamp-2">{a.body}</p>
+                <p className="text-xs text-neutral-400 mt-1">By {a.author_name} · {a.created_at.split('T')[0]}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Attendance Tab ───────────────────────────────────────────────────────────
+function AttendanceTab({ data }: { data: AttendanceData | null }) {
+  if (!data) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <Calendar size={48} className="text-neutral-300 mb-3" />
+      <p className="text-neutral-500 font-medium">No attendance data yet</p>
+    </div>
+  );
+  const { stats, attendance_pct, punctuality_pct, records } = data;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`${attendance_pct >= 75 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'} border rounded-2xl p-4`}>
+          <p className="text-xs text-neutral-500 mb-1">Attendance</p>
+          <p className={`text-3xl font-black ${attendance_pct >= 75 ? 'text-emerald-700' : 'text-red-600'}`}>{attendance_pct}%</p>
+          <p className="text-xs text-neutral-400 mt-1">{stats.present} present · {stats.absent} absent</p>
+        </div>
+        <div className={`${punctuality_pct >= 80 ? 'bg-blue-50 border-blue-100' : 'bg-amber-50 border-amber-100'} border rounded-2xl p-4`}>
+          <p className="text-xs text-neutral-500 mb-1">Punctuality</p>
+          <p className={`text-3xl font-black ${punctuality_pct >= 80 ? 'text-blue-700' : 'text-amber-700'}`}>{punctuality_pct}%</p>
+          <p className="text-xs text-neutral-400 mt-1">{stats.on_time} on time · {stats.late} late</p>
+        </div>
+      </div>
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Last 60 Days</p>
+        <div className="flex flex-wrap gap-1.5">
+          {records.map((r, i) => {
+            const day = parseInt(r.attend_date.split('T')[0].split('-')[2]);
+            return (
+              <div key={i} title={r.attend_date.split('T')[0]}
+                className={`w-8 h-8 rounded-lg flex flex-col items-center justify-center font-medium ${r.status === 'present' && r.is_late ? 'bg-amber-100 text-amber-700' : r.status === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                <span className="text-[10px] leading-none">{day}</span>
+                <span className="text-[8px] leading-none mt-0.5">{r.status === 'present' && r.is_late ? '⏰' : r.status === 'present' ? '✓' : '✗'}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-4 mt-3 text-xs text-neutral-400">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-100 inline-block" />Present</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-100 inline-block" />Late</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-100 inline-block" />Absent</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Progress Tab ─────────────────────────────────────────────────────────────
+function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; activeChild: Child | null; token: string }) {
+  const [milestoneData, setMilestoneData] = useState<{ completion_pct: number; achieved: number; total: number; class_level: string } | null>(null);
+  const [hwHistory, setHwHistory] = useState<HomeworkRecord[]>([]);
+  const [hwLoading, setHwLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activeChild?.id || !token) return;
+    apiGet<any>(`/api/v1/teacher/milestones/${activeChild.id}`, token)
+      .then(d => setMilestoneData({ completion_pct: d.completion_pct, achieved: d.achieved, total: d.total, class_level: d.class_level }))
+      .catch(() => {});
+    setHwLoading(true);
+    apiGet<HomeworkRecord[]>(`/api/v1/parent/homework/history?student_id=${activeChild.id}`, token)
+      .then(d => setHwHistory(d || []))
+      .catch(() => {})
+      .finally(() => setHwLoading(false));
+  }, [activeChild?.id]);
+
+  if (!data) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <TrendingUp size={48} className="text-neutral-300 mb-3" />
+      <p className="text-neutral-500 font-medium">No progress data yet</p>
+    </div>
+  );
+  const pct = data.coverage_pct;
+  const strokeColor = pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
+  const r = 50; const circ = 2 * Math.PI * r;
+  const missedCount = hwHistory.filter(h => h.status !== 'completed').length;
+  const completedCount = hwHistory.filter(h => h.status === 'completed').length;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-[#0f2417] rounded-2xl p-6 flex flex-col items-center">
+        <div className="relative w-36 h-36 mb-4">
+          <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="12" />
+            <circle cx="60" cy="60" r={r} fill="none" stroke={strokeColor} strokeWidth="12"
+              strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)} strokeLinecap="round"
+              style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-3xl font-black text-white">{pct}%</span>
+            <span className="text-xs text-white/50">covered</span>
+          </div>
+        </div>
+        {data.has_curriculum ? (
+          <>
+            <p className="font-bold text-white mb-1">{activeChild?.name.split(' ')[0]}&apos;s Curriculum</p>
+            <p className="text-xs text-white/50">{data.covered} of {data.total_chunks} topics completed</p>
+          </>
+        ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
+      </div>
+
+      {milestoneData && (
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-neutral-800">🏆 Milestones</p>
+            <span className="text-emerald-600 font-bold text-sm">{milestoneData.completion_pct}%</span>
+          </div>
+          <div className="w-full bg-neutral-100 rounded-full h-2.5 mb-2">
+            <div className="h-2.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${milestoneData.completion_pct}%` }} />
+          </div>
+          <p className="text-xs text-neutral-400">{milestoneData.achieved} of {milestoneData.total} {milestoneData.class_level} milestones achieved</p>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-neutral-800">📚 Homework History</p>
+          {hwHistory.length > 0 && (
+            <div className="flex gap-2 text-xs">
+              <span className="text-emerald-600 font-medium">{completedCount} done</span>
+              {missedCount > 0 && <span className="text-red-500 font-medium">{missedCount} missed</span>}
+            </div>
+          )}
+        </div>
+        {hwLoading ? (
+          <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-neutral-300" /></div>
+        ) : hwHistory.length === 0 ? (
+          <div className="flex items-center gap-2 text-emerald-600 py-2">
+            <CheckCircle2 size={16} />
+            <p className="text-sm font-medium">No homework records yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {hwHistory.map((hw, i) => {
+              const rawDate = (hw.homework_date || '').toString().split('T')[0];
+              const dateStr = rawDate
+                ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+                : '—';
+              const statusConfig = ({
+                completed: { label: '✓ Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+                partial: { label: '½ Partial', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
+                not_submitted: { label: '✗ Not submitted', cls: 'bg-red-50 text-red-600 border-red-100' },
+              } as Record<string, { label: string; cls: string }>)[hw.status] || { label: hw.status, cls: 'bg-neutral-50 text-neutral-600 border-neutral-100' };
+              return (
+                <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
+                  <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
+                    <div className="flex items-center gap-2">
+                      <ChevronRight size={14} className="shrink-0 transition-transform group-open:rotate-90" />
+                      <span className="text-xs font-medium">{dateStr}</span>
+                    </div>
+                    <span className="text-xs font-bold">{statusConfig.label}</span>
+                  </summary>
+                  <div className="px-3 pb-3 pt-1 border-t border-current/10">
+                    {hw.homework_text ? (
+                      <p className="text-xs leading-relaxed whitespace-pre-wrap">{hw.homework_text}</p>
+                    ) : (
+                      <p className="text-xs text-neutral-400 italic">No homework text recorded</p>
+                    )}
+                    {hw.teacher_note && <p className="text-xs text-neutral-500 mt-1 italic">Note: {hw.teacher_note}</p>}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
