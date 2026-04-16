@@ -317,6 +317,8 @@ router.post('/format-session', async (req: Request, res: Response) => {
     const aiResp = await axios.post(`${AI_URL}/internal/format-session`, {
       raw_transcript: raw_transcript.trim(),
       class_context: classContext,
+      topics_covered: req.body.topics_covered || [],
+      session_date: req.body.session_date || '',
     }, { timeout: 30000 });
 
     return res.json({ formatted: aiResp.data.formatted });

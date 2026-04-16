@@ -162,6 +162,8 @@ async def query_endpoint(req: QueryRequest):
 class FormatSessionRequest(BaseModel):
     raw_transcript: str
     class_context: str = ""
+    topics_covered: list = []
+    session_date: str = ""
 
 @app.post("/internal/format-session")
 async def format_session(req: FormatSessionRequest):
@@ -171,9 +173,14 @@ async def format_session(req: FormatSessionRequest):
     """
     from query_pipeline import _call_llm
 
+    topics_str = ", ".join(req.topics_covered) if req.topics_covered else "General session"
+    date_str = req.session_date or ""
+
     prompt = f"""You are a school assistant helping a teacher format their classroom session notes.
 
 {f"Context: {req.class_context}" if req.class_context else ""}
+{f"Session Date: {date_str}" if date_str else ""}
+Topics covered today: {topics_str}
 
 The teacher recorded this session transcript using voice recognition:
 ---
@@ -187,7 +194,8 @@ Please format this into clean, structured class notes that can be shared with pa
 4. Homework or follow-up items if mentioned
 
 Keep it concise, clear, and parent-friendly. Use simple language.
-Format with clear sections using emoji headers like 📚 Topics Covered, 🎯 Activities, 📝 Homework."""
+Format with clear sections using emoji headers like 📚 Topics Covered, 🎯 Activities, 📝 Homework.
+Start with the date and topics at the top."""
 
     system = "You are a helpful school assistant. Format classroom notes clearly and concisely for parents."
 
@@ -195,8 +203,8 @@ Format with clear sections using emoji headers like 📚 Topics Covered, 🎯 Ac
 
     if not formatted:
         # Fallback: basic structure without AI
-        lines = req.raw_transcript.strip().split('. ')
-        formatted = f"📚 Class Session Notes\n\n"
+        formatted = f"📅 Session Notes — {date_str}\n"
+        formatted += f"📚 Topics: {topics_str}\n\n"
         formatted += f"📝 Session Summary:\n{req.raw_transcript[:500]}{'...' if len(req.raw_transcript) > 500 else ''}\n\n"
         formatted += f"ℹ️ Note: This is the raw transcript from today's session."
 

@@ -11,6 +11,7 @@ import OakitLogo from '@/components/OakitLogo';
 import VoiceMicButton from '@/components/VoiceMicButton';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
 import SessionRecorder from '@/components/SessionRecorder';
+import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
@@ -1061,6 +1062,11 @@ export default function TeacherPlanner() {
           <SessionRecorder
             token={token}
             sectionId={sectionId}
+            today={today}
+            topics={(plan?.chunks || []).map((c: any): SessionTopic => ({
+              id: c.id,
+              label: c.topic_label || 'Activity',
+            }))}
             onClose={() => setShowSessionRecorder(false)}
           />
         )}
