@@ -47,16 +47,18 @@ router.get('/status', async (req: Request, res: Response) => {
 });
 
 // GET /callback?provider=google&code=...&state=...
+// This endpoint will store the authorization code for later exchange if server is not configured with client secret.
 router.get('/callback', async (req: Request, res: Response) => {
   try {
     const provider = (req.query.provider as string) || 'google';
     const code = req.query.code as string | undefined;
-    const state = req.query.state as string | undefined;
+    const state = req.query.state as string | undefined; // contains user_id when we set state
 
     if (!code || !state) return res.status(400).send('Missing code/state');
 
-    const parentId = state;
+    const parentId = state; // we used user_id as state earlier
 
+    // Store the code for later token exchange
     await pool.query(
       `INSERT INTO parent_calendar_tokens (parent_id, provider, code, status)
        VALUES ($1, $2, $3, $4)
@@ -64,6 +66,7 @@ router.get('/callback', async (req: Request, res: Response) => {
       [parentId, provider, code, 'pending']
     );
 
+    // Redirect back to frontend with success
     const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
     return res.redirect(`${frontend}/parent?calendar_connected=1`);
   } catch (err) {
@@ -72,6 +75,7 @@ router.get('/callback', async (req: Request, res: Response) => {
   }
 });
 
+// POST /token - exchange stored code or provided code for tokens (server-side)
 router.post('/token', async (req: Request, res: Response) => {
   try {
     const provider = (req.query.provider as string) || 'google';
@@ -88,6 +92,7 @@ router.post('/token', async (req: Request, res: Response) => {
       return res.status(501).json({ error: 'Server not configured for token exchange' });
     }
 
+    // Prefer code from body, else stored code
     let code = codeFromBody;
     if (!code) {
       const row = await pool.query('SELECT code FROM parent_calendar_tokens WHERE parent_id = $1 AND provider = $2', [user_id, provider]);
@@ -96,7 +101,7 @@ router.post('/token', async (req: Request, res: Response) => {
     }
 
     const params = new URLSearchParams();
-    params.append('code', code);
+    params.append('code', code as string);
     params.append('client_id', clientId);
     params.append('client_secret', clientSecret);
     params.append('redirect_uri', redirectUri);
@@ -108,7 +113,7 @@ router.post('/token', async (req: Request, res: Response) => {
       console.error('Token exchange failed', text);
       return res.status(500).json({ error: 'Token exchange failed' });
     }
-    const data = await resp.json();
+    const data: any = await resp.json();
 
     const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000) : null;
 
@@ -132,12 +137,16 @@ router.post('/token', async (req: Request, res: Response) => {
   }
 });
 
+// GET /export - download a simple ICS calendar (stubbed events)
 router.get('/export', async (req: Request, res: Response) => {
   try {
     const { user_id } = req.user!;
+
+    // Query for school events if available - this is a stub that returns a minimal calendar
     const now = new Date();
     const starts = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const ends = new Date(now.getTime() + 25 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
     const uid = `oakit-${user_id}-${Date.now()}`;
     const ics = [
       'BEGIN:VCALENDAR',
@@ -164,6 +173,7 @@ router.get('/export', async (req: Request, res: Response) => {
   }
 });
 
+// POST /refresh - refresh access token using stored refresh_token
 router.post('/refresh', async (req: Request, res: Response) => {
   try {
     const provider = (req.query.provider as string) || 'google';
@@ -192,7 +202,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
       console.error('Refresh failed', txt);
       return res.status(502).json({ error: 'Token refresh failed' });
     }
-    const data = await resp.json();
+    const data: any = await resp.json();
 
     const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000) : null;
 
@@ -208,6 +218,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
   }
 });
 
+// POST /revoke - revoke tokens and clear stored credentials
 router.post('/revoke', async (req: Request, res: Response) => {
   try {
     const provider = (req.query.provider as string) || 'google';

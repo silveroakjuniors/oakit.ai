@@ -1,3 +1,4 @@
+// @ts-ignore: express-rate-limit types may not be available in all environments
 import rateLimit from 'express-rate-limit';
 import { Request, Response, NextFunction } from 'express';
 import { redis } from '../lib/redis';
@@ -21,7 +22,7 @@ export const apiRateLimit = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
   // Don't double-throttle auth requests; login has its own dedicated limiter.
-  skip: (req) => req.path === '/health' || req.path.startsWith('/api/v1/auth'),
+  skip: (req: Request) => req.path === '/health' || req.path.startsWith('/api/v1/auth'),
 });
 
 /** Auth endpoints (except login) — moderate: 100 req / 15 min per IP */
@@ -90,7 +91,7 @@ export const aiRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many AI requests, please slow down' },
-  keyGenerator: (req) => {
+  keyGenerator: (req: Request) => {
     // Rate limit by user ID if available, otherwise by IP
     const user = (req as any).user;
     return user?.user_id || req.ip || 'unknown';

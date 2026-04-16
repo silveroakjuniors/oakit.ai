@@ -5,6 +5,7 @@ import { jwtVerify, forceResetGuard, schoolScope, roleGuard } from '../../middle
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('parent'));
 
+// GET / — return settings for authenticated parent
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { user_id } = req.user!;
@@ -19,6 +20,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// PUT / — upsert settings for authenticated parent
 router.put('/', async (req: Request, res: Response) => {
   try {
     const { user_id } = req.user!;
