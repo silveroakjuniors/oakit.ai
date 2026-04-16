@@ -143,11 +143,22 @@ const BUNDLES = [
   },
   {
     id: 'bundle_wa_ml_speak',
-    name: 'WhatsApp + Multilingual + Speak',
+    name: 'The Public Speaker',
+    subtitle: 'WhatsApp + Multilingual + Speak & Evaluate',
     includes: ['whatsapp', 'multilingual', 'speak'],
     price: 1750,
     saving: 549,
     color: 'blue',
+    badge: 'Save ₹549',
+  },
+  {
+    id: 'bundle_wa_ml_story',
+    name: 'The Story Narrator',
+    subtitle: 'WhatsApp + Multilingual + Story & Evaluate',
+    includes: ['whatsapp', 'multilingual', 'story'],
+    price: 1750,
+    saving: 549,
+    color: 'violet',
     badge: 'Save ₹549',
   },
   {
@@ -157,19 +168,30 @@ const BUNDLES = [
     includes: ['whatsapp', 'multilingual', 'speak', 'story'],
     price: 2500,
     saving: 799,
-    color: 'violet',
+    color: 'indigo',
     badge: 'Best Value',
     highlight: true,
   },
   {
     id: 'bundle_k12',
-    name: 'K-12 Excellence',
+    name: 'The Future Achiever',
     subtitle: 'WhatsApp + Multilingual + Competitive Prep',
     includes: ['whatsapp', 'multilingual', 'competitive'],
     price: 2500,
     saving: 299,
     color: 'amber',
     badge: 'K-12 Special',
+  },
+  {
+    id: 'bundle_everything',
+    name: 'Everything — All 5 Plans',
+    subtitle: 'WhatsApp + Multilingual + Speak + Story + Competitive Prep',
+    includes: ['whatsapp', 'multilingual', 'speak', 'story', 'competitive'],
+    price: 3500,
+    saving: 1299,
+    color: 'emerald',
+    badge: '🏆 Ultimate',
+    highlight: true,
   },
 ];
 
@@ -320,16 +342,33 @@ export default function PremiumPage() {
       </div>
 
       {/* Hero */}
-      <div className="bg-gradient-to-br from-[#0f2417] to-[#1e5c3a] px-5 py-8 text-white">
+      <div className="bg-gradient-to-br from-[#0f2417] to-[#1e5c3a] px-5 py-10 text-white">
         <div className="max-w-2xl mx-auto text-center">
-          <p className="text-xs font-bold tracking-widest uppercase text-emerald-400 mb-2">Oakit Premium</p>
-          <h2 className="text-2xl font-black mb-3" style={{ letterSpacing: '-0.03em' }}>
-            Give your child the<br />learning edge
+          <p className="text-xs font-bold tracking-widest uppercase text-emerald-400 mb-3">Oakit Premium</p>
+          <h2 className="text-2xl font-black mb-4 leading-tight" style={{ letterSpacing: '-0.03em' }}>
+            Want your child to be a<br />
+            <span className="text-emerald-400">confident speaker</span>,<br />
+            <span className="text-violet-300">captivating storyteller</span>,<br />
+            or <span className="text-amber-300">future exam champion</span>?
           </h2>
-          <p className="text-sm text-white/70 leading-relaxed max-w-sm mx-auto">
-            From speaking skills for toddlers to competitive exam prep for teens — premium tools designed for every stage of your child's journey.
+          <p className="text-sm text-white/70 leading-relaxed max-w-sm mx-auto mb-5">
+            Premium learning tools designed for every stage — from toddlers finding their voice to teens preparing for competitive exams. Start early, grow strong.
           </p>
-          <div className="flex items-center justify-center gap-4 mt-5 text-xs text-white/60">
+          {/* Aspiration chips */}
+          <div className="flex flex-wrap justify-center gap-2 mb-5">
+            {[
+              { icon: '🗣️', text: 'Public Speaker' },
+              { icon: '📖', text: 'Story Narrator' },
+              { icon: '🏆', text: 'Exam Ready' },
+              { icon: '🌐', text: 'Multilingual' },
+              { icon: '💬', text: 'Always Connected' },
+            ].map(chip => (
+              <span key={chip.text} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-xs font-semibold text-white/80">
+                {chip.icon} {chip.text}
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center justify-center gap-4 text-xs text-white/50">
             <span className="flex items-center gap-1"><Check size={12} className="text-emerald-400" /> No hidden fees</span>
             <span className="flex items-center gap-1"><Check size={12} className="text-emerald-400" /> Cancel anytime</span>
             <span className="flex items-center gap-1"><Check size={12} className="text-emerald-400" /> Instant access</span>
@@ -400,9 +439,11 @@ export default function PremiumPage() {
               { name: 'Competitive Exam Prep (3 topics)', price: '₹1,500/yr', tag: 'K-12' },
               { name: '─── Bundles ───', price: '', tag: '' },
               { name: 'WhatsApp + Multilingual', price: '₹1,000/yr', tag: 'Save ₹299' },
-              { name: 'WhatsApp + Multilingual + Speak', price: '₹1,750/yr', tag: 'Save ₹549' },
+              { name: 'The Public Speaker (WA + ML + Speak)', price: '₹1,750/yr', tag: 'Save ₹549' },
+              { name: 'The Story Narrator (WA + ML + Story)', price: '₹1,750/yr', tag: 'Save ₹549' },
               { name: 'Pre-Primary Complete (all 4)', price: '₹2,500/yr', tag: 'Best Value' },
-              { name: 'K-12 Excellence (WA + ML + Comp)', price: '₹2,500/yr', tag: 'K-12 Special' },
+              { name: 'The Future Achiever (WA + ML + Comp)', price: '₹2,500/yr', tag: 'K-12 Special' },
+              { name: 'Everything — All 5 Plans', price: '₹3,500/yr', tag: '🏆 Ultimate' },
             ].map((row, i) => (
               <div key={i} className={`flex items-center justify-between px-5 py-3 ${row.name.startsWith('─') ? 'bg-neutral-50' : ''}`}>
                 <span className={`text-sm ${row.name.startsWith('─') ? 'text-neutral-400 font-medium' : 'text-neutral-700'}`}>{row.name}</span>
