@@ -1,4 +1,8 @@
 @echo off
+echo ============================================================
+echo  WARNING: You are running from oakit\oakit\ (nested copy)
+echo  Recommended: Run from oakit\start-dev.bat instead
+echo ============================================================
 echo Starting Oakit Dev Servers...
 
 :: API Gateway (Node/TypeScript) — port 3001

@@ -204,6 +204,7 @@ export default function AdminDashboardPage() {
   const todayBdays = birthdays.filter(b => b.days_until === 0);
 
   return (
+    <>
     <div className="min-h-screen bg-neutral-50/80">
 
       {/* ── PAGE HEADER ─────────────────────────────────────────── */}
@@ -340,51 +341,60 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* ── PENDING + BIRTHDAYS ── */}
-        {((todaySnap && (pendingAtt > 0 || pendingPlan > 0)) || birthdays.length > 0) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {todaySnap && (pendingAtt > 0 || pendingPlan > 0) && (
-              <Panel>
-                <PanelHeader icon={<Clock className="w-4 h-4 text-amber-500" />} title="Pending Today" subtitle="Actions still needed across sections" />
-                <div className="px-5 pb-5 space-y-2.5 border-t border-neutral-100">
-                  <div className="pt-3 space-y-2.5">
-                    {pendingAtt > 0 && (
-                      <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-                        <span className="text-xl shrink-0">📋</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[12px] font-semibold text-amber-800">{pendingAtt} section{pendingAtt > 1 ? 's' : ''} haven't marked attendance</p>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <div className="flex-1 bg-amber-200 rounded-full h-1.5"><div className="h-1.5 rounded-full bg-amber-500 transition-all" style={{ width: `${attPct}%` }} /></div>
-                            <span className="text-[10px] text-amber-600 font-semibold shrink-0">{attPct}%</span>
-                          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Pending Today — only shown when there are pending items */}
+          {todaySnap && (pendingAtt > 0 || pendingPlan > 0) && (
+            <Panel>
+              <PanelHeader icon={<Clock className="w-4 h-4 text-amber-500" />} title="Pending Today" subtitle="Actions still needed across sections" />
+              <div className="px-5 pb-5 space-y-2.5 border-t border-neutral-100">
+                <div className="pt-3 space-y-2.5">
+                  {pendingAtt > 0 && (
+                    <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+                      <span className="text-xl shrink-0">📋</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-semibold text-amber-800">{pendingAtt} section{pendingAtt > 1 ? 's' : ''} haven't marked attendance</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex-1 bg-amber-200 rounded-full h-1.5"><div className="h-1.5 rounded-full bg-amber-500 transition-all" style={{ width: `${attPct}%` }} /></div>
+                          <span className="text-[10px] text-amber-600 font-semibold shrink-0">{attPct}%</span>
                         </div>
                       </div>
-                    )}
-                    {pendingPlan > 0 && (
-                      <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
-                        <span className="text-xl shrink-0">📚</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[12px] font-semibold text-blue-800">{pendingPlan} section{pendingPlan > 1 ? 's' : ''} haven't completed plans</p>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <div className="flex-1 bg-blue-200 rounded-full h-1.5"><div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${planPct}%` }} /></div>
-                            <span className="text-[10px] text-blue-600 font-semibold shrink-0">{planPct}%</span>
-                          </div>
+                    </div>
+                  )}
+                  {pendingPlan > 0 && (
+                    <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                      <span className="text-xl shrink-0">📚</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-semibold text-blue-800">{pendingPlan} section{pendingPlan > 1 ? 's' : ''} haven't completed plans</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex-1 bg-blue-200 rounded-full h-1.5"><div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${planPct}%` }} /></div>
+                          <span className="text-[10px] text-blue-600 font-semibold shrink-0">{planPct}%</span>
                         </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              </Panel>
-            )}
-            {birthdays.length > 0 && (
-              <Panel>
-                <PanelHeader
-                  icon={<Cake className="w-4 h-4 text-pink-500" />}
-                  title="Birthdays"
-                  subtitle="Next 7 days"
-                  badge={todayBdays.length > 0 ? `${todayBdays.length} today 🎉` : undefined}
-                  badgeColor="bg-pink-100 text-pink-700"
-                />
-                <div className="px-5 pb-5 pt-3 border-t border-neutral-100 flex flex-wrap gap-2">
+              </div>
+            </Panel>
+          )}
+
+          {/* Birthdays — always shown */}
+          <Panel>
+            <PanelHeader
+              icon={<Cake className="w-4 h-4 text-pink-500" />}
+              title="Birthdays"
+              subtitle="Next 7 days"
+              badge={todayBdays.length > 0 ? `${todayBdays.length} today 🎉` : birthdays.length > 0 ? `${birthdays.length} upcoming` : undefined}
+              badgeColor={todayBdays.length > 0 ? 'bg-pink-100 text-pink-700' : 'bg-neutral-100 text-neutral-500'}
+            />
+            <div className="px-5 pb-5 pt-3 border-t border-neutral-100">
+              {birthdays.length === 0 ? (
+                <div className="flex flex-col items-center py-6 text-center">
+                  <span className="text-3xl mb-2">🎂</span>
+                  <p className="text-[12px] font-semibold text-neutral-600">No birthdays in the next 7 days</p>
+                  <p className="text-[11px] text-neutral-400 mt-1">Check back soon!</p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
                   {birthdays.map(b => (
                     <div key={b.student_id}
                       onClick={b.days_until === 0 ? () => setBirthdayModal(true) : undefined}
@@ -406,10 +416,10 @@ export default function AdminDashboardPage() {
                     </button>
                   )}
                 </div>
-              </Panel>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          </Panel>
+        </div>
 
         {/* ── SCHOOL INTELLIGENCE ── */}
         {(smartAlertsLoading || smartAlerts) && (
@@ -795,16 +805,16 @@ export default function AdminDashboardPage() {
     </div>
 
     {/* ── MODALS ── */}
-    <>
-      {drillModal && (
-        <StatDrillModal type={drillModal} todaySnap={todaySnap} stats={stats} onClose={() => setDrillModal(null)} />
-      )}
-      {birthdayModal && (
-        <BirthdayWishModal birthdays={birthdays} onClose={() => setBirthdayModal(false)} />
-      )}
+    {drillModal && (
+      <StatDrillModal type={drillModal} todaySnap={todaySnap} stats={stats} onClose={() => setDrillModal(null)} />
+    )}
+    {birthdayModal && (
+      <BirthdayWishModal birthdays={birthdays} onClose={() => setBirthdayModal(false)} />
+    )}
     </>
   );
 }
+
 
 /* ── Attendance chart ─────────────────────────────────────────── */
 function AttendanceTrendChart({ data }: { data: TrendRow[] }) {

@@ -12,6 +12,14 @@ import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
 
+// ─── Translation Settings type (needed by TranslationContext) ─────────────────
+interface TranslationSettings {
+  enabled: boolean;
+  targetLanguage: string;
+  autoTranslate: boolean;
+  supportedLanguages: string[];
+}
+
 // ─── Translation Context ──────────────────────────────────────────────────────
 const TranslationContext = React.createContext<{
   t: (key: string, defaultText?: string) => string;
@@ -166,13 +174,6 @@ interface Goal {
   category: 'academic' | 'behavioral' | 'attendance';
 }
 
-interface TranslationSettings {
-  enabled: boolean;
-  targetLanguage: string;
-  autoTranslate: boolean;
-  supportedLanguages: string[];
-}
-
 interface ChildComparison {
   childId: string;
   name: string;
@@ -299,7 +300,11 @@ export default function ParentPage() {
     supportedLanguages: ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa']
   });
 
-  const { t } = useTranslation();
+  // t() helper used directly in ParentPage (can't use useTranslation here — we ARE the provider)
+  const t = (key: string, defaultText?: string) => {
+    if (!translationSettings.enabled || translationSettings.targetLanguage === 'en') return defaultText || key;
+    return translations[translationSettings.targetLanguage]?.[key] || defaultText || key;
+  };
 
   async function saveCalendarSync(enabled: boolean) {
     try {
@@ -535,9 +540,8 @@ export default function ParentPage() {
 
   return (
     <TranslationContext.Provider value={translationContextValue}>
-      <>
-        {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
-        <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+      {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
+      <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
 
         {/* Desktop sidebar */}
         <aside className="hidden lg:flex fixed left-0 top-0 h-full w-64 flex-col z-40"
@@ -672,7 +676,7 @@ export default function ParentPage() {
           </nav>
         </div>
       </div>
-    </>
+    </TranslationContext.Provider>
   );
 }
 
@@ -768,14 +772,22 @@ function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTa
           <p className="text-white/60 text-sm mt-0.5">{activeChild.class_name} · Section {activeChild.section_label}</p>
           <p className="text-white/40 text-xs mt-2">Tap photo to preview or change</p>
         </div>
-        {/* Today's status badge */}
-        <div className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold ${
-          !att ? 'bg-white/10 text-white/60' :
-          att.status === 'present' && !att.is_late ? 'bg-emerald-500/20 text-emerald-300' :
-          att.status === 'present' ? 'bg-amber-500/20 text-amber-300' :
-          'bg-red-500/20 text-red-300'
-        }`}>
-          {attLabel}
+        {/* Today's status badge + translate link */}
+        <div className="shrink-0 flex flex-col items-end gap-1.5">
+          <div className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
+            !att ? 'bg-white/10 text-white/60' :
+            att.status === 'present' && !att.is_late ? 'bg-emerald-500/20 text-emerald-300' :
+            att.status === 'present' ? 'bg-amber-500/20 text-amber-300' :
+            'bg-red-500/20 text-red-300'
+          }`}>
+            {attLabel}
+          </div>
+          <button
+            onClick={() => onTabChange('settings')}
+            className="text-[10px] text-white/40 hover:text-white/70 underline underline-offset-2 transition-colors flex items-center gap-0.5"
+          >
+            🌐 Translate
+          </button>
         </div>
       </div>
 
@@ -1356,6 +1368,7 @@ function NotificationsTab({ notifications, announcements, onRead }: { notificati
               <button onClick={() => onRead(n.id)} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">Dismiss</button>
             </div>
           </div>
+        ))}
       </div>
     </div>
   );
@@ -1764,147 +1777,80 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
         </div>
       )}
 
-      {/* Notifications Section */}
-      {activeSection === 'notifications' && (
-        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <Bell className="w-6 h-6 text-blue-600" />
-            <h2 className="text-xl font-bold text-neutral-800">Notification Preferences</h2>
-          </div>
-
-          <div className="space-y-4">
-            {notificationPrefs.map(pref => (
-              <div key={pref.type} className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
-                <div className="flex-1">
-                  <div className="font-semibold text-neutral-800 capitalize">{pref.type}</div>
-                  <div className="text-sm text-neutral-600">
-                    Channels: {pref.channels.join(', ')}
-                    {pref.quietHours && ` • Quiet: ${pref.quietHours.start}-${pref.quietHours.end}`}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`text-xs px-2 py-1 rounded-full ${
-                    pref.enabled ? 'bg-green-100 text-green-700' : 'bg-neutral-100 text-neutral-600'
-                  }`}>
-                    {pref.enabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Calendar Section */}
+      {/* Calendar Section — Paid Feature */}
       {activeSection === 'calendar' && (
         <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3 mb-2">
             <CalendarDays className="w-6 h-6 text-purple-600" />
             <h2 className="text-xl font-bold text-neutral-800">Calendar Integration</h2>
+            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">✨ Premium</span>
           </div>
+          <p className="text-sm text-neutral-500 mb-6">Sync school events, homework deadlines and reminders directly to your calendar.</p>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
-              <div>
-                <div className="font-semibold text-neutral-800">Google Calendar Sync</div>
-                <div className="text-sm text-neutral-600">Automatically sync homework and events</div>
-              </div>
-              <button
-                onClick={() => onCalendarSyncChange(!calendarSyncEnabled)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  calendarSyncEnabled ? 'bg-emerald-600' : 'bg-neutral-200'
-                }`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  calendarSyncEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`} />
-              </button>
+          <div className="rounded-2xl border-2 border-dashed border-purple-200 bg-purple-50/50 p-6 flex flex-col items-center text-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-purple-100 flex items-center justify-center text-3xl">📅</div>
+            <p className="font-bold text-neutral-800 text-base">Smart Calendar Sync</p>
+            <p className="text-sm text-neutral-500 max-w-xs leading-relaxed">
+              Automatically add homework due dates, school events and parent-teacher meetings to Google Calendar or Apple Calendar.
+            </p>
+
+            {/* Feature list */}
+            <div className="w-full space-y-2 my-1">
+              {[
+                { icon: '📆', label: 'Google Calendar & Apple Calendar sync' },
+                { icon: '🤖', label: 'Oakie AI reminders — smart nudges before deadlines' },
+                { icon: '🔔', label: 'Never miss a homework due date or school event' },
+              ].map(f => (
+                <div key={f.label} className="flex items-center gap-3 bg-white border border-purple-100 rounded-xl px-4 py-2.5 text-left">
+                  <span className="text-lg shrink-0">{f.icon}</span>
+                  <span className="text-sm text-neutral-700">{f.label}</span>
+                </div>
+              ))}
             </div>
 
-            <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
-              <div>
-                <div className="font-semibold text-neutral-800">AI Assistant Reminders</div>
-                <div className="text-sm text-neutral-600">Smart reminders for important dates</div>
-              </div>
-              <button
-                onClick={() => onAssistantRemindersChange(!assistantReminders)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  assistantReminders ? 'bg-emerald-600' : 'bg-neutral-200'
-                }`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  assistantReminders ? 'translate-x-6' : 'translate-x-1'
-                }`} />
-              </button>
+            <div className="w-full bg-white border border-purple-200 rounded-xl p-4">
+              <p className="text-xs font-semibold text-neutral-600 mb-1">Coming soon — Subscription required</p>
+              <p className="text-xs text-neutral-400">Payment integration is being set up. You'll be notified when this feature is available for purchase.</p>
             </div>
+            <button disabled className="w-full py-3 bg-purple-600 text-white rounded-xl font-semibold text-sm opacity-50 cursor-not-allowed flex items-center justify-center gap-2">
+              <CalendarDays size={16} /> Unlock Calendar Sync — Coming Soon
+            </button>
           </div>
         </div>
       )}
 
-      {/* Translation Section */}
+      {/* Translation Section — Paid Feature */}
       {activeSection === 'translation' && (
         <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3 mb-2">
             <Zap className="w-6 h-6 text-indigo-600" />
-            <h2 className="text-xl font-bold text-neutral-800">Translation Settings</h2>
+            <h2 className="text-xl font-bold text-neutral-800">Translation</h2>
+            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">✨ Premium</span>
           </div>
+          <p className="text-sm text-neutral-500 mb-6">Translate the parent portal into your local language — Hindi, Telugu, Tamil, Kannada and more.</p>
 
-          <div className="space-y-6">
-            <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
-              <div>
-                <div className="font-semibold text-neutral-800">Enable Translation</div>
-                <div className="text-sm text-neutral-600">Translate app content to your preferred language</div>
-              </div>
-              <button
-                onClick={() => onTranslationSettingsChange({ ...translationSettings, enabled: !translationSettings.enabled })}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  translationSettings.enabled ? 'bg-emerald-600' : 'bg-neutral-200'
-                }`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  translationSettings.enabled ? 'translate-x-6' : 'translate-x-1'
-                }`} />
-              </button>
+          {/* Paid feature gate */}
+          <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 p-6 flex flex-col items-center text-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center text-3xl">🌐</div>
+            <p className="font-bold text-neutral-800 text-base">Multilingual Support</p>
+            <p className="text-sm text-neutral-500 max-w-xs leading-relaxed">
+              Read homework, updates, and announcements in your preferred language. Supports 10 Indian languages.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2 my-1">
+              {['हिंदी', 'తెలుగు', 'தமிழ்', 'ಕನ್ನಡ', 'മലയാളം', 'ગુજરાતી', 'বাংলা', 'मराठी'].map(lang => (
+                <span key={lang} className="text-xs px-2.5 py-1 rounded-full bg-white border border-indigo-200 text-indigo-700 font-medium">{lang}</span>
+              ))}
             </div>
-
-            {translationSettings.enabled && (
-              <>
-                <div className="p-4 border border-neutral-200 rounded-xl">
-                  <label className="block text-sm font-semibold text-neutral-800 mb-2">Target Language</label>
-                  <select
-                    value={translationSettings.targetLanguage}
-                    onChange={(e) => onTranslationSettingsChange({ ...translationSettings, targetLanguage: e.target.value })}
-                    className="w-full p-3 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  >
-                    {translationSettings.supportedLanguages.map(lang => (
-                      <option key={lang} value={lang}>{languageNames[lang]}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
-                  <div>
-                    <div className="font-semibold text-neutral-800">Auto Translation</div>
-                    <div className="text-sm text-neutral-600">Automatically translate new content</div>
-                  </div>
-                  <button
-                    onClick={() => onTranslationSettingsChange({ ...translationSettings, autoTranslate: !translationSettings.autoTranslate })}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      translationSettings.autoTranslate ? 'bg-emerald-600' : 'bg-neutral-200'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      translationSettings.autoTranslate ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                </div>
-              </>
-            )}
+            <div className="w-full bg-white border border-indigo-200 rounded-xl p-4 mt-1">
+              <p className="text-xs font-semibold text-neutral-600 mb-1">Coming soon — Subscription required</p>
+              <p className="text-xs text-neutral-400">Payment integration is being set up. You'll be notified when this feature is available for purchase.</p>
+            </div>
+            <button disabled className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm opacity-50 cursor-not-allowed flex items-center justify-center gap-2">
+              <Zap size={16} /> Unlock Translation — Coming Soon
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
-    </TranslationContext.Provider>
-  );
