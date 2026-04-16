@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { API_BASE } from '@/lib/api';
 import type { Child } from '../types';
 
-export function ChildAvatar({ child, size = 'md', token, onUploaded }: {
+export default function ChildAvatar({ child, size = 'md', token, onUploaded }: {
   child: Child; size?: 'sm' | 'md' | 'lg';
   token?: string; onUploaded?: (url: string) => void;
 }) {

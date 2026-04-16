@@ -43,3 +43,7 @@ export const TranslationContext = React.createContext<{
 export function useTranslation() {
   return React.useContext(TranslationContext);
 }
+
+export function defaultChat(name?: string) {
+  return [{ role: 'ai' as const, text: `Hi! I'm Oakie 🌳 Ask me anything about ${name ? name.split(' ')[0] : 'your child'} — what they studied today, attendance, or progress.`, ts: 0 }];
+}

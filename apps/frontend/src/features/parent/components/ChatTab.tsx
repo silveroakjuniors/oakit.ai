@@ -1,8 +1,8 @@
 'use client';
-import { Sparkles, Send, Loader2 } from 'lucide-react';
+import { Loader2, Send, Sparkles } from 'lucide-react';
 import type { ChatMsg } from '../types';
 
-export function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
+export default function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
   msgs: ChatMsg[]; input: string; loading: boolean;
   onInput: (v: string) => void; onSend: () => void;
   endRef: React.RefObject<HTMLDivElement>; childName: string;
@@ -33,18 +33,18 @@ export function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childNa
             </div>
           </div>
         )}
+        {msgs.length <= 1 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {[`What did ${childName} study today?`, `How is ${childName}'s attendance?`, `Any homework today?`].map(q => (
+              <button key={q} onClick={() => onInput(q)}
+                className="text-xs bg-white border border-neutral-200 text-neutral-600 px-3 py-2 rounded-full hover:bg-neutral-50 transition-colors">
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
         <div ref={endRef} />
       </div>
-      {msgs.length <= 1 && (
-        <div className="px-4 pb-2 flex gap-2 overflow-x-auto">
-          {[`What did ${childName} study today?`, `How is ${childName}'s attendance?`, `Any homework today?`].map(q => (
-            <button key={q} onClick={() => onInput(q)}
-              className="shrink-0 text-xs bg-white border border-neutral-200 text-neutral-600 px-3 py-2 rounded-full hover:bg-neutral-50 transition-colors whitespace-nowrap">
-              {q}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="px-4 py-3 bg-white border-t border-neutral-100 flex gap-2">
         <input value={input} onChange={e => onInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}

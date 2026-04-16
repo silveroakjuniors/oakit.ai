@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import type { NoteItem } from '../types';
 
-export function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; onClose: () => void }) {
+export default function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; onClose: () => void }) {
   const [downloading, setDownloading] = useState(false);
   const daysLeft = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
 

@@ -2,7 +2,7 @@
 import { Bell } from 'lucide-react';
 import type { Notification, Announcement } from '../types';
 
-export function NotificationsTab({ notifications, announcements, onRead }: {
+export default function NotificationsTab({ notifications, announcements, onRead }: {
   notifications: Notification[]; announcements: Announcement[]; onRead: (id: string) => void;
 }) {
   return (
@@ -37,8 +37,7 @@ export function NotificationsTab({ notifications, announcements, onRead }: {
                     <p className="font-bold text-neutral-800 text-sm">{n.section_name}</p>
                     <p className="text-xs text-neutral-500 mt-0.5">{n.completion_date.split('T')[0]} · {n.chunks_covered} topics covered</p>
                   </div>
-                  <button onClick={() => onRead(n.id)}
-                    className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">
+                  <button onClick={() => onRead(n.id)} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">
                     Dismiss
                   </button>
                 </div>
