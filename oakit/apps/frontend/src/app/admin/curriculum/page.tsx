@@ -312,7 +312,7 @@ export default function CurriculumPage() {
       {(flow === 'uploading' || flow === 'processing') && (
         <Card className="mb-4">
           <h2 className="text-sm font-semibold text-gray-700 mb-4">Step 3 — Processing Curriculum</h2>
-          <ProgressBar percent={stagePercent} label={STAGE_LABEL[stage] || 'Processing...'} />
+          <ProgressBar value={stagePercent} label={STAGE_LABEL[stage] || 'Processing...'} />
           <p className="text-xs text-gray-400 mt-3">
             This may take 1–3 minutes depending on the PDF size. You can leave this page — the processing continues in the background.
           </p>

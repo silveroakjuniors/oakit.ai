@@ -30,14 +30,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isParentLogin, setIsParentLogin] = useState(false);
+  const [parentDemoAccounts, setParentDemoAccounts] = useState<string[]>([]);
   const [showPassword, setShowPassword] = useState(false);
-  const [aiStatus, setAiStatus] = useState<'up' | 'down' | 'checking'>('checking');
+  const [aiStatus, setAiStatus] = useState<'checking' | 'up' | 'down'>('checking');
 
   // --- Logic: Hydration Fix & Load Saved Code ---
   useEffect(() => {
     const isSuperAdminMode = typeof window !== 'undefined' &&
       new URLSearchParams(window.location.search).get('superadmin') === '1';
     setIsSuperAdminLogin(isSuperAdminMode);
+
+    // Check if this looks like a parent login (common parent mobile patterns)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isParentMode = urlParams.get('role') === 'parent' || mobile.startsWith('980000000');
+    setIsParentLogin(isParentMode);
+
+    // Set demo parent accounts
+    setParentDemoAccounts(['9800000004', '9800000005', '9800000006']);
 
     if (isSuperAdminMode) {
       setSchoolCodeState('platform');
@@ -183,14 +193,40 @@ export default function LoginPage() {
 
         <div className="w-full max-w-md bg-white p-10 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 animate-in fade-in slide-in-from-bottom-6 duration-700">
           <div className="mb-10 text-center lg:text-left">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Welcome back</h1>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+              {isParentLogin ? 'Welcome, Parent! 👨‍👩‍👧‍👦' : 'Welcome back'}
+            </h1>
             <p className="text-slate-500 font-medium mt-2 text-sm italic">
-              {schoolCode
-                ? schoolName
-                  ? `Signing you into ${schoolName} (${schoolCode.toUpperCase()})`
-                  : `Signing you into ${schoolCode.toUpperCase()}`
-                : 'Sign in to continue to Oakit.'}
+              {isParentLogin
+                ? 'Connect with your child\'s learning journey and stay updated on their progress.'
+                : schoolCode
+                  ? schoolName
+                    ? `Signing you into ${schoolName} (${schoolCode.toUpperCase()})`
+                    : `Signing you into ${schoolCode.toUpperCase()}`
+                  : 'Sign in to continue to Oakit.'}
             </p>
+            
+            {isParentLogin && (
+              <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-semibold text-emerald-800">Demo Parent Accounts</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {parentDemoAccounts.map(account => (
+                    <button
+                      key={account}
+                      onClick={() => setMobile(account)}
+                      className="px-3 py-1 text-xs bg-white border border-emerald-300 rounded-full text-emerald-700 hover:bg-emerald-100 transition-colors"
+                    >
+                      {account}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-emerald-600 mt-2">Click any demo account to auto-fill</p>
+              </div>
+            )}
+            
             {isSuperAdminLogin && (
               <div className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold border ${
                 aiStatus === 'up'
@@ -216,7 +252,17 @@ export default function LoginPage() {
             {/* School Code: Display ONLY if no saved code is found in storage */}
             {!isSuperAdminLogin && !getSchoolCode() && (
               <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">School Code</label>
+                <div className="flex items-center justify-between ml-1">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">School Code</label>
+                  {isParentLogin && (
+                    <button 
+                      onClick={() => alert('Contact your school administration for the school code. Common codes: sojs, demo, test')}
+                      className="text-xs text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                    >
+                      Forgot Code?
+                    </button>
+                  )}
+                </div>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
                     <School size={18} />

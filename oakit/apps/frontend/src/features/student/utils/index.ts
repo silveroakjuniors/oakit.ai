@@ -98,9 +98,9 @@ export function getTimerColor(seconds: number): 'text-red-600' | 'text-neutral-7
 /**
  * Group topics by subject
  */
-export function groupTopicsBySubject(
-  topics: Array<{ subject: string; [key: string]: unknown }>
-): Record<string, Array<{ subject: string; [key: string]: unknown }>> {
+export function groupTopicsBySubject<T extends { subject: string }>(
+  topics: T[]
+): Record<string, T[]> {
   return topics.reduce(
     (acc, topic) => {
       if (!acc[topic.subject]) {
@@ -109,6 +109,6 @@ export function groupTopicsBySubject(
       acc[topic.subject].push(topic);
       return acc;
     },
-    {} as Record<string, Array<{ subject: string; [key: string]: unknown }>>
+    {} as Record<string, T[]>
   );
 }

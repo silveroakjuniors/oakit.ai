@@ -709,7 +709,7 @@ router.get('/class-coverage', async (req: Request, res: Response) => {
     let coveredChunks: any[] = [];
     if (allCoveredIds.length > 0) {
       const chunksRow = await pool.query(
-        `SELECT cc.id, cc.topic_label, cc.chunk_index, cd.filename as doc_name
+        `SELECT cc.id, cc.topic_label, cc.chunk_index, cc.content, cd.filename as doc_name
          FROM curriculum_chunks cc
          JOIN curriculum_documents cd ON cd.id = cc.document_id
          WHERE cc.id = ANY($1::uuid[])
@@ -718,6 +718,45 @@ router.get('/class-coverage', async (req: Request, res: Response) => {
       );
       coveredChunks = chunksRow.rows;
     }
+
+    // Build grouped subject summary — skip raw "Week X Day Y" labels
+    function extractSubjectActivity(topicLabel: string, content: string): { subject: string; activity: string } | null {
+      // If topic_label is meaningful (not "Week X Day Y"), use it
+      if (topicLabel && !/^week\s*\d|^day\s*\d/i.test(topicLabel.trim())) {
+        const parts = topicLabel.split(/[—\-–:]/);
+        const subject = parts[0].trim();
+        const activity = parts.slice(1).join(' ').trim() || '';
+        return { subject, activity };
+      }
+      // Otherwise extract from content: look for "Subject: activity" lines
+      const lines = (content || '').split('\n').map((l: string) => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        const m = line.match(/^(English Speaking|English|Math(?:ematics)?|GK|General Knowledge|Writing|Handwriting|Art|Drawing|Music|PE|Science|EVS|Hindi|Regional Language|Additional [Aa]ctivities[^:\n]*|Circle [Tt]ime[^:\n]*|Morning [Mm]eet[^:\n]*|Story [Tt]ime[^:\n]*|Public [Ss]peaking[^:\n]*)\s*[:\-–]\s*(.{5,})/i);
+        if (m) return { subject: m[1].trim(), activity: m[2].trim().slice(0, 120) };
+      }
+      // Fallback: first meaningful line
+      const first = lines.find((l: string) => l.length > 10 && !/^(objective|resources|tip|note|what to do|ask children|materials)/i.test(l));
+      return first ? { subject: 'Activity', activity: first.slice(0, 100) } : null;
+    }
+
+    // Group by canonical subject
+    const subjectMap: Record<string, Set<string>> = {};
+    const SPECIAL_SUBJECTS = ['story time', 'public speaking', 'show and tell', 'drama', 'debate', 'presentation'];
+
+    for (const chunk of coveredChunks) {
+      const parsed = extractSubjectActivity(chunk.topic_label || '', chunk.content || '');
+      if (!parsed) continue;
+      const subj = parsed.subject;
+      if (!subjectMap[subj]) subjectMap[subj] = new Set();
+      if (parsed.activity) subjectMap[subj].add(parsed.activity);
+    }
+
+    // Build the grouped topics list
+    const groupedTopics = Object.entries(subjectMap).map(([subject, activities]) => ({
+      subject,
+      activities: [...activities].slice(0, 4),
+      is_special: SPECIAL_SUBJECTS.some(s => subject.toLowerCase().includes(s)),
+    }));
 
     // Special days in range
     const specialDays = await pool.query(
@@ -765,7 +804,8 @@ router.get('/class-coverage', async (req: Request, res: Response) => {
         teacher: r.teacher_name,
         topics_covered: r.covered_chunk_ids?.length ?? 0,
       })),
-      covered_topics: coveredChunks.map((c: any) => ({
+      covered_topics: groupedTopics,
+      covered_topics_raw: coveredChunks.map((c: any) => ({
         label: c.topic_label || `Topic ${c.chunk_index + 1}`,
         document: c.doc_name,
       })),

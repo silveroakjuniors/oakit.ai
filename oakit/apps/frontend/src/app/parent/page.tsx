@@ -5,11 +5,86 @@ import { useRouter } from 'next/navigation';
 import {
   Home, Calendar, TrendingUp, Sparkles, MessageSquare, Bell,
   LogOut, BookOpen, Clock, CheckCircle2, AlertCircle, User,
-  ChevronRight, Send, Loader2, RefreshCw
+  ChevronRight, Send, Loader2, RefreshCw, Phone, Shield, Settings,
+  BarChart3, Target, Zap, CalendarDays, Apple, Smartphone
 } from 'lucide-react';
-import { API_BASE, apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
+
+// ─── Translation Context ──────────────────────────────────────────────────────
+const TranslationContext = React.createContext<{
+  t: (key: string, defaultText?: string) => string;
+  settings: TranslationSettings;
+}>({
+  t: (key, defaultText) => defaultText || key,
+  settings: { enabled: false, targetLanguage: 'en', autoTranslate: false, supportedLanguages: [] }
+});
+
+// Simple translation dictionary (in a real app, this would come from an API)
+const translations: Record<string, Record<string, string>> = {
+  hi: {
+    'Home': 'होम',
+    'Attendance': 'उपस्थिति',
+    'Progress': 'प्रगति',
+    'Insights': 'अंतर्दृष्टि',
+    'Oakie': 'ओकी',
+    'Messages': 'संदेश',
+    'Updates': 'अपडेट',
+    'Settings': 'सेटिंग्स',
+    'Emergency Contacts': 'आपातकालीन संपर्क',
+    'Notification Preferences': 'सूचना प्राथमिकताएं',
+    'Calendar Integration': 'कैलेंडर एकीकरण',
+    'Translation Settings': 'अनुवाद सेटिंग्स',
+    'Progress Predictions': 'प्रगति भविष्यवाणी',
+    'Goal Setting': 'लक्ष्य निर्धारण',
+    'Performance Comparison': 'प्रदर्शन तुलना',
+    'Next Week Attendance': 'अगले सप्ताह की उपस्थिति',
+    'End of Month Progress': 'माह के अंत में प्रगति',
+    'Areas Needing Attention': 'ध्यान देने योग्य क्षेत्र',
+    'Academic Goals': 'शैक्षणिक लक्ष्य',
+    'Behavioral Goals': 'व्यवहारिक लक्ष्य',
+    'Attendance Goals': 'उपस्थिति लक्ष्य',
+    'Enable Translation': 'अनुवाद सक्षम करें',
+    'Target Language': 'लक्ष्य भाषा',
+    'Auto Translation': 'स्वत: अनुवाद',
+    'Predicted attendance rate': 'भविष्यवाणी उपस्थिति दर',
+    'Expected academic progress': 'अपेक्षित शैक्षणिक प्रगति'
+  },
+  te: {
+    'Home': 'హోమ్',
+    'Attendance': 'హాజరు',
+    'Progress': 'ప్రోగ్రెస్',
+    'Insights': 'ఇన్సైట్స్',
+    'Oakie': 'ఓకీ',
+    'Messages': 'సందేశాలు',
+    'Updates': 'నవీకరణలు',
+    'Settings': 'సెట్టింగులు',
+    'Emergency Contacts': 'అత్యవసర సంప్రదింపులు',
+    'Notification Preferences': 'నోటిఫికేషన్ ప్రాధాన్యతలు',
+    'Calendar Integration': 'క్యాలెండర్ ఇంటిగ్రేషన్',
+    'Translation Settings': 'అనువాద సెట్టింగులు',
+    'Progress Predictions': 'ప్రోగ్రెస్ అంచనాలు',
+    'Goal Setting': 'లక్ష్య సెట్టింగ్',
+    'Performance Comparison': 'పనితీరు పోలిక',
+    'Next Week Attendance': 'తదుపరి వారం హాజరు',
+    'End of Month Progress': 'నెల ముగింపు ప్రోగ్రెస్',
+    'Areas Needing Attention': 'దృష్టి అవసరమైన ప్రాంతాలు',
+    'Academic Goals': 'విద్యా లక్ష్యాలు',
+    'Behavioral Goals': 'వ్యవహార లక్ష్యాలు',
+    'Attendance Goals': 'హాజరు లక్ష్యాలు',
+    'Enable Translation': 'అనువాదాన్ని ప్రారంభించు',
+    'Target Language': 'లక్ష్య భాష',
+    'Auto Translation': 'స్వయంచాలక అనువాదం',
+    'Predicted attendance rate': 'అంచనా హాజరు రేటు',
+    'Expected academic progress': 'అంచనా విద్యా ప్రోగ్రెస్'
+  }
+};
+
+function useTranslation() {
+  const context = React.useContext(TranslationContext);
+  return context;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Child { id: string; name: string; class_name: string; section_label: string; section_id: string; class_id: string; photo_url?: string; }
@@ -34,15 +109,91 @@ interface HomeworkRecord { homework_date: string; status: string; teacher_note: 
 interface ChatMsg { role: 'user' | 'ai'; text: string; ts: number; }
 interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; }
 
-type Tab = 'home' | 'attendance' | 'progress' | 'chat' | 'messages' | 'notifications';
+// ─── New Feature Types ────────────────────────────────────────────────────────
+interface EmergencyContact {
+  id: string;
+  name: string;
+  relation: string;
+  phone: string;
+  priority: 1 | 2 | 3;
+  available: boolean;
+}
+
+interface NotificationPreference {
+  type: 'homework' | 'attendance' | 'progress' | 'messages' | 'announcements';
+  enabled: boolean;
+  channels: ('push' | 'sms' | 'email')[];
+  quietHours: { start: string; end: string } | null;
+  frequency: 'immediate' | 'daily' | 'weekly';
+}
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  start: string;
+  end: string;
+  type: 'homework' | 'exam' | 'holiday' | 'event' | 'meeting';
+  childId: string;
+}
+
+interface ParentInsights {
+  attendanceTrend: 'improving' | 'declining' | 'stable';
+  participationScore: number;
+  strengths: string[];
+  areasForImprovement: string[];
+  teacherFeedback: string[];
+  predictions: {
+    nextWeekAttendance: number;
+    endOfMonthProgress: number;
+    areasNeedingAttention: string[];
+  };
+  goals?: {
+    academic: Goal[];
+    behavioral: Goal[];
+    attendance: Goal[];
+  };
+}
+
+interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  target: string;
+  current: string;
+  deadline: string;
+  status: 'not_started' | 'in_progress' | 'completed' | 'overdue';
+  category: 'academic' | 'behavioral' | 'attendance';
+}
+
+interface TranslationSettings {
+  enabled: boolean;
+  targetLanguage: string;
+  autoTranslate: boolean;
+  supportedLanguages: string[];
+}
+
+interface ChildComparison {
+  childId: string;
+  name: string;
+  attendance: number;
+  progress: number;
+  participation: number;
+  rank: number;
+  trend: 'up' | 'down' | 'stable';
+}
+
+type Tab = 'home' | 'attendance' | 'progress' | 'chat' | 'messages' | 'notifications' | 'insights' | 'settings';
 
 const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
   { id: 'home',          Icon: Home,           label: 'Home' },
   { id: 'attendance',    Icon: Calendar,       label: 'Attendance' },
   { id: 'progress',      Icon: TrendingUp,     label: 'Progress' },
+  { id: 'insights',      Icon: BarChart3,      label: 'Insights' },
   { id: 'chat',          Icon: Sparkles,       label: 'Oakie' },
   { id: 'messages',      Icon: MessageSquare,  label: 'Messages' },
   { id: 'notifications', Icon: Bell,           label: 'Updates' },
+  { id: 'settings',      Icon: Settings,       label: 'Settings' },
 ];
 
 function defaultChat(name?: string): ChatMsg[] {
@@ -133,6 +284,45 @@ export default function ParentPage() {
   const [noteModal, setNoteModal] = useState<NoteItem | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // ─── New Feature State ──────────────────────────────────────────────────────
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreference[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [parentInsights, setParentInsights] = useState<ParentInsights | null>(null);
+  const [childComparisons, setChildComparisons] = useState<ChildComparison[]>([]);
+  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
+  const [assistantReminders, setAssistantReminders] = useState(false);
+  const [translationSettings, setTranslationSettings] = useState<TranslationSettings>({
+    enabled: false,
+    targetLanguage: 'en',
+    autoTranslate: false,
+    supportedLanguages: ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa']
+  });
+
+  const { t } = useTranslation();
+
+  async function saveCalendarSync(enabled: boolean) {
+    try {
+      await apiPut('/api/v1/parent/settings', { calendar_sync: enabled }, token);
+      setCalendarSyncEnabled(enabled);
+      localStorage.setItem('calendar_sync', String(enabled));
+    } catch (e) {
+      console.error('Failed to save calendar sync', e);
+      alert('Failed to save calendar sync setting');
+    }
+  }
+
+  async function saveAssistantReminders(enabled: boolean) {
+    try {
+      await apiPut('/api/v1/parent/settings', { assistant_reminders: enabled }, token);
+      setAssistantReminders(enabled);
+      localStorage.setItem('assistant_reminders', String(enabled));
+    } catch (e) {
+      console.error('Failed to save assistant reminders', e);
+      alert('Failed to save assistant reminders setting');
+    }
+  }
+
   const activeChild = children.find(c => c.id === activeChildId) ?? null;
   const activeCache = activeChildId ? cache[activeChildId] : null;
   const chatMsgs = activeChildId ? (chatMap[activeChildId] ?? defaultChat(activeChild?.name)) : [];
@@ -172,9 +362,96 @@ export default function ParentPage() {
       setNotifications(notifs);
       apiGet<Announcement[]>('/api/v1/parent/announcements', token).then(setAnnouncements).catch(() => {});
       apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {});
+      
+      // Load emergency contacts and settings from API (fallback to mock data)
+      (async () => {
+        try {
+          const [rows, settings] = await Promise.all([
+            apiGet<any[]>('/api/v1/parent/emergency-contacts', token),
+            apiGet<any>('/api/v1/parent/settings', token),
+          ]);
+          const mapped = rows.map(r => ({ id: r.id, name: r.name, relation: r.relationship || r.relation || '', phone: r.phone, priority: r.is_primary ? 1 : 2, available: true }));
+          setEmergencyContacts(mapped);
+          if (settings) {
+            if (settings.notification_prefs) setNotificationPrefs(settings.notification_prefs);
+            if (typeof settings.calendar_sync === 'boolean') setCalendarSyncEnabled(settings.calendar_sync);
+            if (typeof settings.assistant_reminders === 'boolean') setAssistantReminders(settings.assistant_reminders);
+            if (settings.translation_settings) setTranslationSettings(settings.translation_settings);
+          }
+        } catch (e) {
+          // fallback to mock data for other features
+          loadMockFeaturesData(true);
+        }
+      })();
+      
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id); }
     } catch { /* ignore */ }
     finally { setLoading(false); }
+  }
+
+  // ─── Mock Data for New Features ─────────────────────────────────────────────
+  function loadMockFeaturesData(includeEmergency = true) {
+    // Emergency Contacts
+    if (includeEmergency) {
+      setEmergencyContacts([
+        { id: '1', name: 'John Doe', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
+        { id: '2', name: 'Jane Doe', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: false },
+        { id: '3', name: 'Grandma', relation: 'Grandmother', phone: '+91-9876543212', priority: 3, available: true },
+      ]);
+    }
+
+    // Notification Preferences
+    setNotificationPrefs([
+      { type: 'homework', enabled: true, channels: ['push', 'email'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
+      { type: 'attendance', enabled: true, channels: ['push'], quietHours: null, frequency: 'daily' },
+      { type: 'progress', enabled: true, channels: ['email'], quietHours: null, frequency: 'weekly' },
+      { type: 'messages', enabled: true, channels: ['push', 'sms'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
+      { type: 'announcements', enabled: false, channels: ['email'], quietHours: null, frequency: 'weekly' },
+    ]);
+
+    // Calendar Events
+    setCalendarEvents([
+      { id: '1', title: 'Math Homework Due', description: 'Complete exercises 1-10 from chapter 5', start: '2026-04-20T18:00:00', end: '2026-04-20T18:00:00', type: 'homework', childId: activeChildId || '' },
+      { id: '2', title: 'Parent-Teacher Meeting', description: 'Discuss Aarav\'s progress this term', start: '2026-04-25T10:00:00', end: '2026-04-25T11:00:00', type: 'meeting', childId: activeChildId || '' },
+      { id: '3', title: 'Science Exam', description: 'Chapter 3-5 assessment', start: '2026-04-22T09:00:00', end: '2026-04-22T10:30:00', type: 'exam', childId: activeChildId || '' },
+    ]);
+
+    // Parent Insights
+    setParentInsights({
+      attendanceTrend: 'improving',
+      participationScore: 85,
+      strengths: ['Mathematics', 'Reading Comprehension', 'Class Participation'],
+      areasForImprovement: ['Handwriting', 'Physical Education'],
+      teacherFeedback: ['Excellent progress in math this month', 'Shows great enthusiasm for learning'],
+      predictions: {
+        nextWeekAttendance: 95,
+        endOfMonthProgress: 88,
+        areasNeedingAttention: ['Practice handwriting daily']
+      },
+      goals: {
+        academic: [
+          { id: '1', title: 'Improve Math Grade', description: 'Achieve 90% or higher in mathematics', target: '90%', current: '85%', deadline: '2026-06-30', status: 'in_progress', category: 'academic' },
+          { id: '2', title: 'Complete Reading Program', description: 'Finish all assigned reading comprehension exercises', target: '100%', current: '75%', deadline: '2026-05-15', status: 'in_progress', category: 'academic' },
+        ],
+        behavioral: [
+          { id: '3', title: 'Class Participation', description: 'Actively participate in 80% of class activities', target: '80%', current: '65%', deadline: '2026-04-30', status: 'in_progress', category: 'behavioral' },
+        ],
+        attendance: [
+          { id: '4', title: 'Perfect Attendance Month', description: 'Attend all classes for the entire month', target: '100%', current: '92%', deadline: '2026-04-30', status: 'in_progress', category: 'attendance' },
+        ]
+      }
+    });
+
+    // Child Comparisons
+    setChildComparisons([
+      { childId: activeChildId || '', name: activeChild?.name || 'Your Child', attendance: 92, progress: 88, participation: 85, rank: 3, trend: 'up' },
+      { childId: 'comp1', name: 'Class Average', attendance: 87, progress: 82, participation: 78, rank: 0, trend: 'stable' },
+      { childId: 'comp2', name: 'Top Performer', attendance: 98, progress: 95, participation: 92, rank: 1, trend: 'up' },
+    ]);
+
+    // Integration Settings
+    setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
+    setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
   }
 
   const fetchChildData = useCallback(async (childId: string) => {
@@ -246,10 +523,21 @@ export default function ParentPage() {
     );
   }
 
+  const translationContextValue = {
+    t: (key: string, defaultText?: string) => {
+      if (!translationSettings.enabled || translationSettings.targetLanguage === 'en') {
+        return defaultText || key;
+      }
+      return translations[translationSettings.targetLanguage]?.[key] || defaultText || key;
+    },
+    settings: translationSettings
+  };
+
   return (
-    <>
-      {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
-      <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+    <TranslationContext.Provider value={translationContextValue}>
+      <>
+        {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
+        <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
 
         {/* Desktop sidebar */}
         <aside className="hidden lg:flex fixed left-0 top-0 h-full w-64 flex-col z-40"
@@ -356,9 +644,11 @@ export default function ParentPage() {
                 {tab === 'home' && <HomeTab feed={activeCache?.feed ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} announcements={announcements} onNoteClick={setNoteModal} onTabChange={setTab} token={token} onChildUpdate={(url) => setChildren(prev => prev.map(c => c.id === activeChildId ? { ...c, photo_url: url } : c))} />}
                 {tab === 'attendance' && <AttendanceTab data={activeCache?.attendance ?? null} />}
                 {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
+                {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
                 {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
                 {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
                 {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
+                {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
               </div>
             )}
           </main>
@@ -373,7 +663,7 @@ export default function ParentPage() {
                 <button key={id} onClick={() => setTab(id)}
                   className={`relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[48px] min-h-[44px] transition-colors ${isActive ? 'text-emerald-600' : 'text-neutral-400'}`}>
                   <Icon size={20} className={isActive ? 'scale-110 transition-transform' : ''} />
-                  <span className={`text-[9px] font-semibold ${isActive ? 'text-emerald-600' : 'text-neutral-400'}`}>{label}</span>
+                  <span className={`text-[9px] font-semibold ${isActive ? 'text-emerald-600' : 'text-neutral-400'}`}>{t(label)}</span>
                   {badge > 0 && <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{badge}</span>}
                   {isActive && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-500" />}
                 </button>
@@ -1066,8 +1356,555 @@ function NotificationsTab({ notifications, announcements, onRead }: { notificati
               <button onClick={() => onRead(n.id)} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">Dismiss</button>
             </div>
           </div>
-        ))}
       </div>
     </div>
   );
 }
+
+function InsightsTab({ insights, comparisons, activeChild }: { insights: ParentInsights | null; comparisons: ChildComparison[]; activeChild: Child | null }) {
+  const { t } = useTranslation();
+  if (!insights || !activeChild) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-neutral-300 animate-spin" />
+      </div>
+    );
+  }
+
+  const getStatusColor = (status: Goal['status']) => {
+    switch (status) {
+      case 'completed': return 'text-green-600 bg-green-50';
+      case 'in_progress': return 'text-blue-600 bg-blue-50';
+      case 'overdue': return 'text-red-600 bg-red-50';
+      default: return 'text-neutral-600 bg-neutral-50';
+    }
+  };
+
+  const getStatusIcon = (status: Goal['status']) => {
+    switch (status) {
+      case 'completed': return '✅';
+      case 'in_progress': return '🔄';
+      case 'overdue': return '⚠️';
+      default: return '⏳';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Progress Predictions */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <Target className="w-6 h-6 text-emerald-600" />
+          <h2 className="text-xl font-bold text-neutral-800">{t('Progress Predictions')}</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-emerald-800">{t('Next Week Attendance')}</span>
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-700">{insights.predictions.nextWeekAttendance}%</div>
+            <div className="text-xs text-emerald-600 mt-1">Predicted attendance rate</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-blue-800">End of Month Progress</span>
+              <BarChart3 className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="text-2xl font-bold text-blue-700">{insights.predictions.endOfMonthProgress}%</div>
+            <div className="text-xs text-blue-600 mt-1">Expected academic progress</div>
+          </div>
+        </div>
+
+        {insights.predictions.areasNeedingAttention.length > 0 && (
+          <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-amber-800 mb-2">Areas Needing Attention</h3>
+                <ul className="text-sm text-amber-700 space-y-1">
+                  {insights.predictions.areasNeedingAttention.map((area, idx) => (
+                    <li key={idx}>• {area}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Goal Setting */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <Target className="w-6 h-6 text-purple-600" />
+          <h2 className="text-xl font-bold text-neutral-800">Goal Setting</h2>
+        </div>
+
+        {insights.goals && (
+          <div className="space-y-4">
+            {Object.entries(insights.goals).map(([category, goals]) => (
+              <div key={category}>
+                <h3 className="font-semibold text-neutral-700 mb-3 capitalize flex items-center gap-2">
+                  {category === 'academic' && <BookOpen className="w-4 h-4" />}
+                  {category === 'behavioral' && <User className="w-4 h-4" />}
+                  {category === 'attendance' && <Calendar className="w-4 h-4" />}
+                  {category} Goals
+                </h3>
+                <div className="space-y-3">
+                  {goals.map(goal => (
+                    <div key={goal.id} className="border border-neutral-200 rounded-xl p-4 hover:bg-neutral-50 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-neutral-800">{goal.title}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(goal.status)}`}>
+                              {getStatusIcon(goal.status)} {goal.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-neutral-600 mb-2">{goal.description}</p>
+                          <div className="flex items-center gap-4 text-xs text-neutral-500">
+                            <span>Target: {goal.target}</span>
+                            <span>Current: {goal.current}</span>
+                            <span>Due: {new Date(goal.deadline).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <div className="flex justify-between text-xs text-neutral-600 mb-1">
+                          <span>Progress</span>
+                          <span>{goal.current} / {goal.target}</span>
+                        </div>
+                        <div className="w-full bg-neutral-200 rounded-full h-2">
+                          <div
+                            className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, (parseFloat(goal.current) / parseFloat(goal.target.replace('%', ''))) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Child Comparison */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <BarChart3 className="w-6 h-6 text-indigo-600" />
+          <h2 className="text-xl font-bold text-neutral-800">Performance Comparison</h2>
+        </div>
+
+        <div className="space-y-3">
+          {comparisons.map(comp => (
+            <div key={comp.childId} className={`border rounded-xl p-4 ${comp.childId === activeChild.id ? 'border-emerald-300 bg-emerald-50' : 'border-neutral-200'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-neutral-800">{comp.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-neutral-600">Rank #{comp.rank}</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${comp.trend === 'up' ? 'text-green-600 bg-green-50' : comp.trend === 'down' ? 'text-red-600 bg-red-50' : 'text-neutral-600 bg-neutral-50'}`}>
+                    {comp.trend === 'up' ? '↗️' : comp.trend === 'down' ? '↘️' : '→'} {comp.trend}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <div className="text-neutral-500">Attendance</div>
+                  <div className="font-semibold text-neutral-800">{comp.attendance}%</div>
+                </div>
+                <div>
+                  <div className="text-neutral-500">Progress</div>
+                  <div className="font-semibold text-neutral-800">{comp.progress}%</div>
+                </div>
+                <div>
+                  <div className="text-neutral-500">Participation</div>
+                  <div className="font-semibold text-neutral-800">{comp.participation}%</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEvents, calendarSyncEnabled, assistantReminders, translationSettings, onEmergencyContactsChange, onNotificationPrefsChange, onCalendarSyncChange, onAssistantRemindersChange, onTranslationSettingsChange }: {
+  emergencyContacts: EmergencyContact[];
+  notificationPrefs: NotificationPreference[];
+  calendarEvents: CalendarEvent[];
+  calendarSyncEnabled: boolean;
+  assistantReminders: boolean;
+  translationSettings: TranslationSettings;
+  onEmergencyContactsChange: (contacts: EmergencyContact[]) => void;
+  onNotificationPrefsChange: (prefs: NotificationPreference[]) => void;
+  onCalendarSyncChange: (enabled: boolean) => void;
+  onAssistantRemindersChange: (enabled: boolean) => void;
+  onTranslationSettingsChange: (settings: TranslationSettings) => void;
+  token: string;
+}) {
+  const { t } = useTranslation();
+  const [activeSection, setActiveSection] = useState<'emergency' | 'notifications' | 'calendar' | 'translation'>('emergency');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newRelation, setNewRelation] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newPriority, setNewPriority] = useState<number>(2);
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRelation, setEditRelation] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPriority, setEditPriority] = useState<number>(2);
+  const [editSaving, setEditSaving] = useState(false);
+
+  const [localPrefs, setLocalPrefs] = useState<NotificationPreference[]>(notificationPrefs);
+  useEffect(() => setLocalPrefs(notificationPrefs), [notificationPrefs]);
+
+  const languageNames: Record<string, string> = {
+    en: 'English',
+    hi: 'हिंदी (Hindi)',
+    te: 'తెలుగు (Telugu)',
+    ta: 'தமிழ் (Tamil)',
+    kn: 'ಕನ್ನಡ (Kannada)',
+    ml: 'മലയാളം (Malayalam)',
+    gu: 'ગુજરાતી (Gujarati)',
+    bn: 'বাংলা (Bengali)',
+    mr: 'मराठी (Marathi)',
+    pa: 'ਪੰਜਾਬੀ (Punjabi)'
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Settings Navigation */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'emergency', label: t('Emergency Contacts'), icon: Shield },
+            { id: 'notifications', label: t('Notifications'), icon: Bell },
+            { id: 'calendar', label: t('Calendar Integration'), icon: CalendarDays },
+            { id: 'translation', label: t('Translation Settings'), icon: Zap }
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveSection(id as any)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                activeSection === id ? 'bg-emerald-100 text-emerald-700' : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Emergency Contacts Section */}
+      {activeSection === 'emergency' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Shield className="w-6 h-6 text-red-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Emergency Contacts</h2>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-neutral-600">Manage who the school should contact in an emergency.</p>
+              <button onClick={() => setShowAddForm(s => !s)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm">{showAddForm ? 'Close' : 'Add contact'}</button>
+            </div>
+            {showAddForm && (
+              <div className="p-4 border border-neutral-200 rounded-xl space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name" className="col-span-1 p-2 border rounded-md" />
+                  <input value={newRelation} onChange={e => setNewRelation(e.target.value)} placeholder="Relation" className="col-span-1 p-2 border rounded-md" />
+                  <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="Phone" className="col-span-1 p-2 border rounded-md" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-600">Priority</label>
+                  <select value={String(newPriority)} onChange={e => setNewPriority(Number(e.target.value))} className="p-2 border rounded-md text-sm">
+                    <option value="1">1 — Primary</option>
+                    <option value="2">2 — Secondary</option>
+                    <option value="3">3 — Other</option>
+                  </select>
+                  <div className="flex-1" />
+                  <button onClick={async () => {
+                    if (!newName.trim() || !newPhone.trim()) return;
+                    setCreating(true);
+                    try {
+                      const payload = { name: newName.trim(), relationship: newRelation.trim() || null, phone: newPhone.trim(), phone_type: null, is_primary: newPriority === 1 };
+                      const created = await apiPost<any>('/api/v1/parent/emergency-contacts', payload, token);
+                      const mapped = { id: created.id, name: created.name, relation: created.relationship || created.relation || '', phone: created.phone, priority: created.is_primary ? 1 : 2, available: true };
+                      onEmergencyContactsChange([...emergencyContacts, mapped]);
+                      setNewName(''); setNewRelation(''); setNewPhone(''); setNewPriority(2); setShowAddForm(false);
+                    } catch (err) { console.error(err); alert('Failed to add contact'); }
+                    finally { setCreating(false); }
+                  }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm" disabled={creating}>{creating ? 'Adding…' : 'Add'}</button>
+                </div>
+              </div>
+            )}
+
+            {emergencyContacts.map(contact => (
+              <div key={contact.id} className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+                {editingId === contact.id ? (
+                  <div className="flex-1">
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <input value={editName} onChange={e => setEditName(e.target.value)} className="p-2 border rounded-md" />
+                      <input value={editRelation} onChange={e => setEditRelation(e.target.value)} className="p-2 border rounded-md" />
+                      <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="p-2 border rounded-md" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select value={String(editPriority)} onChange={e => setEditPriority(Number(e.target.value))} className="p-2 border rounded-md text-sm">
+                        <option value="1">1 — Primary</option>
+                        <option value="2">2 — Secondary</option>
+                        <option value="3">3 — Other</option>
+                      </select>
+                      <div className="flex-1" />
+                      <button onClick={async () => {
+                        setEditSaving(true);
+                        try {
+                          const payload = { name: editName.trim(), relationship: editRelation.trim() || null, phone: editPhone.trim(), phone_type: null, is_primary: editPriority === 1 };
+                          const updated = await apiPut<any>(`/api/v1/parent/emergency-contacts/${contact.id}`, payload, token);
+                          const mapped = { id: updated.id, name: updated.name, relation: updated.relationship || updated.relation || '', phone: updated.phone, priority: updated.is_primary ? 1 : 2, available: true };
+                          onEmergencyContactsChange(emergencyContacts.map(c => c.id === contact.id ? mapped : c));
+                          setEditingId(null);
+                        } catch (err) { console.error(err); alert('Failed to update contact'); }
+                        finally { setEditSaving(false); }
+                      }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm mr-2" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
+                      <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-neutral-100 rounded-xl text-sm">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-3 h-3 rounded-full ${contact.available ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <div>
+                        <div className="font-semibold text-neutral-800">{contact.name}</div>
+                        <div className="text-sm text-neutral-600">{contact.relation} • {contact.phone}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        contact.priority === 1 ? 'bg-red-100 text-red-700' :
+                        contact.priority === 2 ? 'bg-orange-100 text-orange-700' :
+                        'bg-neutral-100 text-neutral-700'
+                      }`}>
+                        Priority {contact.priority}
+                      </span>
+                      <button onClick={() => {
+                        setEditingId(contact.id); setEditName(contact.name); setEditRelation(contact.relation); setEditPhone(contact.phone); setEditPriority(contact.priority || 2);
+                      }} className="ml-2 text-sm text-emerald-700 px-3 py-1 rounded-md border border-emerald-100">Edit</button>
+                      <button onClick={async () => {
+                        if (!confirm('Delete this contact?')) return;
+                        try {
+                          await apiDelete(`/api/v1/parent/emergency-contacts/${contact.id}`, token);
+                          onEmergencyContactsChange(emergencyContacts.filter(c => c.id !== contact.id));
+                        } catch (err) { console.error(err); alert('Failed to delete'); }
+                      }} className="ml-2 text-sm text-red-600 px-3 py-1 rounded-md border border-red-100">Delete</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Section Editor */}
+      {activeSection === 'notifications' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Bell className="w-6 h-6 text-blue-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Notification Preferences</h2>
+          </div>
+
+          <div className="space-y-4">
+            {localPrefs.map((pref, idx) => (
+              <div key={pref.type} className="p-4 border border-neutral-200 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="font-semibold text-neutral-800 capitalize">{pref.type}</div>
+                    <div className="text-sm text-neutral-600">Channels: {pref.channels.join(', ')}</div>
+                  </div>
+                  <label className="inline-flex items-center">
+                    <input type="checkbox" checked={pref.enabled} onChange={e => { const updated = [...localPrefs]; updated[idx] = { ...pref, enabled: e.target.checked }; setLocalPrefs(updated); }} />
+                    <span className="ml-2 text-sm">Enabled</span>
+                  </label>
+                </div>
+                <div className="flex items-center gap-3">
+                  {(['push','sms','email'] as const).map(ch => (
+                    <label key={ch} className="inline-flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={pref.channels.includes(ch)} onChange={e => {
+                        const updated = [...localPrefs];
+                        const channels = new Set(pref.channels);
+                        if (e.target.checked) channels.add(ch); else channels.delete(ch);
+                        updated[idx] = { ...pref, channels: Array.from(channels) };
+                        setLocalPrefs(updated);
+                      }} />
+                      <span className="capitalize">{ch}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex justify-end">
+              <button onClick={async () => {
+                try {
+                  await apiPut('/api/v1/parent/settings', { notification_prefs: localPrefs }, token);
+                  onNotificationPrefsChange(localPrefs);
+                  alert('Notification preferences saved');
+                } catch (e) { console.error(e); alert('Failed to save preferences'); }
+              }} className="px-4 py-2 bg-emerald-600 text-white rounded-xl">Save Preferences</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Section */}
+      {activeSection === 'notifications' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Bell className="w-6 h-6 text-blue-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Notification Preferences</h2>
+          </div>
+
+          <div className="space-y-4">
+            {notificationPrefs.map(pref => (
+              <div key={pref.type} className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+                <div className="flex-1">
+                  <div className="font-semibold text-neutral-800 capitalize">{pref.type}</div>
+                  <div className="text-sm text-neutral-600">
+                    Channels: {pref.channels.join(', ')}
+                    {pref.quietHours && ` • Quiet: ${pref.quietHours.start}-${pref.quietHours.end}`}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    pref.enabled ? 'bg-green-100 text-green-700' : 'bg-neutral-100 text-neutral-600'
+                  }`}>
+                    {pref.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Section */}
+      {activeSection === 'calendar' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <CalendarDays className="w-6 h-6 text-purple-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Calendar Integration</h2>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+              <div>
+                <div className="font-semibold text-neutral-800">Google Calendar Sync</div>
+                <div className="text-sm text-neutral-600">Automatically sync homework and events</div>
+              </div>
+              <button
+                onClick={() => onCalendarSyncChange(!calendarSyncEnabled)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  calendarSyncEnabled ? 'bg-emerald-600' : 'bg-neutral-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  calendarSyncEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+              <div>
+                <div className="font-semibold text-neutral-800">AI Assistant Reminders</div>
+                <div className="text-sm text-neutral-600">Smart reminders for important dates</div>
+              </div>
+              <button
+                onClick={() => onAssistantRemindersChange(!assistantReminders)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  assistantReminders ? 'bg-emerald-600' : 'bg-neutral-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  assistantReminders ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Translation Section */}
+      {activeSection === 'translation' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Zap className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Translation Settings</h2>
+          </div>
+
+          <div className="space-y-6">
+            <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+              <div>
+                <div className="font-semibold text-neutral-800">Enable Translation</div>
+                <div className="text-sm text-neutral-600">Translate app content to your preferred language</div>
+              </div>
+              <button
+                onClick={() => onTranslationSettingsChange({ ...translationSettings, enabled: !translationSettings.enabled })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  translationSettings.enabled ? 'bg-emerald-600' : 'bg-neutral-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  translationSettings.enabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            {translationSettings.enabled && (
+              <>
+                <div className="p-4 border border-neutral-200 rounded-xl">
+                  <label className="block text-sm font-semibold text-neutral-800 mb-2">Target Language</label>
+                  <select
+                    value={translationSettings.targetLanguage}
+                    onChange={(e) => onTranslationSettingsChange({ ...translationSettings, targetLanguage: e.target.value })}
+                    className="w-full p-3 border border-neutral-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  >
+                    {translationSettings.supportedLanguages.map(lang => (
+                      <option key={lang} value={lang}>{languageNames[lang]}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+                  <div>
+                    <div className="font-semibold text-neutral-800">Auto Translation</div>
+                    <div className="text-sm text-neutral-600">Automatically translate new content</div>
+                  </div>
+                  <button
+                    onClick={() => onTranslationSettingsChange({ ...translationSettings, autoTranslate: !translationSettings.autoTranslate })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      translationSettings.autoTranslate ? 'bg-emerald-600' : 'bg-neutral-200'
+                    }`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      translationSettings.autoTranslate ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+    </TranslationContext.Provider>
+  );

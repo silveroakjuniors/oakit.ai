@@ -96,10 +96,10 @@ export default function TeacherActivityPage() {
                         <p className="text-sm font-semibold text-neutral-800">{t.name}</p>
                         <span className="text-xs text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full capitalize">{t.role_name}</span>
                         {t.amber_warning && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⚠ {t.days_since_last}d no plan</span>}
-                        {t.current_streak >= 5 && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">🔥 {t.current_streak} streak</span>}
+                        {t.current_streak >= 5 && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">🔥 {t.current_streak} consistency</span>}
                       </div>
                       <p className="text-xs text-neutral-500 mt-1">
-                        Last plan: {t.last_completed_date ?? 'Never'} · Best streak: {t.best_streak} days
+                        Last plan: {t.last_completed_date ?? 'Never'} · Best consistency: {t.best_streak} days
                       </p>
                     </div>
                     <div className="text-right shrink-0">

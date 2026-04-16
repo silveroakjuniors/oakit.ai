@@ -461,7 +461,11 @@ function Step1({
 function Step2({ session, onRefresh }: { session: Session; onRefresh: () => void }) {
   const token = getToken() || '';
   const p = session.parameters || {};
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    school_start: string; school_end: string; lunch_start: string; lunch_end: string;
+    snack_start: string; snack_end: string; sports_minutes_per_week: number;
+    activities: { name: string; daily_minutes: number }[];
+  }>({
     school_start: p.school_start || '08:00',
     school_end: p.school_end || '14:00',
     lunch_start: p.lunch_start || '12:00',
@@ -469,7 +473,7 @@ function Step2({ session, onRefresh }: { session: Session; onRefresh: () => void
     snack_start: p.snack_start || '',
     snack_end: p.snack_end || '',
     sports_minutes_per_week: p.sports_minutes_per_week || 60,
-    activities: p.activities || [] as { name: string; daily_minutes: number }[],
+    activities: (p.activities as { name: string; daily_minutes: number }[]) || [],
   });
   const [saving, setSaving] = useState(false);
   const [availableMinutes, setAvailableMinutes] = useState<number | null>(null);
@@ -634,10 +638,13 @@ function Step3({ session, onRefresh }: { session: Session; onRefresh: () => void
 function Step4({ session, onRefresh }: { session: Session; onRefresh: () => void }) {
   const token = getToken() || '';
   const tc = session.test_config || {};
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    mode: string; every_n_weeks: number; specific_dates: string;
+    duration_periods: number; revision_buffer: boolean;
+  }>({
     mode: tc.mode || 'end-of-chapter',
     every_n_weeks: tc.every_n_weeks || 4,
-    specific_dates: (tc.specific_dates || []).join('\n'),
+    specific_dates: ((tc.specific_dates as string[]) || []).join('\n'),
     duration_periods: tc.duration_periods || 2,
     revision_buffer: tc.revision_buffer !== false,
   });

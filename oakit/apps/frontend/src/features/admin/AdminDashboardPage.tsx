@@ -379,7 +379,7 @@ export default function AdminDashboardPage() {
                             <div className="px-4 py-3 space-y-2">
                               {[
                                 { label: 'Plan Completion', value: teacherDrillDown.compliance_pct, weight: 30, detail: `${teacherDrillDown.compliance_pct}% of working days logged` },
-                                { label: 'Teaching Streak', value: Math.min(Math.round((teacherDrillDown.current_streak / 30) * 100), 100), weight: 10, detail: `${teacherDrillDown.current_streak} day streak` },
+                                { label: 'Teaching Consistency', value: Math.min(Math.round((teacherDrillDown.current_streak / 30) * 100), 100), weight: 10, detail: `${teacherDrillDown.current_streak} day consistency` },
                                 { label: 'Oakie AI Engagement', value: Math.min(Math.round((teacherDrillDown.ai_queries_7d / 20) * 100), 100), weight: 10, detail: `${teacherDrillDown.ai_queries_7d} queries this week` },
                               ].map((f, i) => (
                                 <div key={i} className="flex items-center gap-3">
@@ -686,7 +686,7 @@ export default function AdminDashboardPage() {
                                 <span title="Homework sent in last 30 days">📚 {t.homework_sent_30d} homework</span>
                                 <span title="Notes sent in last 30 days">📎 {t.notes_sent_30d} notes</span>
                                 <span title="Messages sent in last 30 days">💬 {t.messages_sent_30d} messages</span>
-                                <span title="Current streak">🔥 {t.streak}d streak</span>
+                                <span title="Current consistency">🏆 {t.streak}d consistency</span>
                               </div>
                               {(() => {
                                 const pct = Math.min(Math.round((t.days_completed_30d / 22) * 100), 100);

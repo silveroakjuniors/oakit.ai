@@ -5,7 +5,20 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:e2e": "node ../../node_modules/playwright/cli.js test tests/e2e --reporter=list",
+    "test:e2e:admin": "node ../../node_modules/playwright/cli.js test tests/e2e/admin.spec.ts --reporter=list",
+    "test:e2e:principal": "node ../../node_modules/playwright/cli.js test tests/e2e/principal.spec.ts --reporter=list",
+    "test:e2e:teacher": "node ../../node_modules/playwright/cli.js test tests/e2e/teacher.spec.ts --reporter=list",
+    "test:e2e:parent": "node ../../node_modules/playwright/cli.js test tests/e2e/parent.spec.ts --reporter=list",
+    "test:functional": "node ../../node_modules/playwright/cli.js test tests/functional --reporter=list",
+    "test:functional:admin": "node ../../node_modules/playwright/cli.js test tests/functional/admin.functional.spec.ts --reporter=list",
+    "test:functional:principal": "node ../../node_modules/playwright/cli.js test tests/functional/principal.functional.spec.ts --reporter=list",
+    "test:functional:teacher": "node ../../node_modules/playwright/cli.js test tests/functional/teacher.functional.spec.ts --reporter=list",
+    "test:functional:parent": "node ../../node_modules/playwright/cli.js test tests/functional/parent.functional.spec.ts --reporter=list",
+    "test:all": "node ../../node_modules/playwright/cli.js test tests --reporter=list",
+    "test:report:generate": "node tests/generate-report.js",
+    "test:report": "node ../../node_modules/playwright/cli.js show-report playwright-report --host localhost --port 9323"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",
@@ -18,6 +31,7 @@
     "swr": "^2.2.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/js-cookie": "^3",
     "@types/node": "^20",
     "@types/react": "^18",

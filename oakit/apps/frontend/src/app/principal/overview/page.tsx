@@ -22,12 +22,13 @@ interface OverviewData {
   upcoming_holidays: Holiday[];
 }
 interface Section { section_id: string; section_label: string; class_name: string; }
+interface CoveredTopic { subject: string; activities: string[]; is_special: boolean; }
 interface ReportData {
   school_name: string; class_name: string; section_label: string;
   class_teacher: string; supporting_teachers: string;
   from_date: string; to_date: string;
   completions: { date: string; teacher: string; topics_covered: number }[];
-  covered_topics: { label: string; document: string }[];
+  covered_topics: CoveredTopic[];
   special_days: SpecialDay[]; holidays: Holiday[];
   attendance: { days_marked: number; total_present: number; total_absent: number };
   total_days_completed: number; total_topics_covered: number;
@@ -135,7 +136,9 @@ export default function PrincipalOverviewPage() {
       ...reportData.completions.map(c => `  ${c.date}  |  ${c.teacher}  |  ${c.topics_covered} topics`),
       ``,
       `TOPICS COVERED`,
-      ...reportData.covered_topics.map((t, i) => `  ${i + 1}. ${t.label}`),
+      ...reportData.covered_topics.map(t =>
+        `  ${t.is_special ? '⭐' : '✓'} ${t.subject}${t.activities.length ? ': ' + t.activities.join(', ') : ''}`
+      ),
       ``,
       `SPECIAL DAYS IN PERIOD`,
       ...(reportData.special_days.length > 0
@@ -344,7 +347,7 @@ export default function PrincipalOverviewPage() {
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { label: 'Days logged', value: reportData.total_days_completed },
-                    { label: 'Topics covered', value: reportData.total_topics_covered },
+                    { label: 'Subjects covered', value: reportData.covered_topics.length },
                     { label: 'Att. days', value: reportData.attendance?.days_marked ?? 0 },
                   ].map((s, i) => (
                     <div key={i} className="bg-neutral-50 rounded-xl p-2.5 text-center">
@@ -360,16 +363,33 @@ export default function PrincipalOverviewPage() {
                   {reportData.supporting_teachers && <p>👥 Supporting: <span className="font-medium text-neutral-700">{reportData.supporting_teachers}</span></p>}
                 </div>
 
-                {/* Topics covered */}
+                {/* Topics covered — grouped by subject */}
                 {reportData.covered_topics.length > 0 && (
-                  <details className="group">
-                    <summary className="text-xs font-semibold text-neutral-700 cursor-pointer list-none flex items-center gap-1">
+                  <details className="group" open>
+                    <summary className="text-xs font-semibold text-neutral-700 cursor-pointer list-none flex items-center gap-1 mb-2">
                       <span className="transition-transform group-open:rotate-90">›</span>
-                      {reportData.covered_topics.length} topics covered
+                      {reportData.covered_topics.length} subjects covered
                     </summary>
-                    <div className="mt-2 space-y-1 pl-3">
-                      {reportData.covered_topics.map((t, i) => (
-                        <p key={i} className="text-xs text-neutral-600">✓ {t.label}</p>
+                    <div className="space-y-2 pl-2">
+                      {/* Special activities highlighted first */}
+                      {reportData.covered_topics.filter(t => t.is_special).map((t, i) => (
+                        <div key={i} className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                          <p className="text-xs font-bold text-amber-700">⭐ {t.subject}</p>
+                          {t.activities.length > 0 && (
+                            <p className="text-[11px] text-amber-600 mt-0.5">{t.activities.join(' · ')}</p>
+                          )}
+                        </div>
+                      ))}
+                      {/* Regular subjects */}
+                      {reportData.covered_topics.filter(t => !t.is_special).map((t, i) => (
+                        <div key={i} className="bg-neutral-50 rounded-xl px-3 py-2">
+                          <p className="text-xs font-semibold text-neutral-700">✓ {t.subject}</p>
+                          {t.activities.length > 0 && (
+                            <p className="text-[11px] text-neutral-500 mt-0.5 leading-relaxed">
+                              {t.activities.join(' · ')}
+                            </p>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </details>

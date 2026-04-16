@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { StudentProfile } from '../types';
-import { studentAuthService } from '../api';
+import { StudentAuthService, studentAuthService } from '../api';
 
 export interface UseStudentAuthReturn {
   isAuthenticated: boolean;
@@ -22,7 +22,7 @@ export function useStudentAuth(): UseStudentAuthReturn {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const token = studentAuthService.getToken();
+    const token = StudentAuthService.getToken();
 
     if (!token) {
       router.push('/student/login');
@@ -44,7 +44,7 @@ export function useStudentAuth(): UseStudentAuthReturn {
           message.includes('Missing') ||
           message.includes('disabled')
         ) {
-          studentAuthService.clearToken();
+          StudentAuthService.clearToken();
           router.push('/student/login');
         }
       })
@@ -55,7 +55,7 @@ export function useStudentAuth(): UseStudentAuthReturn {
   }, [router]);
 
   const logout = () => {
-    studentAuthService.clearToken();
+    StudentAuthService.clearToken();
     router.push('/student/login');
   };
 
