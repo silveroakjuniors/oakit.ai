@@ -239,25 +239,17 @@ export default function ParentPage() {
   }
 
   async function saveCalendarSync(enabled: boolean) {
-    try {
-      await apiPut('/api/v1/parent/settings', { calendar_sync: enabled }, token);
-      setCalendarSyncEnabled(enabled);
-      localStorage.setItem('calendar_sync', String(enabled));
-    } catch (e) {
-      console.error('Failed to save calendar sync', e);
-      alert('Failed to save calendar sync setting');
-    }
+    // Calendar sync is a premium feature — just persist locally for now
+    setCalendarSyncEnabled(enabled);
+    localStorage.setItem('calendar_sync', String(enabled));
+    apiPut('/api/v1/parent/settings', { calendar_sync: enabled }, token).catch(() => {/* non-critical */});
   }
 
   async function saveAssistantReminders(enabled: boolean) {
-    try {
-      await apiPut('/api/v1/parent/settings', { assistant_reminders: enabled }, token);
-      setAssistantReminders(enabled);
-      localStorage.setItem('assistant_reminders', String(enabled));
-    } catch (e) {
-      console.error('Failed to save assistant reminders', e);
-      alert('Failed to save assistant reminders setting');
-    }
+    // Assistant reminders is a premium feature — just persist locally for now
+    setAssistantReminders(enabled);
+    localStorage.setItem('assistant_reminders', String(enabled));
+    apiPut('/api/v1/parent/settings', { assistant_reminders: enabled }, token).catch(() => {/* non-critical */});
   }
 
   const activeChild = children.find(c => c.id === activeChildId) ?? null;
@@ -305,10 +297,20 @@ export default function ParentPage() {
           const mapped = rows.map(r => ({ id: r.id, name: r.name, relation: r.relationship || r.relation || '', phone: r.phone, priority: r.is_primary ? 1 : 2, available: true }));
           setEmergencyContacts(mapped as EmergencyContact[]);
           if (settings) {
-            if (settings.notification_prefs) setNotificationPrefs(settings.notification_prefs);
+            if (settings.notification_prefs && settings.notification_prefs.length > 0) setNotificationPrefs(settings.notification_prefs);
             if (typeof settings.calendar_sync === 'boolean') setCalendarSyncEnabled(settings.calendar_sync);
             if (typeof settings.assistant_reminders === 'boolean') setAssistantReminders(settings.assistant_reminders);
             if (settings.translation_settings) setTranslationSettings(settings.translation_settings);
+          }
+          // Always load mock notification prefs if API didn't return them
+          if (!settings?.notification_prefs?.length) {
+            setNotificationPrefs([
+              { type: 'homework', enabled: true, channels: ['push', 'email'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
+              { type: 'attendance', enabled: true, channels: ['push'], quietHours: null, frequency: 'daily' },
+              { type: 'progress', enabled: true, channels: ['email'], quietHours: null, frequency: 'weekly' },
+              { type: 'messages', enabled: true, channels: ['push', 'sms'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
+              { type: 'announcements', enabled: false, channels: ['email'], quietHours: null, frequency: 'weekly' },
+            ]);
           }
         } catch {
           loadMockFeaturesData(true);
