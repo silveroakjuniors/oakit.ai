@@ -1,3 +1,4 @@
+// @ts-ignore: supabase client may be unavailable in some dev environments
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';

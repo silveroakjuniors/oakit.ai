@@ -960,6 +960,56 @@ async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
     }
 
 
+# --- Birthday wish generator ---
+
+class BirthdayWishRequest(BaseModel):
+    students: list  # [{name, age, class_name, section_label}]
+    school_name: str = ""
+
+@app.post("/internal/birthday-wish")
+async def birthday_wish(req: BirthdayWishRequest):
+    """Generate warm, age-appropriate birthday wishes for students turning X today."""
+    from llm_client import call_llm
+
+    if not req.students:
+        return {"wishes": {}}
+
+    # Build a prompt describing each child
+    lines = []
+    for s in req.students:
+        age = s.get("age")
+        name = s.get("name", "Student")
+        cls = s.get("class_name", "")
+        age_str = f", turning {age} today" if age else ""
+        lines.append(f"- {name} ({cls}{age_str})")
+
+    students_text = "\n".join(lines)
+    today_str = datetime.now().strftime("%d %B %Y")
+
+    prompt = f"""Today is {today_str}. The following students are celebrating their birthday today at school:
+
+{students_text}
+
+Write a single warm, joyful birthday announcement message (3-4 sentences) that:
+- Celebrates all these children together
+- Is age-appropriate and cheerful for a school setting
+- Mentions the school community wishing them well
+- Ends with an encouraging note about their learning journey
+- Uses simple, warm language suitable for parents to read
+
+Return ONLY the message text, no extra formatting."""
+
+    try:
+        result = await call_llm(prompt, max_tokens=200)
+        message = result.strip() if isinstance(result, str) else result.get("text", "").strip()
+    except Exception:
+        # Fallback message
+        names = ", ".join(s.get("name", "Student") for s in req.students)
+        message = f"🎂 Wishing a very Happy Birthday to {names}! May this special day be filled with joy, laughter, and wonderful memories. The entire school family celebrates with you today. Keep shining bright in your learning journey! 🌟"
+
+    return {"message": message, "student_count": len(req.students)}
+
+
 class HomeworkFormatRequest(BaseModel):
     raw_text: str
     school_id: str = ""

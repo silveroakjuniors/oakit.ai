@@ -54,6 +54,9 @@ import parentProgressRouter from './routes/parent/progress';
 import parentMessagesRouter from './routes/parent/messages';
 import parentObservationsRouter from './routes/parent/observations';
 import parentHomeworkRouter from './routes/parent/homework';
+import parentEmergencyContactsRouter from './routes/parent/emergencyContacts';
+import parentSettingsRouter from './routes/parent/settings';
+import parentCalendarRouter from './routes/parent/calendar';
 import parentStudentAnalyticsRouter from './routes/parent/studentAnalytics';
 import adminStudentPortalRouter from './routes/admin/studentPortal';
 import adminQuizzesRouter from './routes/admin/quizzes';
@@ -237,7 +240,10 @@ app.use('/api/v1/parent/messages', parentMessagesRouter);
 app.use('/api/v1/parent/announcements', parentAnnouncementsRouter);
 app.use('/api/v1/parent/observations', parentObservationsRouter);
 app.use('/api/v1/parent/homework', parentHomeworkRouter);
+app.use('/api/v1/parent/emergency-contacts', parentEmergencyContactsRouter);
+app.use('/api/v1/parent/settings', parentSettingsRouter);
 app.use('/api/v1/parent/student-analytics', parentStudentAnalyticsRouter);
+app.use('/api/v1/parent/calendar', parentCalendarRouter);
 
 // Admin — Student Portal
 app.use('/api/v1/admin/student-portal', adminStudentPortalRouter);
@@ -268,6 +274,47 @@ app.listen(PORT, () => {
       console.error('[cleanup scheduler]', e);
     }
   }, 60 * 60 * 1000); // every hour
+
+  // Scheduled token refresh: refresh calendar tokens that are expired or expiring soon
+  setInterval(async () => {
+    try {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      if (!clientId || !clientSecret) return; // not configured
+
+      const rows = await pool.query(
+        `SELECT parent_id, provider, refresh_token FROM parent_calendar_tokens
+         WHERE refresh_token IS NOT NULL
+         AND (expires_at IS NULL OR expires_at < now() + interval '10 minutes')`
+      );
+
+      for (const r of rows.rows) {
+        try {
+          const params = new URLSearchParams();
+          params.append('client_id', clientId);
+          params.append('client_secret', clientSecret);
+          params.append('refresh_token', r.refresh_token);
+          params.append('grant_type', 'refresh_token');
+
+          const resp = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', body: params });
+          if (!resp.ok) {
+            console.error('[token-refresh] failed for', r.parent_id, await resp.text());
+            continue;
+          }
+          const data = await resp.json();
+          const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000) : null;
+          await pool.query(
+            `UPDATE parent_calendar_tokens SET access_token = $1, expires_at = $2, status = 'authorized', updated_at = now() WHERE parent_id = $3 AND provider = $4`,
+            [data.access_token || null, expiresAt, r.parent_id, r.provider]
+          );
+        } catch (e) {
+          console.error('[token-refresh] error for', r.parent_id, e);
+        }
+      }
+    } catch (e) {
+      console.error('[token-refresh scheduler]', e);
+    }
+  }, 15 * 60 * 1000); // every 15 minutes
 });
 
 export default app;

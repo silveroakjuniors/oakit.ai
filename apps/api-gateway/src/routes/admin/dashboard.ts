@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
+import axios from 'axios';
 import { pool } from '../../lib/db';
 import { redis } from '../../lib/redis';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { getToday } from '../../lib/today';
+
+const AI = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin', 'principal'));
@@ -361,6 +364,135 @@ router.get('/engagement', async (req: Request, res: Response) => {
     return res.json(data);
   } catch (err) {
     console.error('[engagement]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/dashboard/birthdays?days=7
+router.get('/birthdays', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const days = Math.min(parseInt(req.query.days as string || '7'), 30);
+    const colCheck = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name='students' AND column_name='date_of_birth' LIMIT 1`
+    );
+    if (colCheck.rows.length === 0) return res.json([]);
+
+    const result = await pool.query(
+      `SELECT s.id as student_id, s.name, s.date_of_birth::text,
+              c.name as class_name, sec.label as section_label,
+              EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.date_of_birth))::int as current_age,
+              EXTRACT(YEAR FROM AGE(CURRENT_DATE + $2, s.date_of_birth))::int as turning_age,
+              EXTRACT(MONTH FROM s.date_of_birth)::int as birth_month,
+              EXTRACT(DAY FROM s.date_of_birth)::int as birth_day,
+              (DATE_TRUNC('year', CURRENT_DATE) +
+                (s.date_of_birth - DATE_TRUNC('year', s.date_of_birth)) +
+                CASE WHEN (s.date_of_birth - DATE_TRUNC('year', s.date_of_birth)) <
+                          (CURRENT_DATE - DATE_TRUNC('year', CURRENT_DATE))
+                     THEN INTERVAL '1 year' ELSE INTERVAL '0' END
+              )::date - CURRENT_DATE AS days_until
+       FROM students s
+       JOIN classes c ON c.id = s.class_id
+       JOIN sections sec ON sec.id = s.section_id
+       WHERE s.school_id = $1 AND s.is_active = true AND s.date_of_birth IS NOT NULL
+         AND (DATE_TRUNC('year', CURRENT_DATE) +
+              (s.date_of_birth - DATE_TRUNC('year', s.date_of_birth)) +
+              CASE WHEN (s.date_of_birth - DATE_TRUNC('year', s.date_of_birth)) <
+                        (CURRENT_DATE - DATE_TRUNC('year', CURRENT_DATE))
+                   THEN INTERVAL '1 year' ELSE INTERVAL '0' END
+             )::date BETWEEN CURRENT_DATE AND CURRENT_DATE + $2
+       ORDER BY days_until, s.name`,
+      [school_id, days]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[admin/birthdays]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/admin/dashboard/birthday-wish — AI-generate a wish message
+router.post('/birthday-wish', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { students } = req.body; // [{name, age, class_name, section_label}]
+    if (!Array.isArray(students) || students.length === 0) {
+      return res.status(400).json({ error: 'students array required' });
+    }
+    const schoolRow = await pool.query(`SELECT name FROM schools WHERE id = $1`, [school_id]);
+    const school_name = schoolRow.rows[0]?.name || '';
+    const aiResp = await axios.post(`${AI()}/internal/birthday-wish`, { students, school_name }, { timeout: 10000 });
+    return res.json(aiResp.data);
+  } catch (err: any) {
+    // Fallback if AI is down
+    const names = (req.body.students || []).map((s: any) => s.name).join(', ');
+    return res.json({ message: `🎂 Wishing a very Happy Birthday to ${names}! May this special day be filled with joy and wonderful memories. The entire school family celebrates with you today. Keep shining bright! 🌟` });
+  }
+});
+
+// POST /api/v1/admin/dashboard/birthday-send — send wish to parents
+router.post('/birthday-send', async (req: Request, res: Response) => {
+  try {
+    const { school_id, user_id } = req.user!;
+    const { student_ids, message } = req.body;
+    if (!Array.isArray(student_ids) || !message?.trim()) {
+      return res.status(400).json({ error: 'student_ids and message required' });
+    }
+    const results = [];
+    for (const student_id of student_ids) {
+      const studentRow = await pool.query(
+        `SELECT s.name, s.class_id FROM students s WHERE s.id = $1 AND s.school_id = $2`,
+        [student_id, school_id]
+      );
+      if (studentRow.rows.length === 0) continue;
+      const student = studentRow.rows[0];
+      await pool.query(
+        `INSERT INTO announcements (school_id, author_id, title, body, target_audience, target_class_id, expires_at)
+         VALUES ($1, $2, $3, $4, 'class', $5, now() + INTERVAL '3 days')`,
+        [school_id, user_id, `🎂 Happy Birthday ${student.name}!`, message.trim(), student.class_id]
+      );
+      results.push(student.name);
+    }
+    return res.json({ sent_to: results, count: results.length });
+  } catch (err) {
+    console.error('[birthday-send]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/dashboard/today-sections
+// Per-section breakdown: students, attendance submitted/not, plans done/not
+router.get('/today-sections', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const today = await getToday(school_id);
+
+    const result = await pool.query(
+      `SELECT
+         s.id AS section_id,
+         s.label AS section_label,
+         c.name AS class_name,
+         u.name AS teacher_name,
+         COUNT(DISTINCT st.id)::int AS total_students,
+         COUNT(DISTINCT ar.student_id) FILTER (WHERE ar.status = 'present')::int AS present,
+         COUNT(DISTINCT ar.student_id) FILTER (WHERE ar.status = 'absent')::int AS absent,
+         CASE WHEN COUNT(ar.id) > 0 THEN true ELSE false END AS attendance_submitted,
+         CASE WHEN COUNT(dc.id) > 0 THEN true ELSE false END AS plan_completed
+       FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       LEFT JOIN users u ON u.id = s.class_teacher_id
+       LEFT JOIN students st ON st.section_id = s.id AND st.is_active = true
+       LEFT JOIN attendance_records ar ON ar.section_id = s.id AND ar.attend_date = $2
+       LEFT JOIN daily_completions dc ON dc.section_id = s.id AND dc.completion_date = $2 AND dc.school_id = $1
+       WHERE s.school_id = $1
+       GROUP BY s.id, s.label, c.name, u.name
+       ORDER BY c.name, s.label`,
+      [school_id, today]
+    );
+
+    return res.json({ sections: result.rows, date: today });
+  } catch (err) {
+    console.error('[today-sections]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

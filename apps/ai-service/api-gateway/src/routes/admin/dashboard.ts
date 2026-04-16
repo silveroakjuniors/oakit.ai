@@ -365,4 +365,40 @@ router.get('/engagement', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/admin/dashboard/today-sections
+router.get('/today-sections', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const today = await getToday(school_id);
+
+    const result = await pool.query(
+      `SELECT
+         s.id AS section_id,
+         s.label AS section_label,
+         c.name AS class_name,
+         u.name AS teacher_name,
+         COUNT(DISTINCT st.id)::int AS total_students,
+         COUNT(DISTINCT ar.student_id) FILTER (WHERE ar.status = 'present')::int AS present,
+         COUNT(DISTINCT ar.student_id) FILTER (WHERE ar.status = 'absent')::int AS absent,
+         CASE WHEN COUNT(ar.id) > 0 THEN true ELSE false END AS attendance_submitted,
+         CASE WHEN COUNT(dc.id) > 0 THEN true ELSE false END AS plan_completed
+       FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       LEFT JOIN users u ON u.id = s.class_teacher_id
+       LEFT JOIN students st ON st.section_id = s.id AND st.is_active = true
+       LEFT JOIN attendance_records ar ON ar.section_id = s.id AND ar.attend_date = $2
+       LEFT JOIN daily_completions dc ON dc.section_id = s.id AND dc.completion_date = $2 AND dc.school_id = $1
+       WHERE s.school_id = $1
+       GROUP BY s.id, s.label, c.name, u.name
+       ORDER BY c.name, s.label`,
+      [school_id, today]
+    );
+
+    return res.json({ sections: result.rows, date: today });
+  } catch (err) {
+    console.error('[today-sections]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

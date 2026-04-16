@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card } from '@/components/ui';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import ProgressBar from '@/components/ui/ProgressBar';
 import Badge from '@/components/ui/Badge';
@@ -21,7 +21,7 @@ interface AttendanceHistory { student_id: string; student_name: string; records:
 interface Notification { id: string; section_name: string; completion_date: string; chunks_covered: number; is_read: boolean; created_at: string; }
 interface ProgressItem { student_id: string; student_name: string; coverage_pct: number; has_curriculum: boolean; }
 
-type Tab = 'feed' | 'attendance' | 'notifications' | 'progress' | 'absences';
+type Tab = 'feed' | 'attendance' | 'notifications' | 'progress' | 'absences' | 'settings';
 
 export default function ParentPage() {
   const router = useRouter();
@@ -39,6 +39,8 @@ export default function ParentPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [progress, setProgress] = useState<ProgressItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [translationSettings, setTranslationSettings] = useState<{ enabled: boolean; language: string }>({ enabled: false, language: 'en' });
+  const [calendarStatus, setCalendarStatus] = useState<{ connected: boolean; provider?: string; expires_at?: string } | null>(null);
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
@@ -62,7 +64,28 @@ export default function ParentPage() {
       if (progData.status === 'fulfilled') setProgress(progData.value);
       if (absData.status === 'fulfilled') setAbsences(absData.value);
       if (compData.status === 'fulfilled') setCompleted(compData.value);
+      // load parent settings (translation prefs etc.)
+      try {
+        const settings = await apiGet<any>('/api/v1/parent/settings', token);
+        if (settings && settings.translation_settings) {
+          setTranslationSettings({
+            enabled: !!settings.translation_settings.enabled,
+            language: settings.translation_settings.language || 'en',
+          });
+        }
+      } catch {
+        // ignore settings failures
+      }
     } finally { setLoading(false); }
+  }
+
+  async function loadCalendarStatus() {
+    try {
+      const status = await apiGet<{ connected: boolean; provider?: string; expires_at?: string }>('/api/v1/parent/calendar/status', token);
+      setCalendarStatus(status);
+    } catch {
+      setCalendarStatus(null);
+    }
   }
 
   async function markNotificationRead(id: string) {
@@ -81,6 +104,51 @@ export default function ParentPage() {
     } catch { /* ignore */ }
   }
 
+  async function connectCalendar() {
+    try {
+      const resp = await apiGet<{ authUrl?: string }>(`/api/v1/parent/calendar/connect?provider=google`, token);
+      if (resp && resp.authUrl) {
+        // redirect to provider auth URL
+        window.location.href = resp.authUrl;
+      } else {
+        alert('Calendar provider not configured');
+      }
+    } catch (err) {
+      alert('Failed to start calendar connect');
+    }
+  }
+
+  async function exportCalendar() {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/parent/calendar/export`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Export failed');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'oakit-events.ics';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to export calendar');
+    }
+  }
+
+  async function revokeCalendar() {
+    try {
+      await fetch(`${API_BASE}/api/v1/parent/calendar/revoke?provider=google`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      alert('Calendar disconnected');
+      await loadCalendarStatus();
+    } catch {
+      alert('Failed to disconnect');
+    }
+  }
+
   const unreadCount = notifications.length;
 
   const tabs: { id: Tab; label: string }[] = [
@@ -89,6 +157,7 @@ export default function ParentPage() {
     { id: 'notifications', label: `Notifications${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
     { id: 'progress', label: 'Progress' },
     { id: 'absences', label: 'Absences' },
+    { id: 'settings', label: 'Settings' },
   ];
 
   return (
@@ -271,6 +340,82 @@ export default function ParentPage() {
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── Settings ── */}
+            {tab === 'settings' && (
+              <div className="flex flex-col gap-4">
+                <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
+                <Card>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-gray-800">Translation</p>
+                        <p className="text-sm text-gray-500">Automatically translate messages for this account.</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="text-sm text-gray-700">Enable</label>
+                        <input
+                          type="checkbox"
+                          checked={translationSettings.enabled}
+                          onChange={(e) => setTranslationSettings(prev => ({ ...prev, enabled: e.target.checked }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm text-gray-700">Language</label>
+                      <select
+                        value={translationSettings.language}
+                        onChange={(e) => setTranslationSettings(prev => ({ ...prev, language: e.target.value }))}
+                        className="border rounded px-2 py-1"
+                      >
+                        <option value="en">English</option>
+                        <option value="hi">Hindi</option>
+                        <option value="es">Spanish</option>
+                        <option value="ar">Arabic</option>
+                        <option value="zh">Chinese (Simplified)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        onClick={async () => {
+                          try {
+                            await apiPut('/api/v1/parent/settings', { translation_settings: translationSettings }, token);
+                            alert('Translation settings saved');
+                          } catch (err) {
+                            alert('Failed to save settings');
+                          }
+                        }}
+                        className="px-4 py-2 bg-primary text-white rounded"
+                      >
+                        Save
+                      </button>
+                    </div>
+                    <hr />
+                    <div className="flex items-center justify-between pt-2">
+                      <div>
+                        <p className="font-medium text-gray-800">Calendar</p>
+                        <p className="text-sm text-gray-500">Connect your personal calendar to receive events.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {calendarStatus && calendarStatus.connected ? (
+                          <>
+                            <span className="text-sm text-green-600">Connected ({calendarStatus.provider})</span>
+                            <button onClick={revokeCalendar} className="px-3 py-2 border rounded text-sm">Disconnect</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={connectCalendar} className="px-3 py-2 bg-primary text-white rounded text-sm">Connect</button>
+                            <button onClick={exportCalendar} className="px-3 py-2 border rounded text-sm">Export .ics</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
               </div>
             )}
           </>
