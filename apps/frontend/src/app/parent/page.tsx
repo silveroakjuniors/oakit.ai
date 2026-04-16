@@ -300,7 +300,17 @@ export default function ParentPage() {
             if (settings.notification_prefs && settings.notification_prefs.length > 0) setNotificationPrefs(settings.notification_prefs);
             if (typeof settings.calendar_sync === 'boolean') setCalendarSyncEnabled(settings.calendar_sync);
             if (typeof settings.assistant_reminders === 'boolean') setAssistantReminders(settings.assistant_reminders);
-            if (settings.translation_settings) setTranslationSettings(settings.translation_settings);
+            if (settings.translation_settings) {
+              const ts = settings.translation_settings;
+              setTranslationSettings({
+                enabled: ts.enabled ?? false,
+                targetLanguage: ts.targetLanguage || 'en',
+                autoTranslate: ts.autoTranslate ?? false,
+                supportedLanguages: ts.supportedLanguages?.length
+                  ? ts.supportedLanguages
+                  : ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa'],
+              });
+            }
           }
           // Always load mock notification prefs if API didn't return them
           if (!settings?.notification_prefs?.length) {
@@ -1725,7 +1735,7 @@ function SettingsTab({
             <div className="p-4 border border-neutral-200 rounded-xl">
               <p className="font-semibold text-neutral-800 mb-2">{t('Target Language')}</p>
               <select value={translationSettings.targetLanguage} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white" disabled>
-                {translationSettings.supportedLanguages.map(lang => (
+                {(translationSettings.supportedLanguages || []).map(lang => (
                   <option key={lang} value={lang}>{languageNames[lang] || lang}</option>
                 ))}
               </select>
