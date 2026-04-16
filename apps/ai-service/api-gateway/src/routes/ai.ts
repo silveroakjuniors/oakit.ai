@@ -47,12 +47,12 @@ const INAPPROPRIATE_PATTERNS = [
 
 // Off-topic keywords — logged as 'blocked_offtopic'
 const OFF_TOPIC_PATTERNS = [
-  /\bweather\b/i, /\btemperature\b/i, /\bforecast\b/i, /\brain\b/i, /\bsunny\b/i,
-  /\bnews\b/i, /\bpolitics\b/i, /\bsports\b/i, /\bcricket\b/i, /\bfootball\b/i,
+  /\bweather\b/i, /\btemperature\b/i, /\bforecast\b/i,
+  /\bnews\b/i, /\bpolitics\b/i, /\bcricket\b/i, /\bfootball\b/i,
   /\bstock\b/i, /\bshare price\b/i, /\bcrypto\b/i, /\bbitcoin\b/i,
-  /\brecipe\b/i, /\bcook\b/i, /\bfilm\b/i, /\bmovie\b/i, /\bsong\b/i,
-  /\bjoke\b/i, /\bfunny\b/i, /\blaugh\b/i,
-  /\bwho is\b/i, /\bwhat is the capital\b/i, /\bhistory of\b/i,
+  /\brecipe\b/i, /\bfilm\b/i, /\bmovie\b/i,
+  /\bjoke\b/i,
+  /\bwhat is the capital\b/i, /\bhistory of\b/i,
 ];
 
 function isInappropriate(text: string): boolean {

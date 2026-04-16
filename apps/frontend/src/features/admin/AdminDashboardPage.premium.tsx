@@ -805,7 +805,6 @@ export default function AdminDashboardPage() {
     </>
   );
 }
-}
 
 /* ── Attendance chart ─────────────────────────────────────────── */
 function AttendanceTrendChart({ data }: { data: TrendRow[] }) {
@@ -825,3 +824,4 @@ function AttendanceTrendChart({ data }: { data: TrendRow[] }) {
     </div>
   );
 }
+
