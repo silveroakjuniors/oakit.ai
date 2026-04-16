@@ -170,7 +170,7 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
     const currentStep = step;
     // Determine input: override > edited formatted notes (if re-formatting) > raw transcript
     let raw: string;
-    if (sourceOverride !== undefined) {
+    if (typeof sourceOverride === 'string' && sourceOverride.length > 0) {
       raw = sourceOverride.trim();
     } else if (currentStep === 'formatted') {
       raw = formattedNotes.trim();
@@ -525,7 +525,7 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
 
           {step === 'review' && (
             <div className="space-y-2">
-              <button onClick={formatWithOakie} disabled={!editedTranscript.trim()}
+              <button onClick={() => formatWithOakie()} disabled={!editedTranscript.trim()}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40">
                 ✨ Format with Oakie
               </button>
@@ -546,7 +546,7 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
             <div className="space-y-2">
               {/* Primary action changes based on whether notes were edited */}
               {formattedEdited ? (
-                <button onClick={formatWithOakie} disabled={!formattedNotes.trim()}
+                <button onClick={() => formatWithOakie()} disabled={!formattedNotes.trim()}
                   className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40">
                   ✨ Re-format with Oakie
                 </button>
