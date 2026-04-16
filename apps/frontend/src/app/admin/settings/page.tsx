@@ -13,6 +13,7 @@ interface Settings {
   contact_address: string;
   notes_expiry_days: number;
   ai_plan_mode: string;
+  voice_enabled: boolean;
   logo_url: string | null;
   primary_color: string;
   tagline: string;
@@ -291,7 +292,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     school_name: '', subdomain: '', contact_email: '',
     contact_phone: '', contact_address: '', notes_expiry_days: 14,
-    ai_plan_mode: 'standard', logo_url: null, primary_color: '#1A3C2E', tagline: '',
+    ai_plan_mode: 'standard', voice_enabled: false, logo_url: null, primary_color: '#1A3C2E', tagline: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -502,6 +503,37 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <AiPlanModeSection token={token} />
+              </div>
+
+              {/* Voice Input */}
+              <div className="mt-5 pt-5 border-t border-neutral-100">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-neutral-700">🎤 Voice Input for Oakie</p>
+                  <button
+                    onClick={async () => {
+                      const newVal = !settings.voice_enabled;
+                      setSettings(s => ({ ...s, voice_enabled: newVal }));
+                      try {
+                        await apiPut('/api/v1/admin/settings', { voice_enabled: newVal }, token);
+                      } catch {
+                        setSettings(s => ({ ...s, voice_enabled: !newVal })); // revert
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.voice_enabled ? 'bg-emerald-600' : 'bg-neutral-200'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.voice_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-400 mb-2">
+                  When enabled, a microphone button appears in Oakie chat for teachers and parents. Audio is transcribed using Google Gemini AI — works in all browsers and will work in the mobile app.
+                </p>
+                {settings.voice_enabled && (
+                  <div className="flex items-start gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <span className="text-emerald-500 text-sm mt-0.5">✅</span>
+                    <p className="text-xs text-emerald-700">
+                      Voice input is <strong>active</strong>. Teachers and parents will see a 🎤 mic button in Oakie chat. Each voice query uses Gemini transcription credits.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

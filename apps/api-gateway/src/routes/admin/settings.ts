@@ -41,7 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Get settings
     const settingsRow = await pool.query(
-      `SELECT notes_expiry_days, ai_plan_mode FROM school_settings WHERE school_id = $1`,
+      `SELECT notes_expiry_days, ai_plan_mode, voice_enabled FROM school_settings WHERE school_id = $1`,
       [school_id]
     );
     if (settingsRow.rows.length === 0) {
@@ -59,6 +59,7 @@ router.get('/', async (req: Request, res: Response) => {
       contact_address: school.contact?.address ?? '',
       notes_expiry_days: settingsRow.rows[0]?.notes_expiry_days ?? 14,
       ai_plan_mode: settingsRow.rows[0]?.ai_plan_mode ?? 'standard',
+      voice_enabled: settingsRow.rows[0]?.voice_enabled ?? false,
       logo_url: school.logo_path ? getPublicUrl(school.logo_path) : null,
       primary_color: school.primary_color ?? '#1A3C2E',
       tagline: school.tagline ?? '',
@@ -120,6 +121,18 @@ router.put('/', async (req: Request, res: Response) => {
          ON CONFLICT (school_id) DO UPDATE
          SET ai_plan_mode = EXCLUDED.ai_plan_mode, updated_at = now()`,
         [school_id, ai_plan_mode]
+      );
+    }
+
+    // Voice feature toggle
+    const { voice_enabled } = req.body;
+    if (voice_enabled !== undefined) {
+      await pool.query(
+        `INSERT INTO school_settings (school_id, voice_enabled, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (school_id) DO UPDATE
+         SET voice_enabled = EXCLUDED.voice_enabled, updated_at = now()`,
+        [school_id, Boolean(voice_enabled)]
       );
     }
 

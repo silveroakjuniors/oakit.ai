@@ -1,6 +1,7 @@
 'use client';
 import { Calendar, TrendingUp, BookOpen, Sparkles, MessageSquare, CheckCircle2 } from 'lucide-react';
 import ChildAvatar from './ChildAvatar';
+import { useTranslation } from '../context';
 import type { ChildFeed, ProgressData, Child, Announcement, NoteItem, Tab } from '../types';
 
 export default function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate }: {
@@ -8,6 +9,7 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
   announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
   token: string; onChildUpdate: (url: string) => void;
 }) {
+  const { t } = useTranslation();
   if (!activeChild) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <p className="text-neutral-500 font-medium">No child selected</p>
@@ -30,7 +32,7 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
         <div className="flex-1 min-w-0">
           <p className="text-white font-bold text-lg leading-tight truncate">{activeChild.name}</p>
           <p className="text-white/60 text-sm mt-0.5">{activeChild.class_name} · Section {activeChild.section_label}</p>
-          <p className="text-white/40 text-xs mt-2">Tap photo to preview or change</p>
+          <p className="text-white/40 text-xs mt-2">{t('Tap photo to preview or change')}</p>
         </div>
         <div className="shrink-0 flex flex-col items-end gap-2">
           <div className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
@@ -39,11 +41,11 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
             att.status === 'present' ? 'bg-amber-500/20 text-amber-300' :
             'bg-red-500/20 text-red-300'
           }`}>
-            {attLabel}
+            {t(attLabel)}
           </div>
           <button onClick={() => onTabChange('settings')}
             className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 text-[10px] font-medium transition-colors">
-            🌐 Translate
+            {t('🌐 Translate')}
           </button>
         </div>
       </div>
@@ -53,11 +55,11 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
         <div className={`${attBg} rounded-2xl p-4 border border-neutral-100 col-span-1 lg:col-span-3`}>
           <div className="flex items-center gap-2 mb-2">
             <Calendar size={16} className="text-neutral-400" />
-            <p className="text-xs font-medium text-neutral-500">Attendance</p>
+            <p className="text-xs font-medium text-neutral-500">{t('Attendance')}</p>
           </div>
-          <p className={`text-xl font-bold ${attColor}`}>{attLabel}</p>
-          {att?.arrived_at && <p className="text-xs text-neutral-400 mt-1">Arrived {att.arrived_at.slice(0, 5)}</p>}
-          {!att && <p className="text-xs text-neutral-400 mt-1">Not yet marked</p>}
+          <p className={`text-xl font-bold ${attColor}`}>{t(attLabel)}</p>
+          {att?.arrived_at && <p className="text-xs text-neutral-400 mt-1">{t('Arrived')} {att.arrived_at.slice(0, 5)}</p>}
+          {!att && <p className="text-xs text-neutral-400 mt-1">{t('Not yet marked')}</p>}
         </div>
 
         <div className="bg-[#0f2417] rounded-2xl p-4 col-span-1 lg:col-span-3 relative overflow-hidden">
@@ -81,9 +83,9 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <BookOpen size={16} className="text-amber-500" />
-              <p className="text-sm font-semibold text-neutral-800">Homework</p>
+              <p className="text-sm font-semibold text-neutral-800">{t('Homework')}</p>
             </div>
-            <button onClick={() => onTabChange('progress')} className="text-xs text-primary-600 font-medium hover:underline">History →</button>
+            <button onClick={() => onTabChange('progress')} className="text-xs text-primary-600 font-medium hover:underline">{t('History →')}</button>
           </div>
           {feed?.homework ? (
             <p className="text-sm text-neutral-700 leading-relaxed line-clamp-3 italic border-l-4 border-amber-200 pl-3">
@@ -92,7 +94,7 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
           ) : (
             <div className="flex items-center gap-2 text-emerald-600">
               <CheckCircle2 size={16} />
-              <p className="text-sm font-medium">No pending homework — great job!</p>
+              <p className="text-sm font-medium">{t('No pending homework — great job!')}</p>
             </div>
           )}
         </div>
@@ -100,7 +102,7 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
         <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-8">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles size={16} className="text-primary-600" />
-            <p className="text-sm font-semibold text-neutral-800">Today&apos;s Learning</p>
+            <p className="text-sm font-semibold text-neutral-800">{t('Today\'s Learning')}</p>
           </div>
           {feed?.special_label ? (
             <div className="bg-blue-50 rounded-xl px-3 py-2.5"><p className="text-sm text-blue-700 font-medium">{feed.special_label}</p></div>
@@ -120,7 +122,7 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
 
         <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 col-span-2 lg:col-span-4 flex flex-col justify-between">
           <div>
-            <p className="font-bold text-emerald-900 text-sm mb-1">Need Help?</p>
+            <p className="font-bold text-emerald-900 text-sm mb-1">{t('Need Help?')}</p>
             <p className="text-xs text-emerald-700/80 leading-snug">Ask Oakie AI or message {activeChild.name.split(' ')[0]}&apos;s teacher directly.</p>
           </div>
           <div className="flex gap-2 mt-4">
@@ -152,7 +154,7 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
       {/* Teacher notes */}
       {feed?.notes && feed.notes.length > 0 && (
         <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-          <p className="text-sm font-semibold text-neutral-800 mb-3">📋 Teacher Notes</p>
+          <p className="text-sm font-semibold text-neutral-800 mb-3">📋 {t('Teacher Notes')}</p>
           <div className="space-y-2">
             {feed.notes.map(note => {
               const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
@@ -173,7 +175,7 @@ export default function HomeTab({ feed, progress, activeChild, announcements, on
       {/* Announcements */}
       {announcements.length > 0 && (
         <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-          <p className="text-sm font-semibold text-neutral-800 mb-3">📢 School Announcements</p>
+          <p className="text-sm font-semibold text-neutral-800 mb-3">📢 {t('School Announcements')}</p>
           <div className="space-y-3">
             {announcements.slice(0, 3).map(a => (
               <div key={a.id} className="border-l-4 border-primary-400 pl-3">

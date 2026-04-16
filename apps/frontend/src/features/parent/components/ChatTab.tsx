@@ -1,12 +1,24 @@
 'use client';
 import { Loader2, Send, Sparkles } from 'lucide-react';
+import { useVoiceInput } from '@/hooks/useVoiceInput';
+import VoiceMicButton from '@/components/VoiceMicButton';
 import type { ChatMsg } from '../types';
 
-export default function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
+export default function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName, token, voiceEnabled, voiceLanguage }: {
   msgs: ChatMsg[]; input: string; loading: boolean;
   onInput: (v: string) => void; onSend: () => void;
   endRef: React.RefObject<HTMLDivElement>; childName: string;
+  token: string; voiceEnabled?: boolean; voiceLanguage?: string;
 }) {
+  const { state: voiceState, startRecording, stopRecording, isSupported } = useVoiceInput({
+    token,
+    language: voiceLanguage || 'en',
+    onTranscript: (text) => {
+      onInput(text);
+    },
+  });
+
+  const showMic = voiceEnabled && isSupported;
   return (
     <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
       <div className="px-4 py-3 bg-[#0f2417] text-white flex items-center gap-3">
@@ -45,7 +57,15 @@ export default function ChatTab({ msgs, input, loading, onInput, onSend, endRef,
         )}
         <div ref={endRef} />
       </div>
-      <div className="px-4 py-3 bg-white border-t border-neutral-100 flex gap-2">
+      <div className="px-4 py-3 bg-white border-t border-neutral-100 flex gap-2 items-center">
+        {showMic && (
+          <VoiceMicButton
+            state={voiceState}
+            onStart={startRecording}
+            onStop={stopRecording}
+            size="sm"
+          />
+        )}
         <input value={input} onChange={e => onInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
           placeholder={`Ask about ${childName}...`} maxLength={300}

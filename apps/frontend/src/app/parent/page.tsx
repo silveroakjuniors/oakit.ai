@@ -79,9 +79,10 @@ export default function ParentPage() {
   const [childComparisons, setChildComparisons] = useState<ChildComparison[]>([]);
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
   const [assistantReminders, setAssistantReminders] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [translationSettings, setTranslationSettings] = useState<TranslationSettings>({
     enabled: false, targetLanguage: 'en', autoTranslate: false,
-    supportedLanguages: ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa'],
+    supportedLanguages: ['en', 'hi', 'te', 'kn', 'ta', 'ml', 'gu', 'mr', 'bn', 'pa', 'ur', 'ar', 'fr', 'es'],
   });
 
   // t() helper — ParentPage is the Provider so can't use useTranslation()
@@ -120,6 +121,8 @@ export default function ParentPage() {
       setNotifications(notifs);
       apiGet<Announcement[]>('/api/v1/parent/announcements', token).then(setAnnouncements).catch(() => {});
       apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {});
+      // Check voice feature status
+      apiGet<{ voice_enabled: boolean }>('/api/v1/ai/voice-status', token).then(d => setVoiceEnabled(d.voice_enabled)).catch(() => {});
 
       // Load settings + emergency contacts
       (async () => {
@@ -132,6 +135,7 @@ export default function ParentPage() {
           if (settings?.notification_prefs?.length) setNotificationPrefs(settings.notification_prefs);
           if (typeof settings?.calendar_sync === 'boolean') setCalendarSyncEnabled(settings.calendar_sync);
           if (typeof settings?.assistant_reminders === 'boolean') setAssistantReminders(settings.assistant_reminders);
+          if (typeof settings?.voice_enabled === 'boolean') setVoiceEnabled(settings.voice_enabled);
           if (settings?.translation_settings) {
             const ts = settings.translation_settings;
             setTranslationSettings({ enabled: ts.enabled ?? false, targetLanguage: ts.targetLanguage || 'en', autoTranslate: ts.autoTranslate ?? false, supportedLanguages: ts.supportedLanguages?.length ? ts.supportedLanguages : ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa'] });
@@ -264,7 +268,12 @@ export default function ParentPage() {
           style={{ background: 'linear-gradient(180deg, #0f2417 0%, #1a3c2e 100%)' }}>
           <div className="px-6 py-5 border-b border-white/10">
             <OakitLogo size="sm" variant="light" />
-            <p className="text-white/40 text-xs mt-1">Parent Portal</p>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-white/40 text-xs">Parent Portal</p>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[9px] font-bold">
+                ✨ Premium
+              </span>
+            </div>
           </div>
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
             {TABS.map(({ id, Icon, label }) => {
@@ -315,7 +324,12 @@ export default function ParentPage() {
             <img src="/oakie.png" alt="" aria-hidden="true" className="absolute right-3 bottom-0 w-20 h-auto object-contain pointer-events-none" style={{ mixBlendMode: 'multiply', opacity: 0.6 }} />
             <div className="relative z-10 flex items-center justify-between mb-4">
               <OakitLogo size="sm" variant="light" />
-              <button onClick={() => { clearToken(); router.push('/login'); }} className="text-white/50 hover:text-white/80 text-xs transition-colors">Sign out</button>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-bold">
+                  ✨ Premium
+                </span>
+                <button onClick={() => { clearToken(); router.push('/login'); }} className="text-white/50 hover:text-white/80 text-xs transition-colors">Sign out</button>
+              </div>
             </div>
             {children.length > 0 && (
               <div className="relative z-10 pr-20">
@@ -357,7 +371,7 @@ export default function ParentPage() {
                 {tab === 'attendance' && <AttendanceTab data={activeCache?.attendance ?? null} />}
                 {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
                 {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
-                {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
+                {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} token={token} voiceEnabled={voiceEnabled} voiceLanguage={translationSettings.enabled ? translationSettings.targetLanguage : 'en'} />}
                 {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
                 {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
                 {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}

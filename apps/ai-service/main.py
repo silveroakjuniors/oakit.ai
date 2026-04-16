@@ -157,7 +157,106 @@ async def query_endpoint(req: QueryRequest):
     return result
 
 
-# --- Plan generation ---
+# ─── Voice transcription ──────────────────────────────────────────────────────
+
+@app.post("/internal/transcribe")
+async def transcribe_audio(
+    audio: UploadFile = File(...),
+    language: str = Form(default="en"),
+):
+    """
+    Transcribe audio to text using Gemini's audio understanding.
+    Accepts any audio format (webm, mp4, wav, ogg, m4a).
+    Returns: { transcript: str, language: str, duration_seconds: float }
+    """
+    import os, httpx, base64, mimetypes
+
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    if not gemini_key:
+        raise HTTPException(status_code=503, detail="Voice transcription not configured")
+
+    # Read audio bytes
+    audio_bytes = await audio.read()
+    if len(audio_bytes) > 10 * 1024 * 1024:  # 10MB limit
+        raise HTTPException(status_code=413, detail="Audio file too large (max 10MB)")
+    if len(audio_bytes) < 100:
+        raise HTTPException(status_code=400, detail="Audio file too small or empty")
+
+    # Determine MIME type
+    content_type = audio.content_type or "audio/webm"
+    # Normalize common types
+    mime_map = {
+        "audio/webm": "audio/webm",
+        "audio/ogg": "audio/ogg",
+        "audio/wav": "audio/wav",
+        "audio/mp4": "audio/mp4",
+        "audio/m4a": "audio/mp4",
+        "audio/mpeg": "audio/mpeg",
+        "video/webm": "audio/webm",  # Chrome records as video/webm
+    }
+    mime_type = mime_map.get(content_type, "audio/webm")
+
+    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+    # Language hint for the prompt
+    lang_hints = {
+        "hi": "Hindi", "te": "Telugu", "kn": "Kannada", "ta": "Tamil",
+        "ml": "Malayalam", "gu": "Gujarati", "mr": "Marathi", "bn": "Bengali",
+        "pa": "Punjabi", "ur": "Urdu", "ar": "Arabic", "fr": "French",
+        "es": "Spanish", "en": "English",
+    }
+    lang_name = lang_hints.get(language, "English")
+
+    prompt = (
+        f"Transcribe this audio recording accurately. "
+        f"The speaker is likely speaking in {lang_name}. "
+        f"This is a school-related question from a teacher or parent. "
+        f"Return ONLY the transcribed text, nothing else. "
+        f"If the audio is unclear or silent, return an empty string."
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}",
+                json={
+                    "contents": [{
+                        "role": "user",
+                        "parts": [
+                            {"text": prompt},
+                            {"inline_data": {"mime_type": mime_type, "data": audio_b64}},
+                        ],
+                    }],
+                    "generationConfig": {
+                        "maxOutputTokens": 500,
+                        "temperature": 0.1,
+                    },
+                },
+            )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                transcript = parts[0].get("text", "").strip() if parts else ""
+                # Clean up — remove any meta-commentary Gemini might add
+                if transcript.lower().startswith("transcription:"):
+                    transcript = transcript[14:].strip()
+                if transcript.lower().startswith("transcript:"):
+                    transcript = transcript[11:].strip()
+                print(f"[Transcribe] Success: '{transcript[:80]}...' ({len(audio_bytes)} bytes, {mime_type})")
+                return {"transcript": transcript, "language": language}
+            else:
+                print(f"[Transcribe] Gemini error {resp.status_code}: {resp.text[:200]}")
+                raise HTTPException(status_code=502, detail="Transcription service error")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Transcribe] Exception: {e}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+
+
 
 class PlanRequest(BaseModel):
     class_id: str

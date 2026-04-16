@@ -258,48 +258,78 @@ export default function SettingsTab({
         </div>
       )}
 
-      {/* Translation — Premium Gate */}
+      {/* Translation — Live (local test) */}
       {activeSection === 'translation' && (
         <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-6">
             <Zap className="w-6 h-6 text-indigo-600" />
             <h2 className="text-xl font-bold text-neutral-800">Translation</h2>
-            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">✨ Premium</span>
+            <span className="ml-2 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">🧪 Test Mode</span>
           </div>
-          <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50 p-8 text-center">
-            <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🌐</span>
-            </div>
-            <h3 className="text-lg font-bold text-indigo-900 mb-2">Coming Soon</h3>
-            <p className="text-sm text-indigo-700 mb-4 max-w-xs mx-auto">
-              Translate the entire parent portal into your preferred language — Hindi, Telugu, Tamil, and more.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2 mb-4">
-              {['हिंदी', 'తెలుగు', 'தமிழ்', 'ಕನ್ನಡ', 'മലയാളം', 'ગુજરાતી', 'বাংলা', 'मराठी'].map(lang => (
-                <span key={lang} className="px-3 py-1 bg-white rounded-xl border border-indigo-200 text-sm text-indigo-700">{lang}</span>
-              ))}
-            </div>
-            <span className="inline-block px-4 py-1.5 bg-indigo-200 text-indigo-800 text-xs font-bold rounded-full">
-              Premium Feature — Payment coming soon
-            </span>
-          </div>
-          {/* Preview (disabled) */}
-          <div className="mt-6 space-y-4 opacity-40 pointer-events-none">
+
+          <div className="space-y-4">
+            {/* Enable toggle */}
             <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
               <div>
                 <p className="font-semibold text-neutral-800">Enable Translation</p>
                 <p className="text-xs text-neutral-500">Translate app content to your language</p>
               </div>
-              <div className="w-11 h-6 bg-neutral-200 rounded-full" />
+              <button
+                onClick={() => onTranslationSettingsChange({ ...translationSettings, enabled: !translationSettings.enabled })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${translationSettings.enabled ? 'bg-emerald-600' : 'bg-neutral-200'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${translationSettings.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
             </div>
-            <div className="p-4 border border-neutral-200 rounded-xl">
-              <p className="font-semibold text-neutral-800 mb-2">Target Language</p>
-              <select value={translationSettings.targetLanguage} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white" disabled>
-                {(translationSettings.supportedLanguages || []).map(lang => (
-                  <option key={lang} value={lang}>{languageNames[lang] || lang}</option>
-                ))}
-              </select>
-            </div>
+
+            {/* Language picker */}
+            {translationSettings.enabled && (
+              <div className="p-4 border border-neutral-200 rounded-xl">
+                <p className="font-semibold text-neutral-800 mb-3">Select Language</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    // Indian languages — fully translated
+                    { code: 'hi', label: 'हिंदी', sublabel: 'Hindi', available: true },
+                    { code: 'te', label: 'తెలుగు', sublabel: 'Telugu', available: true },
+                    { code: 'kn', label: 'ಕನ್ನಡ', sublabel: 'Kannada', available: true },
+                    { code: 'ta', label: 'தமிழ்', sublabel: 'Tamil', available: true },
+                    { code: 'ml', label: 'മലയാളം', sublabel: 'Malayalam', available: true },
+                    { code: 'gu', label: 'ગુજરાતી', sublabel: 'Gujarati', available: true },
+                    { code: 'mr', label: 'मराठी', sublabel: 'Marathi', available: true },
+                    { code: 'bn', label: 'বাংলা', sublabel: 'Bengali', available: true },
+                    { code: 'pa', label: 'ਪੰਜਾਬੀ', sublabel: 'Punjabi', available: true },
+                    { code: 'ur', label: 'اردو', sublabel: 'Urdu', available: true },
+                    // International
+                    { code: 'ar', label: 'العربية', sublabel: 'Arabic', available: true },
+                    { code: 'fr', label: 'Français', sublabel: 'French', available: true },
+                    { code: 'es', label: 'Español', sublabel: 'Spanish', available: true },
+                    // Default
+                    { code: 'en', label: 'English', sublabel: 'Default', available: true },
+                  ].map(lang => (
+                    <button key={lang.code}
+                      onClick={() => onTranslationSettingsChange({ ...translationSettings, targetLanguage: lang.code })}
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                        translationSettings.targetLanguage === lang.code
+                          ? 'border-emerald-500 bg-emerald-50'
+                          : 'border-neutral-200 hover:border-neutral-300 bg-white'
+                      }`}>
+                      <span className="text-lg leading-none">{lang.label}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-neutral-800 truncate">{lang.sublabel}</p>
+                        {translationSettings.targetLanguage === lang.code && <p className="text-[10px] text-emerald-600 font-medium">✓ Active</p>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-neutral-400 mt-3">More languages powered by Google Gemini AI.</p>
+              </div>
+            )}
+
+            {translationSettings.enabled && translationSettings.targetLanguage !== 'en' && (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <p className="text-sm font-semibold text-emerald-800 mb-1">✅ Translation Active</p>
+                <p className="text-xs text-emerald-700">Tab labels, settings, and key UI text are now translated. Dynamic content (homework text, teacher notes) will be translated in the full version.</p>
+              </div>
+            )}
           </div>
         </div>
       )}

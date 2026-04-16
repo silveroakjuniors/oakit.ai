@@ -8,6 +8,8 @@ import { RawPlanModal } from '@/UIComponents/teacher/RawPlanModal';
 import { TopicsChecklist } from '@/UIComponents/teacher/TopicsChecklist';
 import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
+import VoiceMicButton from '@/components/VoiceMicButton';
+import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
@@ -224,6 +226,15 @@ export default function TeacherPlanner() {
   const [fetchingDetailedPlan, setFetchingDetailedPlan] = useState(false);
   const [showRawPlanModal, setShowRawPlanModal] = useState(false);
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+
+  // Voice input hook
+  const { state: voiceState, startRecording, stopRecording, isSupported: voiceSupported } = useVoiceInput({
+    token,
+    language: 'en',
+    onTranscript: (text) => setInput(text),
+  });
+  const showMic = voiceEnabled && voiceSupported;
   // Homework submission tracking state
   const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, 'completed' | 'partial' | 'not_submitted'>>({});
@@ -249,6 +260,8 @@ export default function TeacherPlanner() {
   async function loadAll() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
+    // Check voice feature status
+    apiGet<{ voice_enabled: boolean }>('/api/v1/ai/voice-status', token).then(d => setVoiceEnabled(d.voice_enabled)).catch(() => {});
     if (!todayCompletedRef.current) await autoShowDailyPlan(effectiveToday);
   }
 
@@ -1195,6 +1208,14 @@ export default function TeacherPlanner() {
             </div>
           ) : null}
           <form onSubmit={sendMessage} className="flex gap-2 items-center pb-2">
+            {showMic && (
+              <VoiceMicButton
+                state={voiceState}
+                onStart={startRecording}
+                onStop={stopRecording}
+                size="sm"
+              />
+            )}
             <div className="flex-1 relative">
               <input
                 className="w-full px-4 py-3 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 disabled:bg-gray-50 disabled:text-gray-400 bg-gray-50"
