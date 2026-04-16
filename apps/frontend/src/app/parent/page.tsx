@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -999,6 +999,738 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Chat Tab ─────────────────────────────────────────────────────────────────
+function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
+  msgs: ChatMsg[]; input: string; loading: boolean;
+  onInput: (v: string) => void; onSend: () => void;
+  endRef: React.RefObject<HTMLDivElement>; childName: string;
+}) {
+  return (
+    <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 bg-[#0f2417] text-white flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+          <Sparkles size={16} className="text-emerald-300" />
+        </div>
+        <div>
+          <p className="font-bold text-sm">Oakie AI</p>
+          <p className="text-xs text-white/50">Ask about {childName}</p>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-50/50">
+        {msgs.map((m, i) => (
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${m.role === 'user' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>
+              <p className="whitespace-pre-wrap">{m.text}</p>
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-white rounded-2xl px-4 py-3 shadow-sm border border-neutral-100 rounded-bl-sm">
+              <Loader2 size={16} className="animate-spin text-neutral-400" />
+            </div>
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+      <div className="px-4 py-3 bg-white border-t border-neutral-100 flex gap-2">
+        <input value={input} onChange={e => onInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+          placeholder={`Ask about ${childName}...`} maxLength={300}
+          className="flex-1 px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
+        <button onClick={onSend} disabled={!input.trim() || loading}
+          className="px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center gap-1.5 min-w-[52px] justify-center">
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Messages Tab ─────────────────────────────────────────────────────────────
+function MessagesTab({ threads, token, onRefresh }: { threads: ParentMessage[]; token: string; onRefresh: () => void }) {
+  const [active, setActive] = useState<ParentMessage | null>(null);
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+  const [showNewMsg, setShowNewMsg] = useState(false);
+  const [newMsgBody, setNewMsgBody] = useState('');
+  const [selectedTeacher, setSelectedTeacher] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState('');
+  const [sendingNew, setSendingNew] = useState(false);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    apiGet<any[]>('/api/v1/parent/message-teachers', token).then(setTeachers).catch(() => {});
+  }, []);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+
+  async function openThread(thread: ParentMessage) {
+    setActive(thread);
+    try {
+      const data = await apiGet<any[]>(`/api/v1/parent/messages/${thread.teacher_id}/${thread.student_id}`, token);
+      setMsgs(data || []);
+    } catch { setMsgs([]); }
+  }
+
+  async function sendReply() {
+    if (!reply.trim() || !active || sending) return;
+    setSending(true);
+    try {
+      await apiPost(`/api/v1/parent/messages/${active.teacher_id}/${active.student_id}/reply`, { body: reply.trim() }, token);
+      setReply('');
+      const data = await apiGet<any[]>(`/api/v1/parent/messages/${active.teacher_id}/${active.student_id}`, token);
+      setMsgs(data || []);
+    } catch {}
+    finally { setSending(false); }
+  }
+
+  async function sendNewMessage() {
+    if (!newMsgBody.trim() || !selectedTeacher || !selectedStudent || sendingNew) return;
+    setSendingNew(true);
+    try {
+      await apiPost(`/api/v1/parent/messages/${selectedTeacher}/${selectedStudent}/reply`, { body: newMsgBody.trim() }, token);
+      setShowNewMsg(false); setNewMsgBody(''); setSelectedTeacher(''); setSelectedStudent('');
+      onRefresh();
+      const th = teachers.find(t => t.teacher_id === selectedTeacher && t.student_id === selectedStudent);
+      if (th) {
+        const thread: ParentMessage = { teacher_id: th.teacher_id, student_id: th.student_id, teacher_name: th.teacher_name, student_name: th.student_name, last_message: newMsgBody, last_sent_at: new Date().toISOString(), last_sender: 'parent', unread_count: 0 };
+        await openThread(thread);
+      }
+    } catch {}
+    finally { setSendingNew(false); }
+  }
+
+  if (active) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-4 py-3 bg-[#0f2417] text-white">
+          <button onClick={() => setActive(null)} className="text-white/60 hover:text-white">
+            <ChevronRight size={20} className="rotate-180" />
+          </button>
+          <div>
+            <p className="font-bold text-sm">{active.teacher_name}</p>
+            <p className="text-xs text-white/50">{active.student_name}</p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-50/50">
+          {msgs.length === 0 && (
+            <div className="text-center py-8 text-neutral-400 text-sm">No messages yet. Send the first message below.</div>
+          )}
+          {msgs.map((m, i) => (
+            <div key={i} className={`flex ${m.sender_role === 'parent' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${m.sender_role === 'parent' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>
+                <p>{m.body}</p>
+                <p className={`text-[10px] mt-1 ${m.sender_role === 'parent' ? 'text-white/60' : 'text-neutral-400'}`}>
+                  {new Date(m.sent_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+            </div>
+          ))}
+          <div ref={endRef} />
+        </div>
+        <div className="px-4 py-3 bg-white border-t border-neutral-100 flex gap-2">
+          <input value={reply} onChange={e => setReply(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') sendReply(); }}
+            placeholder="Type a message..." maxLength={1000}
+            className="flex-1 px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
+          <button onClick={sendReply} disabled={!reply.trim() || sending}
+            className="px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center gap-1.5 min-w-[52px] justify-center">
+            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-neutral-800">Messages</h2>
+        <button onClick={() => setShowNewMsg(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors">
+          <MessageSquare size={16} /> New Message
+        </button>
+      </div>
+
+      {showNewMsg && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-neutral-800">Message a Teacher</p>
+            <button onClick={() => setShowNewMsg(false)} className="text-neutral-400 hover:text-neutral-600">✕</button>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Select Teacher &amp; Child</label>
+            <select value={`${selectedTeacher}|${selectedStudent}`}
+              onChange={e => { const [tid, sid] = e.target.value.split('|'); setSelectedTeacher(tid); setSelectedStudent(sid); }}
+              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
+              <option value="|">Select teacher...</option>
+              {teachers.map(t => (
+                <option key={`${t.teacher_id}|${t.student_id}`} value={`${t.teacher_id}|${t.student_id}`}>
+                  {t.teacher_name} — {t.student_name} ({t.class_name})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Message</label>
+            <textarea value={newMsgBody} onChange={e => setNewMsgBody(e.target.value.slice(0, 1000))}
+              rows={3} placeholder="Write your message to the teacher..."
+              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowNewMsg(false)} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50">Cancel</button>
+            <button onClick={sendNewMessage} disabled={!newMsgBody.trim() || !selectedTeacher || sendingNew}
+              className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
+              {sendingNew ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Send
+            </button>
+          </div>
+        </div>
+      )}
+
+      {threads.length === 0 && !showNewMsg ? (
+        <div className="bg-white rounded-2xl p-10 text-center border border-neutral-100 shadow-sm">
+          <MessageSquare size={40} className="text-neutral-300 mx-auto mb-3" />
+          <p className="text-neutral-500 font-medium">No messages yet</p>
+          <p className="text-xs text-neutral-400 mt-1 mb-4">Start a conversation with your child&apos;s teacher</p>
+          <button onClick={() => setShowNewMsg(true)}
+            className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
+            Send First Message
+          </button>
+        </div>
+      ) : threads.map(th => (
+        <button key={`${th.teacher_id}-${th.student_id}`} onClick={() => openThread(th)}
+          className="w-full bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm text-left flex items-start gap-3 hover:shadow-md transition-all">
+          <div className="w-11 h-11 rounded-full bg-primary-100 flex items-center justify-center font-bold text-primary-700 shrink-0">{th.teacher_name?.[0] ?? 'T'}</div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <p className="font-bold text-neutral-800 text-sm">{th.teacher_name}</p>
+              <p className="text-xs text-neutral-400">{th.last_sent_at?.split('T')[0]}</p>
+            </div>
+            <p className="text-xs text-neutral-500">{th.student_name}</p>
+            <p className="text-xs text-neutral-400 truncate mt-0.5">{th.last_message}</p>
+          </div>
+          {Number(th.unread_count) > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{th.unread_count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Notifications Tab ────────────────────────────────────────────────────────
+function NotificationsTab({ notifications, announcements, onRead }: {
+  notifications: Notification[]; announcements: Announcement[]; onRead: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      {announcements.length > 0 && (
+        <div>
+          <h2 className="text-lg font-bold text-neutral-800 mb-3">📢 Announcements</h2>
+          <div className="space-y-3">
+            {announcements.map(a => (
+              <div key={a.id} className="bg-white rounded-2xl p-4 border-l-4 border-primary-400 shadow-sm">
+                <p className="font-bold text-neutral-800 text-sm">{a.title}</p>
+                <p className="text-sm text-neutral-600 mt-1">{a.body}</p>
+                <p className="text-xs text-neutral-400 mt-2">By {a.author_name} · {a.created_at.split('T')[0]}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
+        <h2 className="text-lg font-bold text-neutral-800 mb-3">🔔 Updates</h2>
+        {notifications.length === 0 ? (
+          <div className="bg-white rounded-2xl p-10 text-center border border-neutral-100 shadow-sm">
+            <Bell size={40} className="text-neutral-300 mx-auto mb-3" />
+            <p className="text-neutral-500 font-medium">You&apos;re all caught up!</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {notifications.map(n => (
+              <div key={n.id} className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-neutral-800 text-sm">{n.section_name}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">{n.completion_date.split('T')[0]} · {n.chunks_covered} topics covered</p>
+                  </div>
+                  <button onClick={() => onRead(n.id)} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Insights Tab ─────────────────────────────────────────────────────────────
+function InsightsTab({ insights, comparisons, activeChild }: {
+  insights: ParentInsights | null; comparisons: ChildComparison[]; activeChild: Child | null;
+}) {
+  const { t } = useTranslation();
+
+  if (!insights || !activeChild) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-neutral-300 animate-spin" />
+      </div>
+    );
+  }
+
+  function getStatusColor(status: Goal['status']) {
+    switch (status) {
+      case 'completed': return 'text-green-600 bg-green-50';
+      case 'in_progress': return 'text-blue-600 bg-blue-50';
+      case 'overdue': return 'text-red-600 bg-red-50';
+      default: return 'text-neutral-600 bg-neutral-50';
+    }
+  }
+
+  function getStatusIcon(status: Goal['status']) {
+    switch (status) {
+      case 'completed': return '✅';
+      case 'in_progress': return '🔄';
+      case 'overdue': return '⚠️';
+      default: return '⏳';
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Progress Predictions */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <Target className="w-6 h-6 text-emerald-600" />
+          <h2 className="text-xl font-bold text-neutral-800">{t('Progress Predictions')}</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-emerald-800">{t('Next Week Attendance')}</span>
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-700">{insights.predictions.nextWeekAttendance}%</div>
+            <div className="text-xs text-emerald-600 mt-1">{t('Predicted attendance rate')}</div>
+          </div>
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-blue-800">{t('End of Month Progress')}</span>
+              <BarChart3 className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="text-2xl font-bold text-blue-700">{insights.predictions.endOfMonthProgress}%</div>
+            <div className="text-xs text-blue-600 mt-1">{t('Expected academic progress')}</div>
+          </div>
+        </div>
+        {insights.predictions.areasNeedingAttention.length > 0 && (
+          <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-amber-800 mb-2">{t('Areas Needing Attention')}</h3>
+                <ul className="text-sm text-amber-700 space-y-1">
+                  {insights.predictions.areasNeedingAttention.map((area, idx) => (
+                    <li key={idx}>• {area}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Goal Setting */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <Target className="w-6 h-6 text-purple-600" />
+          <h2 className="text-xl font-bold text-neutral-800">{t('Goal Setting')}</h2>
+        </div>
+        {insights.goals && (
+          <div className="space-y-4">
+            {Object.entries(insights.goals).map(([category, goals]) => (
+              <div key={category}>
+                <h3 className="font-semibold text-neutral-700 mb-3 capitalize flex items-center gap-2">
+                  {category === 'academic' && <BookOpen className="w-4 h-4" />}
+                  {category === 'behavioral' && <User className="w-4 h-4" />}
+                  {category === 'attendance' && <Calendar className="w-4 h-4" />}
+                  {t(`${category.charAt(0).toUpperCase() + category.slice(1)} Goals`, `${category} Goals`)}
+                </h3>
+                <div className="space-y-3">
+                  {goals.map(goal => (
+                    <div key={goal.id} className="border border-neutral-200 rounded-xl p-4 hover:bg-neutral-50 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-neutral-800">{goal.title}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(goal.status)}`}>
+                              {getStatusIcon(goal.status)} {goal.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-neutral-600 mb-2">{goal.description}</p>
+                          <div className="flex items-center gap-4 text-xs text-neutral-500">
+                            <span>Target: {goal.target}</span>
+                            <span>Current: {goal.current}</span>
+                            <span>Due: {new Date(goal.deadline).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <div className="flex justify-between text-xs text-neutral-600 mb-1">
+                          <span>Progress</span>
+                          <span>{goal.current} / {goal.target}</span>
+                        </div>
+                        <div className="w-full bg-neutral-200 rounded-full h-2">
+                          <div className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, (parseFloat(goal.current) / parseFloat(goal.target.replace('%', ''))) * 100)}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Performance Comparison */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <BarChart3 className="w-6 h-6 text-indigo-600" />
+          <h2 className="text-xl font-bold text-neutral-800">{t('Performance Comparison')}</h2>
+        </div>
+        <div className="space-y-3">
+          {comparisons.map(comp => (
+            <div key={comp.childId} className={`border rounded-xl p-4 ${comp.childId === activeChild.id ? 'border-emerald-300 bg-emerald-50' : 'border-neutral-200'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-neutral-800">{comp.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-neutral-600">Rank #{comp.rank}</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${comp.trend === 'up' ? 'text-green-600 bg-green-50' : comp.trend === 'down' ? 'text-red-600 bg-red-50' : 'text-neutral-600 bg-neutral-50'}`}>
+                    {comp.trend === 'up' ? '↗️' : comp.trend === 'down' ? '↘️' : '→'} {comp.trend}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div><div className="text-neutral-500">Attendance</div><div className="font-semibold text-neutral-800">{comp.attendance}%</div></div>
+                <div><div className="text-neutral-500">Progress</div><div className="font-semibold text-neutral-800">{comp.progress}%</div></div>
+                <div><div className="text-neutral-500">Participation</div><div className="font-semibold text-neutral-800">{comp.participation}%</div></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Settings Tab ─────────────────────────────────────────────────────────────
+function SettingsTab({
+  token, emergencyContacts, notificationPrefs, calendarEvents,
+  calendarSyncEnabled, assistantReminders, translationSettings,
+  onEmergencyContactsChange, onNotificationPrefsChange,
+  onCalendarSyncChange, onAssistantRemindersChange, onTranslationSettingsChange
+}: {
+  token: string;
+  emergencyContacts: EmergencyContact[];
+  notificationPrefs: NotificationPreference[];
+  calendarEvents: CalendarEvent[];
+  calendarSyncEnabled: boolean;
+  assistantReminders: boolean;
+  translationSettings: TranslationSettings;
+  onEmergencyContactsChange: (contacts: EmergencyContact[]) => void;
+  onNotificationPrefsChange: (prefs: NotificationPreference[]) => void;
+  onCalendarSyncChange: (enabled: boolean) => void;
+  onAssistantRemindersChange: (enabled: boolean) => void;
+  onTranslationSettingsChange: (settings: TranslationSettings) => void;
+}) {
+  const { t } = useTranslation();
+  const [activeSection, setActiveSection] = useState<'emergency' | 'notifications' | 'calendar' | 'translation'>('emergency');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newRelation, setNewRelation] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newPriority, setNewPriority] = useState<number>(2);
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRelation, setEditRelation] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPriority, setEditPriority] = useState<number>(2);
+  const [editSaving, setEditSaving] = useState(false);
+  const [localPrefs, setLocalPrefs] = useState<NotificationPreference[]>(notificationPrefs);
+  useEffect(() => setLocalPrefs(notificationPrefs), [notificationPrefs]);
+
+  const languageNames: Record<string, string> = {
+    en: 'English', hi: 'हिंदी (Hindi)', te: 'తెలుగు (Telugu)', ta: 'தமிழ் (Tamil)',
+    kn: 'ಕನ್ನಡ (Kannada)', ml: 'മലയാളം (Malayalam)', gu: 'ગુજરાતી (Gujarati)',
+    bn: 'বাংলা (Bengali)', mr: 'मराठी (Marathi)', pa: 'ਪੰਜਾਬੀ (Punjabi)'
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Settings Navigation */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          {([
+            { id: 'emergency', label: t('Emergency Contacts'), icon: Shield },
+            { id: 'notifications', label: t('Notifications', 'Notifications'), icon: Bell },
+            { id: 'calendar', label: t('Calendar Integration'), icon: CalendarDays },
+            { id: 'translation', label: t('Translation Settings'), icon: Zap },
+          ] as { id: 'emergency' | 'notifications' | 'calendar' | 'translation'; label: string; icon: React.ElementType }[]).map(({ id, label, icon: Icon }) => (
+            <button key={id} onClick={() => setActiveSection(id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                activeSection === id ? 'bg-emerald-100 text-emerald-700' : 'text-neutral-600 hover:bg-neutral-100'
+              }`}>
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Emergency Contacts */}
+      {activeSection === 'emergency' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Shield className="w-6 h-6 text-red-600" />
+            <h2 className="text-xl font-bold text-neutral-800">{t('Emergency Contacts')}</h2>
+          </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-neutral-600">Manage who the school should contact in an emergency.</p>
+              <button onClick={() => setShowAddForm(s => !s)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm">
+                {showAddForm ? 'Close' : 'Add contact'}
+              </button>
+            </div>
+            {showAddForm && (
+              <div className="p-4 border border-neutral-200 rounded-xl space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name" className="col-span-1 p-2 border rounded-md text-sm" />
+                  <input value={newRelation} onChange={e => setNewRelation(e.target.value)} placeholder="Relation" className="col-span-1 p-2 border rounded-md text-sm" />
+                  <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="Phone" className="col-span-1 p-2 border rounded-md text-sm" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-600">Priority</label>
+                  <select value={String(newPriority)} onChange={e => setNewPriority(Number(e.target.value))} className="p-2 border rounded-md text-sm">
+                    <option value="1">1 — Primary</option>
+                    <option value="2">2 — Secondary</option>
+                    <option value="3">3 — Other</option>
+                  </select>
+                  <div className="flex-1" />
+                  <button disabled={creating} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm"
+                    onClick={async () => {
+                      if (!newName.trim() || !newPhone.trim()) return;
+                      setCreating(true);
+                      try {
+                        const payload = { name: newName.trim(), relationship: newRelation.trim() || null, phone: newPhone.trim(), phone_type: null, is_primary: newPriority === 1 };
+                        const created = await apiPost<any>('/api/v1/parent/emergency-contacts', payload, token);
+                        const mapped: EmergencyContact = { id: created.id, name: created.name, relation: created.relationship || created.relation || '', phone: created.phone, priority: created.is_primary ? 1 : 2, available: true };
+                        onEmergencyContactsChange([...emergencyContacts, mapped]);
+                        setNewName(''); setNewRelation(''); setNewPhone(''); setNewPriority(2); setShowAddForm(false);
+                      } catch (err) { console.error(err); alert('Failed to add contact'); }
+                      finally { setCreating(false); }
+                    }}>
+                    {creating ? 'Adding…' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {emergencyContacts.map(contact => (
+              <div key={contact.id} className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+                {editingId === contact.id ? (
+                  <div className="flex-1">
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <input value={editName} onChange={e => setEditName(e.target.value)} className="p-2 border rounded-md text-sm" />
+                      <input value={editRelation} onChange={e => setEditRelation(e.target.value)} className="p-2 border rounded-md text-sm" />
+                      <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="p-2 border rounded-md text-sm" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select value={String(editPriority)} onChange={e => setEditPriority(Number(e.target.value))} className="p-2 border rounded-md text-sm">
+                        <option value="1">1 — Primary</option>
+                        <option value="2">2 — Secondary</option>
+                        <option value="3">3 — Other</option>
+                      </select>
+                      <div className="flex-1" />
+                      <button disabled={editSaving} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm mr-2"
+                        onClick={async () => {
+                          setEditSaving(true);
+                          try {
+                            const payload = { name: editName.trim(), relationship: editRelation.trim() || null, phone: editPhone.trim(), phone_type: null, is_primary: editPriority === 1 };
+                            const updated = await apiPut<any>(`/api/v1/parent/emergency-contacts/${contact.id}`, payload, token);
+                            const mapped: EmergencyContact = { id: updated.id, name: updated.name, relation: updated.relationship || updated.relation || '', phone: updated.phone, priority: updated.is_primary ? 1 : 2, available: true };
+                            onEmergencyContactsChange(emergencyContacts.map(c => c.id === contact.id ? mapped : c));
+                            setEditingId(null);
+                          } catch (err) { console.error(err); alert('Failed to update contact'); }
+                          finally { setEditSaving(false); }
+                        }}>
+                        {editSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-neutral-100 rounded-xl text-sm">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-3 h-3 rounded-full ${contact.available ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <div>
+                        <div className="font-semibold text-neutral-800">{contact.name}</div>
+                        <div className="text-sm text-neutral-600">{contact.relation} • {contact.phone}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${contact.priority === 1 ? 'bg-red-100 text-red-700' : contact.priority === 2 ? 'bg-orange-100 text-orange-700' : 'bg-neutral-100 text-neutral-700'}`}>
+                        Priority {contact.priority}
+                      </span>
+                      <button onClick={() => { setEditingId(contact.id); setEditName(contact.name); setEditRelation(contact.relation); setEditPhone(contact.phone); setEditPriority(contact.priority || 2); }}
+                        className="ml-2 text-sm text-emerald-700 px-3 py-1 rounded-md border border-emerald-100">Edit</button>
+                      <button onClick={async () => {
+                        if (!confirm('Delete this contact?')) return;
+                        try {
+                          await apiDelete(`/api/v1/parent/emergency-contacts/${contact.id}`, token);
+                          onEmergencyContactsChange(emergencyContacts.filter(c => c.id !== contact.id));
+                        } catch (err) { console.error(err); alert('Failed to delete'); }
+                      }} className="ml-2 text-sm text-red-600 px-3 py-1 rounded-md border border-red-100">Delete</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Section */}
+      {activeSection === 'notifications' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Bell className="w-6 h-6 text-blue-600" />
+            <h2 className="text-xl font-bold text-neutral-800">{t('Notification Preferences')}</h2>
+          </div>
+          <div className="space-y-4">
+            {localPrefs.map((pref, idx) => (
+              <div key={pref.type} className="border border-neutral-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-semibold text-neutral-800 capitalize">{pref.type}</p>
+                    <p className="text-xs text-neutral-500">Frequency: {pref.frequency}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={pref.enabled} className="sr-only peer"
+                      onChange={e => {
+                        const updated = localPrefs.map((p, i) => i === idx ? { ...p, enabled: e.target.checked } : p);
+                        setLocalPrefs(updated);
+                        onNotificationPrefsChange(updated);
+                      }} />
+                    <div className="w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(['push', 'sms', 'email'] as const).map(ch => (
+                    <label key={ch} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                      <input type="checkbox" checked={pref.channels.includes(ch)}
+                        onChange={e => {
+                          const channels = e.target.checked ? [...pref.channels, ch] : pref.channels.filter(c => c !== ch);
+                          const updated = localPrefs.map((p, i) => i === idx ? { ...p, channels } : p);
+                          setLocalPrefs(updated);
+                          onNotificationPrefsChange(updated);
+                        }}
+                        className="rounded" />
+                      <span className="text-neutral-600 capitalize">{ch}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Section — PREMIUM GATE */}
+      {activeSection === 'calendar' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <CalendarDays className="w-6 h-6 text-purple-600" />
+            <h2 className="text-xl font-bold text-neutral-800">{t('Calendar Integration')}</h2>
+          </div>
+          <div className="rounded-2xl border-2 border-dashed border-purple-200 bg-purple-50 p-8 text-center">
+            <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <CalendarDays className="w-8 h-8 text-purple-500" />
+            </div>
+            <h3 className="text-lg font-bold text-purple-900 mb-2">Coming Soon</h3>
+            <p className="text-sm text-purple-700 mb-4 max-w-xs mx-auto">
+              Sync school events, homework deadlines, and exams directly to your Google or Apple Calendar.
+            </p>
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-purple-200 text-sm text-purple-700">
+                <Apple size={16} /> Apple Calendar
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-purple-200 text-sm text-purple-700">
+                <CalendarDays size={16} /> Google Calendar
+              </div>
+            </div>
+            <span className="inline-block px-4 py-1.5 bg-purple-200 text-purple-800 text-xs font-bold rounded-full">
+              Premium Feature
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Translation Section — PREMIUM GATE */}
+      {activeSection === 'translation' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <Zap className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-xl font-bold text-neutral-800">{t('Translation Settings')}</h2>
+          </div>
+          <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50 p-8 text-center">
+            <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">🌐</span>
+            </div>
+            <h3 className="text-lg font-bold text-indigo-900 mb-2">Coming Soon</h3>
+            <p className="text-sm text-indigo-700 mb-4 max-w-xs mx-auto">
+              Translate the entire parent portal into your preferred language — Hindi, Telugu, Tamil, and more.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2 mb-4">
+              {['हिंदी', 'తెలుగు', 'தமிழ்', 'ಕನ್ನಡ', 'മലയാളം'].map(lang => (
+                <span key={lang} className="px-3 py-1 bg-white rounded-xl border border-indigo-200 text-sm text-indigo-700">{lang}</span>
+              ))}
+            </div>
+            <span className="inline-block px-4 py-1.5 bg-indigo-200 text-indigo-800 text-xs font-bold rounded-full">
+              Premium Feature
+            </span>
+          </div>
+          {/* Preview of translation controls (non-functional in free tier) */}
+          <div className="mt-6 space-y-4 opacity-50 pointer-events-none">
+            <div className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+              <div>
+                <p className="font-semibold text-neutral-800">{t('Enable Translation')}</p>
+                <p className="text-xs text-neutral-500">Translate app content to your language</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={translationSettings.enabled} className="sr-only peer" readOnly />
+                <div className="w-11 h-6 bg-neutral-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+            <div className="p-4 border border-neutral-200 rounded-xl">
+              <p className="font-semibold text-neutral-800 mb-2">{t('Target Language')}</p>
+              <select value={translationSettings.targetLanguage} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white" disabled>
+                {translationSettings.supportedLanguages.map(lang => (
+                  <option key={lang} value={lang}>{languageNames[lang] || lang}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

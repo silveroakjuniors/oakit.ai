@@ -309,7 +309,7 @@ export default function AdminDashboardPage() {
             [1,2,3,4].map(i => <div key={i} className="h-36 rounded-2xl bg-white border border-neutral-200/80 animate-pulse" />)
           ) : (
             <>
-              <StatCard onClick={() => setDrillModal('students')}  value={stats?.students ?? '—'}
+              <StatCard onClick={() => setDrillModal('students')} label="Total Students" value={stats?.students ?? '—'}
                 sub={`${stats?.classes ?? 0} classes · ${stats?.sections ?? 0} sections`}
                 icon={<Users className="w-4 h-4 text-blue-600" />}
                 accentColor="bg-blue-100"
@@ -341,13 +341,12 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* ── PENDING + BIRTHDAYS ── */}
-        {((todaySnap && (pendingAtt > 0 || pendingPlan > 0)) || birthdays.length > 0) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {todaySnap && (pendingAtt > 0 || pendingPlan > 0) && (
-              <Panel>
-                <PanelHeader icon={<Clock className="w-4 h-4 text-amber-500" />} title="Pending Today" subtitle="Actions still needed across sections" />
-                <div className="px-5 pb-5 space-y-2.5 border-t border-neutral-100">
-                  <div className="pt-3 space-y-2.5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {todaySnap && (pendingAtt > 0 || pendingPlan > 0) && (
+            <Panel>
+              <PanelHeader icon={<Clock className="w-4 h-4 text-amber-500" />} title="Pending Today" subtitle="Actions still needed across sections" />
+              <div className="px-5 pb-5 space-y-2.5 border-t border-neutral-100">
+                <div className="pt-3 space-y-2.5">
                     {pendingAtt > 0 && (
                       <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
                         <span className="text-xl shrink-0">📋</span>
@@ -376,41 +375,50 @@ export default function AdminDashboardPage() {
                 </div>
               </Panel>
             )}
-            {birthdays.length > 0 && (
-              <Panel>
-                <PanelHeader
-                  icon={<Cake className="w-4 h-4 text-pink-500" />}
-                  title="Birthdays"
-                  subtitle="Next 7 days"
-                  badge={todayBdays.length > 0 ? `${todayBdays.length} today 🎉` : undefined}
-                  badgeColor="bg-pink-100 text-pink-700"
-                />
-                <div className="px-5 pb-5 pt-3 border-t border-neutral-100 flex flex-wrap gap-2">
-                  {birthdays.map(b => (
-                    <div key={b.student_id}
-                      onClick={b.days_until === 0 ? () => setBirthdayModal(true) : undefined}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${b.days_until === 0 ? 'bg-pink-50 border-pink-200 cursor-pointer hover:bg-pink-100 hover:shadow-sm' : 'bg-neutral-50 border-neutral-100'}`}>
-                      <span className="text-base">{b.days_until === 0 ? '🎉' : '🎈'}</span>
-                      <div>
-                        <p className="text-[11px] font-semibold text-neutral-800 leading-tight">{b.name}</p>
-                        <p className="text-[10px] text-neutral-400">{b.class_name} {b.section_label}</p>
+            {/* Birthdays — always visible */}
+            <Panel>
+              <PanelHeader
+                icon={<Cake className="w-4 h-4 text-pink-500" />}
+                title="Birthdays"
+                subtitle="Next 7 days"
+                badge={todayBdays.length > 0 ? `${todayBdays.length} today 🎉` : birthdays.length > 0 ? `${birthdays.length} upcoming` : undefined}
+                badgeColor={todayBdays.length > 0 ? 'bg-pink-100 text-pink-700' : 'bg-neutral-100 text-neutral-500'}
+              />
+              <div className="px-5 pb-5 pt-3 border-t border-neutral-100">
+                {birthdays.length === 0 ? (
+                  <div className="flex flex-col items-center py-6 text-center">
+                    <span className="text-3xl mb-2">🎂</span>
+                    <p className="text-[12px] font-semibold text-neutral-600">No birthdays in the next 7 days</p>
+                    <p className="text-[11px] text-neutral-400 mt-1">Check back soon!</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {birthdays.map(b => (
+                      <div key={b.student_id}
+                        onClick={b.days_until === 0 ? () => setBirthdayModal(true) : undefined}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${b.days_until === 0 ? 'bg-pink-50 border-pink-200 cursor-pointer hover:bg-pink-100 hover:shadow-sm' : 'bg-neutral-50 border-neutral-100'}`}>
+                        <span className="text-base">{b.days_until === 0 ? '🎉' : '🎈'}</span>
+                        <div>
+                          <p className="text-[11px] font-semibold text-neutral-800 leading-tight">{b.name}</p>
+                          <p className="text-[10px] text-neutral-400">{b.class_name} {b.section_label}</p>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${b.days_until === 0 ? 'bg-pink-500 text-white' : 'bg-neutral-200 text-neutral-600'}`}>
+                          {b.days_until === 0 ? 'Today! 🎁' : `in ${b.days_until}d`}
+                        </span>
                       </div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${b.days_until === 0 ? 'bg-pink-500 text-white' : 'bg-neutral-200 text-neutral-600'}`}>
-                        {b.days_until === 0 ? 'Today! 🎁' : `in ${b.days_until}d`}
-                      </span>
-                    </div>
-                  ))}
-                  {todayBdays.length > 0 && (
-                    <button onClick={() => setBirthdayModal(true)}
-                      className="w-full mt-1 text-xs font-bold text-pink-600 hover:text-pink-800 py-2 rounded-xl hover:bg-pink-50 transition-colors">
-                      ✨ Send birthday wishes to parents →
-                    </button>
-                  )}
-                </div>
-              </Panel>
-            )}
+                    ))}
+                    {todayBdays.length > 0 && (
+                      <button onClick={() => setBirthdayModal(true)}
+                        className="w-full mt-1 text-xs font-bold text-pink-600 hover:text-pink-800 py-2 rounded-xl hover:bg-pink-50 transition-colors">
+                        ✨ Send birthday wishes to parents →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Panel>
           </div>
-        )}
+        </div>
 
         {/* ── SCHOOL INTELLIGENCE ── */}
         {(smartAlertsLoading || smartAlerts) && (
@@ -793,7 +801,6 @@ export default function AdminDashboardPage() {
         )}
 
       </div>
-    </div>
 
     {/* ── MODALS ── */}
     {drillModal && (
@@ -824,4 +831,3 @@ function AttendanceTrendChart({ data }: { data: TrendRow[] }) {
     </div>
   );
 }
-
