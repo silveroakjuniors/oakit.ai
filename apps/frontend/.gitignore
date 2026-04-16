@@ -1,0 +1,46 @@
+<<<<<<< HEAD
+# Node
+node_modules/
+.next/
+=======
+# System
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.kiro/
+
+# Node
+node_modules/
+**/node_modules/
+
+# Next.js
+.next/
+**/.next/
+>>>>>>> b227f76 (Oakit Pahse1 Complete)
+out/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Env
+.env
+.env.local
+
+<<<<<<< HEAD
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+=======
+# Logs
+*.log
+
+# Misc
+git
+>>>>>>> b227f76 (Oakit Pahse1 Complete)
