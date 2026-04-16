@@ -208,7 +208,7 @@ export default function SettingsTab({
                   </label>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {(['push', 'sms', 'email'] as const).map(ch => (
+                  {(['push', 'WhatsApp', 'email'] as const).map(ch => (
                     <label key={ch} className="flex items-center gap-1.5 text-xs cursor-pointer">
                       <input type="checkbox" checked={pref.channels.includes(ch)}
                         onChange={e => {

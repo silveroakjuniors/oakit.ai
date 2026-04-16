@@ -111,6 +111,14 @@ export default function MessagesTab({ threads, token, onRefresh }: {
         </button>
       </div>
 
+      {/* Communication model note */}
+      <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+        <span className="text-blue-500 text-sm shrink-0 mt-0.5">ℹ️</span>
+        <p className="text-xs text-blue-700 leading-relaxed">
+          All communication with teachers happens here in Oakit. When a teacher replies, you'll get a notification. This keeps all school communication in one secure place.
+        </p>
+      </div>
+
       {showNewMsg && (
         <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">

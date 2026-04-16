@@ -10,21 +10,23 @@ const PLANS = [
   {
     id: 'whatsapp',
     icon: '💬',
-    name: 'WhatsApp Support',
-    tagline: 'Stay connected with your child\'s teacher',
+    name: 'WhatsApp Notifications',
+    tagline: 'Get school updates directly on WhatsApp',
     price: 800,
     period: 'year',
     color: 'emerald',
     badge: null,
     forAges: 'All ages',
     features: [
-      'Direct WhatsApp chat with class teacher',
-      'Instant homework & attendance alerts',
-      'Weekly progress updates on WhatsApp',
-      'Emergency notifications',
+      'Homework alerts sent to your WhatsApp',
+      'Attendance notifications (present / absent / late)',
+      'School announcements on WhatsApp',
+      'Weekly progress summary every Friday',
+      'Emergency alerts from school',
       'Parent-teacher meeting reminders',
+      'All communication stays within Oakit — WhatsApp is notifications only',
     ],
-    description: 'Get real-time updates about your child directly on WhatsApp. Never miss a homework assignment, attendance alert, or important school announcement.',
+    description: 'Receive important school updates directly on WhatsApp — homework, attendance, announcements and more. All teacher communication still happens through the Oakit portal. WhatsApp is for notifications only, not direct chat.',
   },
   {
     id: 'multilingual',
@@ -391,7 +393,7 @@ export default function PremiumPage() {
           </div>
           <div className="divide-y divide-neutral-100">
             {[
-              { name: 'WhatsApp Support', price: '₹800/yr', tag: 'All ages' },
+              { name: 'WhatsApp Notifications', price: '₹800/yr', tag: 'All ages' },
               { name: 'Multilingual Support', price: '₹499/yr', tag: 'All ages' },
               { name: 'Speak & Evaluate', price: '₹1,000/yr', tag: 'Pre-Primary' },
               { name: 'Story & Evaluate', price: '₹1,000/yr', tag: 'Pre-Primary' },

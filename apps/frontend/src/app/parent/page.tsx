@@ -29,6 +29,7 @@ import ChatTab from '@/features/parent/components/ChatTab';
 import MessagesTab from '@/features/parent/components/MessagesTab';
 import NotificationsTab from '@/features/parent/components/NotificationsTab';
 import SettingsTab from '@/features/parent/components/SettingsTab';
+import PremiumWelcomeModal from '@/features/parent/components/PremiumWelcomeModal';
 import type { NoteItem } from '@/features/parent/types';
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export default function ParentPage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [noteModal, setNoteModal] = useState<NoteItem | null>(null);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Settings state
@@ -145,7 +147,14 @@ export default function ParentPage() {
 
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id); }
     } catch { /* ignore */ }
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      // Show premium modal once per session (not on every login — once per browser session)
+      const seen = sessionStorage.getItem('oakit_premium_popup_seen');
+      if (!seen) {
+        setTimeout(() => setShowPremiumModal(true), 1500);
+      }
+    }
   }
 
   function loadMockData() {
@@ -402,6 +411,11 @@ export default function ParentPage() {
           </nav>
         </div>
       </div>
+
+      {/* Premium welcome modal — shown once per session after login */}
+      {showPremiumModal && (
+        <PremiumWelcomeModal onClose={() => setShowPremiumModal(false)} />
+      )}
     </TranslationContext.Provider>
   );
 }

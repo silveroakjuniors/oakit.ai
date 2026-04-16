@@ -51,6 +51,8 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
   const [finalText, setFinalText] = useState('');
   const [editedTranscript, setEditedTranscript] = useState('');
   const [formattedNotes, setFormattedNotes] = useState('');
+  const [formattedEdited, setFormattedEdited] = useState(false); // true if teacher edited the AI output
+  const [originalFormatted, setOriginalFormatted] = useState(''); // snapshot to detect changes
   const [error, setError] = useState('');
   const [duration, setDuration] = useState(0);
   const [wordCount, setWordCount] = useState(0);
@@ -184,6 +186,8 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
         token
       );
       setFormattedNotes(res.formatted);
+      setOriginalFormatted(res.formatted);
+      setFormattedEdited(false);
       setStep('formatted');
     } catch (e: any) {
       setError(e.message || 'Formatting failed. Please try again.');
@@ -424,9 +428,12 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Eye size={14} className="text-emerald-600" />
-                <p className="text-sm font-semibold text-neutral-800">Formatted Notes — Preview</p>
-                <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Ready to send</span>
+                <p className="text-sm font-semibold text-neutral-800">Formatted Notes</p>
+                <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${formattedEdited ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {formattedEdited ? '✏️ Edited' : 'Ready to send'}
+                </span>
               </div>
+              <p className="text-xs text-neutral-400">Edit directly below. Changes are highlighted.</p>
 
               {/* Date + topics header */}
               <div className="px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl space-y-1">
@@ -443,9 +450,24 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
                 )}
               </div>
 
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 max-h-[260px] overflow-y-auto">
-                <p className="text-sm text-neutral-800 leading-relaxed whitespace-pre-wrap">{formattedNotes}</p>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-1 max-h-[260px] overflow-y-auto">
+                <textarea
+                  value={formattedNotes}
+                  onChange={e => {
+                    setFormattedNotes(e.target.value);
+                    setFormattedEdited(e.target.value !== originalFormatted);
+                  }}
+                  rows={10}
+                  className="w-full bg-transparent px-3 py-3 text-sm text-neutral-800 leading-relaxed focus:outline-none resize-none"
+                  placeholder="Formatted notes will appear here..."
+                />
               </div>
+              {formattedEdited && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl">
+                  <span className="text-blue-500 text-sm shrink-0">✏️</span>
+                  <p className="text-xs text-blue-700">You've edited the notes. You can re-format with Oakie or send as-is.</p>
+                </div>
+              )}
               {error && <p className="text-xs text-red-600">{error}</p>}
             </div>
           )}
@@ -511,18 +533,33 @@ export default function SessionRecorder({ token, sectionId, today, topics = [], 
 
           {step === 'formatted' && (
             <div className="space-y-2">
-              <button onClick={sendToParents}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
-                <Send size={16} /> Send to Parents
-              </button>
+              {/* Primary action changes based on whether notes were edited */}
+              {formattedEdited ? (
+                <button onClick={formatWithOakie} disabled={!formattedNotes.trim()}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-40">
+                  ✨ Re-format with Oakie
+                </button>
+              ) : (
+                <button onClick={sendToParents}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
+                  <Send size={16} /> Send to Parents
+                </button>
+              )}
+              {/* If edited, also show send-as-is option */}
+              {formattedEdited && (
+                <button onClick={sendToParents}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors text-sm">
+                  <Send size={14} /> Send As-Is to Parents
+                </button>
+              )}
               <div className="flex gap-2">
                 <button onClick={downloadTranscript}
                   className="flex-1 py-2.5 border border-neutral-200 text-neutral-600 text-sm font-medium rounded-xl flex items-center justify-center gap-1.5 hover:bg-neutral-50 transition-colors">
-                  <Download size={14} /> Download Notes
+                  <Download size={14} /> Download
                 </button>
                 <button onClick={() => setStep('review')}
                   className="flex-1 py-2.5 border border-neutral-200 text-neutral-600 text-sm font-medium rounded-xl hover:bg-neutral-50 transition-colors">
-                  ← Edit Transcript
+                  ← Raw Transcript
                 </button>
               </div>
             </div>
