@@ -29,9 +29,9 @@ export const metadata: Metadata = {
     startupImage: '/oakie.png',
   },
   icons: {
-    icon: '/oakie.png',
-    apple: '/oakie.png',
-    shortcut: '/oakie.png',
+    icon: '/app-icon.svg',
+    apple: '/app-icon.svg',
+    shortcut: '/app-icon.svg',
   },
   other: {
     // iOS full-screen PWA
@@ -49,11 +49,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <head>
-        {/* iOS splash / icon — explicit tags for maximum compatibility */}
-        <link rel="apple-touch-icon" href="/oakie.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/oakie.png" />
-        <link rel="apple-touch-icon" sizes="152x152" href="/oakie.png" />
-        <link rel="apple-touch-icon" sizes="120x120" href="/oakie.png" />
+        {/* iOS home screen icon — uses app-icon.svg for crisp display */}
+        <link rel="apple-touch-icon" href="/app-icon.svg" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/app-icon.svg" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/app-icon.svg" />
+        <link rel="apple-touch-icon" sizes="120x120" href="/app-icon.svg" />
+        <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
         <link rel="icon" type="image/png" href="/oakie.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
