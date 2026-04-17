@@ -165,21 +165,54 @@ export default function ParentPage() {
       { id: '1', name: 'Parent 1', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
       { id: '2', name: 'Parent 2', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: true },
     ]);
+
+    // Realistic insights based on June 1-16 observations
+    const name = firstChildName?.split(' ')[0] || 'Your child';
     setParentInsights({
-      attendanceTrend: 'improving', participationScore: 85,
-      strengths: ['Mathematics', 'Reading Comprehension'],
-      areasForImprovement: ['Handwriting'],
-      teacherFeedback: ['Excellent progress in math this month'],
-      predictions: { nextWeekAttendance: 95, endOfMonthProgress: 88, areasNeedingAttention: ['Practice handwriting daily'] },
+      attendanceTrend: 'improving',
+      participationScore: 72,
+      strengths: [
+        `${name} shows excellent creativity and imagination — art and storytelling are clear strengths`,
+        `English speaking confidence has improved noticeably over the past 2 weeks`,
+        `Shows empathy and kindness towards classmates`,
+      ],
+      areasForImprovement: [
+        `Pencil grip needs correction — currently using fist grip instead of 3-finger grip`,
+        `${name} has been falling asleep in afternoon sessions — sleep schedule needs attention`,
+        `Focus and attention during structured activities needs improvement`,
+      ],
+      teacherFeedback: [
+        `Introducing daily pencil grip exercises in class — will use triangular grip aids`,
+        `Pairing ${name} with a confident peer during group activities to build participation`,
+        `Monitoring energy levels — will flag if afternoon fatigue continues`,
+        `Planning extra encouragement during circle time to build speaking confidence`,
+      ],
+      predictions: {
+        nextWeekAttendance: 92,
+        endOfMonthProgress: 78,
+        areasNeedingAttention: [
+          `Practice pencil grip at home daily — 5 minutes before homework`,
+          `Ensure ${name} gets 9-10 hours of sleep on school nights`,
+          `Encourage ${name} to talk about their school day — builds communication skills`,
+          `Limit screen time to 30 minutes before bedtime`,
+        ],
+      },
       goals: {
-        academic: [{ id: '1', title: 'Improve Math Grade', description: 'Achieve 90%+', target: '90%', current: '85%', deadline: '2026-06-30', status: 'in_progress', category: 'academic' }],
-        behavioral: [],
-        attendance: [{ id: '2', title: 'Perfect Attendance', description: 'Attend all classes', target: '100%', current: '92%', deadline: '2026-04-30', status: 'in_progress', category: 'attendance' }],
+        academic: [
+          { id: '1', title: 'Correct Pencil Grip', description: 'Achieve consistent 3-finger pencil grip during all writing activities', target: '100%', current: '40%', deadline: '2026-06-30', status: 'in_progress', category: 'academic' },
+        ],
+        behavioral: [
+          { id: '2', title: 'Classroom Focus', description: 'Stay focused during structured activities without reminders', target: '80%', current: '55%', deadline: '2026-06-30', status: 'in_progress', category: 'behavioral' },
+        ],
+        attendance: [
+          { id: '3', title: 'Full Attendance', description: 'Attend all classes this month with no afternoon fatigue', target: '100%', current: '88%', deadline: '2026-06-30', status: 'in_progress', category: 'attendance' },
+        ],
       },
     });
+
     setChildComparisons([
-      { childId: firstChildId || '', name: firstChildName || 'Your Child', attendance: 92, progress: 88, participation: 85, rank: 3, trend: 'up' },
-      { childId: 'avg', name: 'Class Average', attendance: 87, progress: 82, participation: 78, rank: 0, trend: 'stable' },
+      { childId: firstChildId || '', name: firstChildName || 'Your Child', attendance: 88, progress: 72, participation: 65, rank: 4, trend: 'up' },
+      { childId: 'avg', name: 'Class Average', attendance: 87, progress: 75, participation: 70, rank: 0, trend: 'stable' },
     ]);
     setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
     setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');

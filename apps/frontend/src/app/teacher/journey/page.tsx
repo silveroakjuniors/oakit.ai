@@ -127,11 +127,16 @@ export default function ChildJourneyPage() {
   async function saveObservation() {
     if (!selectedStudent || !obsText.trim() || !obsCategory) return;
     setSavingObs(true); setObsMsg('');
+    const categoryMap: Record<string, string> = {
+      'cognitive': 'Academic Progress', 'language': 'Language', 'social': 'Social Skills',
+      'emotional': 'Behavior', 'gross_motor': 'Motor Skills', 'fine_motor': 'Motor Skills',
+      'creativity': 'Other', 'participation': 'Academic Progress', 'peer': 'Social Skills', 'behaviour': 'Behavior',
+    };
     try {
       await apiPost('/api/v1/teacher/observations', {
         student_id: selectedStudent,
         obs_text: obsText.trim(),
-        categories: [obsCategory],
+        categories: [categoryMap[obsCategory] || 'Other'],
         share_with_parent: false,
       }, token);
       setObsMsg('✓ Observation saved for report');
@@ -176,11 +181,27 @@ export default function ChildJourneyPage() {
   async function saveModalObservation() {
     if (!modalStudent || !modalCategory || !modalText.trim()) { setModalError('Please write an observation.'); return; }
     setModalSaving(true); setModalError('');
+
+    // Map journey categories to valid DB categories
+    const categoryMap: Record<string, string> = {
+      'cognitive':     'Academic Progress',
+      'language':      'Language',
+      'social':        'Social Skills',
+      'emotional':     'Behavior',
+      'gross_motor':   'Motor Skills',
+      'fine_motor':    'Motor Skills',
+      'creativity':    'Other',
+      'participation': 'Academic Progress',
+      'peer':          'Social Skills',
+      'behaviour':     'Behavior',
+    };
+    const dbCategory = categoryMap[modalCategory.key] || 'Other';
+
     try {
       await apiPost('/api/v1/teacher/observations', {
         student_id: modalStudent.id,
         obs_text: modalText.trim(),
-        categories: [modalCategory.label],
+        categories: [dbCategory],
         share_with_parent: modalShare,
       }, token);
       setObsMap(prev => ({
