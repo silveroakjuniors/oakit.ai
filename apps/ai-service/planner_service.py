@@ -159,14 +159,13 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
         global_idx = int(chunk_start_idx + sum(
             0.5 if d in half_day_set else 1.0 for d in range_curriculum_days[:i]
         ))
-        start_idx = global_idx * chunks_per_day
-        day_chunk_ids = all_chunk_ids[start_idx:start_idx + chunks_per_day]
-        if not day_chunk_ids:
-            # Chunks exhausted — cycle back from beginning to fill remaining days
-            cycle_idx = (global_idx * chunks_per_day) % len(all_chunk_ids)
-            day_chunk_ids = all_chunk_ids[cycle_idx:cycle_idx + chunks_per_day]
-            if not day_chunk_ids:
-                day_chunk_ids = all_chunk_ids[-chunks_per_day:]  # use last chunk as fallback
+        # Always cycle through chunks — wrap around using modulo so chunks repeat
+        # evenly across the full year regardless of how many days vs chunks there are.
+        cycle_start = (global_idx * chunks_per_day) % len(all_chunk_ids)
+        day_chunk_ids = all_chunk_ids[cycle_start:cycle_start + chunks_per_day]
+        # Handle wrap-around at end of chunk list
+        if len(day_chunk_ids) < chunks_per_day:
+            day_chunk_ids = day_chunk_ids + all_chunk_ids[:chunks_per_day - len(day_chunk_ids)]
 
         if day in half_day_set:
             # Task 6.3: Half-day plan writing.

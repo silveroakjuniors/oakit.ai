@@ -165,57 +165,102 @@ export default function ParentPage() {
       { id: '1', name: 'Parent 1', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
       { id: '2', name: 'Parent 2', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: true },
     ]);
+    setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
+    setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
+    loadInsightsForChild(firstChildId, firstChildName);
+  }
 
-    // Realistic insights based on June 1-16 observations
-    const name = firstChildName?.split(' ')[0] || 'Your child';
+  function loadInsightsForChild(childId?: string, childName?: string) {
+    const name = childName?.split(' ')[0] || 'Your child';
+    const firstName = childName?.split(' ')[0]?.toLowerCase() || '';
+
+    // Rohan-specific insights
+    const isRohan = firstName === 'rohan';
+
+    const strengths = isRohan ? [
+      `${name} shows exceptional creativity — art and painting are clear strengths`,
+      `Fine motor skills are good — letter formation is neat and well-formed`,
+      `Growing in confidence; answered a question in class for the first time this term`,
+    ] : [
+      `${name} shows excellent creativity and imagination — art and storytelling are clear strengths`,
+      `English speaking confidence has improved noticeably over the past 2 weeks`,
+      `Shows empathy and kindness towards classmates`,
+    ];
+
+    const areasForImprovement = isRohan ? [
+      `${name} is very shy — needs gentle encouragement to speak up and participate`,
+      `Gross motor skills need attention — tires quickly during physical activities`,
+      `Energy levels are low in the afternoons — a light snack before school may help`,
+    ] : [
+      `Pencil grip needs correction — currently using fist grip instead of 3-finger grip`,
+      `${name} has been falling asleep in afternoon sessions — sleep schedule needs attention`,
+      `Focus and attention during structured activities needs improvement`,
+    ];
+
+    const teacherFeedback = isRohan ? [
+      `Pairing ${name} with a confident peer during group activities — it is working well`,
+      `Celebrating small wins publicly to build ${name}'s confidence in class`,
+      `Encouraging outdoor play to build gross motor strength and stamina`,
+      `Monitoring afternoon energy — will flag if fatigue continues`,
+    ] : [
+      `Introducing daily pencil grip exercises in class — will use triangular grip aids`,
+      `Pairing ${name} with a confident peer during group activities to build participation`,
+      `Monitoring energy levels — will flag if afternoon fatigue continues`,
+      `Planning extra encouragement during circle time to build speaking confidence`,
+    ];
+
+    const areasNeedingAttention = isRohan ? [
+      `Encourage ${name} to speak in full sentences at home — builds classroom confidence`,
+      `Ensure ${name} has a light snack and short rest before school`,
+      `Outdoor play daily — even 20 minutes helps build gross motor strength`,
+      `Praise ${name} for small achievements to reinforce confidence`,
+    ] : [
+      `Practice pencil grip at home daily — 5 minutes before homework`,
+      `Ensure ${name} gets 9-10 hours of sleep on school nights`,
+      `Encourage ${name} to talk about their school day — builds communication skills`,
+      `Limit screen time to 30 minutes before bedtime`,
+    ];
+
+    const goals = isRohan ? {
+      academic: [
+        { id: '1', title: 'Classroom Participation', description: 'Raise hand and answer at least one question per day', target: '5x/week', current: '2x/week', deadline: '2026-06-30', status: 'in_progress' as const, category: 'academic' as const },
+      ],
+      behavioral: [
+        { id: '2', title: 'Social Confidence', description: 'Initiate conversation with a classmate during free play', target: 'Daily', current: '2x/week', deadline: '2026-06-30', status: 'in_progress' as const, category: 'behavioral' as const },
+      ],
+      attendance: [
+        { id: '3', title: 'Full Attendance', description: 'Attend all classes with good energy levels', target: '100%', current: '92%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'attendance' as const },
+      ],
+    } : {
+      academic: [
+        { id: '1', title: 'Correct Pencil Grip', description: 'Achieve consistent 3-finger pencil grip during all writing activities', target: '100%', current: '40%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'academic' as const },
+      ],
+      behavioral: [
+        { id: '2', title: 'Classroom Focus', description: 'Stay focused during structured activities without reminders', target: '80%', current: '55%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'behavioral' as const },
+      ],
+      attendance: [
+        { id: '3', title: 'Full Attendance', description: 'Attend all classes this month with no afternoon fatigue', target: '100%', current: '88%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'attendance' as const },
+      ],
+    };
+
     setParentInsights({
-      attendanceTrend: 'improving',
-      participationScore: 72,
-      strengths: [
-        `${name} shows excellent creativity and imagination — art and storytelling are clear strengths`,
-        `English speaking confidence has improved noticeably over the past 2 weeks`,
-        `Shows empathy and kindness towards classmates`,
-      ],
-      areasForImprovement: [
-        `Pencil grip needs correction — currently using fist grip instead of 3-finger grip`,
-        `${name} has been falling asleep in afternoon sessions — sleep schedule needs attention`,
-        `Focus and attention during structured activities needs improvement`,
-      ],
-      teacherFeedback: [
-        `Introducing daily pencil grip exercises in class — will use triangular grip aids`,
-        `Pairing ${name} with a confident peer during group activities to build participation`,
-        `Monitoring energy levels — will flag if afternoon fatigue continues`,
-        `Planning extra encouragement during circle time to build speaking confidence`,
-      ],
+      attendanceTrend: isRohan ? 'stable' : 'improving',
+      participationScore: isRohan ? 45 : 72,
+      strengths,
+      areasForImprovement,
+      teacherFeedback,
       predictions: {
-        nextWeekAttendance: 92,
-        endOfMonthProgress: 78,
-        areasNeedingAttention: [
-          `Practice pencil grip at home daily — 5 minutes before homework`,
-          `Ensure ${name} gets 9-10 hours of sleep on school nights`,
-          `Encourage ${name} to talk about their school day — builds communication skills`,
-          `Limit screen time to 30 minutes before bedtime`,
-        ],
+        nextWeekAttendance: isRohan ? 95 : 92,
+        endOfMonthProgress: isRohan ? 68 : 78,
+        areasNeedingAttention,
       },
-      goals: {
-        academic: [
-          { id: '1', title: 'Correct Pencil Grip', description: 'Achieve consistent 3-finger pencil grip during all writing activities', target: '100%', current: '40%', deadline: '2026-06-30', status: 'in_progress', category: 'academic' },
-        ],
-        behavioral: [
-          { id: '2', title: 'Classroom Focus', description: 'Stay focused during structured activities without reminders', target: '80%', current: '55%', deadline: '2026-06-30', status: 'in_progress', category: 'behavioral' },
-        ],
-        attendance: [
-          { id: '3', title: 'Full Attendance', description: 'Attend all classes this month with no afternoon fatigue', target: '100%', current: '88%', deadline: '2026-06-30', status: 'in_progress', category: 'attendance' },
-        ],
-      },
+      goals,
     });
 
     setChildComparisons([
-      { childId: firstChildId || '', name: firstChildName || 'Your Child', attendance: 88, progress: 72, participation: 65, rank: 4, trend: 'up' },
+      { childId: childId || '', name: childName || 'Your Child', attendance: isRohan ? 92 : 88, progress: isRohan ? 68 : 72, participation: isRohan ? 45 : 65, rank: isRohan ? 5 : 4, trend: isRohan ? 'stable' : 'up' },
       { childId: 'avg', name: 'Class Average', attendance: 87, progress: 75, participation: 70, rank: 0, trend: 'stable' },
     ]);
-    setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
-    setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
   }
 
   const fetchChildData = useCallback(async (childId: string) => {
@@ -234,7 +279,12 @@ export default function ParentPage() {
     } finally { setChildLoading(false); }
   }, [cache, token]);
 
-  async function switchChild(childId: string) { setActiveChildId(childId); await fetchChildData(childId); }
+  async function switchChild(childId: string) {
+    setActiveChildId(childId);
+    const child = children.find(c => c.id === childId);
+    loadInsightsForChild(childId, child?.name);
+    await fetchChildData(childId);
+  }
 
   async function sendChat() {
     const text = chatInput.trim();
