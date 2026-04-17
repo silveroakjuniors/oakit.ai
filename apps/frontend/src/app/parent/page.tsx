@@ -127,6 +127,9 @@ export default function ParentPage() {
       apiGet<{ voice_enabled: boolean }>('/api/v1/ai/voice-status', token).then(d => setVoiceEnabled(d.voice_enabled)).catch(() => {});
 
       // Load settings + emergency contacts
+      // Always load mock insights data immediately so Insights tab never spins
+      loadMockData(kids[0]?.id, kids[0]?.name);
+
       (async () => {
         try {
           const [rows, settings] = await Promise.all([
@@ -142,7 +145,7 @@ export default function ParentPage() {
             const ts = settings.translation_settings;
             setTranslationSettings({ enabled: ts.enabled ?? false, targetLanguage: ts.targetLanguage || 'en', autoTranslate: ts.autoTranslate ?? false, supportedLanguages: ts.supportedLanguages?.length ? ts.supportedLanguages : ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa'] });
           }
-        } catch { loadMockData(); }
+        } catch { /* settings failed — mock data already loaded above */ }
       })();
 
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id); }
@@ -157,7 +160,7 @@ export default function ParentPage() {
     }
   }
 
-  function loadMockData() {
+  function loadMockData(firstChildId?: string, firstChildName?: string) {
     setEmergencyContacts([
       { id: '1', name: 'Parent 1', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
       { id: '2', name: 'Parent 2', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: true },
@@ -175,7 +178,7 @@ export default function ParentPage() {
       },
     });
     setChildComparisons([
-      { childId: activeChildId || '', name: activeChild?.name || 'Your Child', attendance: 92, progress: 88, participation: 85, rank: 3, trend: 'up' },
+      { childId: firstChildId || '', name: firstChildName || 'Your Child', attendance: 92, progress: 88, participation: 85, rank: 3, trend: 'up' },
       { childId: 'avg', name: 'Class Average', attendance: 87, progress: 82, participation: 78, rank: 0, trend: 'stable' },
     ]);
     setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
