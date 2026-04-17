@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import { ChevronLeft, Send, BookOpen, ClipboardList, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, Send, BookOpen, ClipboardList, CheckCircle2, AlertCircle, X, Loader2, Sparkles } from 'lucide-react';
 
 interface Student { id: string; name: string; }
 interface JourneyEntry {
@@ -62,6 +62,15 @@ export default function ChildJourneyPage() {
   const [obsText, setObsText] = useState('');
   const [savingObs, setSavingObs] = useState(false);
   const [obsMsg, setObsMsg] = useState('');
+
+  // Popup modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalStudent, setModalStudent] = useState<Student | null>(null);
+  const [modalCategory, setModalCategory] = useState<typeof REPORT_CATEGORIES[0] | null>(null);
+  const [modalText, setModalText] = useState('');
+  const [modalShare, setModalShare] = useState(false);
+  const [modalSaving, setModalSaving] = useState(false);
+  const [modalError, setModalError] = useState('');
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
@@ -141,13 +150,133 @@ export default function ChildJourneyPage() {
     return REPORT_CATEGORIES.filter(cat => !covered.has(cat.key) && !covered.has(cat.label.toLowerCase())).map(c => c.key);
   }
 
+  // AI suggestions per category
+  const AI_SUGGESTIONS: Record<string, string[]> = {
+    'cognitive':     ['Shows strong problem-solving ability', 'Needs support with memory and recall', 'Excellent pattern recognition', 'Curious and asks thoughtful questions'],
+    'language':      ['Communicates clearly and confidently', 'Vocabulary is expanding well', 'Needs encouragement to speak up', 'Excellent listening and comprehension'],
+    'social':        ['Works well in group activities', 'Needs support sharing with peers', 'Shows leadership qualities', 'Kind and inclusive with classmates'],
+    'emotional':     ['Manages emotions well', 'Gets frustrated easily, needs calming strategies', 'Shows empathy towards classmates', 'Building confidence gradually'],
+    'gross_motor':   ['Active and energetic, good coordination', 'Needs support with balance activities', 'Excellent at outdoor play and sports', 'Developing gross motor skills steadily'],
+    'fine_motor':    ['Fine motor skills are developing well', 'Needs support with pencil grip', 'Excellent at cutting and pasting', 'Struggles with writing, needs practice'],
+    'creativity':    ['Shows great imagination in art', 'Loves storytelling and role play', 'Excellent musical sense and rhythm', 'Needs encouragement to try new activities'],
+    'participation': ['Actively participates in all activities', 'Needs reminders to stay focused', 'Excellent attention span for age', 'Engages well when given individual attention'],
+    'peer':          ['Shares and takes turns well', 'Working on conflict resolution skills', 'A natural peacemaker in the group', 'Prefers one-on-one over group play'],
+    'behaviour':     ['Follows classroom rules consistently', 'Needs reminders about expectations', 'Positive attitude and enthusiasm', 'Showing steady improvement in behaviour'],
+  };
+
+  function openModal(student: Student, cat: typeof REPORT_CATEGORIES[0]) {
+    setModalStudent(student);
+    setModalCategory(cat);
+    setModalText('');
+    setModalShare(false);
+    setModalError('');
+    setModalOpen(true);
+  }
+
+  async function saveModalObservation() {
+    if (!modalStudent || !modalCategory || !modalText.trim()) { setModalError('Please write an observation.'); return; }
+    setModalSaving(true); setModalError('');
+    try {
+      await apiPost('/api/v1/teacher/observations', {
+        student_id: modalStudent.id,
+        obs_text: modalText.trim(),
+        categories: [modalCategory.label],
+        share_with_parent: modalShare,
+      }, token);
+      setObsMap(prev => ({
+        ...prev,
+        [modalStudent.id]: [...(prev[modalStudent.id] || []), modalCategory.key],
+      }));
+      setModalOpen(false);
+    } catch (e: any) { setModalError(e.message || 'Failed to save'); }
+    finally { setModalSaving(false); }
+  }
+
   const examples = ENTRY_EXAMPLES[entryType];
   const selectedStudentName = students.find(s => s.id === selectedStudent)?.name || '';
   const missingForSelected = selectedStudent ? getMissingCategories(selectedStudent) : [];
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-20">
-      {/* Header */}
+
+      {/* ── Observation Popup Modal ── */}
+      {modalOpen && modalStudent && modalCategory && (
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setModalOpen(false)}>
+          <div className="relative w-full lg:w-[480px] bg-white rounded-t-3xl lg:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 bg-primary-50 border-b border-primary-100">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{modalCategory.icon}</span>
+                <div>
+                  <p className="text-sm font-bold text-neutral-800">{modalCategory.label}</p>
+                  <p className="text-xs text-neutral-500">{modalStudent.name} · {modalCategory.hint}</p>
+                </div>
+              </div>
+              <button onClick={() => setModalOpen(false)} className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              {/* AI Suggestions */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Sparkles size={13} className="text-primary-500" />
+                  <p className="text-xs font-semibold text-neutral-600">Oakie suggestions — tap to use</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(AI_SUGGESTIONS[modalCategory.key] || []).map((s, i) => (
+                    <button key={i} onClick={() => setModalText(s)}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-all text-left ${
+                        modalText === s
+                          ? 'bg-primary-50 border-primary-300 text-primary-700 font-semibold'
+                          : 'border-neutral-200 text-neutral-600 hover:border-primary-300 hover:bg-primary-50'
+                      }`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Text input */}
+              <div>
+                <p className="text-xs font-semibold text-neutral-600 mb-1.5">Your observation</p>
+                <textarea value={modalText} onChange={e => setModalText(e.target.value.slice(0, 500))}
+                  placeholder={`Describe what you observed about ${modalStudent.name.split(' ')[0]}…`}
+                  rows={4} autoFocus
+                  className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400 resize-none" />
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs text-neutral-400">{modalText.length}/500</span>
+                  {modalText.length > 0 && <button onClick={() => setModalText('')} className="text-xs text-neutral-400 hover:text-neutral-600">Clear</button>}
+                </div>
+              </div>
+
+              {/* Share toggle */}
+              <div className="flex items-center justify-between px-3 py-2.5 bg-neutral-50 rounded-xl border border-neutral-100">
+                <div>
+                  <p className="text-xs font-semibold text-neutral-700">Share with parent</p>
+                  <p className="text-[10px] text-neutral-400">Parent will see this in their portal</p>
+                </div>
+                <button onClick={() => setModalShare(v => !v)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${modalShare ? 'bg-primary-600' : 'bg-neutral-200'}`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${modalShare ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {modalError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{modalError}</p>}
+            </div>
+
+            <div className="px-5 pb-5 flex gap-3">
+              <button onClick={() => setModalOpen(false)} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50 transition-colors">Cancel</button>
+              <button onClick={saveModalObservation} disabled={modalSaving || !modalText.trim()}
+                className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+                {modalSaving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                {modalSaving ? 'Saving…' : 'Save Observation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
         <button onClick={() => router.back()} className="text-neutral-400 hover:text-neutral-600">
           <ChevronLeft className="w-5 h-5" />
@@ -319,7 +448,7 @@ export default function ChildJourneyPage() {
                           const covered = !missing.includes(cat.key);
                           return (
                             <button key={cat.key}
-                              onClick={() => { setSelectedStudent(student.id); setObsCategory(cat.key); setActiveTab('readiness'); }}
+                              onClick={() => openModal(student, cat)}
                               className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full border transition-colors ${
                                 covered
                                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
