@@ -359,76 +359,151 @@ async def analyze_coverage(req: CoverageRequest):
 @app.post("/internal/import-holidays")
 async def import_holidays(file: UploadFile = File(...)):
     import openpyxl
+    import csv
     content = await file.read()
     valid_rows = []
     invalid_rows = []
 
+    filename = (file.filename or '').lower()
+    is_csv = filename.endswith('.csv')
+
+    # Also detect CSV by content — if content starts with PK (xlsx magic bytes), force xlsx mode
+    if is_csv and content[:2] == b'PK':
+        is_csv = False
+
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(content))
-        ws = wb.active
-        headers = [str(cell.value).strip().lower() if cell.value else '' for cell in ws[1]]
+        if is_csv:
+            # Parse CSV
+            text = content.decode('utf-8-sig')  # utf-8-sig strips BOM if present
+            reader = csv.DictReader(text.splitlines())
+            original_headers = [h.strip() for h in (reader.fieldnames or [])]
+            headers_lower = [h.lower() for h in original_headers]
 
-        # Flexible column detection — support multiple naming conventions
-        def find_col(candidates):
-            for c in candidates:
-                if c in headers:
-                    return headers.index(c)
-            return None
+            # Map from lowercased candidate → original header name for row.get()
+            def find_col(candidates):
+                for c in candidates:
+                    if c in headers_lower:
+                        return original_headers[headers_lower.index(c)]
+                for c in candidates:
+                    for i, h in enumerate(headers_lower):
+                        if c in h or h in c:
+                            return original_headers[i]
+                return None
 
-        date_idx = find_col(['date'])
-        # event_name can come from 'description', 'event_name', 'event', 'name', 'holiday name'
-        name_idx = find_col(['description', 'event_name', 'event', 'name', 'holiday name', 'holiday'])
-        # type column: 'type', 'day type', 'category'
-        type_idx = find_col(['type', 'day type', 'category'])
+            date_key = find_col(['date'])
+            name_key = find_col(['description', 'event_name', 'event name', 'event', 'name', 'holiday name', 'holiday'])
+            type_key = find_col(['type', 'day type', 'category'])
 
-        if date_idx is None:
-            raise HTTPException(status_code=400, detail="Missing required column: Date")
-        if name_idx is None:
-            raise HTTPException(status_code=400, detail="Missing required column: Description or event_name")
+            if not date_key:
+                raise HTTPException(status_code=400, detail=f"Missing required column: 'date'. Found columns: {original_headers}")
+            if not name_key:
+                raise HTTPException(status_code=400, detail=f"Missing required column: 'description' or 'event_name'. Found columns: {original_headers}")
 
-        for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            raw_date = row[date_idx] if date_idx < len(row) else None
-            event_name = row[name_idx] if name_idx is not None and name_idx < len(row) else None
-            row_type = str(row[type_idx]).strip().lower() if type_idx is not None and type_idx < len(row) and row[type_idx] else ''
+            for row_num, row in enumerate(reader, start=2):
+                raw_date = (row.get(date_key) or '').strip()
+                event_name = (row.get(name_key) or '').strip()
+                row_type = (row.get(type_key) or '').strip().lower() if type_key else ''
 
-            if not event_name or not str(event_name).strip():
-                invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
-                continue
+                if not event_name:
+                    invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
+                    continue
 
-            # Skip rows that are explicitly "Working Day" — those aren't holidays
-            if row_type in ('working day', 'working', 'school day'):
-                invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
-                continue
+                if row_type in ('working day', 'working', 'school day'):
+                    invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
+                    continue
 
-            # Parse date
-            parsed_date = None
-            if isinstance(raw_date, (datetime, date)):
-                parsed_date = raw_date.strftime('%Y-%m-%d') if isinstance(raw_date, datetime) else str(raw_date)
-            elif isinstance(raw_date, str):
-                raw_str = raw_date.strip()
-                for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y'):
+                parsed_date = None
+                for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y', '%d-%b-%Y', '%d.%m.%Y'):
                     try:
-                        parsed_date = datetime.strptime(raw_str, fmt).strftime('%Y-%m-%d')
+                        parsed_date = datetime.strptime(raw_date, fmt).strftime('%Y-%m-%d')
                         break
                     except ValueError:
                         continue
 
-            if not parsed_date:
-                invalid_rows.append({"row": row_num, "reason": f"Invalid date: {raw_date}"})
-                continue
+                if not parsed_date:
+                    invalid_rows.append({"row": row_num, "reason": f"Invalid date format: '{raw_date}'. Use DD-MM-YYYY (e.g. 26-06-2026)"})
+                    continue
 
-            valid_rows.append({
-                "date": parsed_date,
-                "event_name": str(event_name).strip(),
-                "type": row_type or "holiday"
-            })
+                valid_rows.append({"date": parsed_date, "event_name": event_name, "type": row_type or "holiday"})
+
+        else:
+            wb = openpyxl.load_workbook(io.BytesIO(content))
+            ws = wb.active
+            headers = [str(cell.value).strip().lower() if cell.value else '' for cell in ws[1]]
+
+            # Flexible column detection — support multiple naming conventions
+            def find_col(candidates):
+                # Exact match first
+                for c in candidates:
+                    if c in headers:
+                        return headers.index(c)
+                # Partial match fallback (e.g. "holiday name" contains "holiday")
+                for c in candidates:
+                    for i, h in enumerate(headers):
+                        if c in h or h in c:
+                            return i
+                return None
+
+            date_idx = find_col(['date'])
+            name_idx = find_col(['description', 'event_name', 'event name', 'event', 'name', 'holiday name', 'holiday'])
+            type_idx = find_col(['type', 'day type', 'category'])
+
+            if date_idx is None:
+                raise HTTPException(status_code=400, detail="Missing required column: Date")
+            if name_idx is None:
+                raise HTTPException(status_code=400, detail="Missing required column: Description or event_name")
+
+            for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                raw_date = row[date_idx] if date_idx < len(row) else None
+                event_name = row[name_idx] if name_idx is not None and name_idx < len(row) else None
+                row_type = str(row[type_idx]).strip().lower() if type_idx is not None and type_idx < len(row) and row[type_idx] else ''
+
+                if not event_name or not str(event_name).strip():
+                    invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
+                    continue
+
+                if row_type in ('working day', 'working', 'school day'):
+                    invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
+                    continue
+
+                parsed_date = None
+                if isinstance(raw_date, (datetime, date)):
+                    parsed_date = raw_date.strftime('%Y-%m-%d') if isinstance(raw_date, datetime) else str(raw_date)
+                elif isinstance(raw_date, (int, float)):
+                    try:
+                        from openpyxl.utils.datetime import from_excel
+                        dt = from_excel(raw_date)
+                        parsed_date = dt.strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
+                elif isinstance(raw_date, str):
+                    raw_str = raw_date.strip()
+                    for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y', '%d-%b-%Y', '%d.%m.%Y'):
+                        try:
+                            parsed_date = datetime.strptime(raw_str, fmt).strftime('%Y-%m-%d')
+                            break
+                        except ValueError:
+                            continue
+
+                if not parsed_date:
+                    invalid_rows.append({"row": row_num, "reason": f"Invalid date: {raw_date}"})
+                    continue
+
+                valid_rows.append({
+                    "date": parsed_date,
+                    "event_name": str(event_name).strip(),
+                    "type": row_type or "holiday"
+                })
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
 
-    return {"valid_rows": valid_rows, "invalid_rows": invalid_rows}
+    return {
+        "valid_rows": valid_rows,
+        "invalid_rows": invalid_rows,
+    }
 
 
 # --- Student import ---
@@ -1207,6 +1282,122 @@ async def generate_report(req: GenerateReportRequest):
         response = f"Report generation failed: {str(e)}"
 
     return {"response": response}
+
+
+class TopicSummaryRequest(BaseModel):
+    topics: list  # list of topic_label strings
+    class_name: str = "Nursery"
+    child_name: str = "your child"
+    completed: bool = False
+
+@app.post("/internal/topic-summary")
+async def topic_summary(req: TopicSummaryRequest):
+    """Generate a 2-sentence parent-friendly summary of today's topics.
+    Bypasses query pipeline — direct LLM call only."""
+    from query_pipeline import _call_llm
+    import re
+
+    # Clean up generic labels like "Week 1 Day 5" before sending to LLM
+    cleaned = []
+    for t in req.topics:
+        # Remove standalone "Week X Day Y" patterns
+        stripped = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', t, flags=re.IGNORECASE).strip(' -–:,')
+        if stripped:
+            cleaned.append(stripped)
+        elif t.strip():
+            cleaned.append(t.strip())
+
+    if not cleaned:
+        return {"summary": ""}
+
+    topics_str = ", ".join(cleaned)
+
+    if req.completed:
+        prompt = (
+            f"Today in {req.class_name}, {req.child_name} learned: {topics_str}.\n\n"
+            f"Write exactly 2 short, warm sentences for a parent explaining what their child learned today. "
+            f"Use past tense (learned, practiced, explored). Use simple language. Be specific about the subjects. "
+            f"Do NOT use bullet points, markdown, or asterisks. "
+            f"Do NOT mention 'Week' or 'Day' numbers. "
+            f"Keep it under 40 words total."
+        )
+    else:
+        prompt = (
+            f"Today in {req.class_name}, {req.child_name}'s class is planned to cover: {topics_str}.\n\n"
+            f"Write exactly 2 short, warm sentences for a parent explaining what their child will be learning today. "
+            f"Use future tense (will learn, will practice, will explore). Use simple language. Be specific about the subjects. "
+            f"Do NOT use bullet points, markdown, or asterisks. "
+            f"Do NOT mention 'Week' or 'Day' numbers. "
+            f"Keep it under 40 words total."
+        )
+
+    system = (
+        "You are a friendly school assistant writing brief daily updates for parents. "
+        "Always write in plain English. No formatting. No lists. Just 2 warm sentences."
+    )
+
+    try:
+        response, _ = await _call_llm(prompt, system)
+        if response:
+            # Strip any markdown that slipped through
+            response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
+            response = re.sub(r'\*([^*]+)\*', r'\1', response)
+            response = response.strip()
+        return {"summary": response or topics_str}
+    except Exception:
+        return {"summary": topics_str}
+
+
+# --- Per-topic homework generation ---
+
+class TopicHomeworkRequest(BaseModel):
+    topic_label: str
+    content: str = ""
+    class_name: str = "Nursery"
+    school_id: str = ""
+    section_id: str = ""
+
+@app.post("/internal/generate-topic-homework")
+async def generate_topic_homework(req: TopicHomeworkRequest):
+    """Generate age-appropriate homework for a single curriculum topic.
+    Returns a structured draft: what to do, materials needed, estimated time.
+    Req 2.1–2.5: 15-second timeout, same language as content, preschool-appropriate."""
+    import asyncio
+    from query_pipeline import _call_llm
+    import re
+
+    topic = req.topic_label.strip() or "today's topic"
+    content_preview = req.content[:600].strip() if req.content else ""
+
+    system = (
+        "You are a friendly preschool teacher writing homework instructions for parents of young children (ages 3–7). "
+        "Write in simple, warm language. No markdown, no bullet symbols, no asterisks. "
+        "Keep it under 80 words. Write in the same language as the topic content."
+    )
+
+    prompt = (
+        f"Topic: {topic}\n"
+        f"{('Context: ' + content_preview) if content_preview else ''}\n\n"
+        f"Write homework for this topic as 3 short lines:\n"
+        f"1. What the child should do (one clear action)\n"
+        f"2. Materials needed (if any, otherwise skip)\n"
+        f"3. Estimated time (e.g. '10 minutes')\n\n"
+        f"Keep it simple, friendly, and age-appropriate for {req.class_name} students."
+    )
+
+    try:
+        response, _ = await asyncio.wait_for(_call_llm(prompt, system), timeout=15.0)
+        if response:
+            # Strip any markdown that slipped through
+            response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
+            response = re.sub(r'\*([^*]+)\*', r'\1', response)
+            response = response.strip()
+        return {"draft_text": response or f"Practice {topic} at home for 10 minutes."}
+    except asyncio.TimeoutError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=504, detail="AI generation timed out. Please retry.")
+    except Exception:
+        return {"draft_text": f"Practice {topic} at home for 10 minutes."}
 
 
 @app.post("/internal/format-homework")

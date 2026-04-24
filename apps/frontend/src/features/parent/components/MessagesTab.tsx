@@ -1,28 +1,38 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { ChevronRight, Loader2, MessageSquare, Send } from 'lucide-react';
+import { ChevronRight, Loader2, Send, MessageCircle, Plus } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/api';
 import type { ParentMessage } from '../types';
+
+const P = {
+  brand: '#1F7A5A', brandDark: '#166A4D', brandSoft: '#E8F3EF', brandBorder: '#A7D4C0',
+  bg: '#F8FAFC', card: '#F8FAFC', border: '#E4E4E7',
+  text: '#18181B', textSub: '#3F3F46', textMuted: '#71717A',
+};
+
+const cardStyle: React.CSSProperties = {
+  background: P.card, border: `1px solid ${P.border}`,
+  borderRadius: 12, boxShadow: '0 1px 2px rgba(0,0,0,0.04)', overflow: 'hidden',
+};
 
 export default function MessagesTab({ threads, token, onRefresh }: {
   threads: ParentMessage[]; token: string; onRefresh: () => void;
 }) {
-  const [active, setActive] = useState<ParentMessage | null>(null);
-  const [msgs, setMsgs] = useState<any[]>([]);
-  const [reply, setReply] = useState('');
-  const [sending, setSending] = useState(false);
-  const [showNewMsg, setShowNewMsg] = useState(false);
-  const [newMsgBody, setNewMsgBody] = useState('');
+  const [active, setActive]           = useState<ParentMessage | null>(null);
+  const [msgs, setMsgs]               = useState<any[]>([]);
+  const [reply, setReply]             = useState('');
+  const [sending, setSending]         = useState(false);
+  const [showNewMsg, setShowNewMsg]   = useState(false);
+  const [newMsgBody, setNewMsgBody]   = useState('');
   const [selectedTeacher, setSelectedTeacher] = useState('');
   const [selectedStudent, setSelectedStudent] = useState('');
-  const [sendingNew, setSendingNew] = useState(false);
-  const [teachers, setTeachers] = useState<any[]>([]);
+  const [sendingNew, setSendingNew]   = useState(false);
+  const [teachers, setTeachers]       = useState<any[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     apiGet<any[]>('/api/v1/parent/message-teachers', token).then(setTeachers).catch(() => {});
   }, []);
-
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
   async function openThread(thread: ParentMessage) {
@@ -41,8 +51,7 @@ export default function MessagesTab({ threads, token, onRefresh }: {
       setReply('');
       const data = await apiGet<any[]>(`/api/v1/parent/messages/${active.teacher_id}/${active.student_id}`, token);
       setMsgs(data || []);
-    } catch {}
-    finally { setSending(false); }
+    } catch {} finally { setSending(false); }
   }
 
   async function sendNewMessage() {
@@ -57,29 +66,47 @@ export default function MessagesTab({ threads, token, onRefresh }: {
         const thread: ParentMessage = { teacher_id: th.teacher_id, student_id: th.student_id, teacher_name: th.teacher_name, student_name: th.student_name, last_message: newMsgBody, last_sent_at: new Date().toISOString(), last_sender: 'parent', unread_count: 0 };
         await openThread(thread);
       }
-    } catch {}
-    finally { setSendingNew(false); }
+    } catch {} finally { setSendingNew(false); }
   }
 
+  // ── Thread view ──────────────────────────────────────────────────────────────
   if (active) {
     return (
-      <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-3 bg-[#0f2417] text-white">
-          <button onClick={() => setActive(null)} className="text-white/60 hover:text-white">
+      <div className="flex flex-col overflow-hidden"
+        style={{ ...cardStyle, height: 'calc(100vh - 280px)', minHeight: 480 }}>
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
+          style={{ background: P.brandSoft, borderBottom: `1px solid ${P.brandBorder}` }}>
+          <button onClick={() => setActive(null)}
+            className="hover:bg-white/60 rounded-lg p-1 transition-colors"
+            style={{ color: P.brandDark }}>
             <ChevronRight size={20} className="rotate-180" />
           </button>
+          <div className="w-9 h-9 rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0"
+            style={{ background: P.brand }}>
+            {active.teacher_name?.[0] ?? 'T'}
+          </div>
           <div>
-            <p className="font-bold text-sm">{active.teacher_name}</p>
-            <p className="text-xs text-white/50">{active.student_name}</p>
+            <p className="font-semibold text-sm" style={{ color: P.brandDark }}>{active.teacher_name}</p>
+            <p className="text-xs" style={{ color: P.brand }}>{active.student_name}</p>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-50/50">
-          {msgs.length === 0 && <div className="text-center py-8 text-neutral-400 text-sm">No messages yet. Send the first message below.</div>}
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ background: P.bg }}>
+          {msgs.length === 0 && (
+            <div className="text-center py-8 text-sm" style={{ color: P.textMuted }}>
+              No messages yet. Send the first message below.
+            </div>
+          )}
           {msgs.map((m, i) => (
             <div key={i} className={`flex ${m.sender_role === 'parent' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${m.sender_role === 'parent' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>
+              <div className="max-w-[80%] px-4 py-2.5 text-sm"
+                style={m.sender_role === 'parent'
+                  ? { background: P.brand, color: '#fff', borderRadius: '16px 16px 4px 16px' }
+                  : { background: P.card, color: P.text, borderRadius: '16px 16px 16px 4px', border: `1px solid ${P.border}`, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
                 <p>{m.body}</p>
-                <p className={`text-[10px] mt-1 ${m.sender_role === 'parent' ? 'text-white/60' : 'text-neutral-400'}`}>
+                <p className="text-[10px] mt-1" style={{ color: m.sender_role === 'parent' ? 'rgba(255,255,255,0.6)' : P.textMuted }}>
                   {new Date(m.sent_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
@@ -87,13 +114,18 @@ export default function MessagesTab({ threads, token, onRefresh }: {
           ))}
           <div ref={endRef} />
         </div>
-        <div className="px-4 py-3 bg-white border-t border-neutral-100 flex gap-2">
+
+        {/* Input */}
+        <div className="px-4 py-3 flex gap-2 flex-shrink-0"
+          style={{ background: P.card, borderTop: `1px solid ${P.border}` }}>
           <input value={reply} onChange={e => setReply(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') sendReply(); }}
-            placeholder="Type a message..." maxLength={1000}
-            className="flex-1 px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
+            placeholder="Type a message…" maxLength={1000}
+            className="flex-1 px-3 py-2.5 text-sm rounded-xl outline-none"
+            style={{ background: P.bg, border: `1.5px solid ${P.border}`, color: P.text }} />
           <button onClick={sendReply} disabled={!reply.trim() || sending}
-            className="px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center gap-1.5 min-w-[52px] justify-center">
+            className="px-4 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-40 flex items-center gap-1.5 min-w-[52px] justify-center text-white"
+            style={{ background: P.brand }}>
             {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
           </button>
         </div>
@@ -101,36 +133,41 @@ export default function MessagesTab({ threads, token, onRefresh }: {
     );
   }
 
+  // ── Thread list ──────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-3">
+    <div className="space-y-4 pb-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-neutral-800">Messages</h2>
-        <button onClick={() => setShowNewMsg(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors">
-          <MessageSquare size={16} /> New Message
+        <p className="text-sm font-semibold" style={{ color: P.text }}>Messages</p>
+        <button onClick={() => setShowNewMsg(s => !s)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-xl text-white transition-opacity hover:opacity-90"
+          style={{ background: P.brand }}>
+          <Plus size={14} strokeWidth={2} /> New Message
         </button>
       </div>
 
-      {/* Communication model note */}
-      <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl">
-        <span className="text-blue-500 text-sm shrink-0 mt-0.5">ℹ️</span>
-        <p className="text-xs text-blue-700 leading-relaxed">
-          All communication with teachers happens here in Oakit. When a teacher replies, you'll get a notification. This keeps all school communication in one secure place.
+      {/* Info banner */}
+      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
+        style={{ background: P.brandSoft, border: `1px solid ${P.brandBorder}` }}>
+        <MessageCircle size={14} strokeWidth={1.75} className="shrink-0 mt-0.5" style={{ color: P.brand }} />
+        <p className="text-xs leading-relaxed" style={{ color: P.brandDark }}>
+          All communication with teachers happens here. You'll get a notification when a teacher replies.
         </p>
       </div>
 
+      {/* New message form */}
       {showNewMsg && (
-        <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm space-y-3">
+        <div className="p-4 space-y-3" style={cardStyle}>
           <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-neutral-800">Message a Teacher</p>
-            <button onClick={() => setShowNewMsg(false)} className="text-neutral-400 hover:text-neutral-600">✕</button>
+            <p className="text-sm font-semibold" style={{ color: P.text }}>Message a Teacher</p>
+            <button onClick={() => setShowNewMsg(false)} style={{ color: P.textMuted }}>✕</button>
           </div>
           <div>
-            <label className="text-xs font-medium text-neutral-600 mb-1 block">Select Teacher &amp; Child</label>
+            <label className="text-xs font-medium mb-1 block" style={{ color: P.textMuted }}>Select Teacher &amp; Child</label>
             <select value={`${selectedTeacher}|${selectedStudent}`}
               onChange={e => { const [tid, sid] = e.target.value.split('|'); setSelectedTeacher(tid); setSelectedStudent(sid); }}
-              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
-              <option value="|">Select teacher...</option>
+              className="w-full px-3 py-2.5 text-sm rounded-xl outline-none"
+              style={{ background: P.bg, border: `1.5px solid ${P.border}`, color: P.text }}>
+              <option value="|">Select teacher…</option>
               {teachers.map(t => (
                 <option key={`${t.teacher_id}|${t.student_id}`} value={`${t.teacher_id}|${t.student_id}`}>
                   {t.teacher_name} — {t.student_name} ({t.class_name})
@@ -139,44 +176,63 @@ export default function MessagesTab({ threads, token, onRefresh }: {
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-neutral-600 mb-1 block">Message</label>
+            <label className="text-xs font-medium mb-1 block" style={{ color: P.textMuted }}>Message</label>
             <textarea value={newMsgBody} onChange={e => setNewMsgBody(e.target.value.slice(0, 1000))}
-              rows={3} placeholder="Write your message to the teacher..."
-              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none" />
+              rows={3} placeholder="Write your message to the teacher…"
+              className="w-full px-3 py-2.5 text-sm rounded-xl outline-none resize-none"
+              style={{ background: P.bg, border: `1.5px solid ${P.border}`, color: P.text }} />
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowNewMsg(false)} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50">Cancel</button>
+            <button onClick={() => setShowNewMsg(false)}
+              className="flex-1 py-2.5 text-sm rounded-xl"
+              style={{ background: P.bg, color: P.textSub, border: `1px solid ${P.border}` }}>Cancel</button>
             <button onClick={sendNewMessage} disabled={!newMsgBody.trim() || !selectedTeacher || sendingNew}
-              className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
+              className="flex-1 py-2.5 text-sm font-semibold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2 text-white"
+              style={{ background: P.brand }}>
               {sendingNew ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Send
             </button>
           </div>
         </div>
       )}
 
-      {threads.length === 0 && !showNewMsg ? (
-        <div className="bg-white rounded-2xl p-10 text-center border border-neutral-100 shadow-sm">
-          <MessageSquare size={40} className="text-neutral-300 mx-auto mb-3" />
-          <p className="text-neutral-500 font-medium">No messages yet</p>
-          <p className="text-xs text-neutral-400 mt-1 mb-4">Start a conversation with your child&apos;s teacher</p>
+      {/* Empty state */}
+      {threads.length === 0 && !showNewMsg && (
+        <div className="p-12 text-center" style={cardStyle}>
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
+            style={{ background: P.brandSoft }}>
+            <MessageCircle size={28} strokeWidth={1.5} style={{ color: P.brand }} />
+          </div>
+          <p className="text-sm font-semibold mb-1" style={{ color: P.text }}>No messages yet</p>
+          <p className="text-sm mt-1 mb-5" style={{ color: P.textMuted }}>Start a conversation with your child's teacher</p>
           <button onClick={() => setShowNewMsg(true)}
-            className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
+            className="px-5 py-2.5 text-sm font-semibold rounded-xl text-white"
+            style={{ background: P.brand }}>
             Send First Message
           </button>
         </div>
-      ) : threads.map(th => (
+      )}
+
+      {/* Thread list */}
+      {threads.map(th => (
         <button key={`${th.teacher_id}-${th.student_id}`} onClick={() => openThread(th)}
-          className="w-full bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm text-left flex items-start gap-3 hover:shadow-md transition-all">
-          <div className="w-11 h-11 rounded-full bg-primary-100 flex items-center justify-center font-bold text-primary-700 shrink-0">{th.teacher_name?.[0] ?? 'T'}</div>
+          className="w-full p-4 text-left flex items-start gap-3 transition-colors hover:bg-neutral-50"
+          style={{ ...cardStyle, display: 'flex' }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center font-semibold text-white flex-shrink-0"
+            style={{ background: Number(th.unread_count) > 0 ? P.brand : P.textMuted }}>
+            {th.teacher_name?.[0] ?? 'T'}
+          </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between">
-              <p className="font-bold text-neutral-800 text-sm">{th.teacher_name}</p>
-              <p className="text-xs text-neutral-400">{th.last_sent_at?.split('T')[0]}</p>
+              <p className="font-semibold text-sm" style={{ color: P.text }}>{th.teacher_name}</p>
+              <p className="text-xs" style={{ color: P.textMuted }}>{(th.last_sent_at || '').split('T')[0]}</p>
             </div>
-            <p className="text-xs text-neutral-500">{th.student_name}</p>
-            <p className="text-xs text-neutral-400 truncate mt-0.5">{th.last_message}</p>
+            <p className="text-xs" style={{ color: P.textMuted }}>{th.student_name}</p>
+            <p className="text-xs truncate mt-0.5" style={{ color: P.textSub }}>{th.last_message}</p>
           </div>
-          {Number(th.unread_count) > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{th.unread_count}</span>}
+          {Number(th.unread_count) > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white flex-shrink-0"
+              style={{ background: '#EF4444' }}>{th.unread_count}</span>
+          )}
         </button>
       ))}
     </div>

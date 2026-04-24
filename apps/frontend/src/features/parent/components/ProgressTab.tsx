@@ -1,8 +1,56 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { TrendingUp, CheckCircle2, Loader2, ChevronRight } from 'lucide-react';
+import { ChevronRight, Loader2, BookOpen, Target, Trophy, BookMarked } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 import type { ProgressData, Child, HomeworkRecord } from '../types';
+
+const P = {
+  brand: '#1F7A5A', brandDark: '#166A4D', brandSoft: '#E8F3EF', brandBorder: '#A7D4C0',
+  bg: '#F8FAFC', card: '#F8FAFC', border: '#E4E4E7',
+  text: '#18181B', textSub: '#3F3F46', textMuted: '#71717A',
+};
+
+const cardStyle: React.CSSProperties = {
+  background: P.card, border: `1px solid ${P.border}`,
+  borderRadius: 12, boxShadow: '0 1px 2px rgba(0,0,0,0.04)', padding: 20,
+  transition: 'box-shadow 0.18s ease, transform 0.18s ease',
+};
+
+const cardHoverClass = 'hover:shadow-md hover:-translate-y-0.5';
+
+function SectionLabel({ icon: Icon, text }: { icon: React.ElementType; text: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <Icon size={14} strokeWidth={1.75} style={{ color: P.textMuted }} />
+      <p className="text-sm font-semibold" style={{ color: P.textSub }}>{text}</p>
+    </div>
+  );
+}
+
+function Ring({ pct, color, size = 130, stroke = 12 }: { pct: number; color: string; size?: number; stroke?: number }) {
+  const [a, setA] = useState(0);
+  useEffect(() => { const id = setTimeout(() => setA(pct), 120); return () => clearTimeout(id); }, [pct]);
+  const r = (size - stroke * 2) / 2;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={P.border} strokeWidth={stroke} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={`${(a/100)*c} ${c}`} strokeLinecap="round"
+        style={{ transition: 'stroke-dasharray 1.2s cubic-bezier(0.34,1.56,0.64,1)' }} />
+    </svg>
+  );
+}
+
+function Bar({ pct, color }: { pct: number; color: string }) {
+  const [w, setW] = useState(0);
+  useEffect(() => { const id = setTimeout(() => setW(pct), 150); return () => clearTimeout(id); }, [pct]);
+  return (
+    <div className="h-1.5 rounded-full" style={{ background: P.border }}>
+      <div className="h-1.5 rounded-full" style={{ width: `${w}%`, background: color, transition: 'width 1.2s cubic-bezier(0.34,1.56,0.64,1)' }} />
+    </div>
+  );
+}
 
 export default function ProgressTab({ data, activeChild, token }: {
   data: ProgressData | null; activeChild: Child | null; token: string;
@@ -25,68 +73,99 @@ export default function ProgressTab({ data, activeChild, token }: {
 
   if (!data) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <TrendingUp size={48} className="text-neutral-300 mb-3" />
-      <p className="text-neutral-500 font-medium">No progress data yet</p>
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: P.brandSoft }}>
+        <BookOpen size={28} strokeWidth={1.5} style={{ color: P.brand }} />
+      </div>
+      <p className="text-sm font-semibold mb-1" style={{ color: P.text }}>No progress data yet</p>
+      <p className="text-sm" style={{ color: P.textMuted }}>Progress will appear once curriculum is assigned</p>
     </div>
   );
 
   const pct = data.coverage_pct;
-  const strokeColor = pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
-  const r = 50; const circ = 2 * Math.PI * r;
-  const missedCount = hwHistory.filter(h => h.status !== 'completed').length;
+  const ringColor = pct >= 75 ? P.brand : pct >= 40 ? '#B45309' : '#DC2626';
+  const missedCount    = hwHistory.filter(h => h.status !== 'completed').length;
   const completedCount = hwHistory.filter(h => h.status === 'completed').length;
 
   return (
-    <div className="space-y-4">
-      <div className="bg-[#0f2417] rounded-2xl p-6 flex flex-col items-center">
-        <div className="relative w-36 h-36 mb-4">
-          <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="12" />
-            <circle cx="60" cy="60" r={r} fill="none" stroke={strokeColor} strokeWidth="12"
-              strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)} strokeLinecap="round"
-              style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-3xl font-black text-white">{pct}%</span>
-            <span className="text-xs text-white/50">covered</span>
+    <div className="space-y-4 pb-6">
+
+      {/* Curriculum ring */}
+      <div className={cardHoverClass} style={cardStyle}>
+        <SectionLabel icon={BookOpen} text="Curriculum Coverage" />
+        <div className="flex items-center justify-center gap-10">
+          <div className="relative flex items-center justify-center">
+            <Ring pct={pct} color={ringColor} />
+            <div className="absolute text-center">
+              <p className="text-3xl font-semibold leading-none" style={{ color: ringColor }}>{pct}%</p>
+              <p className="text-[10px] mt-0.5" style={{ color: P.textMuted }}>covered</p>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {[
+              ['Total Topics', String(data.total_chunks ?? '—'), P.text],
+              ['Covered',      String(data.covered ?? '—'),      P.brand],
+              ['Remaining',    String((data.total_chunks ?? 0) - (data.covered ?? 0)), '#B45309'],
+            ].map(([l, v, c]) => (
+              <div key={l}>
+                <p className="text-xs" style={{ color: P.textMuted }}>{l}</p>
+                <p className="text-2xl font-semibold leading-tight" style={{ color: c }}>{v}</p>
+              </div>
+            ))}
           </div>
         </div>
-        {data.has_curriculum ? (
-          <>
-            <p className="font-bold text-white mb-1">{activeChild?.name.split(' ')[0]}&apos;s Curriculum</p>
-            <p className="text-xs text-white/50">{data.covered} of {data.total_chunks} topics completed</p>
-          </>
-        ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
+        {!data.has_curriculum && (
+          <p className="text-xs text-center mt-3" style={{ color: P.textMuted }}>No curriculum assigned yet</p>
+        )}
       </div>
 
+      {/* Milestones */}
       {milestoneData && (
-        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-neutral-800">🏆 Milestones</p>
-            <span className="text-emerald-600 font-bold text-sm">{milestoneData.completion_pct}%</span>
+        <div className={cardHoverClass} style={cardStyle}>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel icon={Trophy} text="Milestones" />
+            <span className="text-sm font-semibold" style={{ color: P.brand }}>{milestoneData.completion_pct}%</span>
           </div>
-          <div className="w-full bg-neutral-100 rounded-full h-2.5 mb-2">
-            <div className="h-2.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${milestoneData.completion_pct}%` }} />
-          </div>
-          <p className="text-xs text-neutral-400">{milestoneData.achieved} of {milestoneData.total} {milestoneData.class_level} milestones achieved</p>
+          <Bar pct={milestoneData.completion_pct} color={P.brand} />
+          <p className="text-xs mt-2" style={{ color: P.textMuted }}>
+            {milestoneData.achieved} of {milestoneData.total} {milestoneData.class_level} milestones achieved
+          </p>
         </div>
       )}
 
-      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+      {/* Goals */}
+      <div className={cardHoverClass} style={cardStyle}>
+        <SectionLabel icon={Target} text="Goals" />
+        {[
+          { label: 'Curriculum Coverage', pct, color: ringColor },
+          { label: 'Homework Completion', pct: completedCount > 0 ? Math.round((completedCount / (completedCount + missedCount)) * 100) : 0, color: '#1D4ED8' },
+        ].map(g => (
+          <div key={g.label} className="mb-4 last:mb-0">
+            <div className="flex justify-between items-center mb-1.5">
+              <span className="text-sm font-medium" style={{ color: P.textSub }}>{g.label}</span>
+              <span className="text-sm font-semibold" style={{ color: g.color }}>{g.pct}%</span>
+            </div>
+            <Bar pct={g.pct} color={g.color} />
+          </div>
+        ))}
+      </div>
+
+      {/* Homework history */}
+      <div className={cardHoverClass} style={cardStyle}>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-neutral-800">📚 Homework History</p>
+          <SectionLabel icon={BookMarked} text="Homework History" />
           {hwHistory.length > 0 && (
             <div className="flex gap-2 text-xs">
-              <span className="text-emerald-600 font-medium">{completedCount} done</span>
-              {missedCount > 0 && <span className="text-red-500 font-medium">{missedCount} missed</span>}
+              <span className="font-semibold" style={{ color: P.brand }}>{completedCount} done</span>
+              {missedCount > 0 && <span className="font-semibold" style={{ color: '#DC2626' }}>{missedCount} missed</span>}
             </div>
           )}
         </div>
         {hwLoading ? (
-          <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-neutral-300" /></div>
+          <div className="flex justify-center py-4">
+            <Loader2 size={20} className="animate-spin" style={{ color: P.brand }} />
+          </div>
         ) : hwHistory.length === 0 ? (
-          <div className="flex items-center gap-2 text-emerald-600 py-2">
-            <CheckCircle2 size={16} />
+          <div className="flex items-center gap-2 py-2" style={{ color: P.brand }}>
             <p className="text-sm font-medium">No homework records yet</p>
           </div>
         ) : (
@@ -96,27 +175,26 @@ export default function ProgressTab({ data, activeChild, token }: {
               const dateStr = rawDate
                 ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
                 : '—';
-              const statusConfig = ({
-                completed: { label: '✓ Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-                partial: { label: '½ Partial', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
-                not_submitted: { label: '✗ Not submitted', cls: 'bg-red-50 text-red-600 border-red-100' },
-              } as Record<string, { label: string; cls: string }>)[hw.status] || { label: hw.status, cls: 'bg-neutral-50 text-neutral-600 border-neutral-100' };
+              const cfg = ({
+                completed:     { label: 'Done',          bg: P.brandSoft,  color: P.brandDark, border: P.brandBorder },
+                partial:       { label: 'Partial',        bg: '#FEF9C3',    color: '#B45309',   border: '#FDE68A' },
+                not_submitted: { label: 'Not submitted',  bg: '#FEF2F2',    color: '#DC2626',   border: '#FECACA' },
+              } as Record<string, { label: string; bg: string; color: string; border: string }>)[hw.status]
+                || { label: hw.status, bg: P.bg, color: P.textMuted, border: P.border };
               return (
-                <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
+                <details key={i} className="rounded-lg group transition-all hover:shadow-sm hover:-translate-y-0.5" style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}>
                   <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
                     <div className="flex items-center gap-2">
-                      <ChevronRight size={14} className="shrink-0 transition-transform group-open:rotate-90" />
-                      <span className="text-xs font-medium">{dateStr}</span>
+                      <ChevronRight size={13} className="shrink-0 transition-transform group-open:rotate-90" style={{ color: cfg.color }} />
+                      <span className="text-xs font-medium" style={{ color: P.textSub }}>{dateStr}</span>
                     </div>
-                    <span className="text-xs font-bold">{statusConfig.label}</span>
+                    <span className="text-xs font-semibold" style={{ color: cfg.color }}>{cfg.label}</span>
                   </summary>
-                  <div className="px-3 pb-3 pt-1 border-t border-current/10">
-                    {hw.homework_text ? (
-                      <p className="text-xs leading-relaxed whitespace-pre-wrap">{hw.homework_text}</p>
-                    ) : (
-                      <p className="text-xs text-neutral-400 italic">No homework text recorded</p>
-                    )}
-                    {hw.teacher_note && <p className="text-xs text-neutral-500 mt-1 italic">Note: {hw.teacher_note}</p>}
+                  <div className="px-3 pb-3 pt-1" style={{ borderTop: `1px solid ${cfg.border}` }}>
+                    {hw.homework_text
+                      ? <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: P.textSub }}>{hw.homework_text}</p>
+                      : <p className="text-xs italic" style={{ color: P.textMuted }}>No homework text recorded</p>}
+                    {hw.teacher_note && <p className="text-xs mt-1 italic" style={{ color: P.textMuted }}>Note: {hw.teacher_note}</p>}
                   </div>
                 </details>
               );

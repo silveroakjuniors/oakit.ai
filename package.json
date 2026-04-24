@@ -8,5 +8,8 @@
   "scripts": {
     "dev:frontend": "npm run dev --workspace=apps/frontend",
     "dev:api": "npm run dev --workspace=apps/api-gateway"
+  },
+  "dependencies": {
+    "puppeteer": "^24.42.0"
   }
 }

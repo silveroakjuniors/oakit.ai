@@ -2220,7 +2220,8 @@ Keep each section concise. Total under 500 words."""
                     f"Output plain text only — no markdown bold, no tables, no horizontal rules.\n"
                     f"Use emojis to mark sections. Keep lines short for mobile reading.\n"
                     f"Be direct and practical. Teachers read this on their phone in the classroom.\n"
-                    f"Never include direct URLs or YouTube links. If suggesting a video, say 'Search YouTube for: [title]'."
+                    f"Never include general website URLs. If suggesting a YouTube video, provide a search link like: "
+                    f"https://www.youtube.com/results?search_query={class_full.replace(' ', '+').replace('–', '').replace('  ', '+').strip('+')}+TOPIC — replace TOPIC with the specific video topic (use + for spaces)."
                 )
                 llm_prompt = f"""Teacher: "{text}"
 
@@ -2302,8 +2303,9 @@ Ask children: "[one specific question]"
                 f"Short lines for mobile.\n"
                 f"IMPORTANT: You ONLY answer questions about classroom teaching, child development, curriculum activities, and classroom management. "
                 f"Refuse any off-topic, inappropriate, or harmful requests with: 'I can only help with classroom teaching topics.'\n"
-                f"IMPORTANT: Never include direct YouTube URLs or any website links. "
-                f"If suggesting a video, say 'Search YouTube for: [title]' instead of providing a link.\n"
+                f"IMPORTANT: Never include general website URLs. "
+                f"If suggesting a YouTube video, provide a search link like: "
+                f"https://www.youtube.com/results?search_query={class_full.replace(' ', '+').replace('–', '').replace('  ', '+').strip('+')}+TOPIC — replace TOPIC with the specific video topic (use + for spaces).\n"
                 f"IMPORTANT: If the teacher asks for a rhyme, song, story, or poem — provide the ACTUAL TEXT of the content, "
                 f"not instructions on how to teach it. Give the full rhyme/song/story text first, then optionally one tip."
             )
@@ -2315,14 +2317,14 @@ Ask children: "[one specific question]"
                 # ── Out-of-scope content block ────────────────────────────
                 # Only block requests for external links/URLs — not content types in the plan
                 OUT_OF_SCOPE = [
-                    "youtube","url","website","google","search for","find me a link",
+                    "url","website","google","find me a link",
                     "download","give me a link","send me a link","share a link",
                 ]
                 if any(w in t_lower for w in OUT_OF_SCOPE):
                     return {
                         "response": (
-                            "I can't provide external links or URLs.\n\n"
-                            "For videos and songs, use the resources in your Teacher's Handbook or school library.\n\n"
+                            "I can't provide general website links.\n\n"
+                            "For YouTube videos, just ask me about the topic and I'll suggest a search link.\n\n"
                             "Ask me how to conduct any activity in today's plan and I'll give you step-by-step guidance."
                         ),
                         "chunk_ids": [str(c["id"]) for c in chunks] if chunks else [],

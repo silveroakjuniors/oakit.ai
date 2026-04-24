@@ -7,6 +7,7 @@ import { pool } from '../lib/db';
 import { getToday } from '../lib/today';
 import { jwtVerify, schoolScope, roleGuard } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/rateLimit';
+import { checkAndDeductCredits } from '../lib/aiCredits';
 import crypto from 'crypto';
 
 const router = Router();
@@ -367,6 +368,19 @@ router.post('/query', async (req: Request, res: Response) => {
 
     // Log allowed query
     await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: cleanText, outcome: 'allowed' });
+
+    // ── Credit check — deduct before calling AI ───────────────────────────
+    const credit = await checkAndDeductCredits({
+      schoolId: school_id, actorId: user_id, actorRole: role, endpoint: 'query',
+    });
+    if (!credit.allowed) {
+      return res.status(402).json({
+        error: 'insufficient_credits',
+        message: 'Your school\'s AI credits have been exhausted. Please contact your administrator to recharge.',
+        balance_inr: (credit.balance_paise / 100).toFixed(2),
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     const cacheKey = `ai:${user_id}:${crypto.createHash('md5').update(cleanText + today).digest('hex')}`;
     const cached = await redis.get(cacheKey);
@@ -771,6 +785,50 @@ router.post('/voice', voiceUpload.single('audio'), async (req: Request, res: Res
     const errMsg = getAiErrorMessage(err);
     console.error('[ai.voice] error', errMsg);
     return res.status(500).json({ error: `Voice processing failed: ${errMsg}` });
+  }
+});
+
+// GET /api/v1/ai/topic-summary — parent-friendly summary of today's topics
+// Query params: topics (comma-separated), class_name, child_name, completed (boolean)
+router.get('/topic-summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const topicsRaw = (req.query.topics as string || '').trim();
+    const className  = (req.query.class_name as string || 'Nursery').trim();
+    const childName  = (req.query.child_name as string || 'your child').trim();
+    const completed  = req.query.completed === 'true';
+
+    if (!topicsRaw) return res.status(400).json({ error: 'topics is required' });
+
+    const topics = topicsRaw.split(',').map(t => t.trim()).filter(Boolean);
+    if (topics.length === 0) return res.status(400).json({ error: 'No topics provided' });
+
+    // Cache per school+topics+completion combo (1 hour)
+    const cacheKey = `ai:topic-summary:${school_id}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topicsRaw + className).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json({ summary: cached });
+
+    try {
+      // Call the dedicated topic-summary endpoint — bypasses all query pipeline filters
+      const aiResp = await axios.post(`${AI()}/internal/topic-summary`, {
+        topics,
+        class_name: className,
+        child_name: childName,
+        completed,
+      }, { timeout: 15000 });
+
+      const summary: string = aiResp.data?.summary || topics.join(' · ');
+      if (summary) await redis.setEx(cacheKey, 3600, summary);
+      return res.json({ summary });
+    } catch {
+      // Fallback: strip "Week X Day Y" and join
+      const cleaned = topics
+        .map(t => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim())
+        .filter(Boolean);
+      return res.json({ summary: cleaned.length > 0 ? cleaned.join(' · ') : topics.join(' · ') });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

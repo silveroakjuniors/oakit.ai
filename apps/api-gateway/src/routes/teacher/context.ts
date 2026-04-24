@@ -99,7 +99,17 @@ router.get('/', async (req: Request, res: Response) => {
       thought_for_day = aiResp.data.thought_for_day || thought_for_day;
     } catch { /* use defaults */ }
 
-    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id });
+    // Get class name for the teacher's primary section
+    let class_name = '';
+    if (section_id) {
+      const classRow = await pool.query(
+        `SELECT c.name FROM sections s JOIN classes c ON c.id = s.class_id WHERE s.id = $1`,
+        [section_id]
+      );
+      class_name = classRow.rows[0]?.name || '';
+    }
+
+    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }

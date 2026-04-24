@@ -10,6 +10,7 @@ export interface TranslationSettings {
 export interface Child {
   id: string; name: string; class_name: string; section_label: string;
   section_id: string; class_id: string; photo_url?: string;
+  father_name?: string; mother_name?: string;
 }
 
 export interface NoteItem {
@@ -19,7 +20,9 @@ export interface NoteItem {
 
 export interface ChildFeed {
   student_id: string; name: string; class_name: string; section_label: string;
+  feed_date: string;
   attendance: { status: string; is_late: boolean; arrived_at: string | null } | null;
+  completion: { covered_chunk_ids: string[]; submitted_at: string; teacher_name: string } | null;
   topics: string[]; plan_status: string | null; special_label: string | null;
   homework: { formatted_text: string; raw_text: string } | null;
   notes: NoteItem[];
@@ -95,4 +98,4 @@ export interface ChildComparison {
   participation: number; rank: number; trend: 'up' | 'down' | 'stable';
 }
 
-export type Tab = 'home' | 'attendance' | 'progress' | 'chat' | 'messages' | 'notifications' | 'insights' | 'settings';
+export type Tab = 'home' | 'attendance' | 'progress' | 'chat' | 'messages' | 'notifications' | 'insights' | 'settings' | 'fees' | 'reports';

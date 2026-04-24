@@ -1,8 +1,28 @@
 ﻿'use client';
 
 import { useState, useEffect, useRef, FormEvent } from 'react';
+
+// -- Animated counter ------------------------------------------
+function AnimatedNumber({ value, duration = 1000 }: { value: number; duration?: number }) {
+  const [display, setDisplay] = useState(0);
+  const raf = useRef<number>(0);
+  useEffect(() => {
+    if (typeof requestAnimationFrame === 'undefined') { setDisplay(value); return; }
+    const start = performance.now();
+    const step = (now: number) => {
+      const p = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setDisplay(Math.round(value * ease));
+      if (p < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [value, duration]);
+  return <>{display}</>;
+}
 import { Button } from '@/components/ui';
 import OakitLogo from '@/components/OakitLogo';
+import ThemeToggle from '@/components/ThemeToggle';
 import { apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken, getRoleRedirect } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
@@ -40,18 +60,21 @@ const SUGGESTED = [
   'What is the overall curriculum progress?',
 ];
 
-// -- Mini donut (SVG, no deps) ---------------------------------
+// -- Mini donut (SVG, animated) ---------------------------------
 function Donut({ pct, color, size = 64 }: { pct: number; color: string; size?: number }) {
+  const [animPct, setAnimPct] = useState(0);
+  useEffect(() => { const t = setTimeout(() => setAnimPct(pct), 200); return () => clearTimeout(t); }, [pct]);
   const r = size / 2 - 6;
   const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - Math.min(pct, 100) / 100);
+  const offset = circ * (1 - Math.min(animPct, 100) / 100);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e5e7eb" strokeWidth="6" />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bg-subtle)" strokeWidth="6" />
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="6"
         strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-        transform={`rotate(-90 ${size/2} ${size/2})`} style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
-      <text x={size/2} y={size/2+4} textAnchor="middle" fontSize="11" fontWeight="800" fill="#111">{pct}%</text>
+        transform={`rotate(-90 ${size/2} ${size/2})`}
+        style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1)', filter: `drop-shadow(0 0 4px ${color}60)` }} />
+      <text x={size/2} y={size/2+4} textAnchor="middle" fontSize="11" fontWeight="800" fill="var(--text-primary)">{animPct}%</text>
     </svg>
   );
 }
@@ -166,55 +189,124 @@ export default function PrincipalDashboard() {
   const upcomingBirthdays = birthdays.filter(b => b.days_until > 0);
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col">
-      {/* Header */}
-      <header className="text-white px-4 py-3 flex items-center justify-between shrink-0"
-        style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%)', boxShadow: '0 1px 12px rgba(0,0,0,0.15)' }}>
-        <OakitLogo size="xs" variant="light" />
-        <div className="flex items-center gap-3">
-          {ctx && <span className="text-sm text-white/80 hidden sm:block">{ctx.principal_name}</span>}
-          <button onClick={() => { clearToken(); router.push('/login'); }}
-            className="text-xs text-white/55 hover:text-white/80 transition-colors">Sign out</button>
+    <div className="min-h-screen flex flex-col" style={{ background: '#F4F6F8' }}>
+      {/* ── Hero Header ── */}
+      <header className="relative overflow-hidden text-white shrink-0"
+        style={{ background: 'linear-gradient(135deg, #0a1f14 0%, #1a3c2e 50%, #2d6a4f 100%)', paddingBottom: '1px' }}>
+        {/* Decorative blobs */}
+        <div className="absolute -top-12 -right-12 w-56 h-56 rounded-full opacity-10 pointer-events-none"
+          style={{ background: 'radial-gradient(circle, #52b788, transparent)' }} />
+        <div className="absolute top-0 left-1/3 w-32 h-32 rounded-full opacity-5 pointer-events-none"
+          style={{ background: 'radial-gradient(circle, #74c69d, transparent)' }} />
+
+        <div className="relative z-10 px-4 pt-4 pb-5">
+          <div className="flex items-center justify-between mb-4">
+            <OakitLogo size="xs" variant="light" />
+            <div className="flex items-center gap-3">
+              {ctx && <span className="text-xs text-white/60 hidden sm:block">{ctx.principal_name}</span>}
+              <ThemeToggle variant="icon" />
+              <button onClick={() => { clearToken(); router.push('/login'); }}
+                className="text-xs text-white/40 hover:text-white/70 transition-colors">Sign out</button>
+            </div>
+          </div>
+
+          {ctx && (
+            <div className="mb-4">
+              <p className="text-white/50 text-xs">{todayLabel}</p>
+              <p className="text-white font-bold text-lg mt-0.5 leading-snug">{ctx.greeting}</p>
+            </div>
+          )}
+
+          {/* ── 3 big stat pills ── */}
+          {ctx && (
+            <div className="grid grid-cols-3 gap-2 stagger">
+              {[
+                { label: 'Students', value: ctx.summary.total_students, sub: `${totalSections} sections`, emoji: '👥', glow: 'rgba(255,255,255,0.1)' },
+                { label: 'Present', value: ctx.summary.total_present, sub: `${ctx.summary.total_students > 0 ? Math.round((ctx.summary.total_present/ctx.summary.total_students)*100) : 0}% today`, emoji: '✅', glow: 'rgba(74,222,128,0.2)' },
+                { label: 'Absent', value: ctx.summary.total_absent, sub: 'today', emoji: '❌', glow: 'rgba(248,113,113,0.2)' },
+              ].map((s, i) => (
+                <div key={i} className="rounded-2xl p-3 border border-white/10 slide-in-up"
+                  style={{ background: `radial-gradient(circle at top right, ${s.glow}, rgba(255,255,255,0.06))`, backdropFilter: 'blur(8px)' }}>
+                  <p className="text-xl">{s.emoji}</p>
+                  <p className="text-white font-black text-2xl leading-none mt-1 number-shimmer">
+                    <AnimatedNumber value={s.value} />
+                  </p>
+                  <p className="text-white/50 text-[10px] mt-0.5">{s.label}</p>
+                  <p className="text-white/30 text-[9px]">{s.sub}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Bottom fade */}
+        <div className="h-4" style={{ background: 'linear-gradient(to bottom, transparent, #F4F6F8)' }} />
       </header>
 
       <div className="flex flex-col lg:flex-row flex-1 min-h-0">
         {/* -- Left / Main -- */}
         <div className="flex-1 overflow-y-auto min-h-0">
-
-          {/* Welcome banner */}
-          {ctx && (
-            <div className="bg-white border-b border-neutral-100 px-5 py-3">
-              <p className="text-xs text-neutral-400">{todayLabel}</p>
-              <p className="text-sm font-semibold text-neutral-800 mt-0.5">{ctx.greeting}</p>
-            </div>
-          )}
-
           <div className="p-4 space-y-3">
 
             {/* Safety alerts */}
             {safetyAlerts.length > 0 && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4">
-                <p className="text-sm font-bold text-red-800"> {safetyAlerts.length} Content Alert{safetyAlerts.length > 1 ? 's' : ''}</p>
-                <p className="text-xs text-red-600 mt-0.5">Review in Admin  Audit Log</p>
+              <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 flex items-start gap-3">
+                <span className="text-xl shrink-0">🚨</span>
+                <div>
+                  <p className="text-sm font-bold text-red-800">{safetyAlerts.length} Content Alert{safetyAlerts.length > 1 ? 's' : ''}</p>
+                  <p className="text-xs text-red-600 mt-0.5">Review in Admin → Audit Log</p>
+                </div>
               </div>
             )}
 
-            {/* 6 stat cards */}
+            {/* ── School Health ── */}
             {ctx && (
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              <div className="bg-white rounded-3xl border border-neutral-100 shadow-sm overflow-hidden">
+                <div className="px-4 pt-4 pb-2">
+                  <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">School Health Today</p>
+                </div>
+                <div className="px-4 pb-4">
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    {[
+                      { label: 'Curriculum', pct: avgCovPct, color: '#10b981', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+                      { label: 'Attendance\nSubmitted', pct: attPct, color: '#6366f1', bg: 'bg-indigo-50', text: 'text-indigo-700' },
+                      { label: 'Plans\nCompleted', pct: planPct, color: '#f59e0b', bg: 'bg-amber-50', text: 'text-amber-700' },
+                    ].map((s, i) => (
+                      <div key={i} className={`${s.bg} rounded-2xl p-3 flex flex-col items-center gap-2`}>
+                        <Donut pct={s.pct} color={s.color} size={60} />
+                        <p className={`text-[10px] font-semibold ${s.text} text-center whitespace-pre-line leading-tight`}>{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { emoji: '🎓', label: 'Students', value: ctx.summary.total_students },
+                      { emoji: '👩‍🏫', label: 'Teachers', value: ctx.sections.filter(s => s.class_teacher_name).length },
+                      { emoji: '🏫', label: 'Classes', value: Object.keys(byClass).length },
+                    ].map((s, i) => (
+                      <div key={i} className="bg-neutral-50 rounded-2xl p-3 text-center border border-neutral-100">
+                        <p className="text-xl">{s.emoji}</p>
+                        <p className="text-xl font-black text-neutral-800 leading-none mt-1">{s.value}</p>
+                        <p className="text-[10px] text-neutral-400 mt-0.5">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Status row: Attendance / Plans / Homework ── */}
+            {ctx && (
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: 'Students', value: ctx.summary.total_students, sub: `${totalSections} sections`, color: 'text-neutral-800' },
-                  { label: 'Present', value: ctx.summary.total_present, sub: `${ctx.summary.total_students > 0 ? Math.round((ctx.summary.total_present/ctx.summary.total_students)*100) : 0}% today`, color: 'text-emerald-700', bg: ctx.summary.total_present > 0 ? 'bg-emerald-50 border-emerald-100' : '' },
-                  { label: 'Absent', value: ctx.summary.total_absent, sub: 'today', color: 'text-red-600', bg: ctx.summary.total_absent > 0 ? 'bg-red-50 border-red-100' : '' },
-                  { label: 'Attendance', value: `${ctx.summary.attendance_submitted}/${totalSections}`, sub: 'sections', color: ctx.summary.attendance_submitted === totalSections ? 'text-emerald-700' : 'text-amber-700', bg: ctx.summary.attendance_submitted === totalSections ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100' },
-                  { label: 'Plans Done', value: `${ctx.summary.plans_completed ?? 0}/${totalSections}`, sub: 'sections', color: 'text-primary-700', bg: (ctx.summary.plans_completed ?? 0) === totalSections ? 'bg-primary-50 border-primary-100' : '' },
-                  { label: 'Homework', value: `${ctx.summary.homework_sent ?? 0}/${totalSections}`, sub: 'sent', color: 'text-blue-700', bg: (ctx.summary.homework_sent ?? 0) > 0 ? 'bg-blue-50 border-blue-100' : '' },
+                  { label: 'Attendance', value: `${ctx.summary.attendance_submitted}/${totalSections}`, done: ctx.summary.attendance_submitted === totalSections, emoji: '📋' },
+                  { label: 'Plans Done', value: `${ctx.summary.plans_completed ?? 0}/${totalSections}`, done: (ctx.summary.plans_completed ?? 0) === totalSections, emoji: '📚' },
+                  { label: 'Homework', value: `${ctx.summary.homework_sent ?? 0}/${totalSections}`, done: (ctx.summary.homework_sent ?? 0) === totalSections, emoji: '✏️' },
                 ].map((s, i) => (
-                  <div key={i} className={`border rounded-2xl p-2.5 shadow-sm flex flex-col gap-0.5 ${s.bg || 'bg-white border-neutral-100'}`}>
-                    <p className="text-[9px] text-neutral-500 uppercase tracking-wide leading-none">{s.label}</p>
-                    <p className={`text-lg font-black leading-tight ${s.color}`}>{s.value}</p>
-                    <p className="text-[9px] text-neutral-400 leading-none">{s.sub}</p>
+                  <div key={i} className={`rounded-2xl p-3 border text-center ${s.done ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-neutral-100'}`}>
+                    <p className="text-lg">{s.emoji}</p>
+                    <p className={`text-base font-black leading-none mt-1 ${s.done ? 'text-emerald-700' : 'text-neutral-800'}`}>{s.value}</p>
+                    <p className="text-[10px] text-neutral-400 mt-0.5">{s.label}</p>
                   </div>
                 ))}
               </div>
@@ -223,52 +315,20 @@ export default function PrincipalDashboard() {
             {/* Quick nav */}
             <div className="grid grid-cols-4 gap-2">
               {[
-                { href: '/principal/attendance', label: 'Attendance', icon: '📋' },
-                { href: '/principal/teachers',   label: 'Teachers',   icon: '' },
-                { href: '/principal/coverage',   label: 'Coverage',   icon: '' },
-                { href: '/principal/overview',   label: 'Reports',    icon: '' },
-              ].map(({ href, label, icon }) => (
+                { href: '/principal/attendance', label: 'Attendance', icon: '📋', color: 'from-indigo-500 to-indigo-600' },
+                { href: '/principal/teachers',   label: 'Teachers',   icon: '👩‍🏫', color: 'from-emerald-500 to-emerald-600' },
+                { href: '/principal/coverage',   label: 'Coverage',   icon: '📊', color: 'from-amber-500 to-amber-600' },
+                { href: '/principal/overview',   label: 'Reports',    icon: '📈', color: 'from-purple-500 to-purple-600' },
+              ].map(({ href, label, icon, color }) => (
                 <Link key={href} href={href}
-                  className="bg-white border border-neutral-200 rounded-2xl p-3 flex flex-col items-center gap-1 hover:shadow-md hover:-translate-y-0.5 transition-all text-center">
-                  <span className="text-xl">{icon}</span>
-                  <span className="text-[10px] font-semibold text-neutral-700">{label}</span>
+                  className="bg-white border border-neutral-100 rounded-2xl p-3 flex flex-col items-center gap-1.5 hover:shadow-md hover:-translate-y-0.5 transition-all text-center shadow-sm">
+                  <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center`}>
+                    <span className="text-base">{icon}</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-neutral-600">{label}</span>
                 </Link>
               ))}
             </div>
-
-            {/* -- School Health � always visible on landing -- */}
-            {ctx && (
-              <div className="bg-white border border-neutral-100 rounded-2xl shadow-sm p-4">
-                <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">School Health</p>
-                <div className="flex justify-around mb-4">
-                  <div className="flex flex-col items-center gap-1">
-                    <Donut pct={avgCovPct} color="#10b981" />
-                    <p className="text-[10px] text-neutral-500 text-center">Curriculum</p>
-                  </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <Donut pct={attPct} color="#6366f1" />
-                    <p className="text-[10px] text-neutral-500 text-center">Attendance<br/>Submitted</p>
-                  </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <Donut pct={planPct} color="#f59e0b" />
-                    <p className="text-[10px] text-neutral-500 text-center">Plans<br/>Completed</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { icon: '', label: 'Students', value: ctx.summary.total_students },
-                    { icon: '', label: 'Teachers', value: ctx.sections.filter(s => s.class_teacher_name).length },
-                    { icon: '', label: 'Classes', value: Object.keys(byClass).length },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-neutral-50 rounded-xl p-2.5 text-center">
-                      <p className="text-base">{s.icon}</p>
-                      <p className="text-lg font-black text-neutral-800">{s.value}</p>
-                      <p className="text-[9px] text-neutral-400">{s.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* -- Birthdays � collapsible -- */}
             {birthdays.length > 0 && (
