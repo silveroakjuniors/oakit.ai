@@ -288,6 +288,9 @@ export default function ParentPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [classFeed, setClassFeed] = useState<any[]>([]);
   const [invoice, setInvoice] = useState<any | null>(null);
+  const [parentProfile, setParentProfile] = useState<{ name: string; mobile: string } | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   // ─── New Feature State ──────────────────────────────────────────────────────
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
@@ -340,6 +343,16 @@ export default function ParentPage() {
 
   useEffect(() => { if (!token) { router.push('/login'); return; } init(); }, []);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs]);
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   async function init() {
     setLoading(true);
@@ -371,6 +384,7 @@ export default function ParentPage() {
       setNotifications(notifs);
       apiGet<Announcement[]>('/api/v1/parent/announcements', token).then(setAnnouncements).catch(() => {});
       apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {});
+      apiGet<{ name: string; mobile: string }>('/api/v1/parent/profile', token).then(setParentProfile).catch(() => {});
       
       // Load emergency contacts and settings from API (fallback to mock data)
       (async () => {
@@ -577,24 +591,90 @@ export default function ParentPage() {
               <Bell size={17} className="text-gray-600" />
               {unreadNotifs > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotifs}</span>}
             </button>
-            {/* User avatar */}
-            <div className="flex items-center gap-2.5 cursor-pointer group">
-              {activeChild ? (
-                <div className="w-9 h-9 rounded-full bg-emerald-100 overflow-hidden border-2 border-emerald-200 flex items-center justify-center">
-                  {activeChild.photo_url ? (
-                    <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-emerald-700 font-bold text-sm">{activeChild.name[0]}</span>
-                  )}
+            {/* Parent profile — click to show name + contact */}
+            <div ref={profileRef} className="relative">
+              <button
+                onClick={() => setProfileOpen(v => !v)}
+                className="flex items-center gap-2.5 hover:bg-gray-50 rounded-xl px-2 py-1.5 transition-colors"
+              >
+                {/* Avatar initials */}
+                <div className="w-9 h-9 rounded-full bg-emerald-100 border-2 border-emerald-200 flex items-center justify-center flex-shrink-0">
+                  <span className="text-emerald-700 font-bold text-sm">
+                    {parentProfile?.name?.[0]?.toUpperCase() ?? 'P'}
+                  </span>
                 </div>
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center"><User size={18} className="text-gray-400" /></div>
+                <div className="hidden xl:block text-left">
+                  <p className="text-sm font-semibold text-gray-800 leading-tight">
+                    {parentProfile?.name ?? 'Parent'}
+                  </p>
+                  <p className="text-xs text-gray-400">Parent</p>
+                </div>
+                <ChevronRight size={14} className={`text-gray-400 transition-transform ${profileOpen ? '-rotate-90' : 'rotate-90'}`} />
+              </button>
+
+              {/* Dropdown */}
+              {profileOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-lg border border-gray-100 z-50 overflow-hidden"
+                  style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+                  {/* Header */}
+                  <div className="bg-emerald-50 px-4 py-4 border-b border-emerald-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-emerald-200 flex items-center justify-center flex-shrink-0">
+                        <span className="text-emerald-800 font-black text-lg">
+                          {parentProfile?.name?.[0]?.toUpperCase() ?? 'P'}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm leading-tight">
+                          {parentProfile?.name ?? 'Parent'}
+                        </p>
+                        <p className="text-xs text-emerald-600 font-medium mt-0.5">Parent Account</p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Contact info */}
+                  <div className="px-4 py-3 space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <Phone size={14} className="text-gray-500" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Mobile</p>
+                        <p className="text-sm font-semibold text-gray-800">
+                          {parentProfile?.mobile ?? '—'}
+                        </p>
+                      </div>
+                    </div>
+                    {activeChild && (
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <User size={14} className="text-gray-500" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Child</p>
+                          <p className="text-sm font-semibold text-gray-800">{activeChild.name}</p>
+                          <p className="text-xs text-gray-400">{activeChild.class_name} · {activeChild.section_label}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Footer actions */}
+                  <div className="px-4 pb-3 pt-1 border-t border-gray-100 flex gap-2">
+                    <button
+                      onClick={() => { setProfileOpen(false); setTab('settings'); }}
+                      className="flex-1 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors"
+                    >
+                      Edit Profile
+                    </button>
+                    <button
+                      onClick={() => { clearToken(); router.push('/login'); }}
+                      className="flex-1 py-2 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
               )}
-              <div className="hidden xl:block text-right">
-                <p className="text-sm font-semibold text-gray-800 leading-tight">{activeChild?.name ?? 'Parent'}</p>
-                <p className="text-xs text-gray-400">Parent</p>
-              </div>
-              <ChevronRight size={14} className="text-gray-400 rotate-90" />
             </div>
           </div>
         </header>
