@@ -1,5 +1,5 @@
 'use client';
-import { FileText, X } from 'lucide-react';
+import { FileText, Music, X } from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; }
 interface SupplementaryActivity { plan_id: string; pool_name: string; activity_title: string; activity_description?: string; }
@@ -52,7 +52,7 @@ export function RawPlanModal({
           )}
           {supplementaryActivities.map(sa => (
             <div key={sa.plan_id} className="px-3 py-2.5 bg-amber-50 rounded-xl border border-amber-100">
-              <p className="text-xs text-amber-700 font-semibold mb-0.5">🎵 {sa.pool_name}</p>
+              <p className="text-xs text-amber-700 font-semibold mb-0.5 flex items-center gap-1"><Music className="w-3 h-3" /> {sa.pool_name}</p>
               <p className="text-sm font-medium text-neutral-800">{sa.activity_title}</p>
               {sa.activity_description && <p className="text-xs text-neutral-500 mt-0.5">{sa.activity_description}</p>}
             </div>

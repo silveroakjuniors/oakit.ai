@@ -1,5 +1,5 @@
 'use client';
-import { FileText, Play, Sparkles } from 'lucide-react';
+import { AlertTriangle, Coffee, FileText, Lightbulb, Play, Sparkles, Wifi } from 'lucide-react';
 
 interface OakieMessageProps {
   text: string;
@@ -50,8 +50,8 @@ export function OakieMessage({
       {/* Settling badge */}
       {isSettling && settlingDay && (
         <div className="px-4 pb-1">
-          <span className="text-xs font-semibold bg-green-100 text-green-700 px-2.5 py-1 rounded-full">
-            🌱 Settling Day {settlingDay} of {settlingTotal}
+          <span className="text-xs font-semibold bg-green-100 text-green-700 px-2.5 py-1 rounded-full flex items-center gap-1 w-fit">
+            <Sparkles className="w-3 h-3" /> Settling Day {settlingDay} of {settlingTotal}
           </span>
         </div>
       )}
@@ -133,7 +133,7 @@ export function OakieMessageText({ text, onVideoHelp }: { text: string; onVideoH
         if (trimmed.startsWith('💡')) {
           return (
             <div key={i} className="flex items-start gap-2 mt-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-              <span className="text-base shrink-0">💡</span>
+              <Lightbulb className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <span className="text-xs text-amber-800">{trimmed.replace(/^💡\s*/, '')}</span>
             </div>
           );
@@ -142,7 +142,7 @@ export function OakieMessageText({ text, onVideoHelp }: { text: string; onVideoH
           return (
             <div key={i} className="flex items-center gap-2 my-1">
               <div className="flex-1 h-px bg-neutral-100" />
-              <span className="text-xs text-neutral-400">☕ Break</span>
+              <span className="flex items-center gap-1 text-xs text-neutral-400"><Coffee className="w-3 h-3" /> Break</span>
               <div className="flex-1 h-px bg-neutral-100" />
             </div>
           );
@@ -150,13 +150,13 @@ export function OakieMessageText({ text, onVideoHelp }: { text: string; onVideoH
         if (trimmed.startsWith('⚠️') || trimmed.startsWith('🚨')) {
           return (
             <div key={i} className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
-              <span className="text-base shrink-0">{trimmed[0]}</span>
+              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span className="text-xs text-red-700 font-medium">{trimmed.replace(/^[⚠️🚨]\s*/u, '')}</span>
             </div>
           );
         }
 
-        const labelMatch = trimmed.match(/^(What to do|Ask children|Tip|Objective|Materials|Note|✅ Offline Support|Resources):\s*(.*)/i);
+        const labelMatch = trimmed.match(/^(What to do|Ask children|Tip|Objective|Materials|Note|Offline Support|Resources):\s*(.*)/i);
         if (labelMatch) {
           return (
             <div key={i} className="flex items-start gap-1.5 pl-3">

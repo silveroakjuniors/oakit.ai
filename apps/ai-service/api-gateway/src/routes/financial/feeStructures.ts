@@ -12,7 +12,7 @@ router.use(jwtVerify);
 // Creates a fee structure with its fee heads.
 router.post(
   '/',
-  permissionGuard('VIEW_FEES'),
+  permissionGuard('MANAGE_FEE_STRUCTURE'),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -287,7 +287,7 @@ router.get(
 // Updates name, academic_year, and/or is_active on a fee structure.
 router.put(
   '/:id',
-  permissionGuard('VIEW_FEES'),
+  permissionGuard('MANAGE_FEE_STRUCTURE'),
   async (req, res) => {
     try {
       const schoolId = req.user!.school_id;
@@ -352,7 +352,7 @@ router.put(
 //   - Sets deleted_at = now() on all associated fee_heads
 router.delete(
   '/:id',
-  permissionGuard('VIEW_FEES'),
+  permissionGuard('MANAGE_FEE_STRUCTURE'),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -402,7 +402,7 @@ router.delete(
 // for all currently enrolled (active) students in that class.
 router.post(
   '/:id/assign-class',
-  permissionGuard('VIEW_FEES'),
+  permissionGuard('MANAGE_FEE_STRUCTURE'),
   async (req, res) => {
     const client = await pool.connect();
     try {
@@ -489,6 +489,64 @@ router.post(
       return res.status(500).json({ error: 'Internal server error' });
     } finally {
       client.release();
+    }
+  }
+);
+
+// ── POST /api/v1/financial/fee-structures/:id/fee-heads ──────────────────────
+// Adds a single fee head to an existing fee structure.
+router.post(
+  '/:id/fee-heads',
+  permissionGuard('MANAGE_FEE_STRUCTURE'),
+  async (req, res) => {
+    try {
+      const schoolId = req.user!.school_id;
+      const { id } = req.params;
+
+      // Verify structure belongs to this school
+      const structureResult = await pool.query(
+        `SELECT id FROM fee_structures WHERE id = $1 AND school_id = $2`,
+        [id, schoolId]
+      );
+      if (structureResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Fee structure not found' });
+      }
+
+      const {
+        name, type, billing_basis, rate, hours_per_day, days_per_week,
+        calculated_monthly_fee, rounded_monthly_fee, pricing_model,
+        instalment_count, booking_amount, late_fee_amount, late_fee_grace_days,
+        is_variable, amount,
+      } = req.body;
+
+      if (!name || !type) {
+        return res.status(400).json({ error: 'name and type are required' });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO fee_heads (
+           fee_structure_id, school_id, name, type, pricing_model,
+           amount, billing_basis, rate, hours_per_day, days_per_week,
+           calculated_monthly_fee, rounded_monthly_fee,
+           instalment_count, booking_amount,
+           late_fee_amount, late_fee_grace_days, is_variable
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         RETURNING *`,
+        [
+          id, schoolId, name, type, pricing_model ?? 'flat',
+          amount ?? null, billing_basis ?? null, rate ?? null,
+          hours_per_day ?? null, days_per_week ?? null,
+          calculated_monthly_fee ?? null, rounded_monthly_fee ?? null,
+          instalment_count ?? null, booking_amount ?? null,
+          late_fee_amount ?? null, late_fee_grace_days ?? null,
+          is_variable ?? false,
+        ]
+      );
+
+      return res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('[fee-structures POST /:id/fee-heads]', err);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 );

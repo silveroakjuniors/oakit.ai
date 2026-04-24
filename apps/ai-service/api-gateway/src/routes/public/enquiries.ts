@@ -54,6 +54,27 @@ router.post('/', async (req, res) => {
       return res.status(403).json({ error: 'School is not currently accepting enquiries' });
     }
 
+    // Duplicate detection: same contact number + open enquiry for this school
+    const duplicate = await pool.query(
+      `SELECT id, student_name, created_at
+       FROM enquiries
+       WHERE school_id = $1
+         AND contact_number = $2
+         AND status = 'open'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [school.id, cleaned]
+    );
+
+    if (duplicate.rows.length > 0) {
+      const existing = duplicate.rows[0];
+      return res.status(409).json({
+        duplicate: true,
+        error: `An enquiry for ${existing.student_name} was already submitted with this number and is still open. Our team will contact you shortly.`,
+        enquiry_id: existing.id,
+      });
+    }
+
     // Insert enquiry
     const result = await pool.query(
       `INSERT INTO enquiries (

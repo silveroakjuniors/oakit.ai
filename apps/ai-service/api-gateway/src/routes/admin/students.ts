@@ -1,4 +1,4 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -10,7 +10,7 @@ import { uploadFile, deleteFile, getPublicUrl } from '../../lib/storage';
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
 
-// Use memory/temp storage � file goes to Supabase, not disk
+// Use memory/temp storage ? file goes to Supabase, not disk
 const photoUpload = multer({
   dest: '/tmp/oakit-uploads/',
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -27,7 +27,7 @@ function normalise(s: string): string {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-// - POST /api/v1/admin/students � create a single student -
+// - POST /api/v1/admin/students ? create a single student -
 router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -58,11 +58,11 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   }
 });
 
-// - GET /api/v1/admin/students -
+// - GET /api/v1/admin/students � list students
 router.get('/', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { class_id, section_id, include_inactive } = req.query;
+    const { class_id, section_id, include_inactive, incomplete_parents } = req.query;
     let query = `
       SELECT s.id, s.name, s.father_name, s.mother_name,
              s.parent_contact, s.mother_contact,
@@ -78,6 +78,15 @@ router.get('/', roleGuard('admin'), async (req: Request, res: Response) => {
     if (!include_inactive || include_inactive !== 'true') { query += ' AND s.is_active = true'; }
     if (class_id)   { params.push(class_id);   query += ` AND s.class_id = $${params.length}`; }
     if (section_id) { params.push(section_id); query += ` AND s.section_id = $${params.length}`; }
+    // Filter: students with any missing parent detail
+    if (incomplete_parents === 'true') {
+      query += ` AND (
+        s.father_name IS NULL OR s.father_name = '' OR
+        s.parent_contact IS NULL OR s.parent_contact = '' OR
+        s.mother_name IS NULL OR s.mother_name = '' OR
+        s.mother_contact IS NULL OR s.mother_contact = ''
+      )`;
+    }
     query += ' ORDER BY s.name';
     const result = await pool.query(query, params);
     return res.json(result.rows.map((r: any) => ({ ...r, photo_url: getPublicUrl(r.photo_path) })));
@@ -437,7 +446,7 @@ router.delete('/:id/parent-links/:parent_id', roleGuard('admin'), async (req: Re
   }
 });
 
-// - PUT /api/v1/admin/students/:id � update parent/guardian details -
+// - PUT /api/v1/admin/students/:id ? update parent/guardian details -
 router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -469,7 +478,7 @@ router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   }
 });
 
-// - POST /api/v1/admin/students/:id/terminate � soft-delete a student -
+// - POST /api/v1/admin/students/:id/terminate ? soft-delete a student -
 router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -516,7 +525,7 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
   }
 });
 
-// - POST /api/v1/admin/students/:id/reactivate � restore a terminated student -
+// - POST /api/v1/admin/students/:id/reactivate ? restore a terminated student -
 router.post('/:id/reactivate', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -602,7 +611,7 @@ router.put('/academic-years/:id/set-current', roleGuard('admin'), async (req: Re
   }
 });
 
-// ─── Student Academic History ─────────────────────────────────────────────────
+// --- Student Academic History -------------------------------------------------
 
 // GET /api/v1/admin/students/:id/history
 router.get('/:id/history', roleGuard('admin'), async (req: Request, res: Response) => {
@@ -932,7 +941,7 @@ router.put('/academic-years/:id/set-current', roleGuard('admin'), async (req: Re
 });
 
 
-// ─── Academic Year Management ─────────────────────────────────────────────────
+// --- Academic Year Management -------------------------------------------------
 
 // GET /api/v1/admin/students/academic-years
 router.get('/academic-years', roleGuard('admin'), async (req: Request, res: Response) => {
@@ -1009,7 +1018,7 @@ router.put('/academic-years/:id/set-current', roleGuard('admin'), async (req: Re
   }
 });
 
-// ─── Student Academic History ─────────────────────────────────────────────────
+// --- Student Academic History -------------------------------------------------
 
 // GET /api/v1/admin/students/:id/history
 router.get('/:id/history', roleGuard('admin'), async (req: Request, res: Response) => {
@@ -1034,7 +1043,7 @@ router.get('/:id/history', roleGuard('admin'), async (req: Request, res: Respons
   }
 });
 
-// ─── Change Student Class (post-promotion edit) ───────────────────────────────
+// --- Change Student Class (post-promotion edit) -------------------------------
 
 // PUT /api/v1/admin/students/:id/change-class
 router.put('/:id/change-class', roleGuard('admin'), async (req: Request, res: Response) => {
@@ -1072,7 +1081,7 @@ router.put('/:id/change-class', roleGuard('admin'), async (req: Request, res: Re
   }
 });
 
-// ─── Bulk Promote ─────────────────────────────────────────────────────────────
+// --- Bulk Promote -------------------------------------------------------------
 
 // POST /api/v1/admin/students/bulk-promote
 router.post('/bulk-promote', roleGuard('admin'), async (req: Request, res: Response) => {
@@ -1195,7 +1204,7 @@ router.post('/bulk-promote', roleGuard('admin'), async (req: Request, res: Respo
   }
 });
 
-// ─── Bulk Terminate ───────────────────────────────────────────────────────────
+// --- Bulk Terminate -----------------------------------------------------------
 
 // POST /api/v1/admin/students/bulk-terminate
 router.post('/bulk-terminate', roleGuard('admin'), async (req: Request, res: Response) => {

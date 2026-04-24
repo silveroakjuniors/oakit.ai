@@ -717,6 +717,113 @@ router.get('/fees', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/parent/profile — get own profile info
+router.get('/profile', async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.user!;
+    const result = await pool.query(
+      `SELECT id, name, mobile, mobile_updated_at
+       FROM parent_users WHERE id = $1`,
+      [user_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
+    const p = result.rows[0];
+    return res.json({
+      id: p.id,
+      name: p.name,
+      mobile: p.mobile,
+      mobile_can_update: !p.mobile_updated_at, // once-only: can only update if never updated before
+    });
+  } catch (err) {
+    console.error('[parent profile GET]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/v1/parent/profile — update own name and/or mobile
+// Mobile update is allowed only once (mobile is the login credential).
+router.put('/profile', async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.user!;
+    const { name, mobile } = req.body as { name?: string; mobile?: string };
+
+    if (!name && !mobile) {
+      return res.status(400).json({ error: 'Provide name or mobile to update' });
+    }
+
+    // Fetch current profile
+    const current = await pool.query(
+      `SELECT id, name, mobile, mobile_updated_at FROM parent_users WHERE id = $1`,
+      [user_id]
+    );
+    if (current.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
+    const profile = current.rows[0];
+
+    // Mobile update: once-only policy
+    if (mobile !== undefined) {
+      const cleaned = String(mobile).replace(/\D/g, '');
+      if (!/^\d{10}$/.test(cleaned)) {
+        return res.status(400).json({ error: 'Mobile must be a valid 10-digit number' });
+      }
+      if (profile.mobile_updated_at) {
+        return res.status(403).json({
+          error: 'Mobile number has already been updated once and cannot be changed again. Contact the school admin if you need help.',
+          mobile_locked: true,
+        });
+      }
+      if (cleaned === profile.mobile) {
+        return res.status(400).json({ error: 'New mobile number is the same as the current one' });
+      }
+
+      // Check no other parent in this school has this mobile
+      const conflict = await pool.query(
+        `SELECT id FROM parent_users WHERE mobile = $1 AND id != $2 LIMIT 1`,
+        [cleaned, user_id]
+      );
+      if (conflict.rows.length > 0) {
+        return res.status(409).json({ error: 'This mobile number is already registered with another account' });
+      }
+
+      // Update mobile + name (if provided)
+      const bcrypt = require('bcryptjs');
+      const newHash = await bcrypt.hash(cleaned, 12);
+      await pool.query(
+        `UPDATE parent_users
+         SET mobile = $1,
+             password_hash = $2,
+             mobile_updated_at = now(),
+             mobile_updated_by = 'parent',
+             ${name ? "name = $4," : ''}
+             force_password_reset = false
+         WHERE id = ${name ? '$5' : '$3'}`,
+        name
+          ? [cleaned, newHash, name.trim(), user_id]
+          : [cleaned, newHash, user_id]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Mobile number updated. Please log in again with your new number.',
+        mobile_updated: true,
+      });
+    }
+
+    // Name-only update
+    if (name) {
+      await pool.query(
+        `UPDATE parent_users SET name = $1 WHERE id = $2`,
+        [name.trim(), user_id]
+      );
+      return res.json({ success: true, message: 'Name updated successfully.' });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[parent profile PUT]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/v1/parent/missed-topics/:id/done
 router.post('/missed-topics/:id/done', async (req: Request, res: Response) => {
   try {

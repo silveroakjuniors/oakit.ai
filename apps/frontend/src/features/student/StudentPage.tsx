@@ -120,7 +120,7 @@ export default function StudentPage() {
     // Guard: don't allow navigation away from active test
     if (quizState.state.activeTestId && tab !== 'quiz') {
       alert(
-        '⚠ You have an active test. Please complete or submit it before navigating away.'
+        'You have an active test. Please complete or submit it before navigating away.'
       );
       return;
     }

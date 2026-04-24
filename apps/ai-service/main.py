@@ -1731,3 +1731,100 @@ async def generate_textbook_planner(req: TextbookPlannerRequest):
             "preview_only": req.preview_only,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Parent-facing topic summary
+# ---------------------------------------------------------------------------
+
+class TopicSummaryRequest(BaseModel):
+    topics: list          # list of topic_label strings
+    chunks: list = []     # optional: [{ "topic": str, "snippet": str }] for richer context
+    class_name: str = "Nursery"
+    child_name: str = "your child"
+    completed: bool = False   # True = teacher marked these as done today
+
+@app.post("/internal/topic-summary")
+async def topic_summary(req: TopicSummaryRequest):
+    """
+    Generate a warm, parent-friendly summary of what a child learned (or will learn) today.
+    Uses chunk content when available for a richer, specific summary.
+    Falls back gracefully if LLM is unavailable.
+    """
+    from query_pipeline import _call_llm
+
+    if not req.topics:
+        return {"summary": ""}
+
+    # Clean up raw "Week X Day Y" labels — extract meaningful subject names
+    def clean_label(label: str) -> str:
+        import re
+        # Remove "Week N Day N" prefix/suffix
+        cleaned = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', label, flags=re.IGNORECASE).strip()
+        # Remove leading/trailing punctuation
+        cleaned = cleaned.strip(' -–—:,.')
+        return cleaned if cleaned else label
+
+    cleaned_topics = [clean_label(t) for t in req.topics]
+    # Filter out empty labels
+    meaningful_topics = [t for t in cleaned_topics if t]
+    if not meaningful_topics:
+        meaningful_topics = req.topics  # fallback to raw labels
+
+    # Build content context from chunk snippets if available
+    content_lines = []
+    for chunk in req.chunks[:8]:
+        topic = chunk.get("topic", "")
+        snippet = (chunk.get("snippet") or "")[:250].strip()
+        if snippet:
+            content_lines.append(f"• {topic}: {snippet}")
+
+    content_context = "\n".join(content_lines) if content_lines else ""
+
+    tense = "learned" if req.completed else "will learn"
+    tense_intro = "Today" if req.completed else "Today's plan"
+
+    system = (
+        "You are Oakie, a warm and friendly school assistant writing to parents.\n"
+        "Write in simple, joyful language that a parent can easily understand.\n"
+        "Always mention the child's name naturally in the summary.\n"
+        "Keep the summary to 2-3 sentences. No bullet points, no markdown.\n"
+        "Focus on what the child actually learned or will learn — be specific and encouraging."
+    )
+
+    topics_list = ", ".join(meaningful_topics[:6])
+
+    if content_context:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+{tense_intro}: {req.child_name} {tense} about {topics_list}.
+
+Curriculum content covered:
+{content_context}
+
+Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} today. Be specific using the content above. Mention {req.child_name} by name."""
+    else:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+{tense_intro}: {req.child_name} {tense} about {topics_list}.
+
+Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} today. Be encouraging and specific. Mention {req.child_name} by name."""
+
+    try:
+        result, _ = await _call_llm(prompt, system)
+        if result and len(result.strip()) > 10:
+            return {"summary": result.strip()}
+    except Exception as e:
+        print(f"[topic-summary] LLM error: {e}")
+
+    # Fallback: build a readable sentence without LLM
+    if len(meaningful_topics) == 1:
+        summary = f"{tense_intro}, {req.child_name} {tense} about {meaningful_topics[0]}."
+    elif len(meaningful_topics) == 2:
+        summary = f"{tense_intro}, {req.child_name} {tense} about {meaningful_topics[0]} and {meaningful_topics[1]}."
+    else:
+        last = meaningful_topics[-1]
+        rest = ", ".join(meaningful_topics[:-1])
+        summary = f"{tense_intro}, {req.child_name} {tense} about {rest}, and {last}."
+
+    return {"summary": summary}

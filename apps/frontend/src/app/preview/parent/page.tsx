@@ -609,7 +609,7 @@ function OakieChatContent() {
           <p className="text-xs font-medium" style={{ color: ACCENT }}>● Online · Ready to help</p>
         </div>
         <span className="ml-auto px-2.5 py-1 rounded-full text-[10px] font-bold"
-          style={{ background: G[100], color: '#5C4A1E', border: `1px solid ${G[100]}` }}>✨ Premium</span>
+          style={{ background: G[100], color: '#5C4A1E', border: `1px solid ${G[100]}` }}>Premium</span>
       </div>
       <div className="flex-1 space-y-3 mb-4">
         {[
@@ -758,7 +758,7 @@ function SettingsContent() {
         ))}
       </Card>
       <Card>
-        <Label>🌐 Translation Language</Label>
+        <Label>Translation Language</Label>
         <div className="flex flex-wrap gap-2">
           {['English','Hindi','Telugu','Tamil','Kannada','Malayalam'].map(l => (
             <span key={l} className="px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer"

@@ -173,12 +173,14 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
     );
 
     let topics: string[] = [];
+    let topicChunks: { topic: string; snippet: string }[] = [];
     if (planRow.rows.length > 0 && planRow.rows[0].chunk_ids?.length > 0) {
       const chunks = await pool.query(
-        'SELECT topic_label FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
+        'SELECT topic_label, LEFT(content, 300) as snippet FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
         [planRow.rows[0].chunk_ids]
       );
       topics = chunks.rows.map((r: any) => r.topic_label);
+      topicChunks = chunks.rows.map((r: any) => ({ topic: r.topic_label || '', snippet: r.snippet || '' }));
     }
 
     // Today's homework
@@ -204,6 +206,7 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
       attendance: attRow.rows[0] || null,
       completion: compRow.rows[0] || null,
       topics,
+      topic_chunks: topicChunks,
       plan_status: planRow.rows[0]?.status || null,
       special_label: planRow.rows[0]?.special_label || null,
       homework: hwRow.rows[0] || null,

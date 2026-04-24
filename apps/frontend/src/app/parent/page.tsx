@@ -8,7 +8,7 @@ import {
   ChevronRight, Send, Loader2, RefreshCw, Phone, Shield, Settings,
   BarChart3, Target, Zap, CalendarDays, Apple, Smartphone,
   ClipboardList, CreditCard, FileBarChart, Star, ArrowRight, Heart, Download,
-  X, Paperclip, Sun, Hand, Moon, Camera, Image as ImageIcon
+  X, Paperclip, Sun, Hand, Moon, Camera, Image as ImageIcon, Globe
 } from 'lucide-react';
 import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
@@ -103,7 +103,10 @@ interface ChildFeed {
   student_id: string; name: string; class_name: string; section_label: string;
   feed_date: string; // YYYY-MM-DD — from time machine or real today
   attendance: { status: string; is_late: boolean; arrived_at: string | null } | null;
-  topics: string[]; plan_status: string | null; special_label: string | null;
+  completion: { covered_chunk_ids: string[]; submitted_at: string; teacher_name: string } | null;
+  topics: string[];
+  topic_chunks: { topic: string; snippet: string }[];
+  plan_status: string | null; special_label: string | null;
   homework: { formatted_text: string; raw_text: string } | null;
   notes: NoteItem[];
 }
@@ -1088,15 +1091,16 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
     if (cached) { setAiSummary(cached); return; }
 
     setSummaryLoading(true);
-    const completed = !!feed.attendance;
-    const params = new URLSearchParams({
-      topics: feed.topics.join(','),
+    // completed = teacher has marked today's topics as done (not just attendance)
+    const completed = !!feed.completion;
+    apiPost<{ summary: string }>('/api/v1/ai/topic-summary', {
+      topics: feed.topics,
+      chunks: feed.topic_chunks ?? [],
       class_name: activeChild.class_name ?? 'Nursery',
       child_name: activeChild.name.split(' ')[0],
-      completed: String(completed),
-    });
-    apiGet<{ summary: string }>(`/api/v1/ai/topic-summary?${params}`, token)
-      .then(d => { setAiSummary(d.summary); localStorage.setItem(cacheKey, d.summary); })
+      completed,
+    }, token)
+      .then(d => { if (d.summary) { setAiSummary(d.summary); localStorage.setItem(cacheKey, d.summary); } })
       .catch(() => {})
       .finally(() => setSummaryLoading(false));
   }, [feed?.topics?.join(','), activeChild?.id]);
@@ -1279,7 +1283,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
                 </div>
               ) : (
                 <p className="text-sm text-emerald-800 leading-relaxed">
-                  {aiSummary || (feed.attendance
+                  {aiSummary || (feed.completion
                     ? `Today, ${activeChild.name.split(' ')[0]} learned about ${feed.topics.slice(0, 2).join(' and ')}.`
                     : `Today, ${activeChild.name.split(' ')[0]} will learn about ${feed.topics.slice(0, 2).join(' and ')}.`)}
                 </p>
@@ -2756,7 +2760,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
           <div className="flex items-center gap-3 mb-2">
             <CalendarDays className="w-6 h-6 text-purple-600" />
             <h2 className="text-xl font-bold text-neutral-800">Calendar Integration</h2>
-            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">✨ Premium</span>
+            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Premium</span>
           </div>
           <p className="text-sm text-neutral-500 mb-6">Sync school events, homework deadlines and reminders directly to your calendar.</p>
 
@@ -2798,13 +2802,15 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
           <div className="flex items-center gap-3 mb-2">
             <Zap className="w-6 h-6 text-indigo-600" />
             <h2 className="text-xl font-bold text-neutral-800">Translation</h2>
-            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">✨ Premium</span>
+            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Premium</span>
           </div>
           <p className="text-sm text-neutral-500 mb-6">Translate the parent portal into your local language — Hindi, Telugu, Tamil, Kannada and more.</p>
 
           {/* Paid feature gate */}
           <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 p-6 flex flex-col items-center text-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center text-3xl">🌐</div>
+            <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center">
+              <Globe className="w-7 h-7 text-indigo-500" />
+            </div>
             <p className="font-bold text-neutral-800 text-base">Multilingual Support</p>
             <p className="text-sm text-neutral-500 max-w-xs leading-relaxed">
               Read homework, updates, and announcements in your preferred language. Supports 10 Indian languages.

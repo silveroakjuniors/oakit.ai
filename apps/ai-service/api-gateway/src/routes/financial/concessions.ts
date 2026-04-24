@@ -53,8 +53,8 @@ router.post('/', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
   }
 });
 
-// ── GET /pending — List pending concessions (Principal) ──────────────────────
-router.get('/pending', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+// ── GET /pending — List pending concessions ──────────────────────────────────
+router.get('/pending', permissionGuard('APPROVE_CONCESSION'), async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const result = await pool.query(
@@ -74,7 +74,7 @@ router.get('/pending', permissionGuard('MANAGE_CONCESSION'), async (req, res) =>
 });
 
 // ── POST /:id/approve — Approve a concession ─────────────────────────────────
-router.post('/:id/approve', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+router.post('/:id/approve', permissionGuard('APPROVE_CONCESSION'), async (req, res) => {
   const client = await pool.connect();
   try {
     const schoolId = req.user!.school_id;
@@ -145,7 +145,7 @@ router.post('/:id/approve', permissionGuard('MANAGE_CONCESSION'), async (req, re
 });
 
 // ── POST /:id/reject — Reject a concession ───────────────────────────────────
-router.post('/:id/reject', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+router.post('/:id/reject', permissionGuard('APPROVE_CONCESSION'), async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { id } = req.params;
@@ -175,7 +175,7 @@ router.post('/:id/reject', permissionGuard('MANAGE_CONCESSION'), async (req, res
 });
 
 // ── POST /bulk-approve — Bulk approve concessions ────────────────────────────
-router.post('/bulk-approve', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+router.post('/bulk-approve', permissionGuard('APPROVE_CONCESSION'), async (req, res) => {
   const client = await pool.connect();
   try {
     const schoolId = req.user!.school_id;

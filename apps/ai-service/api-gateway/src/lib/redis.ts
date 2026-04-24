@@ -76,6 +76,26 @@ class UpstashRedis {
   async hgetall(key: string): Promise<Record<string, string> | null> {
     return this.cmd('HGETALL', key);
   }
+
+  async pExpire(key: string, milliseconds: number): Promise<number> {
+    return this.cmd('PEXPIRE', key, milliseconds);
+  }
+
+  async pTTL(key: string): Promise<number> {
+    return this.cmd('PTTL', key);
+  }
+
+  async ttl(key: string): Promise<number> {
+    return this.cmd('TTL', key);
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    return this.cmd('KEYS', pattern);
+  }
+
+  async flushdb(): Promise<string> {
+    return this.cmd('FLUSHDB');
+  }
 }
 
 // ─── Standard Redis client (local dev) ───────────────────────────────────────
