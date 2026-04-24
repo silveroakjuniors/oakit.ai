@@ -214,7 +214,7 @@ export default function TeacherPlanner() {
   const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
   // Per-chunk homework state (Req 1.1–1.3, 6.5)
-  interface HomeworkState { status: 'none' | 'saved'; record?: { id: string; raw_text: string; formatted_text: string; teacher_comments?: string } }
+  interface HomeworkState { status: 'none' | 'saved'; record?: { id: string; chunk_id: string; topic_label?: string; raw_text: string; formatted_text: string; teacher_comments?: string } }
   const [homeworkByChunk, setHomeworkByChunk] = useState<Record<string, HomeworkState>>({});
   const [homeworkModalChunk, setHomeworkModalChunk] = useState<{ chunkId: string; label: string; content: string } | null>(null);
 
@@ -1146,7 +1146,11 @@ export default function TeacherPlanner() {
             chunkContent={homeworkModalChunk.content}
             sectionId={sectionId}
             token={token}
-            existingRecord={homeworkByChunk[homeworkModalChunk.chunkId]?.record ?? null}
+            existingRecord={(() => {
+              const r = homeworkByChunk[homeworkModalChunk.chunkId]?.record;
+              if (!r) return null;
+              return { ...r, chunk_id: r.chunk_id ?? homeworkModalChunk.chunkId, topic_label: r.topic_label ?? homeworkModalChunk.label };
+            })()}
             onClose={() => setHomeworkModalChunk(null)}
             onSaved={record => {
               setHomeworkByChunk(prev => ({ ...prev, [record.chunk_id]: { status: 'saved', record } }));

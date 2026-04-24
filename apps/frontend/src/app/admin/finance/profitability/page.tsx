@@ -100,17 +100,17 @@ export default function ProfitabilityPage() {
           <StatCard
             label="Total Income"
             value={`₹${profitLoss.total_income.toLocaleString('en-IN')}`}
-            variant="success"
+            color="success"
           />
           <StatCard
             label="Total Expenses"
             value={`₹${profitLoss.total_expenses.toLocaleString('en-IN')}`}
-            variant="warning"
+            color="warning"
           />
           <StatCard
             label="Net Profit"
             value={`₹${profitLoss.net_profit.toLocaleString('en-IN')}`}
-            variant={profitLoss.net_profit >= 0 ? 'success' : 'error'}
+            color={profitLoss.net_profit >= 0 ? 'success' : 'danger'}
           />
         </div>
       )}
