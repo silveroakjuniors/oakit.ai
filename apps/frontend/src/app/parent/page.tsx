@@ -1656,20 +1656,21 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
 
 // ─── Day Plan Drawer ──────────────────────────────────────────────────────────
 function DayPlanDrawer({ day, activeChild, token, onClose }: {
-  day: { date: string; label: string; topics: string[]; isToday: boolean };
+  day: { date: string; label: string; topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean; isToday: boolean };
   activeChild: Child | null;
   token: string;
   onClose: () => void;
 }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // Use the day's own date as reference for "today" — the drawer knows if it's today via day.isToday
   const todayRef = new Date().toISOString().split('T')[0];
   const isPast = day.date < todayRef;
+  // A day is "covered" if teacher marked it completed
+  const isCovered = day.completed;
 
   useEffect(() => {
     if (day.topics.length === 0) return;
-    const cacheKey = `topic-summary:${activeChild?.id}:${day.date}`;
+    const cacheKey = `topic-summary:${activeChild?.id}:${day.date}:${isCovered ? 'done' : 'plan'}`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       try {
@@ -1678,16 +1679,18 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
       } catch {}
     }
     setLoading(true);
-    const params = new URLSearchParams({
-      topics: day.topics.join(','),
+    apiPost<{ summary: string }>('/api/v1/ai/topic-summary', {
+      topics: day.topics,
+      chunks: day.chunks,
       class_name: activeChild?.class_name ?? 'Nursery',
       child_name: activeChild?.name?.split(' ')[0] ?? 'your child',
-      completed: String(isPast),
-    });
-    apiGet<{ summary: string }>(`/api/v1/ai/topic-summary?${params}`, token)
+      completed: isCovered,
+    }, token)
       .then(d => {
-        setSummary(d.summary);
-        localStorage.setItem(cacheKey, JSON.stringify({ ts: todayRef, text: d.summary }));
+        if (d.summary) {
+          setSummary(d.summary);
+          localStorage.setItem(cacheKey, JSON.stringify({ ts: todayRef, text: d.summary }));
+        }
       })
       .catch(() => setSummary(day.topics.join(' · ')))
       .finally(() => setLoading(false));
@@ -1698,11 +1701,14 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
       <div className="relative z-10 bg-white ml-auto w-full xl:w-80 h-full overflow-y-auto shadow-2xl border-l border-gray-100" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className={`px-5 py-4 border-b border-gray-100 flex items-center justify-between ${day.isToday ? 'bg-emerald-50' : 'bg-gray-50'}`}>
+        <div className={`px-5 py-4 border-b border-gray-100 flex items-center justify-between ${day.isToday ? 'bg-emerald-50' : isCovered ? 'bg-blue-50' : 'bg-gray-50'}`}>
           <div>
-            <p className={`text-xs font-bold uppercase tracking-widest ${day.isToday ? 'text-emerald-600' : 'text-gray-400'}`}>
-              {day.isToday ? 'Today' : isPast ? 'Past' : 'Upcoming'}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className={`text-xs font-bold uppercase tracking-widest ${day.isToday ? 'text-emerald-600' : isCovered ? 'text-blue-600' : 'text-gray-400'}`}>
+                {day.isToday ? 'Today' : isCovered ? 'Completed' : isPast ? 'Past' : 'Upcoming'}
+              </p>
+              {isCovered && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Covered</span>}
+            </div>
             <p className="text-base font-bold text-gray-900 mt-0.5">{day.label}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50">
@@ -1719,11 +1725,11 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
           ) : (
             <>
               {/* AI Summary card */}
-              <div className={`rounded-2xl p-4 ${day.isToday ? 'bg-emerald-50 border border-emerald-100' : isPast ? 'bg-blue-50 border border-blue-100' : 'bg-amber-50 border border-amber-100'}`}>
+              <div className={`rounded-2xl p-4 ${day.isToday ? 'bg-emerald-50 border border-emerald-100' : isCovered ? 'bg-blue-50 border border-blue-100' : 'bg-amber-50 border border-amber-100'}`}>
                 <div className="flex items-center gap-2 mb-2">
-                  <Sparkles size={14} className={day.isToday ? 'text-emerald-600' : isPast ? 'text-blue-600' : 'text-amber-600'} />
-                  <p className={`text-xs font-bold uppercase tracking-wide ${day.isToday ? 'text-emerald-700' : isPast ? 'text-blue-700' : 'text-amber-700'}`}>
-                    {isPast ? 'What was covered' : 'What will be covered'}
+                  <Sparkles size={14} className={day.isToday ? 'text-emerald-600' : isCovered ? 'text-blue-600' : 'text-amber-600'} />
+                  <p className={`text-xs font-bold uppercase tracking-wide ${day.isToday ? 'text-emerald-700' : isCovered ? 'text-blue-700' : 'text-amber-700'}`}>
+                    {isCovered ? 'What was learned' : day.isToday ? 'What will be covered today' : 'What will be covered'}
                   </p>
                 </div>
                 {loading ? (
@@ -1732,7 +1738,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
                     <p className="text-xs text-gray-400">Generating summary…</p>
                   </div>
                 ) : (
-                  <p className={`text-sm leading-relaxed ${day.isToday ? 'text-emerald-800' : isPast ? 'text-blue-800' : 'text-amber-800'}`}>
+                  <p className={`text-sm leading-relaxed ${day.isToday ? 'text-emerald-800' : isCovered ? 'text-blue-800' : 'text-amber-800'}`}>
                     {summary}
                   </p>
                 )}
@@ -1747,7 +1753,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
                   {day.topics.map((topic, i) => (
                     <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
                       <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                        {isPast
+                        {isCovered
                           ? <CheckCircle2 size={14} className="text-emerald-500" />
                           : <span className="text-[10px] font-bold text-gray-400 bg-gray-200 w-5 h-5 rounded-full flex items-center justify-center">{i + 1}</span>
                         }
