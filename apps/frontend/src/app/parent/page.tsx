@@ -7,7 +7,8 @@ import {
   LogOut, BookOpen, Clock, CheckCircle2, AlertCircle, User,
   ChevronRight, Send, Loader2, RefreshCw, Phone, Shield, Settings,
   BarChart3, Target, Zap, CalendarDays, Apple, Smartphone,
-  ClipboardList, CreditCard, FileBarChart, Star, ArrowRight, Heart, Download
+  ClipboardList, CreditCard, FileBarChart, Star, ArrowRight, Heart, Download,
+  X, Paperclip, Sun, Hand, Moon, Camera, Image as ImageIcon
 } from 'lucide-react';
 import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
@@ -584,9 +585,18 @@ export default function ParentPage() {
           </div>
           {/* Right side */}
           <div className="flex items-center gap-4">
-            <button className="flex items-center gap-1.5 text-amber-500 font-semibold text-sm hover:text-amber-600 transition-colors">
-              <Star size={15} className="fill-amber-400 text-amber-400" /> Premium
-            </button>
+            {/* Greeting + Premium */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">
+                {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })()},
+              </span>
+              <span className="text-sm font-semibold text-gray-800">
+                {parentProfile?.name?.split(' ')[0] ?? 'there'}
+              </span>
+              <button className="flex items-center gap-1.5 text-amber-500 font-semibold text-sm hover:text-amber-600 transition-colors ml-1">
+                <Star size={15} className="fill-amber-400 text-amber-400" /> Premium
+              </button>
+            </div>
             <button onClick={() => setTab('notifications')} className="relative w-9 h-9 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition-colors">
               <Bell size={17} className="text-gray-600" />
               {unreadNotifs > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotifs}</span>}
@@ -597,7 +607,6 @@ export default function ParentPage() {
                 onClick={() => setProfileOpen(v => !v)}
                 className="flex items-center gap-2.5 hover:bg-gray-50 rounded-xl px-2 py-1.5 transition-colors"
               >
-                {/* Avatar initials */}
                 <div className="w-9 h-9 rounded-full bg-emerald-100 border-2 border-emerald-200 flex items-center justify-center flex-shrink-0">
                   <span className="text-emerald-700 font-bold text-sm">
                     {parentProfile?.name?.[0]?.toUpperCase() ?? 'P'}
@@ -783,6 +792,7 @@ export default function ParentPage() {
                       unreadMessages={unreadMessages}
                       unreadNotifs={unreadNotifs}
                       invoice={invoice}
+                      parentProfile={parentProfile}
                     />
                   )}
                   {tab === 'calendar' && <CalendarTab events={calendarEvents} />}
@@ -871,14 +881,20 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
         <div className="lg:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-neutral-200" /></div>
         <div className="px-5 pb-6 pt-3 lg:pt-5">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-base font-semibold text-neutral-800">📋 Teacher Note</p>
-            <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-500">✕</button>
+            <p className="text-base font-semibold text-neutral-800 flex items-center gap-2">
+              <ClipboardList size={16} className="text-gray-500" /> Teacher Note
+            </p>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-500">
+              <X size={14} />
+            </button>
           </div>
           {note.note_text && <div className="bg-neutral-50 rounded-xl p-4 mb-4"><p className="text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">{note.note_text}</p></div>}
           {note.file_name && (
             <div className="border border-neutral-200 rounded-xl p-4 mb-4">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center text-xl">📎</div>
+                <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center">
+                <Paperclip size={18} className="text-primary-600" />
+              </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-neutral-800 truncate">{note.file_name}</p>
                   {note.file_size && <p className="text-xs text-neutral-400">{Math.round(note.file_size / 1024)} KB</p>}
@@ -890,8 +906,9 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
               </button>
             </div>
           )}
-          <div className={`rounded-xl px-4 py-3 text-xs ${daysLeft <= 3 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
-            {daysLeft <= 0 ? '⚠ Expires today — download now.' : `⚠ Auto-deleted on ${note.expires_at.split('T')[0]} (${daysLeft} day${daysLeft === 1 ? '' : 's'} left). Save a local copy.`}
+          <div className={`rounded-xl px-4 py-3 text-xs flex items-start gap-2 ${daysLeft <= 3 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+            <AlertCircle size={13} className="mt-0.5 flex-shrink-0" />
+            <span>{daysLeft <= 0 ? 'Expires today — download now.' : `Auto-deleted on ${note.expires_at.split('T')[0]} (${daysLeft} day${daysLeft === 1 ? '' : 's'} left). Save a local copy.`}</span>
           </div>
         </div>
       </div>
@@ -900,11 +917,12 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
 }
 
 // ─── Home Tab ────────────────────────────────────────────────────────────────
-function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice }: {
+function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile }: {
   feed: ChildFeed | null; progress: ProgressData | null; attendance: AttendanceData | null; activeChild: Child | null;
   announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
   token: string; onChildUpdate: (url: string) => void;
   unreadMessages: number; unreadNotifs: number; invoice: any;
+  parentProfile: { name: string; mobile: string } | null;
 }) {
   if (!activeChild) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -915,13 +933,8 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
   const att = feed?.attendance;
   const attPct = attendance?.attendance_pct ?? 0;
-  const attLabel = !att ? 'Not marked' : att.status === 'present' && att.is_late ? '⏰ Late' : att.status === 'present' ? '✓ Present' : '✗ Absent';
+  const attLabel = !att ? 'Not marked' : att.status === 'present' && att.is_late ? 'Late' : att.status === 'present' ? 'Present' : 'Absent';
   const pct = progress?.coverage_pct ?? 0;
-
-  // Greeting
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
-  const greetEmoji = hour < 12 ? '☀️' : hour < 17 ? '👋' : '🌙';
 
   // Week calendar
   const today = new Date();
@@ -936,22 +949,39 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
   return (
     <div className="space-y-5">
-      {/* Greeting */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">{greeting}, {activeChild.name.split(' ')[0]} {greetEmoji}</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Here&apos;s what&apos;s happening with {activeChild.name} today.</p>
-      </div>
-
       {/* Child profile card */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full overflow-hidden bg-emerald-100 flex-shrink-0 flex items-center justify-center border-2 border-gray-100">
+        {/* Editable child photo */}
+        <label className="relative w-14 h-14 rounded-full overflow-hidden bg-emerald-100 flex-shrink-0 flex items-center justify-center border-2 border-gray-100 cursor-pointer group">
           {activeChild.photo_url ? (
             <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`}
               alt={activeChild.name} className="w-full h-full object-cover" />
           ) : (
             <span className="text-emerald-700 font-bold text-xl">{activeChild.name[0]}</span>
           )}
-        </div>
+          {/* Camera overlay on hover */}
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-full">
+            <Camera size={18} className="text-white" />
+          </div>
+          <input
+            type="file"
+            accept="image/jpeg,image/png"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file || !token) return;
+              const fd = new FormData();
+              fd.append('photo', file);
+              try {
+                const res = await fetch(`${API_BASE}/api/v1/parent/child/${activeChild.id}/photo`, {
+                  method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+                });
+                const data = await res.json();
+                if (res.ok) onChildUpdate(data.photo_url);
+              } catch {}
+            }}
+          />
+        </label>
         <div className="flex-1 min-w-0">
           <p className="font-bold text-gray-900 text-base">{activeChild.name}</p>
           <p className="text-sm text-gray-500">{activeChild.class_name} · Section {activeChild.section_label}</p>
@@ -967,14 +997,16 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
       {/* Stat cards row */}
       <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: 'Attendance', value: `${attPct}%`, sub: attPct >= 90 ? 'Excellent' : 'This Month', icon: '📅', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Progress', value: `${pct.toFixed(1)}%`, sub: 'This Term', icon: '📈', color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: 'Messages', value: String(unreadMessages), sub: 'Unread', icon: '💬', color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Updates', value: String(unreadNotifs), sub: 'New', icon: '🔔', color: 'text-amber-600', bg: 'bg-amber-50' },
-        ].map(s => (
+        {([
+          { label: 'Attendance', value: `${attPct}%`, sub: attPct >= 90 ? 'Excellent' : 'This Month', Icon: CalendarDays, color: 'text-emerald-600', bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
+          { label: 'Progress',   value: `${pct.toFixed(1)}%`, sub: 'This Term',  Icon: TrendingUp,   color: 'text-blue-600',   bg: 'bg-blue-50',   iconColor: 'text-blue-500' },
+          { label: 'Messages',   value: String(unreadMessages), sub: 'Unread',   Icon: MessageSquare, color: 'text-purple-600', bg: 'bg-purple-50', iconColor: 'text-purple-500' },
+          { label: 'Updates',    value: String(unreadNotifs),   sub: 'New',      Icon: Bell,          color: 'text-amber-600',  bg: 'bg-amber-50',  iconColor: 'text-amber-500' },
+        ] as const).map(s => (
           <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-            <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center text-base mb-2`}>{s.icon}</div>
+            <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center mb-2`}>
+              <s.Icon size={16} className={s.iconColor} />
+            </div>
             <p className="text-2xl font-bold text-gray-900 leading-none">{s.value}</p>
             <p className="text-xs text-gray-400 mt-1">{s.label}</p>
             <p className={`text-xs font-medium mt-0.5 ${s.color}`}>{s.sub}</p>
@@ -986,7 +1018,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Today's Feed */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">📋 Today&apos;s Feed</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-1.5">
+            <ClipboardList size={13} className="text-gray-400" /> Today&apos;s Feed
+          </p>
           {feed?.special_label ? (
             <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
               <p className="text-sm font-semibold text-amber-800">{feed.special_label}</p>
@@ -1010,7 +1044,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
           {/* Homework section */}
           {feed?.homework && (
             <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-xs font-bold text-gray-700 mb-2">📝 Homework</p>
+              <p className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                <BookOpen size={13} className="text-gray-500" /> Homework
+              </p>
               <div className="space-y-2">
                 {(feed.homework.formatted_text || feed.homework.raw_text).split('\n').filter(Boolean).slice(0, 3).map((line, i) => (
                   <div key={i} className="flex items-start gap-2">
@@ -1028,7 +1064,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
         {/* This Week */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">📅 This Week</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-1.5">
+            <CalendarDays size={13} className="text-gray-400" /> This Week
+          </p>
           <div className="flex justify-between mb-3">
             {weekDays.map((d, i) => {
               const dateObj = weekDates[i];
@@ -1062,7 +1100,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Curriculum Progress */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">📊 Curriculum Progress</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-1.5">
+            <TrendingUp size={13} className="text-gray-400" /> Curriculum Progress
+          </p>
           <div className="flex items-center gap-4">
             <div className="relative flex-shrink-0" style={{ width: 80, height: 80 }}>
               <svg width="80" height="80" style={{ transform: 'rotate(-90deg)' }}>
@@ -1087,17 +1127,21 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
         {/* Quick Actions */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">⚡ Quick Actions</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-1.5">
+            <Zap size={13} className="text-gray-400" /> Quick Actions
+          </p>
           <div className="grid grid-cols-4 gap-2">
-            {[
-              { icon: '📊', label: 'Report Card', action: () => onTabChange('reports') },
-              { icon: '🖼️', label: 'Gallery', action: () => onTabChange('notifications') },
-              { icon: '💬', label: 'Messages', action: () => onTabChange('messages') },
-              { icon: '💳', label: 'Fee Details', action: () => onTabChange('fees') },
-            ].map(a => (
+            {([
+              { Icon: BarChart3,     label: 'Report Card', action: () => onTabChange('reports'),       bg: 'bg-blue-50',   iconColor: 'text-blue-500' },
+              { Icon: ImageIcon,     label: 'Gallery',     action: () => onTabChange('notifications'), bg: 'bg-purple-50', iconColor: 'text-purple-500' },
+              { Icon: MessageSquare, label: 'Messages',    action: () => onTabChange('messages'),      bg: 'bg-emerald-50',iconColor: 'text-emerald-500' },
+              { Icon: CreditCard,    label: 'Fee Details', action: () => onTabChange('fees'),          bg: 'bg-orange-50', iconColor: 'text-orange-500' },
+            ] as const).map(a => (
               <button key={a.label} onClick={a.action}
                 className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
-                <span className="text-2xl">{a.icon}</span>
+                <div className={`w-10 h-10 rounded-xl ${a.bg} flex items-center justify-center`}>
+                  <a.Icon size={18} className={a.iconColor} />
+                </div>
                 <span className="text-[10px] font-semibold text-gray-600 text-center leading-tight">{a.label}</span>
               </button>
             ))}
@@ -1108,7 +1152,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       {/* Teacher notes */}
       {feed?.notes && feed.notes.length > 0 && (
         <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-          <p className="text-sm font-semibold text-gray-800 mb-3">📋 Teacher Notes</p>
+          <p className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <ClipboardList size={15} className="text-gray-500" /> Teacher Notes
+          </p>
           <div className="space-y-2">
             {feed.notes.map(note => {
               const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
@@ -1129,7 +1175,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       {/* Announcements */}
       {announcements.length > 0 && (
         <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-          <p className="text-sm font-semibold text-gray-800 mb-3">📢 School Announcements</p>
+          <p className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <Bell size={15} className="text-gray-500" /> School Announcements
+          </p>
           <div className="space-y-3">
             {announcements.slice(0, 3).map(a => (
               <div key={a.id} className="border-l-4 border-emerald-400 pl-3">
@@ -1356,7 +1404,7 @@ function CalendarTab({ events }: { events: CalendarEvent[] }) {
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
                   e.type === 'exam' ? 'bg-red-50' : e.type === 'homework' ? 'bg-amber-50' : e.type === 'meeting' ? 'bg-blue-50' : 'bg-emerald-50'
                 }`}>
-                  {e.type === 'exam' ? '📝' : e.type === 'homework' ? '📚' : e.type === 'meeting' ? '👥' : '📅'}
+                  {e.type === 'exam' ? <ClipboardList size={18} className="text-red-500" /> : e.type === 'homework' ? <BookOpen size={18} className="text-amber-500" /> : e.type === 'meeting' ? <User size={18} className="text-blue-500" /> : <CalendarDays size={18} className="text-emerald-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-800 text-sm">{e.title}</p>
