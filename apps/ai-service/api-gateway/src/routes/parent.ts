@@ -48,6 +48,7 @@ router.get('/children', async (req: Request, res: Response) => {
     const { user_id, school_id } = req.user!;
     const result = await pool.query(
       `SELECT s.id, s.name, s.father_name, s.mother_name,
+              s.parent_contact, s.mother_contact, s.date_of_birth::text,
               s.photo_path,
               c.name as class_name, sec.label as section_label,
               sec.id as section_id, s.class_id
@@ -172,12 +173,14 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
     );
 
     let topics: string[] = [];
+    let topicChunks: { topic: string; snippet: string }[] = [];
     if (planRow.rows.length > 0 && planRow.rows[0].chunk_ids?.length > 0) {
       const chunks = await pool.query(
-        'SELECT topic_label FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
+        'SELECT topic_label, LEFT(content, 300) as snippet FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
         [planRow.rows[0].chunk_ids]
       );
       topics = chunks.rows.map((r: any) => r.topic_label);
+      topicChunks = chunks.rows.map((r: any) => ({ topic: r.topic_label || '', snippet: r.snippet || '' }));
     }
 
     // Today's homework
@@ -203,6 +206,7 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
       attendance: attRow.rows[0] || null,
       completion: compRow.rows[0] || null,
       topics,
+      topic_chunks: topicChunks,
       plan_status: planRow.rows[0]?.status || null,
       special_label: planRow.rows[0]?.special_label || null,
       homework: hwRow.rows[0] || null,
@@ -362,30 +366,129 @@ router.get('/child/:student_id/week-schedule', async (req: Request, res: Respons
     );
 
     // Resolve topic labels — plan_date is already a string due to ::text cast
-    const days: Record<string, string[]> = {};
+    const days: Record<string, { topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean }> = {};
     for (const row of plansRow.rows) {
       const dateKey: string = typeof row.plan_date === 'string'
         ? row.plan_date.split('T')[0]
         : (row.plan_date as Date).toISOString().split('T')[0];
 
       if (row.special_label) {
-        days[dateKey] = [row.special_label];
+        days[dateKey] = { topics: [row.special_label], chunks: [], completed: false };
         continue;
       }
       if (row.chunk_ids?.length > 0) {
-        const chunks = await pool.query(
-          `SELECT topic_label FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
+        const chunkRows = await pool.query(
+          `SELECT topic_label, LEFT(content, 300) as snippet FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
           [row.chunk_ids]
         );
-        days[dateKey] = chunks.rows.map((c: any) => c.topic_label);
+        // Check if this day has a completion record
+        const compRow = await pool.query(
+          `SELECT id FROM daily_completions WHERE section_id = $1 AND completion_date = $2 LIMIT 1`,
+          [section_id, dateKey]
+        );
+        days[dateKey] = {
+          topics: chunkRows.rows.map((c: any) => c.topic_label),
+          chunks: chunkRows.rows.map((c: any) => ({ topic: c.topic_label || '', snippet: c.snippet || '' })),
+          completed: compRow.rows.length > 0,
+        };
       } else {
-        days[dateKey] = [];
+        days[dateKey] = { topics: [], chunks: [], completed: false };
       }
     }
 
-    return res.json({ week_start: monday, days });
+    return res.json({ week_start: monday, today: todayStr, days });
   } catch (err) {
     console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/parent/child/:student_id/term-summary — all topics covered this term
+router.get('/child/:student_id/term-summary', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { student_id } = req.params;
+
+    const link = await pool.query(
+      `SELECT 1 FROM parent_student_links WHERE parent_id = $1 AND student_id = $2`,
+      [user_id, student_id]
+    );
+    if (link.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+
+    const studentRow = await pool.query(
+      `SELECT s.section_id, s.name, c.name as class_name
+       FROM students s JOIN classes c ON c.id = s.class_id
+       WHERE s.id = $1 AND s.school_id = $2`,
+      [student_id, school_id]
+    );
+    if (studentRow.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+    const { section_id, name: student_name, class_name } = studentRow.rows[0];
+
+    // Get current academic year
+    const calRow = await pool.query(
+      `SELECT start_date, end_date FROM school_calendar
+       WHERE school_id = $1 AND now()::date BETWEEN start_date AND end_date LIMIT 1`,
+      [school_id]
+    );
+    const yearStart = calRow.rows[0]?.start_date ?? null;
+    const yearEnd = calRow.rows[0]?.end_date ?? null;
+
+    // All completed days this term with their chunk IDs
+    const completionsRow = await pool.query(
+      `SELECT completion_date::text, covered_chunk_ids, settling_day_note
+       FROM daily_completions
+       WHERE section_id = $1
+         AND ($2::date IS NULL OR completion_date >= $2::date)
+         AND ($3::date IS NULL OR completion_date <= $3::date)
+       ORDER BY completion_date ASC`,
+      [section_id, yearStart, yearEnd]
+    );
+
+    // Collect all unique chunk IDs
+    const allChunkIds: string[] = [];
+    const seenIds = new Set<string>();
+    for (const row of completionsRow.rows) {
+      for (const id of (row.covered_chunk_ids ?? [])) {
+        if (!seenIds.has(id)) { seenIds.add(id); allChunkIds.push(id); }
+      }
+    }
+
+    // Fetch chunk details
+    let chunks: { id: string; topic_label: string; snippet: string }[] = [];
+    if (allChunkIds.length > 0) {
+      const chunksRow = await pool.query(
+        `SELECT id::text, topic_label, LEFT(content, 200) as snippet
+         FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
+        [allChunkIds]
+      );
+      chunks = chunksRow.rows;
+    }
+
+    // Settling day notes
+    const settlingNotes = completionsRow.rows
+      .filter((r: any) => r.settling_day_note)
+      .map((r: any) => ({ date: r.completion_date, note: r.settling_day_note }));
+
+    // Total curriculum chunks for this section
+    const totalRow = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM curriculum_chunks cc
+       JOIN curriculum_documents cd ON cd.id = cc.document_id
+       JOIN sections sec ON sec.class_id = cd.class_id
+       WHERE sec.id = $1 AND cd.school_id = $2`,
+      [section_id, school_id]
+    );
+
+    return res.json({
+      student_name,
+      class_name,
+      total_curriculum_chunks: totalRow.rows[0]?.total ?? 0,
+      covered_chunks: allChunkIds.length,
+      chunks,
+      settling_notes: settlingNotes,
+      completion_days: completionsRow.rows.length,
+    });
+  } catch (err) {
+    console.error('[term-summary]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

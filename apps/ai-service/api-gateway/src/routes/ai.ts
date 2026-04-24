@@ -790,6 +790,7 @@ router.post('/voice', voiceUpload.single('audio'), async (req: Request, res: Res
 
 // GET /api/v1/ai/topic-summary — parent-friendly summary of today's topics
 // Query params: topics (comma-separated), class_name, child_name, completed (boolean)
+// Body (optional): { chunks: [{ topic, snippet }] } for richer AI context
 router.get('/topic-summary', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -797,42 +798,87 @@ router.get('/topic-summary', async (req: Request, res: Response) => {
     const className  = (req.query.class_name as string || 'Nursery').trim();
     const childName  = (req.query.child_name as string || 'your child').trim();
     const completed  = req.query.completed === 'true';
+    const chunks: { topic: string; snippet: string }[] = (req as any).body?.chunks ?? [];
 
     if (!topicsRaw) return res.status(400).json({ error: 'topics is required' });
 
-    const topics = topicsRaw.split(',').map(t => t.trim()).filter(Boolean);
+    const topics = topicsRaw.split(',').map((t: string) => t.trim()).filter(Boolean);
     if (topics.length === 0) return res.status(400).json({ error: 'No topics provided' });
 
-    // Cache per school+topics+completion combo (1 hour)
-    const cacheKey = `ai:topic-summary:${school_id}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topicsRaw + className).digest('hex')}`;
+    // Cache key includes child name + completion state (content-aware)
+    const cacheKey = `ai:topic-summary:${school_id}:${childName}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topicsRaw + className).digest('hex')}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json({ summary: cached });
 
     try {
-      // Call the dedicated topic-summary endpoint — bypasses all query pipeline filters
       const aiResp = await axios.post(`${AI()}/internal/topic-summary`, {
         topics,
+        chunks,
         class_name: className,
         child_name: childName,
         completed,
       }, { timeout: 15000 });
 
-      const summary: string = aiResp.data?.summary || topics.join(' · ');
+      const summary: string = aiResp.data?.summary || '';
       if (summary) await redis.setEx(cacheKey, 3600, summary);
       return res.json({ summary });
     } catch {
-      // Fallback: strip "Week X Day Y" and join
+      // Fallback: build a readable sentence without LLM
       const cleaned = topics
-        .map(t => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim())
+        .map((t: string) => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim())
         .filter(Boolean);
-      return res.json({ summary: cleaned.length > 0 ? cleaned.join(' · ') : topics.join(' · ') });
+      const meaningful = cleaned.length > 0 ? cleaned : topics;
+      const tense = completed ? 'learned about' : 'will learn about';
+      let summary: string;
+      if (meaningful.length === 1) {
+        summary = `Today, ${childName} ${tense} ${meaningful[0]}.`;
+      } else if (meaningful.length === 2) {
+        summary = `Today, ${childName} ${tense} ${meaningful[0]} and ${meaningful[1]}.`;
+      } else {
+        summary = `Today, ${childName} ${tense} ${meaningful.slice(0, -1).join(', ')}, and ${meaningful[meaningful.length - 1]}.`;
+      }
+      return res.json({ summary });
     }
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// GET /api/v1/ai/voice-status — check if voice is enabled for this school
+// POST /api/v1/ai/topic-summary — same as GET but accepts chunks in body for richer context
+router.post('/topic-summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { topics: topicsArr, chunks = [], class_name: className = 'Nursery', child_name: childName = 'your child', completed = false } = req.body;
+
+    if (!topicsArr?.length) return res.status(400).json({ error: 'topics is required' });
+
+    const topics: string[] = topicsArr.map((t: string) => t.trim()).filter(Boolean);
+    const cacheKey = `ai:topic-summary:${school_id}:${childName}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topics.join(',') + className).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json({ summary: cached });
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/topic-summary`, {
+        topics, chunks, class_name: className, child_name: childName, completed,
+      }, { timeout: 15000 });
+
+      const summary: string = aiResp.data?.summary || '';
+      if (summary) await redis.setEx(cacheKey, 3600, summary);
+      return res.json({ summary });
+    } catch {
+      const cleaned = topics.map((t: string) => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim()).filter(Boolean);
+      const meaningful = cleaned.length > 0 ? cleaned : topics;
+      const tense = completed ? 'learned about' : 'will learn about';
+      let summary: string;
+      if (meaningful.length === 1) summary = `Today, ${childName} ${tense} ${meaningful[0]}.`;
+      else if (meaningful.length === 2) summary = `Today, ${childName} ${tense} ${meaningful[0]} and ${meaningful[1]}.`;
+      else summary = `Today, ${childName} ${tense} ${meaningful.slice(0, -1).join(', ')}, and ${meaningful[meaningful.length - 1]}.`;
+      return res.json({ summary });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 router.get('/voice-status', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
