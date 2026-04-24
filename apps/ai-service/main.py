@@ -157,169 +157,7 @@ async def query_endpoint(req: QueryRequest):
     return result
 
 
-# ─── Session transcript formatter ────────────────────────────────────────────
-
-class FormatSessionRequest(BaseModel):
-    raw_transcript: str
-    class_context: str = ""
-    topics_covered: list = []
-    session_date: str = ""
-    is_refinement: bool = False
-
-@app.post("/internal/format-session")
-async def format_session(req: FormatSessionRequest):
-    """
-    Format a raw speech transcript into clean class notes using Gemini.
-    When is_refinement=True, the input is already-formatted notes that the teacher
-    has edited — refine and improve them rather than starting from scratch.
-    Falls back to structured plain text if Gemini is unavailable.
-    """
-    from query_pipeline import _call_llm
-
-    topics_str = ", ".join(req.topics_covered) if req.topics_covered else "General session"
-    date_str = req.session_date or ""
-
-    if req.is_refinement:
-        # Teacher edited the AI output — refine the edited version
-        prompt = f"""You are a school assistant helping a teacher refine their classroom session notes.
-
-{f"Context: {req.class_context}" if req.class_context else ""}
-{f"Session Date: {date_str}" if date_str else ""}
-Topics covered today: {topics_str}
-
-The teacher has edited these session notes and wants them refined and improved:
----
-{req.raw_transcript[:8000]}
----
-
-Please improve these notes while keeping the teacher's edits and intent intact:
-1. Fix any grammar or spelling issues
-2. Improve clarity and flow
-3. Ensure it reads well for parents
-4. Keep all the teacher's specific content and changes
-5. Format with clear sections using emoji headers
-
-Do NOT remove or change the teacher's specific additions — only improve the presentation."""
-    else:
-        # First-time formatting from raw transcript
-        prompt = f"""You are a school assistant helping a teacher format their classroom session notes.
-
-{f"Context: {req.class_context}" if req.class_context else ""}
-{f"Session Date: {date_str}" if date_str else ""}
-Topics covered today: {topics_str}
-
-The teacher recorded this session transcript using voice recognition:
----
-{req.raw_transcript[:8000]}
----
-
-Please format this into clean, structured class notes that can be shared with parents. Include:
-1. A brief summary of what was covered today (2-3 sentences)
-2. Key topics discussed (bullet points)
-3. Any activities or exercises mentioned
-4. Homework or follow-up items if mentioned
-
-Keep it concise, clear, and parent-friendly. Use simple language.
-Format with clear sections using emoji headers like 📚 Topics Covered, 🎯 Activities, 📝 Homework.
-Start with the date and topics at the top."""
-
-    system = "You are a helpful school assistant. Format classroom notes clearly and concisely for parents."
-
-    formatted, _ = await _call_llm(prompt, system)
-
-    if not formatted:
-        # Fallback: basic structure without AI
-        formatted = f"📅 Session Notes — {date_str}\n"
-        formatted += f"📚 Topics: {topics_str}\n\n"
-        formatted += f"📝 Session Summary:\n{req.raw_transcript[:500]}{'...' if len(req.raw_transcript) > 500 else ''}\n\n"
-        formatted += f"ℹ️ Note: This is the raw transcript from today's session."
-
-    return {"formatted": formatted}
-
-
-# ─── Voice transcription ──────────────────────────────────────────────────────
-
-@app.post("/internal/transcribe")
-async def transcribe_audio(
-    audio: UploadFile = File(...),
-    language: str = Form(default="en"),
-):
-    """
-    Transcribe audio to text using Gemini's audio understanding.
-    Accepts any audio format (webm, mp4, wav, ogg, m4a).
-    Returns: { transcript: str, language: str, duration_seconds: float }
-    """
-    import os, httpx, base64, mimetypes
-
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
-    if not gemini_key:
-        raise HTTPException(status_code=503, detail="Voice transcription not configured")
-
-    # Read audio bytes
-    audio_bytes = await audio.read()
-    if len(audio_bytes) > 10 * 1024 * 1024:  # 10MB limit
-        raise HTTPException(status_code=413, detail="Audio file too large (max 10MB)")
-    if len(audio_bytes) < 100:
-        raise HTTPException(status_code=400, detail="Audio file too small or empty")
-
-    # Determine MIME type
-    content_type = audio.content_type or "audio/webm"
-    # Normalize common types
-    mime_map = {
-        "audio/webm": "audio/webm",
-        "audio/ogg": "audio/ogg",
-        "audio/wav": "audio/wav",
-        "audio/mp4": "audio/mp4",
-        "audio/m4a": "audio/mp4",
-        "audio/mpeg": "audio/mpeg",
-        "video/webm": "audio/webm",  # Chrome records as video/webm
-    }
-    mime_type = mime_map.get(content_type, "audio/webm")
-
-    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-
-    # Language hint for the prompt
-    lang_hints = {
-        "hi": "Hindi", "te": "Telugu", "kn": "Kannada", "ta": "Tamil",
-        "ml": "Malayalam", "gu": "Gujarati", "mr": "Marathi", "bn": "Bengali",
-        "pa": "Punjabi", "ur": "Urdu", "ar": "Arabic", "fr": "French",
-        "es": "Spanish", "en": "English",
-    }
-    lang_name = lang_hints.get(language, "English")
-
-    prompt = (
-        f"Transcribe this audio recording accurately. "
-        f"The speaker is likely speaking in {lang_name}. "
-        f"This is a school-related question from a teacher or parent. "
-        f"Return ONLY the transcribed text, nothing else. "
-        f"If the audio is unclear or silent, return an empty string."
-    )
-
-    try:
-        # ── PHASE 2: Real Gemini transcription (not yet available on this API key)
-        # For now, return a mock transcript to demonstrate the voice flow in demos.
-        # The audio IS recorded and received correctly — only the transcription step is mocked.
-        print(f"[Transcribe] DEMO MODE — received {len(audio_bytes)} bytes of {mime_type} audio, returning mock transcript")
-
-        # Pick a contextual demo response based on language
-        demo_transcripts = {
-            "hi": "आज का पाठ्यक्रम क्या है?",
-            "te": "ఈరోజు పాఠ్యప్రణాళిక ఏమిటి?",
-            "kn": "ಇಂದಿನ ಪಾಠ್ಯಕ್ರಮ ಏನು?",
-            "ta": "இன்றைய பாடத்திட்டம் என்ன?",
-            "en": "What is today's plan for my child?",
-        }
-        mock_transcript = demo_transcripts.get(language, demo_transcripts["en"])
-        return {"transcript": mock_transcript, "language": language, "demo_mode": True}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[Transcribe] Exception: {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
-
-
-
+# --- Plan generation ---
 
 class PlanRequest(BaseModel):
     class_id: str
@@ -359,151 +197,76 @@ async def analyze_coverage(req: CoverageRequest):
 @app.post("/internal/import-holidays")
 async def import_holidays(file: UploadFile = File(...)):
     import openpyxl
-    import csv
     content = await file.read()
     valid_rows = []
     invalid_rows = []
 
-    filename = (file.filename or '').lower()
-    is_csv = filename.endswith('.csv')
-
-    # Also detect CSV by content — if content starts with PK (xlsx magic bytes), force xlsx mode
-    if is_csv and content[:2] == b'PK':
-        is_csv = False
-
     try:
-        if is_csv:
-            # Parse CSV
-            text = content.decode('utf-8-sig')  # utf-8-sig strips BOM if present
-            reader = csv.DictReader(text.splitlines())
-            original_headers = [h.strip() for h in (reader.fieldnames or [])]
-            headers_lower = [h.lower() for h in original_headers]
+        wb = openpyxl.load_workbook(io.BytesIO(content))
+        ws = wb.active
+        headers = [str(cell.value).strip().lower() if cell.value else '' for cell in ws[1]]
 
-            # Map from lowercased candidate → original header name for row.get()
-            def find_col(candidates):
-                for c in candidates:
-                    if c in headers_lower:
-                        return original_headers[headers_lower.index(c)]
-                for c in candidates:
-                    for i, h in enumerate(headers_lower):
-                        if c in h or h in c:
-                            return original_headers[i]
-                return None
+        # Flexible column detection — support multiple naming conventions
+        def find_col(candidates):
+            for c in candidates:
+                if c in headers:
+                    return headers.index(c)
+            return None
 
-            date_key = find_col(['date'])
-            name_key = find_col(['description', 'event_name', 'event name', 'event', 'name', 'holiday name', 'holiday'])
-            type_key = find_col(['type', 'day type', 'category'])
+        date_idx = find_col(['date'])
+        # event_name can come from 'description', 'event_name', 'event', 'name', 'holiday name'
+        name_idx = find_col(['description', 'event_name', 'event', 'name', 'holiday name', 'holiday'])
+        # type column: 'type', 'day type', 'category'
+        type_idx = find_col(['type', 'day type', 'category'])
 
-            if not date_key:
-                raise HTTPException(status_code=400, detail=f"Missing required column: 'date'. Found columns: {original_headers}")
-            if not name_key:
-                raise HTTPException(status_code=400, detail=f"Missing required column: 'description' or 'event_name'. Found columns: {original_headers}")
+        if date_idx is None:
+            raise HTTPException(status_code=400, detail="Missing required column: Date")
+        if name_idx is None:
+            raise HTTPException(status_code=400, detail="Missing required column: Description or event_name")
 
-            for row_num, row in enumerate(reader, start=2):
-                raw_date = (row.get(date_key) or '').strip()
-                event_name = (row.get(name_key) or '').strip()
-                row_type = (row.get(type_key) or '').strip().lower() if type_key else ''
+        for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            raw_date = row[date_idx] if date_idx < len(row) else None
+            event_name = row[name_idx] if name_idx is not None and name_idx < len(row) else None
+            row_type = str(row[type_idx]).strip().lower() if type_idx is not None and type_idx < len(row) and row[type_idx] else ''
 
-                if not event_name:
-                    invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
-                    continue
+            if not event_name or not str(event_name).strip():
+                invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
+                continue
 
-                if row_type in ('working day', 'working', 'school day'):
-                    invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
-                    continue
+            # Skip rows that are explicitly "Working Day" — those aren't holidays
+            if row_type in ('working day', 'working', 'school day'):
+                invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
+                continue
 
-                parsed_date = None
-                for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y', '%d-%b-%Y', '%d.%m.%Y'):
+            # Parse date
+            parsed_date = None
+            if isinstance(raw_date, (datetime, date)):
+                parsed_date = raw_date.strftime('%Y-%m-%d') if isinstance(raw_date, datetime) else str(raw_date)
+            elif isinstance(raw_date, str):
+                raw_str = raw_date.strip()
+                for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y'):
                     try:
-                        parsed_date = datetime.strptime(raw_date, fmt).strftime('%Y-%m-%d')
+                        parsed_date = datetime.strptime(raw_str, fmt).strftime('%Y-%m-%d')
                         break
                     except ValueError:
                         continue
 
-                if not parsed_date:
-                    invalid_rows.append({"row": row_num, "reason": f"Invalid date format: '{raw_date}'. Use DD-MM-YYYY (e.g. 26-06-2026)"})
-                    continue
+            if not parsed_date:
+                invalid_rows.append({"row": row_num, "reason": f"Invalid date: {raw_date}"})
+                continue
 
-                valid_rows.append({"date": parsed_date, "event_name": event_name, "type": row_type or "holiday"})
-
-        else:
-            wb = openpyxl.load_workbook(io.BytesIO(content))
-            ws = wb.active
-            headers = [str(cell.value).strip().lower() if cell.value else '' for cell in ws[1]]
-
-            # Flexible column detection — support multiple naming conventions
-            def find_col(candidates):
-                # Exact match first
-                for c in candidates:
-                    if c in headers:
-                        return headers.index(c)
-                # Partial match fallback (e.g. "holiday name" contains "holiday")
-                for c in candidates:
-                    for i, h in enumerate(headers):
-                        if c in h or h in c:
-                            return i
-                return None
-
-            date_idx = find_col(['date'])
-            name_idx = find_col(['description', 'event_name', 'event name', 'event', 'name', 'holiday name', 'holiday'])
-            type_idx = find_col(['type', 'day type', 'category'])
-
-            if date_idx is None:
-                raise HTTPException(status_code=400, detail="Missing required column: Date")
-            if name_idx is None:
-                raise HTTPException(status_code=400, detail="Missing required column: Description or event_name")
-
-            for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                raw_date = row[date_idx] if date_idx < len(row) else None
-                event_name = row[name_idx] if name_idx is not None and name_idx < len(row) else None
-                row_type = str(row[type_idx]).strip().lower() if type_idx is not None and type_idx < len(row) and row[type_idx] else ''
-
-                if not event_name or not str(event_name).strip():
-                    invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
-                    continue
-
-                if row_type in ('working day', 'working', 'school day'):
-                    invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
-                    continue
-
-                parsed_date = None
-                if isinstance(raw_date, (datetime, date)):
-                    parsed_date = raw_date.strftime('%Y-%m-%d') if isinstance(raw_date, datetime) else str(raw_date)
-                elif isinstance(raw_date, (int, float)):
-                    try:
-                        from openpyxl.utils.datetime import from_excel
-                        dt = from_excel(raw_date)
-                        parsed_date = dt.strftime('%Y-%m-%d')
-                    except Exception:
-                        pass
-                elif isinstance(raw_date, str):
-                    raw_str = raw_date.strip()
-                    for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y', '%d-%b-%Y', '%d.%m.%Y'):
-                        try:
-                            parsed_date = datetime.strptime(raw_str, fmt).strftime('%Y-%m-%d')
-                            break
-                        except ValueError:
-                            continue
-
-                if not parsed_date:
-                    invalid_rows.append({"row": row_num, "reason": f"Invalid date: {raw_date}"})
-                    continue
-
-                valid_rows.append({
-                    "date": parsed_date,
-                    "event_name": str(event_name).strip(),
-                    "type": row_type or "holiday"
-                })
+            valid_rows.append({
+                "date": parsed_date,
+                "event_name": str(event_name).strip(),
+                "type": row_type or "holiday"
+            })
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
 
-    return {
-        "valid_rows": valid_rows,
-        "invalid_rows": invalid_rows,
-    }
+    return {"valid_rows": valid_rows, "invalid_rows": invalid_rows}
 
 
 # --- Student import ---
@@ -1282,122 +1045,6 @@ async def generate_report(req: GenerateReportRequest):
         response = f"Report generation failed: {str(e)}"
 
     return {"response": response}
-
-
-class TopicSummaryRequest(BaseModel):
-    topics: list  # list of topic_label strings
-    class_name: str = "Nursery"
-    child_name: str = "your child"
-    completed: bool = False
-
-@app.post("/internal/topic-summary")
-async def topic_summary(req: TopicSummaryRequest):
-    """Generate a 2-sentence parent-friendly summary of today's topics.
-    Bypasses query pipeline — direct LLM call only."""
-    from query_pipeline import _call_llm
-    import re
-
-    # Clean up generic labels like "Week 1 Day 5" before sending to LLM
-    cleaned = []
-    for t in req.topics:
-        # Remove standalone "Week X Day Y" patterns
-        stripped = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', t, flags=re.IGNORECASE).strip(' -–:,')
-        if stripped:
-            cleaned.append(stripped)
-        elif t.strip():
-            cleaned.append(t.strip())
-
-    if not cleaned:
-        return {"summary": ""}
-
-    topics_str = ", ".join(cleaned)
-
-    if req.completed:
-        prompt = (
-            f"Today in {req.class_name}, {req.child_name} learned: {topics_str}.\n\n"
-            f"Write exactly 2 short, warm sentences for a parent explaining what their child learned today. "
-            f"Use past tense (learned, practiced, explored). Use simple language. Be specific about the subjects. "
-            f"Do NOT use bullet points, markdown, or asterisks. "
-            f"Do NOT mention 'Week' or 'Day' numbers. "
-            f"Keep it under 40 words total."
-        )
-    else:
-        prompt = (
-            f"Today in {req.class_name}, {req.child_name}'s class is planned to cover: {topics_str}.\n\n"
-            f"Write exactly 2 short, warm sentences for a parent explaining what their child will be learning today. "
-            f"Use future tense (will learn, will practice, will explore). Use simple language. Be specific about the subjects. "
-            f"Do NOT use bullet points, markdown, or asterisks. "
-            f"Do NOT mention 'Week' or 'Day' numbers. "
-            f"Keep it under 40 words total."
-        )
-
-    system = (
-        "You are a friendly school assistant writing brief daily updates for parents. "
-        "Always write in plain English. No formatting. No lists. Just 2 warm sentences."
-    )
-
-    try:
-        response, _ = await _call_llm(prompt, system)
-        if response:
-            # Strip any markdown that slipped through
-            response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
-            response = re.sub(r'\*([^*]+)\*', r'\1', response)
-            response = response.strip()
-        return {"summary": response or topics_str}
-    except Exception:
-        return {"summary": topics_str}
-
-
-# --- Per-topic homework generation ---
-
-class TopicHomeworkRequest(BaseModel):
-    topic_label: str
-    content: str = ""
-    class_name: str = "Nursery"
-    school_id: str = ""
-    section_id: str = ""
-
-@app.post("/internal/generate-topic-homework")
-async def generate_topic_homework(req: TopicHomeworkRequest):
-    """Generate age-appropriate homework for a single curriculum topic.
-    Returns a structured draft: what to do, materials needed, estimated time.
-    Req 2.1–2.5: 15-second timeout, same language as content, preschool-appropriate."""
-    import asyncio
-    from query_pipeline import _call_llm
-    import re
-
-    topic = req.topic_label.strip() or "today's topic"
-    content_preview = req.content[:600].strip() if req.content else ""
-
-    system = (
-        "You are a friendly preschool teacher writing homework instructions for parents of young children (ages 3–7). "
-        "Write in simple, warm language. No markdown, no bullet symbols, no asterisks. "
-        "Keep it under 80 words. Write in the same language as the topic content."
-    )
-
-    prompt = (
-        f"Topic: {topic}\n"
-        f"{('Context: ' + content_preview) if content_preview else ''}\n\n"
-        f"Write homework for this topic as 3 short lines:\n"
-        f"1. What the child should do (one clear action)\n"
-        f"2. Materials needed (if any, otherwise skip)\n"
-        f"3. Estimated time (e.g. '10 minutes')\n\n"
-        f"Keep it simple, friendly, and age-appropriate for {req.class_name} students."
-    )
-
-    try:
-        response, _ = await asyncio.wait_for(_call_llm(prompt, system), timeout=15.0)
-        if response:
-            # Strip any markdown that slipped through
-            response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
-            response = re.sub(r'\*([^*]+)\*', r'\1', response)
-            response = response.strip()
-        return {"draft_text": response or f"Practice {topic} at home for 10 minutes."}
-    except asyncio.TimeoutError:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=504, detail="AI generation timed out. Please retry.")
-    except Exception:
-        return {"draft_text": f"Practice {topic} at home for 10 minutes."}
 
 
 @app.post("/internal/format-homework")

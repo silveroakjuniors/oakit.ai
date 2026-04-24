@@ -1335,283 +1335,49 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
 
         # For principals/admins with no section, provide a school-wide context response
         if section_row is None and role in ("principal", "admin"):
+            intent = _detect_intent(text)
             today_dt = date_type.fromisoformat(query_date)
             day_names = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
             day_of_week = day_names[today_dt.weekday()]
-            tl = text.lower()
 
-            # ── Fetch all sections with teacher info (used by many queries) ──
+            # Build a school-wide summary for the principal
             sections_data = await pool.fetch(
-                """SELECT s.id AS section_id, s.label, c.name AS class_name,
-                          u.name AS teacher_name, u.email AS teacher_email,
-                          (SELECT COUNT(*) FROM students st WHERE st.section_id = s.id AND st.school_id = $1) AS student_count,
-                          (SELECT COUNT(*) FROM daily_completions dc WHERE dc.section_id = s.id AND dc.completion_date = $2) AS plan_submitted,
-                          (SELECT COUNT(*) FROM attendance_records ar WHERE ar.section_id = s.id AND ar.attend_date = $2) AS has_attendance,
-                          (SELECT COUNT(*) FROM attendance_records ar WHERE ar.section_id = s.id AND ar.attend_date = $2 AND ar.status = 'present') AS present_count,
-                          (SELECT COUNT(*) FROM attendance_records ar WHERE ar.section_id = s.id AND ar.attend_date = $2 AND ar.status = 'absent') AS absent_count
-                   FROM sections s
-                   JOIN classes c ON c.id = s.class_id
-                   LEFT JOIN users u ON u.id = s.class_teacher_id
-                   WHERE s.school_id = $1
-                   ORDER BY c.name, s.label""",
+                """SELECT s.label, c.name AS class_name,
+                          (SELECT COUNT(*) FROM daily_completions dc WHERE dc.section_id = s.id AND dc.completion_date = $2) AS submitted,
+                          (SELECT COUNT(*) FROM attendance_records ar WHERE ar.section_id = s.id AND ar.attend_date = $2) AS has_attendance
+                   FROM sections s JOIN classes c ON c.id = s.class_id
+                   WHERE s.school_id = $1 ORDER BY c.name, s.label""",
                 sid, today_dt,
             )
-
-            # ── 1. WHO IS THE CLASS TEACHER ──────────────────────────────────
-            teacher_keywords = ["class teacher", "teacher for", "who teaches", "who is teaching",
-                                 "teacher of", "in charge of", "head of", "assigned to",
-                                 "who is the teacher", "teacher name", "class incharge"]
-            if any(k in tl for k in teacher_keywords):
-                class_match = None
-                for row in sections_data:
-                    cn = row['class_name'].lower()
-                    sl = row['label'].lower()
-                    if cn in tl or f"section {sl}" in tl or f"sec {sl}" in tl or sl in tl:
-                        class_match = row
-                        break
-                if class_match:
-                    teacher = class_match['teacher_name'] or "Not assigned"
-                    lines = [f"👩‍🏫 **Class Teacher — {class_match['class_name']} Section {class_match['label']}**\n",
-                             f"**Teacher:** {teacher}"]
-                    if class_match['teacher_email']:
-                        lines.append(f"**Email:** {class_match['teacher_email']}")
-                    lines.append(f"**Students:** {class_match['student_count']}")
-                    return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-                else:
-                    lines = [f"👩‍🏫 **All Class Teachers — {today_dt.strftime('%d %B %Y')}**\n"]
-                    for row in sections_data:
-                        teacher = row['teacher_name'] or "⚠️ Not assigned"
-                        lines.append(f"• **{row['class_name']} – Sec {row['label']}**: {teacher} ({row['student_count']} students)")
-                    return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            # ── 2. STUDENT COUNT ──────────────────────────────────────────────
-            student_keywords = ["how many students", "student count", "total students", "number of students",
-                                 "how many children", "how many kids", "enrolled", "strength", "roll strength"]
-            if any(k in tl for k in student_keywords):
-                total = sum(r['student_count'] for r in sections_data)
-                lines = [f"🎓 **Student Strength — {today_dt.strftime('%d %B %Y')}**\n",
-                         f"**Total enrolled: {total} students**\n"]
-                for row in sections_data:
-                    lines.append(f"• {row['class_name']} – Sec {row['label']}: {row['student_count']} students")
-                return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            # ── 3. ATTENDANCE (with individual student names if asked) ────────
-            att_keywords = ["attendance", "present today", "absent today", "who came", "who is absent",
-                            "marked attendance", "not marked", "attendance today", "who was absent",
-                            "who was present", "absent on", "present on", "attendance on"]
-            if any(k in tl for k in att_keywords):
-                target_date = _parse_date_from_text(text, query_date)
-                target_dt_att = date_type.fromisoformat(target_date)
-                show_names = any(w in tl for w in ["who was absent", "who is absent", "who were absent",
-                                                    "list absent", "absent students", "absent children",
-                                                    "names of absent"])
-                if show_names:
-                    absent_students = await pool.fetch(
-                        """SELECT st.name, c.name AS class_name, s.label AS section_label
-                           FROM attendance_records ar
-                           JOIN students st ON st.id = ar.student_id
-                           JOIN sections s ON s.id = ar.section_id
-                           JOIN classes c ON c.id = s.class_id
-                           WHERE ar.school_id = $1 AND ar.attend_date = $2 AND ar.status = 'absent'
-                           ORDER BY c.name, s.label, st.name""",
-                        sid, target_dt_att,
-                    )
-                    if absent_students:
-                        date_label_att = target_dt_att.strftime('%A, %d %B %Y')
-                        lines = [f"📋 **Absent Students — {date_label_att}**\n",
-                                 f"**{len(absent_students)} students were absent:**\n"]
-                        by_class = {}
-                        for st in absent_students:
-                            key = f"{st['class_name']} – Sec {st['section_label']}"
-                            if key not in by_class:
-                                by_class[key] = []
-                            by_class[key].append(st['name'])
-                        for class_key_str, names in by_class.items():
-                            lines.append(f"**{class_key_str}** ({len(names)} absent):")
-                            for name in names:
-                                lines.append(f"  • {name}")
-                            lines.append("")
-                        return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-                    else:
-                        date_label_att = target_dt_att.strftime('%A, %d %B %Y')
-                        return {"response": f"✅ No students were absent on {date_label_att}. Perfect attendance! 🎉", "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-                # Section-level summary
-                lines = [f"📋 **Attendance — {day_of_week}, {today_dt.strftime('%d %B %Y')}**\n"]
-                total_present = sum(r['present_count'] for r in sections_data)
-                total_absent = sum(r['absent_count'] for r in sections_data)
-                total_students = sum(r['student_count'] for r in sections_data)
-                if total_students > 0:
-                    pct = round((total_present / total_students) * 100) if total_students else 0
-                    lines.append(f"**School-wide: {total_present} present, {total_absent} absent ({pct}% attendance)**\n")
-                for row in sections_data:
-                    if row['has_attendance'] > 0:
-                        pct = round((row['present_count'] / row['student_count']) * 100) if row['student_count'] else 0
-                        lines.append(f"✅ {row['class_name']} – Sec {row['label']}: {row['present_count']}/{row['student_count']} present ({pct}%) — {row['teacher_name'] or 'N/A'}")
-                    else:
-                        lines.append(f"⏳ {row['class_name']} – Sec {row['label']}: Not marked yet — {row['teacher_name'] or 'N/A'}")
-                if total_absent > 0:
-                    lines.append(f"\n💬 Ask: *\"Who was absent today?\"* to see individual student names")
-                return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            # ── 4. PLAN / COMPLETION STATUS ───────────────────────────────────
-            plan_keywords = ["plan submitted", "completed plan", "who completed", "plan status",
-                             "who hasn't submitted", "pending plan", "completion status", "plans done",
-                             "who finished", "plan complete"]
-            if any(k in tl for k in plan_keywords):
-                submitted = [r for r in sections_data if r['plan_submitted'] > 0]
-                pending = [r for r in sections_data if r['plan_submitted'] == 0]
-                lines = [f"📚 **Plan Completion — {day_of_week}, {today_dt.strftime('%d %B %Y')}**\n",
-                         f"**{len(submitted)}/{len(sections_data)} sections completed**\n"]
-                if submitted:
-                    lines.append("✅ **Completed:**")
-                    for r in submitted:
-                        lines.append(f"  • {r['class_name']} – Sec {r['label']} ({r['teacher_name'] or 'N/A'})")
-                if pending:
-                    lines.append("\n⏳ **Pending:**")
-                    for r in pending:
-                        lines.append(f"  • {r['class_name']} – Sec {r['label']} ({r['teacher_name'] or 'N/A'})")
-                return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            # ── 5. CURRICULUM PROGRESS ────────────────────────────────────────
-            progress_keywords = ["progress", "coverage", "curriculum", "syllabus", "on track",
-                                  "behind", "lagging", "how far", "covered so far", "completion rate"]
-            if any(k in tl for k in progress_keywords):
-                coverage_data = await pool.fetch(
-                    """SELECT c.name AS class_name, s.label,
-                              u.name AS teacher_name,
-                              COUNT(DISTINCT cc.id) AS total_chunks,
-                              COUNT(DISTINCT dc_chunks.chunk_id) AS covered_chunks
-                       FROM sections s
-                       JOIN classes c ON c.id = s.class_id
-                       LEFT JOIN users u ON u.id = s.class_teacher_id
-                       LEFT JOIN day_plans dp ON dp.section_id = s.id
-                       LEFT JOIN curriculum_chunks cc ON cc.id = ANY(dp.chunk_ids)
-                       LEFT JOIN (
-                           SELECT dc.section_id, unnest(dc.covered_chunk_ids) AS chunk_id
-                           FROM daily_completions dc WHERE dc.section_id IN (
-                               SELECT id FROM sections WHERE school_id = $1
-                           )
-                       ) dc_chunks ON dc_chunks.section_id = s.id AND dc_chunks.chunk_id = cc.id
-                       WHERE s.school_id = $1
-                       GROUP BY c.name, s.label, u.name
-                       ORDER BY c.name, s.label""",
-                    sid,
-                )
-                lines = [f"📊 **Curriculum Progress — {today_dt.strftime('%d %B %Y')}**\n"]
-                for row in coverage_data:
-                    total = row['total_chunks'] or 0
-                    covered = row['covered_chunks'] or 0
-                    pct = round((covered / total) * 100) if total > 0 else 0
-                    bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
-                    status = "✅" if pct >= 80 else "⚠️" if pct >= 50 else "🔴"
-                    lines.append(f"{status} **{row['class_name']} – Sec {row['label']}** ({row['teacher_name'] or 'N/A'})")
-                    lines.append(f"   {bar} {pct}% — {covered}/{total} topics covered")
-                if not coverage_data:
-                    lines.append("No curriculum data found. Please upload curriculum PDFs first.")
-                return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            # ── 6. STUDENT SEARCH ─────────────────────────────────────────────
-            if any(k in tl for k in ["find student", "where is", "which class is", "student named",
-                                      "search student", "look up"]):
-                import re as _re
-                name_match = _re.search(r'(?:student|child|kid|named?|called)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', text)
-                if name_match:
-                    search_name = name_match.group(1)
-                    students_found = await pool.fetch(
-                        """SELECT st.name, c.name AS class_name, s.label AS section_label, u.name AS teacher_name
-                           FROM students st
-                           JOIN sections s ON s.id = st.section_id
-                           JOIN classes c ON c.id = s.class_id
-                           LEFT JOIN users u ON u.id = s.class_teacher_id
-                           WHERE st.school_id = $1 AND LOWER(st.name) LIKE LOWER($2)
-                           ORDER BY st.name LIMIT 10""",
-                        sid, f"%{search_name}%",
-                    )
-                    if students_found:
-                        lines = [f"🔍 **Students matching '{search_name}':**\n"]
-                        for st in students_found:
-                            lines.append(f"• **{st['name']}** — {st['class_name']} Section {st['section_label']} (Teacher: {st['teacher_name'] or 'N/A'})")
-                        return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            # ── 7. TEACHER PERFORMANCE ────────────────────────────────────────
-            if any(k in tl for k in ["teacher performance", "not completing", "inactive teacher",
-                                      "which teacher", "teacher report", "best teacher", "top teacher"]):
-                perf_data = await pool.fetch(
-                    """SELECT u.name AS teacher_name, c.name AS class_name, s.label,
-                              COUNT(DISTINCT dc.completion_date) AS days_completed,
-                              COUNT(DISTINCT dp.plan_date) AS total_plan_days
-                       FROM sections s
-                       JOIN classes c ON c.id = s.class_id
-                       LEFT JOIN users u ON u.id = s.class_teacher_id
-                       LEFT JOIN day_plans dp ON dp.section_id = s.id AND dp.plan_date <= $2
-                       LEFT JOIN daily_completions dc ON dc.section_id = s.id
-                       WHERE s.school_id = $1
-                       GROUP BY u.name, c.name, s.label
-                       ORDER BY days_completed DESC""",
-                    sid, today_dt,
-                )
-                lines = [f"👩‍🏫 **Teacher Activity Report — {today_dt.strftime('%d %B %Y')}**\n"]
-                for row in perf_data:
-                    total = row['total_plan_days'] or 1
-                    done = row['days_completed'] or 0
-                    pct = round((done / total) * 100) if total > 0 else 0
-                    status = "🟢" if pct >= 80 else "🟡" if pct >= 50 else "🔴"
-                    lines.append(f"{status} **{row['teacher_name'] or 'Unassigned'}** — {row['class_name']} Sec {row['label']}: {done}/{total} days ({pct}%)")
-                return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            # ── 8. DEFAULT: School overview + LLM for anything else ───────────
-            total_students = sum(r['student_count'] for r in sections_data)
-            total_present = sum(r['present_count'] for r in sections_data)
-            plans_done = sum(1 for r in sections_data if r['plan_submitted'] > 0)
-            att_marked = sum(1 for r in sections_data if r['has_attendance'] > 0)
-            total_sections = len(sections_data)
-            att_pct = round((total_present / total_students) * 100) if total_students > 0 else 0
-
-            summary_lines = [
-                f"📅 **{day_of_week}, {today_dt.strftime('%d %B %Y')} — School Overview**\n",
-                f"🏫 **{total_sections} sections** | 🎓 **{total_students} students enrolled**\n",
-                f"📋 Attendance: **{att_marked}/{total_sections}** sections marked | **{total_present} present** ({att_pct}%)",
-                f"📚 Plans completed: **{plans_done}/{total_sections}** sections\n",
-            ]
+            submitted = [f"{r['class_name']} {r['label']}" for r in sections_data if r['submitted'] > 0]
+            pending = [f"{r['class_name']} {r['label']}" for r in sections_data if r['submitted'] == 0]
             no_att = [f"{r['class_name']} {r['label']}" for r in sections_data if r['has_attendance'] == 0]
-            no_plan = [f"{r['class_name']} {r['label']}" for r in sections_data if r['plan_submitted'] == 0]
-            no_teacher = [f"{r['class_name']} {r['label']}" for r in sections_data if not r['teacher_name']]
+
+            summary_lines = [f"📅 {day_of_week}, {today_dt.strftime('%d %B %Y')} — School Overview\n"]
+            if submitted:
+                summary_lines.append(f"✅ Completion submitted: {', '.join(submitted)}")
+            if pending:
+                summary_lines.append(f"⏳ Pending completion: {', '.join(pending)}")
             if no_att:
-                summary_lines.append(f"⚠️ Attendance not marked: {', '.join(no_att)}")
-            if no_plan:
-                summary_lines.append(f"⚠️ Plans pending: {', '.join(no_plan)}")
-            if no_teacher:
-                summary_lines.append(f"⚠️ No teacher assigned: {', '.join(no_teacher)}")
-            if not no_att and not no_plan:
-                summary_lines.append("✅ All sections have marked attendance and submitted plans today!")
+                summary_lines.append(f"📋 Attendance not marked: {', '.join(no_att)}")
+            if not sections_data:
+                summary_lines.append("No sections found for this school.")
 
-            # For any question with "?" or question words — use LLM with full context
-            if "?" in text or any(k in tl for k in ["why", "how", "what", "which", "who", "when", "where", "tell me", "show me", "give me"]):
-                teacher_list = "\n".join([
-                    f"- {r['class_name']} Section {r['label']}: Teacher={r['teacher_name'] or 'Not assigned'}, Students={r['student_count']}, Attendance={'Marked' if r['has_attendance'] else 'Not marked'}, Plan={'Done' if r['plan_submitted'] else 'Pending'}"
-                    for r in sections_data
-                ])
-                llm_prompt = f"""You are Oakie, a school intelligence assistant for the principal/admin.
+            # If question is specifically about attendance, only show attendance info
+            text_lower = text.lower()
+            is_attendance_question = any(w in text_lower for w in ["attendance", "marked attendance", "submitted attendance", "who hasn't", "who has not"])
+            if is_attendance_question:
+                att_lines = [f"📋 Attendance Status — {day_of_week}, {today_dt.strftime('%d %B %Y')}\n"]
+                att_submitted = [f"{r['class_name']} {r['label']}" for r in sections_data if r['has_attendance'] > 0]
+                att_pending = [f"{r['class_name']} {r['label']}" for r in sections_data if r['has_attendance'] == 0]
+                if att_submitted:
+                    att_lines.append(f"✅ Attendance marked: {', '.join(att_submitted)}")
+                if att_pending:
+                    att_lines.append(f"⏳ Not yet marked: {', '.join(att_pending)}")
+                if not att_pending:
+                    att_lines.append("✅ All sections have marked attendance today!")
+                return {"response": "\n".join(att_lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-SCHOOL DATA FOR TODAY ({today_dt.strftime('%d %B %Y')}):
-{teacher_list}
-
-SUMMARY:
-{chr(10).join(summary_lines)}
-
-Principal's question: "{text}"
-
-Answer the question directly and specifically using the school data above.
-Be concise, factual, and helpful. Use bullet points for lists.
-If the data doesn't contain the answer, say so clearly."""
-
-                system = "You are Oakie, a school intelligence assistant. Answer only using the school data provided. Be factual and concise."
-                response_text, _ = await _call_llm(llm_prompt, system)
-                if response_text:
-                    return {"response": response_text, "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-            summary_lines.append(f"\n💬 Ask me: *\"Who is the class teacher for UKG A?\"* · *\"Show attendance today\"* · *\"Which class is behind on curriculum?\"* · *\"How many students are enrolled?\"*")
             return {"response": "\n".join(summary_lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
         sec_id        = section_row["section_id"]   # UUID object from asyncpg
@@ -2220,8 +1986,7 @@ Keep each section concise. Total under 500 words."""
                     f"Output plain text only — no markdown bold, no tables, no horizontal rules.\n"
                     f"Use emojis to mark sections. Keep lines short for mobile reading.\n"
                     f"Be direct and practical. Teachers read this on their phone in the classroom.\n"
-                    f"Never include general website URLs. If suggesting a YouTube video, provide a search link like: "
-                    f"https://www.youtube.com/results?search_query={class_full.replace(' ', '+').replace('–', '').replace('  ', '+').strip('+')}+TOPIC — replace TOPIC with the specific video topic (use + for spaces)."
+                    f"Never include direct URLs or YouTube links. If suggesting a video, say 'Search YouTube for: [title]'."
                 )
                 llm_prompt = f"""Teacher: "{text}"
 
@@ -2303,9 +2068,8 @@ Ask children: "[one specific question]"
                 f"Short lines for mobile.\n"
                 f"IMPORTANT: You ONLY answer questions about classroom teaching, child development, curriculum activities, and classroom management. "
                 f"Refuse any off-topic, inappropriate, or harmful requests with: 'I can only help with classroom teaching topics.'\n"
-                f"IMPORTANT: Never include general website URLs. "
-                f"If suggesting a YouTube video, provide a search link like: "
-                f"https://www.youtube.com/results?search_query={class_full.replace(' ', '+').replace('–', '').replace('  ', '+').strip('+')}+TOPIC — replace TOPIC with the specific video topic (use + for spaces).\n"
+                f"IMPORTANT: Never include direct YouTube URLs or any website links. "
+                f"If suggesting a video, say 'Search YouTube for: [title]' instead of providing a link.\n"
                 f"IMPORTANT: If the teacher asks for a rhyme, song, story, or poem — provide the ACTUAL TEXT of the content, "
                 f"not instructions on how to teach it. Give the full rhyme/song/story text first, then optionally one tip."
             )
@@ -2317,14 +2081,14 @@ Ask children: "[one specific question]"
                 # ── Out-of-scope content block ────────────────────────────
                 # Only block requests for external links/URLs — not content types in the plan
                 OUT_OF_SCOPE = [
-                    "url","website","google","find me a link",
+                    "youtube","url","website","google","search for","find me a link",
                     "download","give me a link","send me a link","share a link",
                 ]
                 if any(w in t_lower for w in OUT_OF_SCOPE):
                     return {
                         "response": (
-                            "I can't provide general website links.\n\n"
-                            "For YouTube videos, just ask me about the topic and I'll suggest a search link.\n\n"
+                            "I can't provide external links or URLs.\n\n"
+                            "For videos and songs, use the resources in your Teacher's Handbook or school library.\n\n"
                             "Ask me how to conduct any activity in today's plan and I'll give you step-by-step guidance."
                         ),
                         "chunk_ids": [str(c["id"]) for c in chunks] if chunks else [],
