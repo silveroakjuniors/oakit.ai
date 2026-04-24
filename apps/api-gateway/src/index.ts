@@ -18,6 +18,7 @@ import adminAnnouncementsRouter, { teacherAnnouncementsRouter, parentAnnouncemen
 import adminDashboardRouter from './routes/admin/dashboard';
 import adminAuditRouter from './routes/admin/audit';
 import timeMachineRouter from './routes/admin/timeMachine';
+import publicEnquiriesRouter from './routes/public/enquiries';
 import teacherPlansRouter from './routes/teacher/plans';
 import teacherCoverageRouter from './routes/teacher/coverage';
 import teacherAttendanceRouter from './routes/teacher/attendance';
@@ -168,6 +169,9 @@ app.get('/health/ai', async (_req, res) => {
     response_ms: Date.now() - startedAt,
   });
 });
+
+// Public (no auth)
+app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
 
 // Auth
 app.use('/api/v1/auth', authRateLimit, authRouter);
