@@ -147,7 +147,7 @@ export default function ConcessionsPage() {
     setBulkLoading(true);
     try {
       await apiPost('/api/v1/financial/concessions/bulk-approve', {
-        concession_ids: Array.from(selectedForBulk),
+        ids: Array.from(selectedForBulk),
       }, token);
       setSelectedForBulk(new Set());
       await loadPending();
@@ -271,51 +271,94 @@ export default function ConcessionsPage() {
       {/* Pending approvals */}
       <Card className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-700">Pending Approvals</h2>
-          {selectedForBulk.size > 0 && (
-            <Button size="sm" onClick={handleBulkApprove} disabled={bulkLoading}>
-              {bulkLoading ? 'Approving…' : `Approve Selected (${selectedForBulk.size})`}
-            </Button>
-          )}
+          <h2 className="text-sm font-semibold text-gray-700">
+            Pending Approvals {pending.length > 0 && <span className="ml-1 text-xs text-gray-400">({pending.length})</span>}
+          </h2>
+          <div className="flex items-center gap-3">
+            {pending.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedForBulk.size === pending.length && pending.length > 0}
+                  onChange={() => {
+                    if (selectedForBulk.size === pending.length) setSelectedForBulk(new Set());
+                    else setSelectedForBulk(new Set(pending.map(c => c.id)));
+                  }}
+                  className="rounded"
+                />
+                Select all
+              </label>
+            )}
+            {selectedForBulk.size > 0 && (
+              <Button size="sm" onClick={handleBulkApprove} disabled={bulkLoading}>
+                {bulkLoading ? 'Approving…' : `✓ Approve Selected (${selectedForBulk.size})`}
+              </Button>
+            )}
+          </div>
         </div>
         {pendingLoading ? (
           <p className="text-sm text-gray-400">Loading…</p>
         ) : (
-          <div className="space-y-2">
-            {pending.map(c => (
-              <div key={c.id} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
-                <input
-                  type="checkbox"
-                  checked={selectedForBulk.has(c.id)}
-                  onChange={() => toggleBulkSelect(c.id)}
-                  className="mt-1"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{c.student_name}</p>
-                  <p className="text-xs text-gray-600">
-                    {c.fee_head_name} · {c.type === 'fixed' ? `₹${c.value}` : `${c.value}%`}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">{c.reason}</p>
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => handleApprove(c.id)}
-                    className="text-xs px-3 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => handleReject(c.id)}
-                    className="text-xs px-3 py-1 rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-            ))}
-            {pending.length === 0 && (
-              <p className="text-sm text-gray-400 py-4 text-center">No pending approvals</p>
-            )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="py-2 px-2 text-xs font-medium text-gray-400 w-8">#</th>
+                  <th className="py-2 px-2 w-8"></th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Student</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Fee Head</th>
+                  <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Concession</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Reason</th>
+                  <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Date</th>
+                  <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pending.map((c, idx) => (
+                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-2 px-2 text-center text-xs text-gray-400">{idx + 1}</td>
+                    <td className="py-2 px-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedForBulk.has(c.id)}
+                        onChange={() => toggleBulkSelect(c.id)}
+                        className="rounded"
+                      />
+                    </td>
+                    <td className="py-2 px-3 font-medium text-gray-800">{c.student_name}</td>
+                    <td className="py-2 px-3 text-gray-600 text-xs">{c.fee_head_name}</td>
+                    <td className="py-2 px-3 text-right font-medium text-gray-800">
+                      {c.type === 'fixed' ? `₹${Number(c.value).toLocaleString('en-IN')}` : `${c.value}%`}
+                    </td>
+                    <td className="py-2 px-3 text-gray-500 text-xs max-w-[160px] truncate">{c.reason}</td>
+                    <td className="py-2 px-3 text-center text-gray-500 text-xs">
+                      {new Date(c.created_at).toLocaleDateString('en-IN')}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <div className="flex gap-1.5 justify-center">
+                        <button
+                          onClick={() => handleApprove(c.id)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 font-medium"
+                        >
+                          ✓ Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject(c.id)}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
+                        >
+                          ✕ Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {pending.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-gray-400 text-sm">No pending approvals</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>
@@ -344,26 +387,49 @@ export default function ConcessionsPage() {
           <p className="text-sm text-gray-400">Loading…</p>
         ) : appliedStudent ? (
           <div>
-            <p className="text-xs text-gray-500 mb-2">Showing concessions for {appliedStudent.name}</p>
-            <div className="space-y-2">
-              {applied.map(c => (
-                <div key={c.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">{c.fee_head_name}</p>
-                    <p className="text-xs text-gray-600">
-                      {c.type === 'fixed' ? `₹${c.value}` : `${c.value}%`} · {c.reason}
-                    </p>
-                  </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    c.status === 'approved' ? 'bg-green-100 text-green-700' :
-                    c.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                    'bg-yellow-100 text-yellow-700'
-                  }`}>{c.status}</span>
-                </div>
-              ))}
-              {applied.length === 0 && (
-                <p className="text-sm text-gray-400 py-4 text-center">No concessions applied</p>
-              )}
+            <p className="text-xs text-gray-500 mb-3">Showing concessions for <strong>{appliedStudent.name}</strong></p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="py-2 px-2 text-xs font-medium text-gray-400 w-8">#</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Fee Head</th>
+                    <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Concession</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Reason</th>
+                    <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Status</th>
+                    {applied.some(c => c.rejection_reason) && (
+                      <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Rejection Note</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {applied.map((c, idx) => (
+                    <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="py-2 px-2 text-center text-xs text-gray-400">{idx + 1}</td>
+                      <td className="py-2 px-3 font-medium text-gray-800">{c.fee_head_name}</td>
+                      <td className="py-2 px-3 text-right text-gray-700">
+                        {c.type === 'fixed' ? `₹${Number(c.value).toLocaleString('en-IN')}` : `${c.value}%`}
+                      </td>
+                      <td className="py-2 px-3 text-gray-500 text-xs max-w-[160px] truncate">{c.reason}</td>
+                      <td className="py-2 px-3 text-center">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          c.status === 'approved' ? 'bg-green-100 text-green-700' :
+                          c.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>{c.status}</span>
+                      </td>
+                      {applied.some(x => x.rejection_reason) && (
+                        <td className="py-2 px-3 text-xs text-red-500">{c.rejection_reason || '—'}</td>
+                      )}
+                    </tr>
+                  ))}
+                  {applied.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-gray-400 text-sm">No concessions applied</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         ) : (

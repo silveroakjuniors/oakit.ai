@@ -46,6 +46,7 @@ const navItems: NavItem[] = [
   { href: '/admin/finance/fee-structures', label: 'Fee Structures',   icon: '🏷️', group: 'finance', requirePerm: FIN_PERMS.MANAGE_FEE_STRUCTURE },
   { href: '/admin/finance/fees',           label: 'Fee Collection',   icon: '💳',  group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
   { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: '📝',  group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
+  { href: '/admin/finance/concessions',    label: 'Concessions',      icon: '🎁',  group: 'finance', requirePerm: FIN_PERMS.MANAGE_CONCESSION },
   { href: '/admin/finance/expenses',       label: 'Expenses',         icon: '🧾',  group: 'finance', requirePerm: FIN_PERMS.VIEW_EXPENSE },
   { href: '/admin/finance/salary',         label: 'Salary',           icon: '👔',  group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
   { href: '/admin/finance/reports',        label: 'Reports',          icon: '📈',  group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },

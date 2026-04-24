@@ -330,6 +330,29 @@ export default function PrincipalDashboard() {
               ))}
             </div>
 
+            {/* Finance quick-nav — principal has full access */}
+            <div className="bg-white border border-neutral-100 rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-4 pt-3 pb-2 border-b border-neutral-50">
+                <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Finance</p>
+              </div>
+              <div className="grid grid-cols-3 gap-0 divide-x divide-neutral-50">
+                {[
+                  { href: '/admin/finance',                label: 'Dashboard',    icon: '💰' },
+                  { href: '/admin/finance/fees',           label: 'Fee Collection', icon: '💳' },
+                  { href: '/admin/finance/fee-structures', label: 'Fee Structures', icon: '🏷️' },
+                  { href: '/admin/finance/concessions',    label: 'Concessions',  icon: '🎁' },
+                  { href: '/admin/finance/expenses',       label: 'Expenses',     icon: '🧾' },
+                  { href: '/admin/finance/salary',         label: 'Salary',       icon: '👔' },
+                ].map(({ href, label, icon }) => (
+                  <Link key={href} href={href}
+                    className="flex flex-col items-center gap-1 py-3 px-2 hover:bg-neutral-50 transition-colors text-center">
+                    <span className="text-xl">{icon}</span>
+                    <span className="text-[10px] font-medium text-neutral-600 leading-tight">{label}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
             {/* -- Birthdays � collapsible -- */}
             {birthdays.length > 0 && (
               <Collapsible

@@ -317,6 +317,7 @@ export default function FeesPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100">
+                      <th className="py-2 px-2 text-xs font-medium text-gray-400 w-8">#</th>
                       <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Receipt #</th>
                       <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Fee Head</th>
                       <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Amount</th>
@@ -326,8 +327,9 @@ export default function FeesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {history.map(p => (
+                    {history.map((p, idx) => (
                       <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="py-2 px-2 text-center text-xs text-gray-400">{idx + 1}</td>
                         <td className="py-2 px-3 text-gray-600 text-xs">{p.receipt_number}</td>
                         <td className="py-2 px-3 text-gray-700">{p.fee_head_name || '—'}</td>
                         <td className="py-2 px-3 text-right font-medium text-gray-800">
@@ -351,7 +353,7 @@ export default function FeesPage() {
                     ))}
                     {history.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-gray-400 text-sm">
+                        <td colSpan={7} className="py-6 text-center text-gray-400 text-sm">
                           No payment history
                         </td>
                       </tr>
