@@ -1,55 +1,191 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Home, Calendar, TrendingUp, Sparkles, MessageSquare, Bell,
-  LogOut, Settings, BarChart3, Loader2, MoreHorizontal,
-  ClipboardList, FileText, CreditCard, ChevronDown, User,
+  LogOut, BookOpen, Clock, CheckCircle2, AlertCircle, User,
+  ChevronRight, Send, Loader2, RefreshCw, Phone, Shield, Settings,
+  BarChart3, Target, Zap, CalendarDays, Apple, Smartphone
 } from 'lucide-react';
-import { apiGet, apiPost, apiPut } from '@/lib/api';
+import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
+import OakitLogo from '@/components/OakitLogo';
 
-// ─── Decode parent name from JWT ──────────────────────────────────────────────
-function getParentNameFromToken(token: string): string {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.name || payload.full_name || payload.username || '';
-  } catch { return ''; }
+// ─── Translation Settings type (needed by TranslationContext) ─────────────────
+interface TranslationSettings {
+  enabled: boolean;
+  targetLanguage: string;
+  autoTranslate: boolean;
+  supportedLanguages: string[];
 }
 
-function getGreeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good Morning';
-  if (h < 17) return 'Good Afternoon';
-  return 'Good Evening';
+// ─── Translation Context ──────────────────────────────────────────────────────
+const TranslationContext = React.createContext<{
+  t: (key: string, defaultText?: string) => string;
+  settings: TranslationSettings;
+}>({
+  t: (key, defaultText) => defaultText || key,
+  settings: { enabled: false, targetLanguage: 'en', autoTranslate: false, supportedLanguages: [] }
+});
+
+// Simple translation dictionary (in a real app, this would come from an API)
+const translations: Record<string, Record<string, string>> = {
+  hi: {
+    'Home': 'होम',
+    'Attendance': 'उपस्थिति',
+    'Progress': 'प्रगति',
+    'Insights': 'अंतर्दृष्टि',
+    'Oakie': 'ओकी',
+    'Messages': 'संदेश',
+    'Updates': 'अपडेट',
+    'Settings': 'सेटिंग्स',
+    'Emergency Contacts': 'आपातकालीन संपर्क',
+    'Notification Preferences': 'सूचना प्राथमिकताएं',
+    'Calendar Integration': 'कैलेंडर एकीकरण',
+    'Translation Settings': 'अनुवाद सेटिंग्स',
+    'Progress Predictions': 'प्रगति भविष्यवाणी',
+    'Goal Setting': 'लक्ष्य निर्धारण',
+    'Performance Comparison': 'प्रदर्शन तुलना',
+    'Next Week Attendance': 'अगले सप्ताह की उपस्थिति',
+    'End of Month Progress': 'माह के अंत में प्रगति',
+    'Areas Needing Attention': 'ध्यान देने योग्य क्षेत्र',
+    'Academic Goals': 'शैक्षणिक लक्ष्य',
+    'Behavioral Goals': 'व्यवहारिक लक्ष्य',
+    'Attendance Goals': 'उपस्थिति लक्ष्य',
+    'Enable Translation': 'अनुवाद सक्षम करें',
+    'Target Language': 'लक्ष्य भाषा',
+    'Auto Translation': 'स्वत: अनुवाद',
+    'Predicted attendance rate': 'भविष्यवाणी उपस्थिति दर',
+    'Expected academic progress': 'अपेक्षित शैक्षणिक प्रगति'
+  },
+  te: {
+    'Home': 'హోమ్',
+    'Attendance': 'హాజరు',
+    'Progress': 'ప్రోగ్రెస్',
+    'Insights': 'ఇన్సైట్స్',
+    'Oakie': 'ఓకీ',
+    'Messages': 'సందేశాలు',
+    'Updates': 'నవీకరణలు',
+    'Settings': 'సెట్టింగులు',
+    'Emergency Contacts': 'అత్యవసర సంప్రదింపులు',
+    'Notification Preferences': 'నోటిఫికేషన్ ప్రాధాన్యతలు',
+    'Calendar Integration': 'క్యాలెండర్ ఇంటిగ్రేషన్',
+    'Translation Settings': 'అనువాద సెట్టింగులు',
+    'Progress Predictions': 'ప్రోగ్రెస్ అంచనాలు',
+    'Goal Setting': 'లక్ష్య సెట్టింగ్',
+    'Performance Comparison': 'పనితీరు పోలిక',
+    'Next Week Attendance': 'తదుపరి వారం హాజరు',
+    'End of Month Progress': 'నెల ముగింపు ప్రోగ్రెస్',
+    'Areas Needing Attention': 'దృష్టి అవసరమైన ప్రాంతాలు',
+    'Academic Goals': 'విద్యా లక్ష్యాలు',
+    'Behavioral Goals': 'వ్యవహార లక్ష్యాలు',
+    'Attendance Goals': 'హాజరు లక్ష్యాలు',
+    'Enable Translation': 'అనువాదాన్ని ప్రారంభించు',
+    'Target Language': 'లక్ష్య భాష',
+    'Auto Translation': 'స్వయంచాలక అనువాదం',
+    'Predicted attendance rate': 'అంచనా హాజరు రేటు',
+    'Expected academic progress': 'అంచనా విద్యా ప్రోగ్రెస్'
+  }
+};
+
+function useTranslation() {
+  const context = React.useContext(TranslationContext);
+  return context;
 }
 
-// ─── Feature imports ──────────────────────────────────────────────────────────
-import { TranslationContext, translations, defaultChat } from '@/features/parent/context';
-import type {
-  Child, ChildCache, ChildFeed, AttendanceData, ProgressData,
-  Notification, Announcement, ParentMessage, ChatMsg,
-  EmergencyContact, NotificationPreference, CalendarEvent,
-  ParentInsights, ChildComparison, TranslationSettings, Tab,
-} from '@/features/parent/types';
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Child { id: string; name: string; class_name: string; section_label: string; section_id: string; class_id: string; photo_url?: string; }
+interface NoteItem { id: string; note_text: string | null; file_name: string | null; file_size: number | null; expires_at: string; created_at: string; }
+interface ChildFeed {
+  student_id: string; name: string; class_name: string; section_label: string;
+  attendance: { status: string; is_late: boolean; arrived_at: string | null } | null;
+  topics: string[]; plan_status: string | null; special_label: string | null;
+  homework: { formatted_text: string; raw_text: string } | null;
+  notes: NoteItem[];
+}
+interface AttendanceData {
+  records: { attend_date: string; status: string; is_late: boolean }[];
+  attendance_pct: number; punctuality_pct: number;
+  stats: { total: number; present: number; absent: number; late: number; on_time: number };
+}
+interface ProgressData { student_id: string; coverage_pct: number; has_curriculum: boolean; total_chunks?: number; covered?: number; }
+interface Notification { id: string; section_name: string; completion_date: string; chunks_covered: number; created_at: string; }
+interface Announcement { id: string; title: string; body: string; created_at: string; author_name: string; }
+interface ParentMessage { teacher_id: string; student_id: string; teacher_name: string; student_name: string; last_message: string; last_sent_at: string; last_sender: string; unread_count: number; }
+interface HomeworkRecord { homework_date: string; status: string; teacher_note: string | null; homework_text: string | null; }
+interface ChatMsg { role: 'user' | 'ai'; text: string; ts: number; }
+interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; }
 
-import ChildAvatar from '@/features/parent/components/ChildAvatar';
-import NoteModal from '@/features/parent/components/NoteModal';
-import HomeTab from '@/features/parent/components/HomeTab';
-import AttendanceTab from '@/features/parent/components/AttendanceTab';
-import ProgressTab from '@/features/parent/components/ProgressTab';
-import InsightsTab from '@/features/parent/components/InsightsTab';
-import ChatTab from '@/features/parent/components/ChatTab';
-import MessagesTab from '@/features/parent/components/MessagesTab';
-import NotificationsTab from '@/features/parent/components/NotificationsTab';
-import SettingsTab from '@/features/parent/components/SettingsTab';
-import PremiumWelcomeModal from '@/features/parent/components/PremiumWelcomeModal';
-import ReportsTab from '@/features/parent/components/ReportsTab';
-import FeesTab from '@/features/parent/components/FeesTab';
-import type { NoteItem } from '@/features/parent/types';
+// ─── New Feature Types ────────────────────────────────────────────────────────
+interface EmergencyContact {
+  id: string;
+  name: string;
+  relation: string;
+  phone: string;
+  priority: 1 | 2 | 3;
+  available: boolean;
+}
 
-// ─── Tab config ───────────────────────────────────────────────────────────────
+interface NotificationPreference {
+  type: 'homework' | 'attendance' | 'progress' | 'messages' | 'announcements';
+  enabled: boolean;
+  channels: ('push' | 'sms' | 'email')[];
+  quietHours: { start: string; end: string } | null;
+  frequency: 'immediate' | 'daily' | 'weekly';
+}
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  start: string;
+  end: string;
+  type: 'homework' | 'exam' | 'holiday' | 'event' | 'meeting';
+  childId: string;
+}
+
+interface ParentInsights {
+  attendanceTrend: 'improving' | 'declining' | 'stable';
+  participationScore: number;
+  strengths: string[];
+  areasForImprovement: string[];
+  teacherFeedback: string[];
+  predictions: {
+    nextWeekAttendance: number;
+    endOfMonthProgress: number;
+    areasNeedingAttention: string[];
+  };
+  goals?: {
+    academic: Goal[];
+    behavioral: Goal[];
+    attendance: Goal[];
+  };
+}
+
+interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  target: string;
+  current: string;
+  deadline: string;
+  status: 'not_started' | 'in_progress' | 'completed' | 'overdue';
+  category: 'academic' | 'behavioral' | 'attendance';
+}
+
+interface ChildComparison {
+  childId: string;
+  name: string;
+  attendance: number;
+  progress: number;
+  participation: number;
+  rank: number;
+  trend: 'up' | 'down' | 'stable';
+}
+
+type Tab = 'home' | 'attendance' | 'progress' | 'chat' | 'messages' | 'notifications' | 'insights' | 'settings';
+
 const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
   { id: 'home',          Icon: Home,           label: 'Home' },
   { id: 'attendance',    Icon: Calendar,       label: 'Attendance' },
@@ -58,922 +194,78 @@ const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
   { id: 'chat',          Icon: Sparkles,       label: 'Oakie' },
   { id: 'messages',      Icon: MessageSquare,  label: 'Messages' },
   { id: 'notifications', Icon: Bell,           label: 'Updates' },
-  { id: 'fees',          Icon: CreditCard,     label: 'Fees' },
-  { id: 'reports',       Icon: FileText,       label: 'Reports' },
   { id: 'settings',      Icon: Settings,       label: 'Settings' },
 ];
 
-// Mobile nav — 5 primary tabs + "More" drawer
-const MOBILE_PRIMARY_TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
-  { id: 'home',       Icon: Home,          label: 'Home'     },
-  { id: 'attendance', Icon: Calendar,      label: 'Attend'   },
-  { id: 'progress',   Icon: TrendingUp,    label: 'Progress' },
-  { id: 'chat',       Icon: Sparkles,      label: 'Oakie'    },
-  { id: 'messages',   Icon: MessageSquare, label: 'Messages' },
-];
-
-const DEFAULT_NOTIF_PREFS: NotificationPreference[] = [
-  { type: 'homework',      enabled: true,  channels: ['push', 'email'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
-  { type: 'attendance',    enabled: true,  channels: ['push'],          quietHours: null,                             frequency: 'daily'     },
-  { type: 'progress',      enabled: true,  channels: ['email'],         quietHours: null,                             frequency: 'weekly'    },
-  { type: 'messages',      enabled: true,  channels: ['push', 'sms'],   quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
-  { type: 'announcements', enabled: false, channels: ['email'],         quietHours: null,                             frequency: 'weekly'    },
-];
-
-// ─── Photo feed mock data ─────────────────────────────────────────────────────
-// (removed — feed column now fetches live from /api/v1/feed)
-
-// ─── Live Class Feed column ───────────────────────────────────────────────────
-import type { FeedPost } from '@/features/feed/types';
-import { API_BASE } from '@/lib/api';
-import { createPortal } from 'react-dom';
-
-// ── Lightbox — rendered via portal so overflow:hidden parents don't clip it ──
-function FeedLightbox({ post, onClose, onLike }: { post: FeedPost; onClose: () => void; onLike: (id: string) => void }) {
-  const [imgIdx, setImgIdx] = React.useState(0);
-  const [liked, setLiked] = React.useState(post.liked_by_me);
-  const [likeCount, setLikeCount] = React.useState(post.like_count);
-  const [liking, setLiking] = React.useState(false);
-
-  async function handleLike() {
-    if (liking) return;
-    setLiking(true);
-    const wasLiked = liked;
-    setLiked(!wasLiked);
-    setLikeCount(c => wasLiked ? c - 1 : c + 1);
-    try { await onLike(post.id); } catch { setLiked(wasLiked); setLikeCount(c => wasLiked ? c + 1 : c - 1); }
-    finally { setLiking(false); }
-  }
-
-  function handleShare() {
-    const text = `Class moment from school ❤️`;
-    if (navigator.share && post.images[imgIdx]) {
-      navigator.share({ text, url: post.images[imgIdx] }).catch(() => {});
-    } else {
-      window.open(`https://wa.me/?text=${encodeURIComponent(text + ' ' + (post.images[imgIdx] || ''))}`, '_blank');
-    }
-  }
-
-  // Close on backdrop click
-  function onBackdrop(e: React.MouseEvent) { if (e.target === e.currentTarget) onClose(); }
-
-  // Close on Escape
-  React.useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
-
-  const timeAgo = (() => {
-    const diff = Date.now() - new Date(post.created_at).getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1) return 'just now';
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
-  })();
-
-  return createPortal(
-    <div className="fixed inset-0 flex items-center justify-center p-4"
-      style={{ zIndex: 99999, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
-      onClick={onBackdrop}>
-      <div className="relative w-full max-w-lg rounded-2xl overflow-hidden"
-        style={{ background: '#fff', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
-        onClick={e => e.stopPropagation()}>
-
-        {/* Close */}
-        <button onClick={onClose}
-          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-lg"
-          style={{ background: 'rgba(0,0,0,0.5)' }}>×</button>
-
-        {/* Image */}
-        <div className="relative bg-black flex-shrink-0" style={{ aspectRatio: '4/3' }}>
-          <img src={post.images[imgIdx]} alt={post.caption || 'Class photo'}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
-          {post.images.length > 1 && (
-            <>
-              {imgIdx > 0 && (
-                <button onClick={() => setImgIdx(i => i - 1)}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center text-white text-xl font-bold"
-                  style={{ background: 'rgba(0,0,0,0.5)' }}>‹</button>
-              )}
-              {imgIdx < post.images.length - 1 && (
-                <button onClick={() => setImgIdx(i => i + 1)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center text-white text-xl font-bold"
-                  style={{ background: 'rgba(0,0,0,0.5)' }}>›</button>
-              )}
-              <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
-                {post.images.map((_, i) => (
-                  <button key={i} onClick={() => setImgIdx(i)}
-                    className="w-1.5 h-1.5 rounded-full transition-all"
-                    style={{ background: i === imgIdx ? '#fff' : 'rgba(255,255,255,0.4)', transform: i === imgIdx ? 'scale(1.3)' : 'scale(1)' }} />
-                ))}
-              </div>
-              <div className="absolute top-3 left-3 text-white text-xs px-2 py-0.5 rounded-full font-bold"
-                style={{ background: 'rgba(0,0,0,0.5)' }}>{imgIdx + 1}/{post.images.length}</div>
-            </>
-          )}
-        </div>
-
-        {/* Info + actions */}
-        <div className="px-4 py-3 flex-shrink-0">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0"
-              style={{ background: '#E8F3EF' }}>
-              {post.poster_role === 'teacher' ? '👩‍🏫' : '🏫'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{post.poster_name}</p>
-              <p className="text-xs" style={{ color: '#64748B' }}>
-                {post.section_label ? `📚 ${post.section_label}` : '🏫 School'} · {timeAgo}
-              </p>
-            </div>
-          </div>
-          {post.caption && (
-            <p className="text-sm leading-relaxed mb-3" style={{ color: '#374151' }}>{post.caption}</p>
-          )}
-          <div className="flex items-center gap-3 pt-2" style={{ borderTop: '1px solid #E2E8F0' }}>
-            <button onClick={handleLike}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all flex-1 justify-center"
-              style={{ background: liked ? '#FEE2E2' : '#E8F3EF', color: liked ? '#DC2626' : '#1F7A5A', border: `1px solid ${liked ? '#FECACA' : '#A7D4C0'}` }}>
-              <span className="text-lg" style={{ transform: liked ? 'scale(1.2)' : 'scale(1)', transition: 'transform 0.15s' }}>
-                {liked ? '❤️' : '🤍'}
-              </span>
-              {likeCount > 0 ? likeCount : 'Like'}
-            </button>
-            <button onClick={handleShare}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm flex-1 justify-center"
-              style={{ background: '#EDF2FE', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-              <span className="text-lg">📤</span>
-              Share
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
+function defaultChat(name?: string): ChatMsg[] {
+  return [{ role: 'ai', text: `Hi! I'm Oakie 🌳 Ask me anything about ${name ? name.split(' ')[0] : 'your child'} — what they studied today, attendance, or progress.`, ts: 0 }];
 }
 
-// ── Feed post card (desktop column) ──────────────────────────────────────────
-function FeedPostCard({ p, onLike }: { p: FeedPost; onLike: (id: string) => void }) {
-  const [open, setOpen] = React.useState(false);
-  const [liked, setLiked] = React.useState(p.liked_by_me);
-  const [likeCount, setLikeCount] = React.useState(p.like_count);
-  const [liking, setLiking] = React.useState(false);
-
-  async function handleLike(_id?: string) {
-    if (liking) return;
-    setLiking(true);
-    const wasLiked = liked;
-    setLiked(!wasLiked);
-    setLikeCount(c => wasLiked ? c - 1 : c + 1);
-    try { await onLike(p.id); } catch { setLiked(wasLiked); setLikeCount(c => wasLiked ? c + 1 : c - 1); }
-    finally { setLiking(false); }
-  }
-
-  function handleShare() {
-    const text = `Class moment from school ❤️`;
-    if (navigator.share && p.images[0]) {
-      navigator.share({ text, url: p.images[0] }).catch(() => {});
-    } else {
-      window.open(`https://wa.me/?text=${encodeURIComponent(text + ' ' + (p.images[0] || ''))}`, '_blank');
-    }
-  }
-
-  // Sync lightbox state back to card
-  const postWithState: FeedPost = { ...p, liked_by_me: liked, like_count: likeCount };
-
-  return (
-    <>
-      {open && <FeedLightbox post={postWithState} onClose={() => setOpen(false)} onLike={handleLike} />}
-      <div className="rounded-xl overflow-hidden transition-all hover:shadow-lg hover:-translate-y-0.5"
-        style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-
-        {/* Clickable image */}
-        {p.images && p.images.length > 0 ? (
-          <button className="block w-full relative cursor-pointer" style={{ aspectRatio: '4/3', overflow: 'hidden' }}
-            onClick={() => setOpen(true)}>
-            <img src={p.images[0]} alt={p.caption || 'Class photo'}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }} />
-            {p.images.length > 1 && (
-              <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-                style={{ background: 'rgba(0,0,0,0.5)' }}>+{p.images.length - 1}</span>
-            )}
-            {p.section_label && (
-              <span className="absolute bottom-2 left-2 text-xs font-semibold px-2.5 py-0.5 rounded-full"
-                style={{ background: 'rgba(255,255,255,0.92)', color: '#0F172A' }}>{p.section_label}</span>
-            )}
-            {/* Tap hint overlay */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
-              style={{ background: 'rgba(59,47,143,0.25)' }}>
-              <span className="text-white text-xs font-bold px-3 py-1.5 rounded-full"
-                style={{ background: 'rgba(0,0,0,0.5)' }}>🔍 View</span>
-            </div>
-          </button>
-        ) : (
-          <div className="flex items-center justify-center" style={{ height: 100, background: '#F3F1FF' }}>
-            <span className="text-4xl">📸</span>
-          </div>
-        )}
-
-        {/* Caption + actions */}
-        <div className="px-3 py-2.5">
-          {p.caption && <p className="text-sm leading-snug mb-2" style={{ color: '#0F172A' }}>{p.caption}</p>}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium" style={{ color: '#1F7A5A' }}>by {p.poster_name}</p>
-              <p className="text-[11px]" style={{ color: '#64748B' }}>
-                {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => handleLike()}
-                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all"
-                style={{ background: liked ? '#FEE2E2' : '#F1F5F9', color: liked ? '#DC2626' : '#64748B', border: `1px solid ${liked ? '#FECACA' : '#E2E8F0'}` }}>
-                <span style={{ transform: liked ? 'scale(1.2)' : 'scale(1)', transition: 'transform 0.15s', display: 'inline-block' }}>
-                  {liked ? '❤️' : '🤍'}
-                </span>
-                {likeCount > 0 && likeCount}
-              </button>
-              <button onClick={handleShare}
-                className="flex items-center justify-center w-7 h-7 rounded-lg text-sm"
-                style={{ background: '#EDF2FE', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-                📤
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function useFeedPosts(token: string) {
-  const [posts, setPosts] = React.useState<FeedPost[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  React.useEffect(() => {
-    if (!token) return;
-    fetch(`${API_BASE}/api/v1/feed`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then(d => setPosts(d.posts || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token]);
-
-  async function toggleLike(postId: string) {
-    const res = await fetch(`${API_BASE}/api/v1/feed/posts/${postId}/like`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    setPosts(ps => ps.map(p => p.id === postId ? { ...p, like_count: data.like_count, liked_by_me: data.liked_by_me } : p));
-  }
-
-  return { posts, loading, toggleLike };
-}
-
-function ClassFeedColumn({ token }: { token: string }) {
-  const { posts, loading, toggleLike } = useFeedPosts(token);
-  return (
-    <>
-      <div className="flex items-center justify-between px-4 py-3.5 flex-shrink-0"
-        style={{ borderBottom: '1px solid #E2E8F0', background: '#FFFFFF' }}>
-        <div>
-          <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>📸 Class Feed</p>
-          <p className="text-xs" style={{ color: '#64748B' }}>Photos from school</p>
-        </div>
-        <a href="/parent/feed"
-          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
-          style={{ background: '#E8F3EF', color: '#166A4D' }}>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          Live
-        </a>
-      </div>
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {loading && (
-          <div className="flex flex-col gap-3">
-            {[1,2,3].map(i => (
-              <div key={i} className="rounded-xl overflow-hidden animate-pulse"
-                style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                <div style={{ aspectRatio: '4/3', background: '#E2E8F0' }} />
-                <div className="p-3 space-y-2">
-                  <div className="h-3 rounded-full w-3/4" style={{ background: '#E2E8F0' }} />
-                  <div className="h-2 rounded-full w-1/2" style={{ background: '#F1F5F9' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {!loading && posts.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <span className="text-4xl mb-3">📸</span>
-            <p className="text-sm font-semibold" style={{ color: '#334155' }}>No photos yet</p>
-            <p className="text-xs mt-1" style={{ color: '#64748B' }}>Teachers will post class moments here</p>
-          </div>
-        )}
-        {posts.map(p => <FeedPostCard key={p.id} p={p} onLike={toggleLike} />)}
-      </div>
-    </>
-  );
-}
-
-// Mobile feed preview — horizontal scroll of cards with lightbox on tap
-function MobileFeedPreview({ token }: { token: string }) {
-  const { posts, loading, toggleLike } = useFeedPosts(token);
-  const [openPost, setOpenPost] = React.useState<FeedPost | null>(null);
-
-  if (loading) return (
-    <div className="flex gap-3 px-4 py-3 overflow-x-auto">
-      {[1,2,3].map(i => (
-        <div key={i} className="rounded-xl overflow-hidden flex-shrink-0 animate-pulse"
-          style={{ width: 160, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-          <div style={{ height: 110, background: '#E2E8F0' }} />
-          <div className="p-2 space-y-1.5">
-            <div className="h-2.5 rounded-full w-3/4" style={{ background: '#E2E8F0' }} />
-            <div className="h-2 rounded-full w-1/2" style={{ background: '#F1F5F9' }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-  if (posts.length === 0) return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
-      <span className="text-3xl mb-2">📸</span>
-      <p className="text-sm font-semibold" style={{ color: '#334155' }}>No photos yet</p>
-      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Teachers will post class moments here</p>
-    </div>
-  );
-
-  // Keep openPost in sync with latest like state
-  const openPostLive = openPost ? posts.find(p => p.id === openPost.id) ?? openPost : null;
-
-  return (
-    <>
-      {openPostLive && (
-        <FeedLightbox post={openPostLive} onClose={() => setOpenPost(null)} onLike={toggleLike} />
-      )}
-      <div className="flex gap-3 px-4 py-3 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-        {posts.slice(0, 6).map(p => (
-          <button key={p.id} onClick={() => setOpenPost(p)}
-            className="rounded-xl overflow-hidden flex-shrink-0 text-left"
-            style={{ width: 160, background: '#fff', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-            {p.images && p.images.length > 0 ? (
-              <div className="relative" style={{ height: 110, overflow: 'hidden' }}>
-                <img src={p.images[0]} alt={p.caption || ''}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }} />
-                {p.section_label && (
-                  <span className="absolute bottom-1.5 left-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                    style={{ background: 'rgba(255,255,255,0.92)', color: '#0F172A' }}>{p.section_label}</span>
-                )}
-                {p.images.length > 1 && (
-                  <span className="absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white"
-                    style={{ background: 'rgba(0,0,0,0.5)' }}>+{p.images.length - 1}</span>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center" style={{ height: 110, background: '#F3F1FF' }}>
-                <span className="text-3xl">📸</span>
-              </div>
-            )}
-            <div className="px-2.5 py-2">
-              {p.caption && <p className="text-[11px] leading-snug line-clamp-2 mb-1" style={{ color: '#0F172A' }}>{p.caption}</p>}
-              <div className="flex items-center justify-between">
-                <p className="text-[10px]" style={{ color: '#64748B' }}>
-                  {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                </p>
-                <span className="text-[10px] font-semibold" style={{ color: p.liked_by_me ? '#DC2626' : '#94A3B8' }}>
-                  {p.liked_by_me ? '❤️' : '🤍'} {p.like_count > 0 ? p.like_count : ''}
-                </span>
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-    </>
-  );
-}
-
-// ─── Day Highlights Modal ─────────────────────────────────────────────────────
-interface DayHighlights {
-  date: string;
-  child_name: string;
-  class_name: string;
-  topics: string[];
-  chunks: { topic: string; snippet: string }[];
-  summary: string;
-  is_special_day: boolean;
-}
-
-function DayHighlightsModal({
-  dateKey, studentId, token, onClose,
-}: {
-  dateKey: string; studentId: string; token: string; onClose: () => void;
+function ChildAvatar({ child, size = 'md', token, onUploaded }: {
+  child: Child; size?: 'sm' | 'md' | 'lg';
+  token?: string; onUploaded?: (url: string) => void;
 }) {
-  const [data, setData] = React.useState<DayHighlights | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState('');
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const sz = size === 'sm' ? 'w-8 h-8 text-sm' : size === 'lg' ? 'w-16 h-16 text-2xl' : 'w-10 h-10 text-base';
+  // photo_url is already a full URL (Supabase) or a /uploads/ path — resolve correctly
+  const photoUrl = child.photo_url
+    ? (child.photo_url.startsWith('http') ? child.photo_url : `${API_BASE}${child.photo_url}`)
+    : null;
 
-  React.useEffect(() => {
-    setLoading(true); setError('');
-    fetch(`${API_BASE}/api/v1/parent/child/${studentId}/day-highlights?date=${dateKey}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then(d => { if (d.error) setError(d.error); else setData(d); })
-      .catch(() => setError('Could not load highlights'))
-      .finally(() => setLoading(false));
-  }, [dateKey, studentId, token]);
-
-  // Close on Escape
-  React.useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
-
-  // Format date nicely
-  const [y, m, d] = dateKey.split('-').map(Number);
-  const dateLabel = new Date(y, m - 1, d).toLocaleDateString('en-IN', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  });
-
-  const subjectColors = [
-    '#1F7A5A', '#1D4ED8', '#7C3AED', '#DB2777', '#EA580C', '#0891B2', '#65A30D', '#9333EA',
-  ];
-
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-center justify-center p-4 z-[99999]"
-      style={{ background: 'rgba(30,16,96,0.55)', backdropFilter: 'blur(6px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-
-      <div className="relative w-full max-w-md rounded-3xl overflow-hidden flex flex-col"
-        style={{
-          background: '#fff',
-          maxHeight: '85vh',
-          boxShadow: '0 24px 80px rgba(91,79,207,0.30), 0 4px 16px rgba(0,0,0,0.12)',
-        }}>
-
-        {/* Header */}
-        <div className="px-6 pt-6 pb-4 flex-shrink-0"
-          style={{ background: '#1F7A5A' }}>
-          <button onClick={onClose}
-            className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 transition-all text-lg font-bold">
-            ×
-          </button>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-lg">📅</span>
-            <p className="text-white/70 text-xs font-semibold uppercase tracking-widest">Day Highlights</p>
-          </div>
-          <h2 className="text-white font-semibold text-lg leading-tight">{dateLabel}</h2>
-          {data && (
-            <p className="text-white/60 text-xs mt-1">{data.class_name} · {data.child_name}</p>
-          )}
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {loading && (
-            <div className="flex flex-col items-center justify-center py-10 gap-3">
-              <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
-                style={{ borderColor: '#1F7A5A', borderTopColor: 'transparent' }} />
-              <p className="text-sm font-medium" style={{ color: '#64748B' }}>Generating highlights…</p>
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <span className="text-3xl mb-2">⚠️</span>
-              <p className="text-sm" style={{ color: '#9CA3AF' }}>{error}</p>
-            </div>
-          )}
-
-          {!loading && !error && data && (
-            <>
-              {/* Special day */}
-              {data.is_special_day && (
-                <div className="rounded-2xl p-4 text-center"
-                  style={{ background: 'linear-gradient(135deg,#FEF3C7,#FDE68A)', border: '1px solid #FCD34D' }}>
-                  <span className="text-3xl">🎉</span>
-                  <p className="text-base font-bold mt-2" style={{ color: '#92400E' }}>{data.topics[0]}</p>
-                </div>
-              )}
-
-              {/* No plan */}
-              {!data.is_special_day && data.topics.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <span className="text-3xl mb-2">📭</span>
-                  <p className="text-sm font-semibold" style={{ color: '#334155' }}>No plan for this day</p>
-                  <p className="text-xs mt-1" style={{ color: '#64748B' }}>The teacher hasn't set a plan yet</p>
-                </div>
-              )}
-
-              {/* AI Summary */}
-              {!data.is_special_day && data.summary && (
-                <div className="rounded-xl p-4"
-                  style={{ background: '#EDF2FE', border: '1px solid #BFDBFE' }}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-base">✨</span>
-                    <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#1D4ED8' }}>
-                      AI Summary
-                    </p>
-                  </div>
-                  <p className="text-sm leading-relaxed" style={{ color: '#1E3A5F' }}>{data.summary}</p>
-                </div>
-              )}
-
-              {/* Topics covered */}
-              {!data.is_special_day && data.topics.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#64748B' }}>
-                    📚 Topics Planned
-                  </p>
-                  <div className="space-y-2">
-                    {data.topics.map((topic, i) => (
-                      <div key={i} className="flex items-start gap-3 rounded-lg p-3"
-                        style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                        <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                          style={{ background: subjectColors[i % subjectColors.length] }} />
-                        <p className="text-sm font-medium leading-snug" style={{ color: '#0F172A' }}>{topic}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Chunk snippets */}
-              {!data.is_special_day && data.chunks.some(c => c.snippet) && (
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#64748B' }}>
-                    📖 From the Curriculum
-                  </p>
-                  <div className="space-y-2">
-                    {data.chunks.filter(c => c.snippet).map((c, i) => (
-                      <div key={i} className="rounded-lg p-3"
-                        style={{ background: '#F8FAFC', border: `1px solid ${subjectColors[i % subjectColors.length]}25` }}>
-                        {c.topic && (
-                          <p className="text-[10px] font-semibold mb-1"
-                            style={{ color: subjectColors[i % subjectColors.length] }}>
-                            {c.topic}
-                          </p>
-                        )}
-                        <p className="text-xs leading-relaxed" style={{ color: '#64748B' }}>
-                          {c.snippet}{c.snippet.length >= 300 ? '…' : ''}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid #E2E8F0' }}>
-          <button onClick={onClose}
-            className="w-full py-2.5 rounded-xl text-sm font-medium transition-all"
-            style={{ background: '#F1F5F9', color: '#334155' }}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// ─── Right panel ──────────────────────────────────────────────────────────────
-function ParentRightPanel({ activeChild, progress, token }: { activeChild: Child | null; progress: ProgressData | null; token: string }) {
-  const [schedule, setSchedule] = React.useState<Record<string, string[]>>({});
-  const [weekStart, setWeekStart] = React.useState<string>('');
-  const [schedLoading, setSchedLoading] = React.useState(false);
-  const [highlightDay, setHighlightDay] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (!activeChild?.id || !token) return;
-    setSchedLoading(true);
-    fetch(`${API_BASE}/api/v1/parent/child/${activeChild.id}/week-schedule`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then(d => { setSchedule(d.days || {}); setWeekStart(d.week_start || ''); })
-      .catch(() => {})
-      .finally(() => setSchedLoading(false));
-  }, [activeChild?.id, token]);
-
-  // Build Mon–Fri date keys from the API's week_start (avoids browser timezone issues)
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-  const todayKey = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
-
-  const weekDates: string[] = React.useMemo(() => {
-    if (!weekStart) {
-      // Fallback: compute locally
-      const now = new Date();
-      const dow = now.getDay();
-      const offset = dow === 0 ? -6 : 1 - dow;
-      return Array.from({ length: 5 }, (_, i) => {
-        const d = new Date(now);
-        d.setDate(now.getDate() + offset + i);
-        return d.toLocaleDateString('en-CA');
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !token) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('photo', file);
+      const res = await fetch(`${API_BASE}/api/v1/parent/child/${child.id}/photo`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
       });
-    }
-    return Array.from({ length: 5 }, (_, i) => {
-      const d = new Date(weekStart + 'T12:00:00Z');
-      d.setUTCDate(d.getUTCDate() + i);
-      return d.toISOString().split('T')[0];
-    });
-  }, [weekStart]);
-
-  const pct = progress?.coverage_pct ?? 0;
-
-  // Format YYYY-MM-DD → "20 Apr"
-  function formatDate(key: string) {
-    const [y, m, d] = key.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      onUploaded?.(data.photo_url);
+    } catch (err) { console.error('Photo upload failed', err); }
+    finally { setUploading(false); }
   }
 
   return (
     <>
-      {/* Highlights modal */}
-      {highlightDay && activeChild && (
-        <DayHighlightsModal
-          dateKey={highlightDay}
-          studentId={activeChild.id}
-          token={token}
-          onClose={() => setHighlightDay(null)}
-        />
+      {/* Photo preview modal */}
+      {preview && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreview(null)}>
+          <div className="relative max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+            <img src={preview} alt={child.name} className="w-full rounded-2xl object-contain max-h-[70vh]" />
+            <button onClick={() => setPreview(null)}
+              className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70">✕</button>
+            <p className="text-white text-center mt-3 font-semibold">{child.name}</p>
+          </div>
+        </div>
       )}
 
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#64748B' }}>📆 Weekly Schedule</p>
-        {schedLoading ? (
-          <div className="space-y-1.5">
-            {[1,2,3,4,5].map(i => (
-              <div key={i} className="rounded-lg p-2.5 animate-pulse" style={{ background: '#F1F5F9', height: 44 }} />
-            ))}
-          </div>
+      <label className={`relative ${sz} rounded-full shrink-0 cursor-pointer group`} title="Tap to change photo">
+        {photoUrl ? (
+          <>
+            <img src={photoUrl} alt={child.name}
+              className={`${sz} rounded-full object-contain bg-white border-2 border-white/20`}
+              onClick={e => { e.preventDefault(); setPreview(photoUrl); }} />
+          </>
         ) : (
-          <div className="space-y-1.5">
-            {weekDates.map((key, i) => {
-              const isToday = key === todayKey;
-              const hasTopics = (schedule[key] || []).length > 0;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setHighlightDay(key)}
-                  className="w-full rounded-lg p-2.5 text-left transition-all group hover:shadow-sm hover:-translate-y-0.5"
-                  style={{
-                    background: isToday ? '#E8F3EF' : '#F8FAFC',
-                    border: `1px solid ${isToday ? '#A7D4C0' : '#E2E8F0'}`,
-                  }}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[9px] font-semibold uppercase tracking-wide"
-                        style={{ color: isToday ? '#166A4D' : '#94A3B8' }}>
-                        {dayLabels[i]}{isToday ? ' · Today' : ''}
-                      </p>
-                      <p className="text-xs font-semibold mt-0.5 underline decoration-dotted underline-offset-2 group-hover:no-underline"
-                        style={{ color: isToday ? '#1F7A5A' : '#334155' }}>
-                        {formatDate(key)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {hasTopics && (
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#22C55E' }} />
-                      )}
-                      <span className="text-[10px] opacity-40 group-hover:opacity-80 transition-opacity"
-                        style={{ color: '#334155' }}>›</span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+          <div className={`${sz} rounded-full bg-white/20 flex items-center justify-center font-bold text-white`}>
+            {uploading ? <span className="text-xs animate-spin">⏳</span> : child.name[0]}
           </div>
         )}
-      </div>
-
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: '#64748B' }}>🎯 Progress</p>
-        <div className="space-y-2.5">
-          {[
-            { label: 'Curriculum', pct, color: '#1F7A5A' },
-          ].map(g => (
-            <div key={g.label}>
-              <div className="flex justify-between text-[10px] mb-1">
-                <span className="font-medium" style={{ color: '#64748B' }}>{g.label}</span>
-                <span className="font-semibold" style={{ color: g.color }}>{g.pct}%</span>
-              </div>
-              <div className="h-1.5 rounded-full" style={{ background: '#E2E8F0' }}>
-                <div className="h-1.5 rounded-full transition-all" style={{ width: `${g.pct}%`, background: g.color }} />
-              </div>
-            </div>
-          ))}
+        {/* Camera overlay on hover */}
+        <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+          <span className="text-white text-xs">📷</span>
         </div>
-      </div>
-
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: '#64748B' }}>✨ Quick Links</p>
-        <div className="space-y-1.5">
-          {[
-            { icon: '📖', label: "Child's Journey", href: activeChild ? `/parent/journey?student_id=${activeChild.id}` : '/parent/journey' },
-            { icon: '⭐', label: 'Premium Features', href: '/parent/premium' },
-          ].map(f => (
-            <a key={f.label} href={f.href}
-              className="flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-pointer hover:bg-neutral-100 hover:shadow-sm hover:-translate-y-0.5 transition-all"
-              style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-              <span className="text-sm">{f.icon}</span>
-              <span className="text-[10px] font-medium flex-1" style={{ color: '#334155' }}>{f.label}</span>
-              <span className="text-[10px] font-semibold" style={{ color: '#1F7A5A' }}>→</span>
-            </a>
-          ))}
-        </div>
-      </div>
+        {token && <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleFile} />}
+      </label>
     </>
   );
 }
 
-// ─── Mobile Bottom Nav with "More" drawer ────────────────────────────────────
-const MOBILE_MORE_TABS: { id: Tab; Icon: React.ElementType; label: string; badge?: number }[] = [
-  { id: 'insights',      Icon: BarChart3,  label: 'Insights' },
-  { id: 'notifications', Icon: Bell,       label: 'Updates'  },
-  { id: 'settings',      Icon: Settings,   label: 'Settings' },
-];
-
-function MobileBottomNav({ tab, setTab, unreadMessages, unreadNotifs, t }: {
-  tab: Tab; setTab: (t: Tab) => void;
-  unreadMessages: number; unreadNotifs: number;
-  t: (key: string, def?: string) => string;
-}) {
-  const [moreOpen, setMoreOpen] = React.useState(false);
-  const moreTabIds = MOBILE_MORE_TABS.map(x => x.id);
-  const moreIsActive = moreTabIds.includes(tab);
-
-  // Per-tab active colours — bg tint + icon/text colour
-  const navColors: Record<string, { bg: string; active: string }> = {
-    home:          { bg: '#E8F3EF', active: '#1F7A5A' },
-    attendance:    { bg: '#ECFDF5', active: '#166A4D' },
-    progress:      { bg: '#EFF6FF', active: '#1D4ED8' },
-    chat:          { bg: '#F5F3FF', active: '#7C3AED' },
-    messages:      { bg: '#FCE7F3', active: '#9D174D' },
-    insights:      { bg: '#EDE9FE', active: '#5B21B6' },
-    notifications: { bg: '#FEF9C3', active: '#B45309' },
-    settings:      { bg: '#F1F5F9', active: '#334155' },
-  };
-
-  const INACTIVE_COLOR = '#475569';   // slate-600 — clearly visible
-  const INACTIVE_LABEL = '#64748B';   // slate-500
-
-  return (
-    <>
-      {/* Backdrop */}
-      {moreOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40"
-          style={{ background: 'rgba(15,23,42,0.25)' }}
-          onClick={() => setMoreOpen(false)}
-        />
-      )}
-
-      {/* More drawer */}
-      <div
-        className="lg:hidden fixed left-0 right-0 z-50 rounded-t-2xl overflow-hidden transition-all duration-300"
-        style={{
-          bottom: moreOpen ? 72 : -220,
-          background: '#FFFFFF',
-          boxShadow: '0 -4px 24px rgba(0,0,0,0.10)',
-          border: '1px solid #E2E8F0',
-          borderBottom: 'none',
-        }}>
-        <div className="px-4 pt-3 pb-4">
-          <div className="w-10 h-1 rounded-full mx-auto mb-4 bg-neutral-200" />
-          <div className="grid grid-cols-3 gap-3">
-            {MOBILE_MORE_TABS.map(({ id, Icon, label }) => {
-              const badge = id === 'notifications' ? unreadNotifs : 0;
-              const isActive = tab === id;
-              const c = navColors[id] || navColors.home;
-              return (
-                <button
-                  key={id}
-                  onClick={() => { setTab(id); setMoreOpen(false); }}
-                  className="flex flex-col items-center gap-2 py-3 px-2 rounded-xl transition-all active:scale-95"
-                  style={{
-                    background: isActive ? c.bg : '#F8FAFC',
-                    border: `1.5px solid ${isActive ? c.active + '40' : '#E2E8F0'}`,
-                  }}
-                  aria-current={isActive ? 'page' : undefined}>
-                  <div className="relative">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center"
-                      style={{ background: isActive ? c.active : '#F1F5F9' }}>
-                      <Icon size={22} style={{ color: isActive ? '#fff' : INACTIVE_COLOR }} strokeWidth={1.75} />
-                    </div>
-                    {badge > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
-                        style={{ background: '#EF4444' }}>{badge}</span>
-                    )}
-                  </div>
-                  <span className="text-xs font-semibold" style={{ color: isActive ? c.active : INACTIVE_LABEL }}>
-                    {t(label)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom nav bar */}
-      <nav
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center"
-        style={{
-          background: '#FFFFFF',
-          borderTop: '1px solid #E2E8F0',
-          paddingBottom: 'max(10px, env(safe-area-inset-bottom))',
-          paddingTop: '6px',
-          boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
-        }}>
-        {MOBILE_PRIMARY_TABS.map(({ id, Icon, label }) => {
-          const badge = id === 'messages' ? unreadMessages : 0;
-          const isActive = tab === id && !moreOpen;
-          const c = navColors[id] || navColors.home;
-          return (
-            <button
-              key={id}
-              onClick={() => { setTab(id); setMoreOpen(false); }}
-              className="relative flex-1 flex flex-col items-center gap-1 py-1 transition-all active:scale-95"
-              aria-current={isActive ? 'page' : undefined}>
-              {/* Active indicator bar */}
-              {isActive && (
-                <span
-                  className="absolute top-0 left-1/2 -translate-x-1/2 rounded-full"
-                  style={{ width: 28, height: 3, background: c.active }} />
-              )}
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
-                style={{ background: isActive ? c.bg : 'transparent' }}>
-                <Icon
-                  size={20}
-                  strokeWidth={isActive ? 2 : 1.75}
-                  style={{ color: isActive ? c.active : INACTIVE_COLOR }}
-                />
-              </div>
-              <span
-                className="text-[11px] leading-none"
-                style={{
-                  color: isActive ? c.active : INACTIVE_LABEL,
-                  fontWeight: isActive ? 600 : 500,
-                }}>
-                {t(label)}
-              </span>
-              {badge > 0 && (
-                <span className="absolute top-1 right-[calc(50%-20px)] w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
-                  style={{ background: '#EF4444' }}>{badge}</span>
-              )}
-            </button>
-          );
-        })}
-
-        {/* More button */}
-        <button
-          onClick={() => setMoreOpen(o => !o)}
-          className="relative flex-1 flex flex-col items-center gap-1 py-1 transition-all active:scale-95"
-          aria-expanded={moreOpen}>
-          {(moreIsActive || moreOpen) && (
-            <span
-              className="absolute top-0 left-1/2 -translate-x-1/2 rounded-full"
-              style={{ width: 28, height: 3, background: '#5B21B6' }} />
-          )}
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
-            style={{ background: moreIsActive || moreOpen ? '#EDE9FE' : 'transparent' }}>
-            <MoreHorizontal
-              size={20}
-              strokeWidth={moreIsActive || moreOpen ? 2 : 1.75}
-              style={{ color: moreIsActive || moreOpen ? '#5B21B6' : INACTIVE_COLOR }}
-            />
-          </div>
-          <span
-            className="text-[11px] leading-none"
-            style={{
-              color: moreIsActive || moreOpen ? '#5B21B6' : INACTIVE_LABEL,
-              fontWeight: moreIsActive || moreOpen ? 600 : 500,
-            }}>
-            More
-          </span>
-          {unreadNotifs > 0 && (
-            <span className="absolute top-1 right-[calc(50%-20px)] w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
-              style={{ background: '#EF4444' }}>{unreadNotifs}</span>
-          )}
-        </button>
-      </nav>
-    </>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
 export default function ParentPage() {
   const router = useRouter();
   const token = getToken() || '';
@@ -991,33 +283,55 @@ export default function ParentPage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [noteModal, setNoteModal] = useState<NoteItem | null>(null);
-  const [showPremiumModal, setShowPremiumModal] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Settings state
+  // ─── New Feature State ──────────────────────────────────────────────────────
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreference[]>(DEFAULT_NOTIF_PREFS);
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreference[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [parentInsights, setParentInsights] = useState<ParentInsights | null>(null);
   const [childComparisons, setChildComparisons] = useState<ChildComparison[]>([]);
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
   const [assistantReminders, setAssistantReminders] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [translationSettings, setTranslationSettings] = useState<TranslationSettings>({
-    enabled: false, targetLanguage: 'en', autoTranslate: false,
-    supportedLanguages: ['en', 'hi', 'te', 'kn', 'ta', 'ml', 'gu', 'mr', 'bn', 'pa', 'ur', 'ar', 'fr', 'es'],
+    enabled: false,
+    targetLanguage: 'en',
+    autoTranslate: false,
+    supportedLanguages: ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa']
   });
 
-  // t() helper — ParentPage is the Provider so can't use useTranslation()
-  function t(key: string, defaultText?: string): string {
+  // t() helper used directly in ParentPage (can't use useTranslation here — we ARE the provider)
+  const t = (key: string, defaultText?: string) => {
     if (!translationSettings.enabled || translationSettings.targetLanguage === 'en') return defaultText || key;
     return translations[translationSettings.targetLanguage]?.[key] || defaultText || key;
+  };
+
+  async function saveCalendarSync(enabled: boolean) {
+    try {
+      await apiPut('/api/v1/parent/settings', { calendar_sync: enabled }, token);
+      setCalendarSyncEnabled(enabled);
+      localStorage.setItem('calendar_sync', String(enabled));
+    } catch (e) {
+      console.error('Failed to save calendar sync', e);
+      alert('Failed to save calendar sync setting');
+    }
+  }
+
+  async function saveAssistantReminders(enabled: boolean) {
+    try {
+      await apiPut('/api/v1/parent/settings', { assistant_reminders: enabled }, token);
+      setAssistantReminders(enabled);
+      localStorage.setItem('assistant_reminders', String(enabled));
+    } catch (e) {
+      console.error('Failed to save assistant reminders', e);
+      alert('Failed to save assistant reminders setting');
+    }
   }
 
   const activeChild = children.find(c => c.id === activeChildId) ?? null;
   const activeCache = activeChildId ? cache[activeChildId] : null;
   const chatMsgs = activeChildId ? (chatMap[activeChildId] ?? defaultChat(activeChild?.name)) : [];
-  const unreadMessages = messageThreads.reduce((s, th) => s + Number(th.unread_count), 0);
+  const unreadMessages = messageThreads.reduce((s, t) => s + Number(t.unread_count), 0);
   const unreadNotifs = notifications.length;
 
   useEffect(() => { if (!token) { router.push('/login'); return; } init(); }, []);
@@ -1031,11 +345,20 @@ export default function ParentPage() {
         apiGet<Notification[]>('/api/v1/parent/notifications', token),
       ]);
 
+      // Handle force_password_reset — redirect to change-password
       if (kidsResult.status === 'rejected') {
         const msg = kidsResult.reason?.message || '';
-        if (msg.includes('Password change required') || msg.includes('force_password_reset')) { router.push('/auth/change-password'); return; }
-        if (msg.includes('Invalid or expired token') || msg.includes('Missing authorization')) { clearToken(); router.push('/login'); return; }
+        if (msg.includes('Password change required') || msg.includes('force_password_reset')) {
+          router.push('/auth/change-password');
+          return;
+        }
+        if (msg.includes('Invalid or expired token') || msg.includes('Missing authorization')) {
+          clearToken();
+          router.push('/login');
+          return;
+        }
         setInitError(msg || 'Failed to load data');
+        console.error('[parent init] children failed:', msg);
       }
 
       const kids = kidsResult.status === 'fulfilled' ? kidsResult.value : [];
@@ -1044,144 +367,96 @@ export default function ParentPage() {
       setNotifications(notifs);
       apiGet<Announcement[]>('/api/v1/parent/announcements', token).then(setAnnouncements).catch(() => {});
       apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {});
-      // Check voice feature status
-      apiGet<{ voice_enabled: boolean }>('/api/v1/ai/voice-status', token).then(d => setVoiceEnabled(d.voice_enabled)).catch(() => {});
-
-      // Load settings + emergency contacts
-      // Always load mock insights data immediately so Insights tab never spins
-      loadMockData(kids[0]?.id, kids[0]?.name);
-
+      
+      // Load emergency contacts and settings from API (fallback to mock data)
       (async () => {
         try {
           const [rows, settings] = await Promise.all([
             apiGet<any[]>('/api/v1/parent/emergency-contacts', token),
             apiGet<any>('/api/v1/parent/settings', token),
           ]);
-          setEmergencyContacts(rows.map(r => ({ id: r.id, name: r.name, relation: r.relationship || r.relation || '', phone: r.phone, priority: r.is_primary ? 1 : 2, available: true })) as EmergencyContact[]);
-          if (settings?.notification_prefs?.length) setNotificationPrefs(settings.notification_prefs);
-          if (typeof settings?.calendar_sync === 'boolean') setCalendarSyncEnabled(settings.calendar_sync);
-          if (typeof settings?.assistant_reminders === 'boolean') setAssistantReminders(settings.assistant_reminders);
-          if (typeof settings?.voice_enabled === 'boolean') setVoiceEnabled(settings.voice_enabled);
-          if (settings?.translation_settings) {
-            const ts = settings.translation_settings;
-            setTranslationSettings({ enabled: ts.enabled ?? false, targetLanguage: ts.targetLanguage || 'en', autoTranslate: ts.autoTranslate ?? false, supportedLanguages: ts.supportedLanguages?.length ? ts.supportedLanguages : ['en', 'hi', 'te', 'ta', 'kn', 'ml', 'gu', 'bn', 'mr', 'pa'] });
+          const mapped = rows.map(r => ({ id: r.id, name: r.name, relation: r.relationship || r.relation || '', phone: r.phone, priority: (r.is_primary ? 1 : 2) as 1 | 2 | 3, available: true }));
+          setEmergencyContacts(mapped);
+          if (settings) {
+            if (settings.notification_prefs) setNotificationPrefs(settings.notification_prefs);
+            if (typeof settings.calendar_sync === 'boolean') setCalendarSyncEnabled(settings.calendar_sync);
+            if (typeof settings.assistant_reminders === 'boolean') setAssistantReminders(settings.assistant_reminders);
+            if (settings.translation_settings) setTranslationSettings(settings.translation_settings);
           }
-        } catch { /* settings failed — mock data already loaded above */ }
+        } catch (e) {
+          // fallback to mock data for other features
+          loadMockFeaturesData(true);
+        }
       })();
-
+      
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id); }
     } catch { /* ignore */ }
-    finally {
-      setLoading(false);
-      // Show premium modal once per session (not on every login — once per browser session)
-      const seen = sessionStorage.getItem('oakit_premium_popup_seen');
-      if (!seen) {
-        setTimeout(() => setShowPremiumModal(true), 1500);
-      }
+    finally { setLoading(false); }
+  }
+
+  // ─── Mock Data for New Features ─────────────────────────────────────────────
+  function loadMockFeaturesData(includeEmergency = true) {
+    // Emergency Contacts
+    if (includeEmergency) {
+      setEmergencyContacts([
+        { id: '1', name: 'John Doe', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
+        { id: '2', name: 'Jane Doe', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: false },
+        { id: '3', name: 'Grandma', relation: 'Grandmother', phone: '+91-9876543212', priority: 3, available: true },
+      ]);
     }
-  }
 
-  function loadMockData(firstChildId?: string, firstChildName?: string) {
-    setEmergencyContacts([
-      { id: '1', name: 'Parent 1', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
-      { id: '2', name: 'Parent 2', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: true },
+    // Notification Preferences
+    setNotificationPrefs([
+      { type: 'homework', enabled: true, channels: ['push', 'email'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
+      { type: 'attendance', enabled: true, channels: ['push'], quietHours: null, frequency: 'daily' },
+      { type: 'progress', enabled: true, channels: ['email'], quietHours: null, frequency: 'weekly' },
+      { type: 'messages', enabled: true, channels: ['push', 'sms'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
+      { type: 'announcements', enabled: false, channels: ['email'], quietHours: null, frequency: 'weekly' },
     ]);
-    setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
-    setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
-    loadInsightsForChild(firstChildId, firstChildName);
-  }
 
-  function loadInsightsForChild(childId?: string, childName?: string) {
-    const name = childName?.split(' ')[0] || 'Your child';
-    const firstName = childName?.split(' ')[0]?.toLowerCase() || '';
+    // Calendar Events
+    setCalendarEvents([
+      { id: '1', title: 'Math Homework Due', description: 'Complete exercises 1-10 from chapter 5', start: '2026-04-20T18:00:00', end: '2026-04-20T18:00:00', type: 'homework', childId: activeChildId || '' },
+      { id: '2', title: 'Parent-Teacher Meeting', description: 'Discuss Aarav\'s progress this term', start: '2026-04-25T10:00:00', end: '2026-04-25T11:00:00', type: 'meeting', childId: activeChildId || '' },
+      { id: '3', title: 'Science Exam', description: 'Chapter 3-5 assessment', start: '2026-04-22T09:00:00', end: '2026-04-22T10:30:00', type: 'exam', childId: activeChildId || '' },
+    ]);
 
-    // Rohan-specific insights
-    const isRohan = firstName === 'rohan';
-
-    const strengths = isRohan ? [
-      `${name} shows exceptional creativity — art and painting are clear strengths`,
-      `Fine motor skills are good — letter formation is neat and well-formed`,
-      `Growing in confidence; answered a question in class for the first time this term`,
-    ] : [
-      `${name} shows excellent creativity and imagination — art and storytelling are clear strengths`,
-      `English speaking confidence has improved noticeably over the past 2 weeks`,
-      `Shows empathy and kindness towards classmates`,
-    ];
-
-    const areasForImprovement = isRohan ? [
-      `${name} is very shy — needs gentle encouragement to speak up and participate`,
-      `Gross motor skills need attention — tires quickly during physical activities`,
-      `Energy levels are low in the afternoons — a light snack before school may help`,
-    ] : [
-      `Pencil grip needs correction — currently using fist grip instead of 3-finger grip`,
-      `${name} has been falling asleep in afternoon sessions — sleep schedule needs attention`,
-      `Focus and attention during structured activities needs improvement`,
-    ];
-
-    const teacherFeedback = isRohan ? [
-      `Pairing ${name} with a confident peer during group activities — it is working well`,
-      `Celebrating small wins publicly to build ${name}'s confidence in class`,
-      `Encouraging outdoor play to build gross motor strength and stamina`,
-      `Monitoring afternoon energy — will flag if fatigue continues`,
-    ] : [
-      `Introducing daily pencil grip exercises in class — will use triangular grip aids`,
-      `Pairing ${name} with a confident peer during group activities to build participation`,
-      `Monitoring energy levels — will flag if afternoon fatigue continues`,
-      `Planning extra encouragement during circle time to build speaking confidence`,
-    ];
-
-    const areasNeedingAttention = isRohan ? [
-      `Encourage ${name} to speak in full sentences at home — builds classroom confidence`,
-      `Ensure ${name} has a light snack and short rest before school`,
-      `Outdoor play daily — even 20 minutes helps build gross motor strength`,
-      `Praise ${name} for small achievements to reinforce confidence`,
-    ] : [
-      `Practice pencil grip at home daily — 5 minutes before homework`,
-      `Ensure ${name} gets 9-10 hours of sleep on school nights`,
-      `Encourage ${name} to talk about their school day — builds communication skills`,
-      `Limit screen time to 30 minutes before bedtime`,
-    ];
-
-    const goals = isRohan ? {
-      academic: [
-        { id: '1', title: 'Classroom Participation', description: 'Raise hand and answer at least one question per day', target: '5x/week', current: '2x/week', deadline: '2026-06-30', status: 'in_progress' as const, category: 'academic' as const },
-      ],
-      behavioral: [
-        { id: '2', title: 'Social Confidence', description: 'Initiate conversation with a classmate during free play', target: 'Daily', current: '2x/week', deadline: '2026-06-30', status: 'in_progress' as const, category: 'behavioral' as const },
-      ],
-      attendance: [
-        { id: '3', title: 'Full Attendance', description: 'Attend all classes with good energy levels', target: '100%', current: '92%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'attendance' as const },
-      ],
-    } : {
-      academic: [
-        { id: '1', title: 'Correct Pencil Grip', description: 'Achieve consistent 3-finger pencil grip during all writing activities', target: '100%', current: '40%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'academic' as const },
-      ],
-      behavioral: [
-        { id: '2', title: 'Classroom Focus', description: 'Stay focused during structured activities without reminders', target: '80%', current: '55%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'behavioral' as const },
-      ],
-      attendance: [
-        { id: '3', title: 'Full Attendance', description: 'Attend all classes this month with no afternoon fatigue', target: '100%', current: '88%', deadline: '2026-06-30', status: 'in_progress' as const, category: 'attendance' as const },
-      ],
-    };
-
+    // Parent Insights
     setParentInsights({
-      attendanceTrend: isRohan ? 'stable' : 'improving',
-      participationScore: isRohan ? 45 : 72,
-      strengths,
-      areasForImprovement,
-      teacherFeedback,
+      attendanceTrend: 'improving',
+      participationScore: 85,
+      strengths: ['Mathematics', 'Reading Comprehension', 'Class Participation'],
+      areasForImprovement: ['Handwriting', 'Physical Education'],
+      teacherFeedback: ['Excellent progress in math this month', 'Shows great enthusiasm for learning'],
       predictions: {
-        nextWeekAttendance: isRohan ? 95 : 92,
-        endOfMonthProgress: isRohan ? 68 : 78,
-        areasNeedingAttention,
+        nextWeekAttendance: 95,
+        endOfMonthProgress: 88,
+        areasNeedingAttention: ['Practice handwriting daily']
       },
-      goals,
+      goals: {
+        academic: [
+          { id: '1', title: 'Improve Math Grade', description: 'Achieve 90% or higher in mathematics', target: '90%', current: '85%', deadline: '2026-06-30', status: 'in_progress', category: 'academic' },
+          { id: '2', title: 'Complete Reading Program', description: 'Finish all assigned reading comprehension exercises', target: '100%', current: '75%', deadline: '2026-05-15', status: 'in_progress', category: 'academic' },
+        ],
+        behavioral: [
+          { id: '3', title: 'Class Participation', description: 'Actively participate in 80% of class activities', target: '80%', current: '65%', deadline: '2026-04-30', status: 'in_progress', category: 'behavioral' },
+        ],
+        attendance: [
+          { id: '4', title: 'Perfect Attendance Month', description: 'Attend all classes for the entire month', target: '100%', current: '92%', deadline: '2026-04-30', status: 'in_progress', category: 'attendance' },
+        ]
+      }
     });
 
+    // Child Comparisons
     setChildComparisons([
-      { childId: childId || '', name: childName || 'Your Child', attendance: isRohan ? 92 : 88, progress: isRohan ? 68 : 72, participation: isRohan ? 45 : 65, rank: isRohan ? 5 : 4, trend: isRohan ? 'stable' : 'up' },
-      { childId: 'avg', name: 'Class Average', attendance: 87, progress: 75, participation: 70, rank: 0, trend: 'stable' },
+      { childId: activeChildId || '', name: activeChild?.name || 'Your Child', attendance: 92, progress: 88, participation: 85, rank: 3, trend: 'up' },
+      { childId: 'comp1', name: 'Class Average', attendance: 87, progress: 82, participation: 78, rank: 0, trend: 'stable' },
+      { childId: 'comp2', name: 'Top Performer', attendance: 98, progress: 95, participation: 92, rank: 1, trend: 'up' },
     ]);
+
+    // Integration Settings
+    setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
+    setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
   }
 
   const fetchChildData = useCallback(async (childId: string) => {
@@ -1200,12 +475,7 @@ export default function ParentPage() {
     } finally { setChildLoading(false); }
   }, [cache, token]);
 
-  async function switchChild(childId: string) {
-    setActiveChildId(childId);
-    const child = children.find(c => c.id === childId);
-    loadInsightsForChild(childId, child?.name);
-    await fetchChildData(childId);
-  }
+  async function switchChild(childId: string) { setActiveChildId(childId); await fetchChildData(childId); }
 
   async function sendChat() {
     const text = chatInput.trim();
@@ -1226,26 +496,13 @@ export default function ParentPage() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   }
 
-  function saveCalendarSync(enabled: boolean) {
-    setCalendarSyncEnabled(enabled);
-    localStorage.setItem('calendar_sync', String(enabled));
-    apiPut('/api/v1/parent/settings', { calendar_sync: enabled }, token).catch(() => {});
-  }
-
-  function saveAssistantReminders(enabled: boolean) {
-    setAssistantReminders(enabled);
-    localStorage.setItem('assistant_reminders', String(enabled));
-    apiPut('/api/v1/parent/settings', { assistant_reminders: enabled }, token).catch(() => {});
-  }
-
-  // ─── Loading / error states ────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#F8FAFC' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%)' }}>
         <div className="text-center">
-          <img src="/oakie.png" alt="Oakie" className="w-16 h-auto mx-auto mb-4" />
-          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3" style={{ color: '#1F7A5A' }} />
-          <p className="text-sm font-medium" style={{ color: '#64748B' }}>Loading your dashboard...</p>
+          <img src="/oakie.png" alt="Oakie" className="w-16 h-auto mx-auto mb-4 opacity-80" style={{ mixBlendMode: 'multiply' }} />
+          <Loader2 className="w-8 h-8 text-white/40 animate-spin mx-auto mb-3" />
+          <p className="text-white/60 text-sm">Loading your dashboard...</p>
         </div>
       </div>
     );
@@ -1258,8 +515,14 @@ export default function ParentPage() {
           <p className="text-4xl mb-4">⚠️</p>
           <p className="text-neutral-700 font-semibold mb-2">Something went wrong</p>
           <p className="text-sm text-neutral-500 mb-4 bg-red-50 border border-red-100 rounded-xl px-4 py-3">{initError}</p>
-          <button onClick={() => { setInitError(null); setLoading(true); init(); }} className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium">Try again</button>
-          <button onClick={() => { clearToken(); router.push('/login'); }} className="ml-3 px-4 py-2 border border-neutral-200 rounded-xl text-sm text-neutral-600">Sign out</button>
+          <button onClick={() => { setInitError(null); setLoading(true); init(); }}
+            className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium">
+            Try again
+          </button>
+          <button onClick={() => { clearToken(); router.push('/login'); }}
+            className="ml-3 px-4 py-2 border border-neutral-200 rounded-xl text-sm text-neutral-600">
+            Sign out
+          </button>
         </div>
       </div>
     );
@@ -1267,273 +530,1327 @@ export default function ParentPage() {
 
   const translationContextValue = {
     t: (key: string, defaultText?: string) => {
-      if (!translationSettings.enabled || translationSettings.targetLanguage === 'en') return defaultText || key;
+      if (!translationSettings.enabled || translationSettings.targetLanguage === 'en') {
+        return defaultText || key;
+      }
       return translations[translationSettings.targetLanguage]?.[key] || defaultText || key;
     },
-    settings: translationSettings,
+    settings: translationSettings
   };
 
-  // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <TranslationContext.Provider value={translationContextValue}>
-      <div className="min-h-screen flex flex-col" style={{ background: '#F8FAFC' }}>
-        {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
+      {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
+      <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
 
-        {/* ── DESKTOP FULL SIDEBAR (160px) ─────────────────────────── */}
-        <aside className="hidden lg:flex fixed left-0 top-0 h-full flex-col z-40"
-          style={{ width: 160, background: '#FFFFFF', borderRight: '1px solid #E2E8F0' }}>
-
-          {/* Logo */}
-          <div className="flex items-center gap-2.5 px-4 py-4 flex-shrink-0"
-            style={{ borderBottom: '1px solid #E2E8F0' }}>
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: '#E8F3EF' }}>
-              <img src="/oakie.png" alt="Oakit" className="w-5 h-5 rounded-lg object-cover" />
-            </div>
-            <div>
-              <p className="font-bold text-sm leading-none tracking-tight" style={{ color: '#0F172A' }}>
-                Oakit<span style={{ color: '#1F7A5A' }}>.ai</span>
-              </p>
-              <p className="text-[10px] font-medium mt-0.5" style={{ color: '#64748B' }}>Parent Portal</p>
-            </div>
+        {/* Desktop sidebar */}
+        <aside className="hidden lg:flex fixed left-0 top-0 h-full w-64 flex-col z-40"
+          style={{ background: 'linear-gradient(180deg, #0f2417 0%, #1a3c2e 100%)' }}>
+          <div className="px-6 py-5 border-b border-white/10">
+            <OakitLogo size="sm" variant="light" />
+            <p className="text-white/40 text-xs mt-1">Parent Portal</p>
           </div>
-
-          {/* Nav */}
-          <nav className="flex-1 flex flex-col gap-0.5 px-2 py-3 overflow-y-auto">
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
             {TABS.map(({ id, Icon, label }) => {
               const badge = id === 'messages' ? unreadMessages : id === 'notifications' ? unreadNotifs : 0;
-              const isActive = tab === id;
               return (
-                <button
-                  key={id}
-                  onClick={() => setTab(id)}
-                  aria-current={isActive ? 'page' : undefined}
-                  className="relative flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-left transition-all duration-150 active:scale-95 hover:bg-neutral-50 group"
-                  style={{ background: isActive ? '#E8F3EF' : 'transparent' }}>
-                  {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full" style={{ background: '#1F7A5A' }} />}
-                  <Icon size={16} strokeWidth={isActive ? 2 : 1.75} style={{ color: isActive ? '#166A4D' : '#64748B' }} className="flex-shrink-0" />
-                  <span className="text-xs font-medium flex-1" style={{ color: isActive ? '#166A4D' : '#475569' }}>{t(label)}</span>
-                  {badge > 0 && (
-                    <span className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white flex-shrink-0"
-                      style={{ background: '#EF4444' }}>{badge > 9 ? '9+' : badge}</span>
-                  )}
+                <button key={id} onClick={() => setTab(id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150 ${
+                    tab === id ? 'bg-white/15 text-white' : 'text-white/55 hover:bg-white/8 hover:text-white/85'
+                  }`}>
+                  <Icon size={18} className="shrink-0" />
+                  <span className="flex-1 text-left">{label}</span>
+                  {badge > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{badge}</span>}
+                  {tab === id && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />}
                 </button>
               );
             })}
           </nav>
-
-          {/* Active child card at bottom */}
-          {activeChild && (
-            <div className="px-2 pb-3 flex-shrink-0" style={{ borderTop: '1px solid #E2E8F0', paddingTop: 10 }}>
-              <button onClick={() => {}} className="w-full flex items-center gap-2 px-2 py-2 rounded-xl transition-all hover:bg-neutral-50 group">
-                <div className="relative flex-shrink-0">
-                  <div className="w-8 h-8 rounded-full overflow-hidden" style={{ border: '2px solid #E2E8F0' }}>
-                    <ChildAvatar child={activeChild} size="sm" token={token} onUploaded={url => setChildren(prev => prev.map(c => c.id === activeChildId ? { ...c, photo_url: url } : c))} />
-                  </div>
-                  <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white bg-emerald-500" />
-                </div>
-                <div className="flex-1 min-w-0 text-left">
-                  <p className="text-xs font-semibold truncate" style={{ color: '#0F172A' }}>{activeChild.name.split(' ')[0]}</p>
-                  <p className="text-[10px] truncate" style={{ color: '#64748B' }}>{activeChild.class_name} · {activeChild.section_label}</p>
-                </div>
-                <ChevronDown size={12} style={{ color: '#94A3B8' }} className="flex-shrink-0" />
-              </button>
+          {/* Child switcher in sidebar */}
+          {children.length > 0 && (
+            <div className="px-3 py-4 border-t border-white/10">
+              <p className="text-white/40 text-xs font-medium mb-2 px-1">YOUR CHILDREN</p>
+              <div className="space-y-1">
+                {children.map(child => (
+                  <button key={child.id} onClick={() => switchChild(child.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${activeChildId === child.id ? 'bg-white/15' : 'hover:bg-white/8'}`}>
+                    <ChildAvatar child={child} size="sm" token={token} onUploaded={(url) => setChildren(prev => prev.map(c => c.id === child.id ? { ...c, photo_url: url } : c))} />
+                    <div className="text-left min-w-0">
+                      <p className="text-white text-xs font-semibold truncate">{child.name.split(' ')[0]}</p>
+                      <p className="text-white/40 text-[10px]">{child.class_name} {child.section_label}</p>
+                    </div>
+                    {activeChildId === child.id && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-auto" />}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
-
-          {/* Sign out */}
-          <div className="px-2 pb-3 flex-shrink-0">
+          <div className="px-3 py-3 border-t border-white/10">
             <button onClick={() => { clearToken(); router.push('/login'); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all hover:bg-neutral-50 active:scale-95">
-              <LogOut size={15} strokeWidth={1.75} style={{ color: '#64748B' }} />
-              <span className="text-xs font-medium" style={{ color: '#64748B' }}>Log out</span>
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/40 hover:text-white/70 hover:bg-white/8 transition-colors text-sm">
+              <LogOut size={16} />
+              <span>Sign out</span>
             </button>
           </div>
         </aside>
 
-        {/* Main content — offset by 160px sidebar */}
-        <div className="lg:pl-40 flex flex-col flex-1" style={{ height: '100vh', overflow: 'hidden' }}>
-
-          {/* ── DESKTOP TOP BAR ── */}
-          <header className="hidden lg:flex items-center justify-between px-5 py-2.5 flex-shrink-0"
-            style={{ background: '#FFFFFF', borderBottom: '1px solid #E2E8F0' }}>
-            {/* Left — greeting */}
-            <div>
-              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>
-                {getGreeting()}, {(children[0]?.father_name || children[0]?.mother_name || getParentNameFromToken(token) || 'Parent').split(' ')[0]} 👋
-              </p>
-              {activeChild && (
-                <p className="text-xs" style={{ color: '#64748B' }}>
-                  Here's what's happening with {activeChild.name.split(' ')[0]} today.
-                </p>
-              )}
-            </div>
-            {/* Right — premium + bell + parent avatar */}
-            <div className="flex items-center gap-3">
-              <button onClick={() => router.push('/parent/premium')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:shadow-sm"
-                style={{ background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A' }}>
-                ✨ Premium
-              </button>
-              <button className="relative w-8 h-8 rounded-xl flex items-center justify-center transition-all hover:bg-neutral-100"
-                style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                <Bell size={15} strokeWidth={1.75} style={{ color: '#475569' }} />
-                {unreadNotifs > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
-                    style={{ background: '#EF4444' }}>{unreadNotifs > 9 ? '9+' : unreadNotifs}</span>
-                )}
-              </button>
-              {/* Parent avatar + name */}
-              <div className="flex items-center gap-2 pl-2" style={{ borderLeft: '1px solid #E2E8F0' }}>
-                {(() => {
-                  const parentName = children[0]?.father_name || children[0]?.mother_name || getParentNameFromToken(token) || 'Parent';
-                  return (
-                    <>
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-                        style={{ background: '#E8F3EF', color: '#1F7A5A' }}>
-                        {parentName.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="hidden xl:block">
-                        <p className="text-xs font-semibold leading-none" style={{ color: '#0F172A' }}>
-                          {parentName}
-                        </p>
-                        <p className="text-[10px] mt-0.5" style={{ color: '#64748B' }}>Parent</p>
-                      </div>
-                    </>
-                  );
-                })()}
-                <ChevronDown size={12} style={{ color: '#94A3B8' }} />
-              </div>
-            </div>
-          </header>
-
+        {/* Main content */}
+        <div className="lg:pl-64 flex flex-col min-h-screen">
           {/* Mobile header */}
-          <header className="lg:hidden px-4 pt-10 pb-4 relative overflow-hidden flex-shrink-0"
-            style={{ background: '#FFFFFF', borderBottom: '1px solid #E2E8F0' }}>
-            <div className="relative z-10 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: '#E8F3EF' }}>
-                  <img src="/oakie.png" alt="Oakie" className="w-6 h-6 rounded-lg object-cover" />
-                </div>
-                <div>
-                  <p className="font-bold text-sm leading-none" style={{ color: '#0F172A' }}>Oakit<span style={{ color: '#1F7A5A' }}>.ai</span></p>
-                  <p className="text-[11px] font-medium" style={{ color: '#64748B' }}>Parent Portal</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => router.push('/parent/premium')}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold"
-                  style={{ background: '#FEF9C3', color: '#92400E', border: '1px solid #FDE68A' }}>
-                  ✨ Premium
-                </button>
-                <button onClick={() => { clearToken(); router.push('/login'); }}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-neutral-100"
-                  style={{ color: '#64748B' }}>
-                  <LogOut size={14} />
-                </button>
-              </div>
+          <header className="lg:hidden text-white px-4 pt-8 pb-5 relative overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 60%, var(--brand-primary-light) 100%)' }}>
+            <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-white/5 pointer-events-none" />
+            <img src="/oakie.png" alt="" aria-hidden="true"
+              className="absolute right-3 bottom-0 w-20 h-auto object-contain pointer-events-none"
+              style={{ mixBlendMode: 'multiply', opacity: 0.6 }} />
+            <div className="relative z-10 flex items-center justify-between mb-4">
+              <OakitLogo size="sm" variant="light" />
+              <button onClick={() => { clearToken(); router.push('/login'); }} className="text-white/50 hover:text-white/80 text-xs transition-colors">
+                Sign out
+              </button>
             </div>
+            {/* Mobile child switcher */}
+            {children.length > 0 && (
+              <div className="relative z-10 pr-20">
+                {children.length === 1 ? (
+                  <div className="flex items-center gap-3 bg-white/12 rounded-2xl px-4 py-3 border border-white/10">
+                    <ChildAvatar child={children[0]} size="lg" token={token} onUploaded={(url) => setChildren(prev => prev.map(c => c.id === children[0].id ? { ...c, photo_url: url } : c))} />
+                    <div>
+                      <p className="text-white/55 text-xs">{children[0].class_name} · Section {children[0].section_label}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    {children.map(child => (
+                      <button key={child.id} onClick={() => switchChild(child.id)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl whitespace-nowrap shrink-0 border transition-all ${activeChildId === child.id ? 'bg-white text-neutral-900 border-white shadow-md' : 'bg-white/10 text-white/80 border-white/15'}`}>
+                        <ChildAvatar child={child} size="sm" token={token} onUploaded={(url) => setChildren(prev => prev.map(c => c.id === child.id ? { ...c, photo_url: url } : c))} />
+                        <div className="text-left">
+                          <p className={`text-xs font-semibold ${activeChildId === child.id ? 'text-neutral-900' : 'text-white'}`}>{child.name.split(' ')[0]}</p>
+                          <p className={`text-[10px] ${activeChildId === child.id ? 'text-neutral-500' : 'text-white/50'}`}>{child.class_name}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </header>
 
-          {/* Tab content + side panels */}
-          <div className="flex flex-1 overflow-hidden" style={{ background: '#F8FAFC' }}>
+          {/* Tab content */}
+          <main className="flex-1 overflow-y-auto pb-24 lg:pb-8">
+            {childLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 text-neutral-300 animate-spin" />
+              </div>
+            ) : (
+              <div className="p-4 lg:p-6 max-w-5xl mx-auto">
+                {tab === 'home' && <HomeTab feed={activeCache?.feed ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} announcements={announcements} onNoteClick={setNoteModal} onTabChange={setTab} token={token} onChildUpdate={(url) => setChildren(prev => prev.map(c => c.id === activeChildId ? { ...c, photo_url: url } : c))} />}
+                {tab === 'attendance' && <AttendanceTab data={activeCache?.attendance ?? null} />}
+                {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
+                {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
+                {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
+                {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
+                {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
+                {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
+              </div>
+            )}
+          </main>
 
-            {/* Main scrollable content */}
-            <main className="flex-1 min-w-0 overflow-y-auto pb-24 lg:pb-8">
-              {childLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <div className="text-center">
-                    <img src="/oakie.png" alt="Oakie" className="w-12 h-auto mx-auto mb-3 opacity-70" />
-                    <Loader2 className="w-6 h-6 text-green-400 animate-spin mx-auto" />
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4 lg:p-6 w-full max-w-xl lg:max-w-none tab-content">
-                  {tab === 'home' && <HomeTab feed={activeCache?.feed ?? null} progress={activeCache?.progress ?? null} attendance={activeCache?.attendance ?? null} unreadMessages={unreadMessages} unreadNotifs={unreadNotifs} activeChild={activeChild} announcements={announcements} onNoteClick={setNoteModal} onTabChange={setTab} token={token} onChildUpdate={url => setChildren(prev => prev.map(c => c.id === activeChildId ? { ...c, photo_url: url } : c))} />}
-                  {/* Mobile-only class feed — shown below home tab content */}
-                  {tab === 'home' && (
-                    <div className="lg:hidden mt-4">
-                      <div className="rounded-xl overflow-hidden"
-                        style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
-                        <div className="flex items-center justify-between px-4 py-3"
-                          style={{ borderBottom: '1px solid #E2E8F0' }}>
-                          <div>
-                            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>📸 Class Feed</p>
-                            <p className="text-xs" style={{ color: '#64748B' }}>Photos from school</p>
-                          </div>
-                          <a href="/parent/feed"
-                            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
-                            style={{ background: '#E8F3EF', color: '#166A4D' }}>
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                            View all
-                          </a>
-                        </div>
-                        <MobileFeedPreview token={token} />
-                      </div>
-                    </div>
-                  )}
-                  {tab === 'attendance' && <AttendanceTab data={activeCache?.attendance ?? null} />}
-                  {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
-                  {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
-                  {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} token={token} voiceEnabled={voiceEnabled} voiceLanguage={translationSettings.enabled ? translationSettings.targetLanguage : 'en'} />}
-                  {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
-                  {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
-                  {tab === 'fees' && <FeesTab token={token} activeChild={activeChild} />}
-                  {tab === 'reports' && <ReportsTab token={token} activeChild={activeChild} />}
-                  {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
-                </div>
-              )}
-            </main>
+          {/* Mobile bottom nav */}
+          <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-50 flex items-center justify-around px-1"
+            style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))', paddingTop: '8px', boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
+            {TABS.map(({ id, Icon, label }) => {
+              const badge = id === 'messages' ? unreadMessages : id === 'notifications' ? unreadNotifs : 0;
+              const isActive = tab === id;
+              return (
+                <button key={id} onClick={() => setTab(id)}
+                  className={`relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[48px] min-h-[44px] transition-colors ${isActive ? 'text-emerald-600' : 'text-neutral-400'}`}>
+                  <Icon size={20} className={isActive ? 'scale-110 transition-transform' : ''} />
+                  <span className={`text-[9px] font-semibold ${isActive ? 'text-emerald-600' : 'text-neutral-400'}`}>{t(label)}</span>
+                  {badge > 0 && <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{badge}</span>}
+                  {isActive && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-500" />}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+    </TranslationContext.Provider>
+  );
+}
 
-            {/* Photo feed column — desktop only */}
-            <aside className="hidden lg:flex flex-col flex-shrink-0 overflow-hidden"
-              style={{ width: 'clamp(240px, 22vw, 320px)', borderLeft: '1px solid rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(20px)' }}>
-              <ClassFeedColumn token={token} />
-            </aside>
+// ─── Note Modal ───────────────────────────────────────────────────────────────
+function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; onClose: () => void }) {
+  const [downloading, setDownloading] = useState(false);
+  const daysLeft = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
 
-            {/* Right panel — desktop only */}
-            <aside className="hidden lg:flex flex-col flex-shrink-0 overflow-y-auto p-4 space-y-4"
-              style={{ width: 'clamp(180px, 15vw, 220px)', background: '#FFFFFF', borderLeft: '1px solid #E2E8F0' }}>
-              <ParentRightPanel activeChild={activeChild} progress={activeCache?.progress ?? null} token={token} />
-              {/* ── FEES DUE CARD ── */}
-              <div className="rounded-xl overflow-hidden"
-                style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                <div className="px-3 py-2.5 flex items-center gap-2"
-                  style={{ borderBottom: '1px solid #E2E8F0', background: '#F1F5F9' }}>
-                  <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{ background: '#CBD5E1' }}>
-                    <CreditCard size={12} strokeWidth={2} style={{ color: '#fff' }} />
-                  </div>
-                  <p className="text-xs font-semibold" style={{ color: '#64748B' }}>Fees Due</p>
-                </div>
-                <div className="px-3 py-3 text-center">
-                  <p className="text-xs" style={{ color: '#94A3B8' }}>Not set yet</p>
-                  <button
-                    onClick={() => setTab('fees')}
-                    className="mt-2 w-full py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-                    style={{ background: '#F1F5F9', color: '#64748B' }}>
-                    View Fees →
-                  </button>
+  async function download() {
+    if (downloading || !note.file_name) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/parent/notes/${note.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { alert('File not available or expired.'); return; }
+      // If server redirected to Supabase, open in new tab
+      if (res.url && res.url.startsWith('https://') && !res.url.includes('localhost')) {
+        window.open(res.url, '_blank');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = note.file_name!; a.click();
+      URL.revokeObjectURL(url);
+    } finally { setDownloading(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative z-10 bg-white w-full lg:w-[520px] rounded-t-3xl lg:rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="lg:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-neutral-200" /></div>
+        <div className="px-5 pb-6 pt-3 lg:pt-5">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-base font-semibold text-neutral-800">📋 Teacher Note</p>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-500">✕</button>
+          </div>
+          {note.note_text && <div className="bg-neutral-50 rounded-xl p-4 mb-4"><p className="text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">{note.note_text}</p></div>}
+          {note.file_name && (
+            <div className="border border-neutral-200 rounded-xl p-4 mb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center text-xl">📎</div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{note.file_name}</p>
+                  {note.file_size && <p className="text-xs text-neutral-400">{Math.round(note.file_size / 1024)} KB</p>}
                 </div>
               </div>
-            </aside>
+              <button onClick={download} disabled={downloading}
+                className="w-full py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                {downloading ? <Loader2 size={16} className="animate-spin" /> : '↓'} Download File
+              </button>
+            </div>
+          )}
+          <div className={`rounded-xl px-4 py-3 text-xs ${daysLeft <= 3 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+            {daysLeft <= 0 ? '⚠ Expires today — download now.' : `⚠ Auto-deleted on ${note.expires_at.split('T')[0]} (${daysLeft} day${daysLeft === 1 ? '' : 's'} left). Save a local copy.`}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          {/* Mobile bottom nav — 5 tabs + More drawer */}
-          <MobileBottomNav
-            tab={tab}
-            setTab={setTab}
-            unreadMessages={unreadMessages}
-            unreadNotifs={unreadNotifs}
-            t={t}
-          />
+// ─── Home Tab — Bento Grid ────────────────────────────────────────────────────
+function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate }: {
+  feed: ChildFeed | null; progress: ProgressData | null; activeChild: Child | null;
+  announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
+  token: string; onChildUpdate: (url: string) => void;
+}) {
+  if (!activeChild) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <User size={48} className="text-neutral-300 mb-3" />
+      <p className="text-neutral-500 font-medium">No child selected</p>
+    </div>
+  );
+
+  const att = feed?.attendance;
+  const attColor = !att ? 'text-neutral-500' : att.status === 'present' && !att.is_late ? 'text-emerald-700' : att.status === 'present' ? 'text-amber-700' : 'text-red-600';
+  const attBg = !att ? 'bg-neutral-50' : att.status === 'present' && !att.is_late ? 'bg-emerald-50' : att.status === 'present' ? 'bg-amber-50' : 'bg-red-50';
+  const attLabel = !att ? 'Not marked' : att.status === 'present' && att.is_late ? '⏰ Late' : att.status === 'present' ? '✓ Present' : '✗ Absent';
+  const pct = progress?.coverage_pct ?? 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Child profile card — prominent at top */}
+      <div className="bg-gradient-to-r from-[#0f2417] to-[#1e5c3a] rounded-2xl p-5 flex items-center gap-4">
+        {/* Large avatar with upload */}
+        <div className="shrink-0">
+          <ChildAvatar child={activeChild} size="lg" token={token} onUploaded={onChildUpdate} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-white font-bold text-lg leading-tight truncate">{activeChild.name}</p>
+          <p className="text-white/60 text-sm mt-0.5">{activeChild.class_name} · Section {activeChild.section_label}</p>
+          <p className="text-white/40 text-xs mt-2">Tap photo to preview or change</p>
+        </div>
+        {/* Today's status badge + translate link */}
+        <div className="shrink-0 flex flex-col items-end gap-1.5">
+          <div className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
+            !att ? 'bg-white/10 text-white/60' :
+            att.status === 'present' && !att.is_late ? 'bg-emerald-500/20 text-emerald-300' :
+            att.status === 'present' ? 'bg-amber-500/20 text-amber-300' :
+            'bg-red-500/20 text-red-300'
+          }`}>
+            {attLabel}
+          </div>
+          <button
+            onClick={() => onTabChange('settings')}
+            className="text-[10px] text-white/40 hover:text-white/70 underline underline-offset-2 transition-colors flex items-center gap-0.5"
+          >
+            🌐 Translate
+          </button>
         </div>
       </div>
 
-      {/* Premium welcome modal — shown once per session after login */}
-      {showPremiumModal && (
-        <PremiumWelcomeModal onClose={() => setShowPremiumModal(false)} />
+      {/* Bento grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-12 gap-3">
+        {/* Attendance card */}
+        <div className={`${attBg} rounded-2xl p-4 border border-neutral-100 col-span-1 lg:col-span-3`}>
+          <div className="flex items-center gap-2 mb-2">
+            <Calendar size={16} className="text-neutral-400" />
+            <p className="text-xs font-medium text-neutral-500">Attendance</p>
+          </div>
+          <p className={`text-xl font-bold ${attColor}`}>{attLabel}</p>
+          {att?.arrived_at && <p className="text-xs text-neutral-400 mt-1">Arrived {att.arrived_at.slice(0, 5)}</p>}
+          {!att && <p className="text-xs text-neutral-400 mt-1">Not yet marked</p>}
+        </div>
+
+        {/* Progress card */}
+        <div className="bg-[#0f2417] rounded-2xl p-4 col-span-1 lg:col-span-3 relative overflow-hidden">
+          <div className="absolute -right-4 -bottom-4 opacity-10">
+            <TrendingUp size={80} className="text-white" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp size={16} className="text-emerald-400" />
+              <p className="text-xs font-medium text-white/60">Progress</p>
+            </div>
+            <p className="text-3xl font-black text-white">{pct}%</p>
+            <p className="text-xs text-white/50 mt-0.5">syllabus covered</p>
+            <div className="w-full bg-white/10 h-1.5 rounded-full mt-2">
+              <div className="bg-emerald-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Homework card */}
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <BookOpen size={16} className="text-amber-500" />
+              <p className="text-sm font-semibold text-neutral-800">Homework</p>
+            </div>
+            <button onClick={() => onTabChange('progress')}
+              className="text-xs text-primary-600 font-medium hover:underline">History →</button>
+          </div>
+          {feed?.homework ? (
+            <p className="text-sm text-neutral-700 leading-relaxed line-clamp-3 italic border-l-4 border-amber-200 pl-3">
+              "{feed.homework.formatted_text || feed.homework.raw_text}"
+            </p>
+          ) : (
+            <div className="flex items-center gap-2 text-emerald-600">
+              <CheckCircle2 size={16} />
+              <p className="text-sm font-medium">No pending homework — great job!</p>
+            </div>
+          )}
+        </div>
+
+        {/* Today's learning */}
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={16} className="text-primary-600" />
+            <p className="text-sm font-semibold text-neutral-800">Today&apos;s Learning</p>
+          </div>
+          {feed?.special_label ? (
+            <div className="bg-blue-50 rounded-xl px-3 py-2.5"><p className="text-sm text-blue-700 font-medium">{feed.special_label}</p></div>
+          ) : feed?.topics && feed.topics.length > 0 ? (
+            <div className="space-y-2">
+              {feed.topics.map((t, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{i + 1}</span>
+                  <p className="text-sm text-neutral-700">{t}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400">No topics recorded yet for today</p>
+          )}
+        </div>
+
+        {/* Need help CTA */}
+        <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 col-span-2 lg:col-span-4 flex flex-col justify-between">
+          <div>
+            <p className="font-bold text-emerald-900 text-sm mb-1">Need Help?</p>
+            <p className="text-xs text-emerald-700/80 leading-snug">Ask Oakie AI or message {activeChild.name.split(' ')[0]}&apos;s teacher directly.</p>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <button onClick={() => onTabChange('chat')} className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-700 transition-colors">
+              <Sparkles size={14} /> Oakie
+            </button>
+            <button onClick={() => onTabChange('messages')} className="flex-1 bg-white text-emerald-800 py-2.5 rounded-xl text-xs font-bold border border-emerald-200 flex items-center justify-center gap-1.5 hover:bg-emerald-50 transition-colors">
+              <MessageSquare size={14} /> Teacher
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Child Journey */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <BookOpen size={16} className="text-primary-500" />
+            <p className="text-sm font-semibold text-neutral-800">{activeChild.name.split(' ')[0]}'s Journey</p>
+          </div>
+        </div>
+        <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
+          Daily highlights and special moments recorded by {activeChild.name.split(' ')[0]}'s teacher.
+        </p>
+        <a href={`/parent/journey?student_id=${activeChild.id}`}
+          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-colors">
+          <BookOpen size={14} /> View {activeChild.name.split(' ')[0]}'s Journey
+        </a>
+      </div>
+
+      {/* Teacher notes */}
+      {feed?.notes && feed.notes.length > 0 && (
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+          <p className="text-sm font-semibold text-neutral-800 mb-3">📋 Teacher Notes</p>
+          <div className="space-y-2">
+            {feed.notes.map(note => {
+              const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
+              return (
+                <button key={note.id} onClick={() => onNoteClick(note)}
+                  className="w-full text-left bg-neutral-50 hover:bg-neutral-100 rounded-xl px-3 py-3 transition-colors border border-neutral-100">
+                  {note.note_text && <p className="text-sm text-neutral-700 line-clamp-2 mb-1">{note.note_text}</p>}
+                  {note.file_name && <div className="flex items-center gap-2"><span>📎</span><p className="text-xs font-medium text-neutral-700 truncate flex-1">{note.file_name}</p><span className="text-xs text-primary-600 font-medium">Download ↓</span></div>}
+                  <p className={`text-xs mt-1 ${dl <= 3 ? 'text-red-500 font-medium' : 'text-neutral-400'}`}>{dl <= 0 ? 'Expires today' : `Expires in ${dl} day${dl === 1 ? '' : 's'}`}</p>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-amber-600 mt-3">⚠ Notes auto-delete after expiry. Download attachments you need to keep.</p>
+        </div>
       )}
-    </TranslationContext.Provider>
+
+      {/* Announcements */}
+      {announcements.length > 0 && (
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+          <p className="text-sm font-semibold text-neutral-800 mb-3">📢 School Announcements</p>
+          <div className="space-y-3">
+            {announcements.slice(0, 3).map(a => (
+              <div key={a.id} className="border-l-4 border-primary-400 pl-3">
+                <p className="text-sm font-medium text-neutral-800">{a.title}</p>
+                <p className="text-xs text-neutral-600 mt-0.5 line-clamp-2">{a.body}</p>
+                <p className="text-xs text-neutral-400 mt-1">By {a.author_name} · {a.created_at.split('T')[0]}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Attendance Tab ───────────────────────────────────────────────────────────
+function AttendanceTab({ data }: { data: AttendanceData | null }) {
+  if (!data) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <Calendar size={48} className="text-neutral-300 mb-3" />
+      <p className="text-neutral-500 font-medium">No attendance data yet</p>
+    </div>
+  );
+  const { stats, attendance_pct, punctuality_pct, records } = data;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`${attendance_pct >= 75 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'} border rounded-2xl p-4`}>
+          <p className="text-xs text-neutral-500 mb-1">Attendance</p>
+          <p className={`text-3xl font-black ${attendance_pct >= 75 ? 'text-emerald-700' : 'text-red-600'}`}>{attendance_pct}%</p>
+          <p className="text-xs text-neutral-400 mt-1">{stats.present} present · {stats.absent} absent</p>
+        </div>
+        <div className={`${punctuality_pct >= 80 ? 'bg-blue-50 border-blue-100' : 'bg-amber-50 border-amber-100'} border rounded-2xl p-4`}>
+          <p className="text-xs text-neutral-500 mb-1">Punctuality</p>
+          <p className={`text-3xl font-black ${punctuality_pct >= 80 ? 'text-blue-700' : 'text-amber-700'}`}>{punctuality_pct}%</p>
+          <p className="text-xs text-neutral-400 mt-1">{stats.on_time} on time · {stats.late} late</p>
+        </div>
+      </div>
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-3">Last 60 Days</p>
+        <div className="flex flex-wrap gap-1.5">
+          {records.map((r, i) => {
+            const day = parseInt(r.attend_date.split('T')[0].split('-')[2]);
+            return (
+              <div key={i} title={r.attend_date.split('T')[0]}
+                className={`w-8 h-8 rounded-lg flex flex-col items-center justify-center font-medium ${r.status === 'present' && r.is_late ? 'bg-amber-100 text-amber-700' : r.status === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                <span className="text-[10px] leading-none">{day}</span>
+                <span className="text-[8px] leading-none mt-0.5">{r.status === 'present' && r.is_late ? '⏰' : r.status === 'present' ? '✓' : '✗'}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-4 mt-3 text-xs text-neutral-400">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-100 inline-block" />Present</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-100 inline-block" />Late</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-100 inline-block" />Absent</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Progress Tab ─────────────────────────────────────────────────────────────
+function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; activeChild: Child | null; token: string }) {
+  const [milestoneData, setMilestoneData] = useState<{ completion_pct: number; achieved: number; total: number; class_level: string } | null>(null);
+  const [hwHistory, setHwHistory] = useState<HomeworkRecord[]>([]);
+  const [hwLoading, setHwLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activeChild?.id || !token) return;
+    apiGet<any>(`/api/v1/teacher/milestones/${activeChild.id}`, token)
+      .then(d => setMilestoneData({ completion_pct: d.completion_pct, achieved: d.achieved, total: d.total, class_level: d.class_level }))
+      .catch(() => {});
+    // Load homework history
+    setHwLoading(true);
+    apiGet<HomeworkRecord[]>(`/api/v1/parent/homework/history?student_id=${activeChild.id}`, token)
+      .then(d => setHwHistory(d || []))
+      .catch(() => {})
+      .finally(() => setHwLoading(false));
+  }, [activeChild?.id]);
+
+  if (!data) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <TrendingUp size={48} className="text-neutral-300 mb-3" />
+      <p className="text-neutral-500 font-medium">No progress data yet</p>
+    </div>
+  );
+  const pct = data.coverage_pct;
+  const strokeColor = pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
+  const r = 50; const circ = 2 * Math.PI * r;
+
+  const missedCount = hwHistory.filter(h => h.status !== 'completed').length;
+  const completedCount = hwHistory.filter(h => h.status === 'completed').length;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-[#0f2417] rounded-2xl p-6 flex flex-col items-center">
+        <div className="relative w-36 h-36 mb-4">
+          <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="12" />
+            <circle cx="60" cy="60" r={r} fill="none" stroke={strokeColor} strokeWidth="12"
+              strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)} strokeLinecap="round"
+              style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-3xl font-black text-white">{pct}%</span>
+            <span className="text-xs text-white/50">covered</span>
+          </div>
+        </div>
+        {data.has_curriculum ? (
+          <>
+            <p className="font-bold text-white mb-1">{activeChild?.name.split(' ')[0]}&apos;s Curriculum</p>
+            <p className="text-xs text-white/50">{data.covered} of {data.total_chunks} topics completed</p>
+          </>
+        ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
+      </div>
+      {milestoneData && (
+        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-neutral-800">🏆 Milestones</p>
+            <span className="text-emerald-600 font-bold text-sm">{milestoneData.completion_pct}%</span>
+          </div>
+          <div className="w-full bg-neutral-100 rounded-full h-2.5 mb-2">
+            <div className="h-2.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${milestoneData.completion_pct}%` }} />
+          </div>
+          <p className="text-xs text-neutral-400">{milestoneData.achieved} of {milestoneData.total} {milestoneData.class_level} milestones achieved</p>
+        </div>
+      )}
+
+      {/* Homework History */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-neutral-800">📚 Homework History</p>
+          {hwHistory.length > 0 && (
+            <div className="flex gap-2 text-xs">
+              <span className="text-emerald-600 font-medium">{completedCount} done</span>
+              {missedCount > 0 && <span className="text-red-500 font-medium">{missedCount} missed</span>}
+            </div>
+          )}
+        </div>
+        {hwLoading ? (
+          <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-neutral-300" /></div>
+        ) : hwHistory.length === 0 ? (
+          <div className="flex items-center gap-2 text-emerald-600 py-2">
+            <CheckCircle2 size={16} />
+            <p className="text-sm font-medium">No homework records yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {hwHistory.map((hw, i) => {
+              const rawDate = (hw.homework_date || '').toString().split('T')[0];
+              const dateStr = rawDate
+                ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+                : '—';
+              const statusConfig = {
+                completed: { label: '✓ Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+                partial: { label: '½ Partial', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
+                not_submitted: { label: '✗ Not submitted', cls: 'bg-red-50 text-red-600 border-red-100' },
+              }[hw.status] || { label: hw.status, cls: 'bg-neutral-50 text-neutral-600 border-neutral-100' };
+              return (
+                <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
+                  <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
+                    <div className="flex items-center gap-2">
+                      <ChevronRight size={14} className="shrink-0 transition-transform group-open:rotate-90" />
+                      <span className="text-xs font-medium">{dateStr}</span>
+                    </div>
+                    <span className="text-xs font-bold">{statusConfig.label}</span>
+                  </summary>
+                  <div className="px-3 pb-3 pt-1 border-t border-current/10">
+                    {hw.homework_text ? (
+                      <p className="text-xs leading-relaxed whitespace-pre-wrap">{hw.homework_text}</p>
+                    ) : (
+                      <p className="text-xs opacity-50 italic">No homework text recorded for this date.</p>
+                    )}
+                    {hw.teacher_note && (
+                      <p className="text-xs mt-2 italic opacity-70 border-t border-current/10 pt-2">
+                        Teacher note: {hw.teacher_note}
+                      </p>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Chat Tab ─────────────────────────────────────────────────────────────────
+function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
+  msgs: ChatMsg[]; input: string; loading: boolean;
+  onInput: (v: string) => void; onSend: () => void;
+  endRef: React.RefObject<HTMLDivElement>; childName: string;
+}) {
+  function handleKey(e: React.KeyboardEvent) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }
+  return (
+    <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+      <div className="bg-[#0f2417] px-5 py-4 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-xl">🌳</div>
+        <div>
+          <p className="text-white font-bold text-sm">Oakie AI</p>
+          <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-bold uppercase tracking-widest">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" /> Active
+          </div>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-50/50">
+        {msgs.map((m, i) => (
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {m.role === 'ai' && <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2 mt-0.5">🌳</div>}
+            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === 'user' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>{m.text}</div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2">🌳</div>
+            <div className="bg-white rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm border border-neutral-100">
+              <div className="flex gap-1 items-center h-4">
+                {[0, 150, 300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+      {msgs.length <= 1 && (
+        <div className="px-4 pb-2 flex gap-2 overflow-x-auto scrollbar-hide">
+          {[`What did ${childName} study today?`, `How is ${childName}'s attendance?`, `Any homework today?`].map(q => (
+            <button key={q} onClick={() => onInput(q)} className="shrink-0 text-xs bg-white border border-neutral-200 text-neutral-600 px-3 py-2 rounded-full hover:bg-neutral-50 transition-colors whitespace-nowrap">{q}</button>
+          ))}
+        </div>
+      )}
+      <div className="px-4 py-3 bg-white border-t border-neutral-100">
+        <div className="flex gap-2 bg-neutral-50 rounded-2xl border border-neutral-200 p-2">
+          <textarea value={input} onChange={e => onInput(e.target.value)} onKeyDown={handleKey}
+            placeholder={`Ask about ${childName}...`} maxLength={300} rows={1}
+            className="flex-1 resize-none text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none px-2 py-1.5 bg-transparent leading-snug" style={{ maxHeight: 80 }} />
+          <button onClick={onSend} disabled={!input.trim() || loading}
+            className="w-9 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 flex items-center justify-center text-white transition-all active:scale-95 shrink-0 self-end">
+            <Send size={16} />
+          </button>
+        </div>
+        {input.length > 250 && <p className="text-xs text-neutral-400 mt-1 text-right">{input.length}/300</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Messages Tab ─────────────────────────────────────────────────────────────
+function MessagesTab({ threads, token, onRefresh }: { threads: ParentMessage[]; token: string; onRefresh: () => void }) {
+  const [active, setActive] = useState<ParentMessage | null>(null);
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [reply, setReply] = useState('');
+  const [sending, setSending] = useState(false);
+  const [showNewMsg, setShowNewMsg] = useState(false);
+  const [teachers, setTeachers] = useState<{ teacher_id: string; teacher_name: string; student_id: string; student_name: string; class_name: string }[]>([]);
+  const [selectedTeacher, setSelectedTeacher] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState('');
+  const [newMsgBody, setNewMsgBody] = useState('');
+  const [sendingNew, setSendingNew] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
+
+  useEffect(() => {
+    if (showNewMsg && teachers.length === 0) {
+      apiGet<any[]>('/api/v1/parent/teachers', token).then(setTeachers).catch(() => {});
+    }
+  }, [showNewMsg]);
+
+  async function openThread(t: ParentMessage) {
+    setActive(t);
+    try { const data = await apiGet<any[]>(`/api/v1/parent/messages/${t.teacher_id}/${t.student_id}`, token); setMsgs(data); onRefresh(); } catch {}
+  }
+
+  async function sendReply() {
+    if (!reply.trim() || !active || sending) return;
+    setSending(true);
+    try {
+      await apiPost(`/api/v1/parent/messages/${active.teacher_id}/${active.student_id}/reply`, { body: reply.trim() }, token);
+      setReply('');
+      const data = await apiGet<any[]>(`/api/v1/parent/messages/${active.teacher_id}/${active.student_id}`, token);
+      setMsgs(data);
+    } catch {}
+    finally { setSending(false); }
+  }
+
+  async function sendNewMessage() {
+    if (!newMsgBody.trim() || !selectedTeacher || !selectedStudent || sendingNew) return;
+    setSendingNew(true);
+    try {
+      await apiPost(`/api/v1/parent/messages/${selectedTeacher}/${selectedStudent}/reply`, { body: newMsgBody.trim() }, token);
+      setShowNewMsg(false); setNewMsgBody(''); setSelectedTeacher(''); setSelectedStudent('');
+      onRefresh();
+      // Open the thread
+      const t = teachers.find(t => t.teacher_id === selectedTeacher && t.student_id === selectedStudent);
+      if (t) {
+        const thread: ParentMessage = { teacher_id: t.teacher_id, student_id: t.student_id, teacher_name: t.teacher_name, student_name: t.student_name, last_message: newMsgBody, last_sent_at: new Date().toISOString(), last_sender: 'parent', unread_count: 0 };
+        await openThread(thread);
+      }
+    } catch {}
+    finally { setSendingNew(false); }
+  }
+
+  if (active) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-4 py-3 bg-[#0f2417] text-white">
+          <button onClick={() => setActive(null)} className="text-white/60 hover:text-white"><ChevronRight size={20} className="rotate-180" /></button>
+          <div><p className="font-bold text-sm">{active.teacher_name}</p><p className="text-xs text-white/50">{active.student_name}</p></div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-50/50">
+          {msgs.length === 0 && (
+            <div className="text-center py-8 text-neutral-400 text-sm">No messages yet. Send the first message below.</div>
+          )}
+          {msgs.map((m, i) => (
+            <div key={i} className={`flex ${m.sender_role === 'parent' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${m.sender_role === 'parent' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>
+                <p>{m.body}</p>
+                <p className={`text-[10px] mt-1 ${m.sender_role === 'parent' ? 'text-white/60' : 'text-neutral-400'}`}>{new Date(m.sent_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            </div>
+          ))}
+          <div ref={endRef} />
+        </div>
+        <div className="px-4 py-3 bg-white border-t border-neutral-100 flex gap-2">
+          <input value={reply} onChange={e => setReply(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendReply(); }}
+            placeholder="Type a message..." maxLength={1000}
+            className="flex-1 px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30" />
+          <button onClick={sendReply} disabled={!reply.trim() || sending}
+            className="px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center gap-1.5 min-w-[52px] justify-center">
+            {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-neutral-800">Messages</h2>
+        <button onClick={() => setShowNewMsg(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors">
+          <MessageSquare size={16} /> New Message
+        </button>
+      </div>
+
+      {/* New message form */}
+      {showNewMsg && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-neutral-800">Message a Teacher</p>
+            <button onClick={() => setShowNewMsg(false)} className="text-neutral-400 hover:text-neutral-600">✕</button>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Select Teacher & Child</label>
+            <select value={`${selectedTeacher}|${selectedStudent}`}
+              onChange={e => { const [tid, sid] = e.target.value.split('|'); setSelectedTeacher(tid); setSelectedStudent(sid); }}
+              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30">
+              <option value="|">Select teacher...</option>
+              {teachers.map(t => (
+                <option key={`${t.teacher_id}|${t.student_id}`} value={`${t.teacher_id}|${t.student_id}`}>
+                  {t.teacher_name} — {t.student_name} ({t.class_name})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-neutral-600 mb-1 block">Message</label>
+            <textarea value={newMsgBody} onChange={e => setNewMsgBody(e.target.value.slice(0, 1000))}
+              rows={3} placeholder="Write your message to the teacher..."
+              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowNewMsg(false)} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50">Cancel</button>
+            <button onClick={sendNewMessage} disabled={!newMsgBody.trim() || !selectedTeacher || sendingNew}
+              className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
+              {sendingNew ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Send
+            </button>
+          </div>
+        </div>
+      )}
+
+      {threads.length === 0 && !showNewMsg ? (
+        <div className="bg-white rounded-2xl p-10 text-center border border-neutral-100 shadow-sm">
+          <MessageSquare size={40} className="text-neutral-300 mx-auto mb-3" />
+          <p className="text-neutral-500 font-medium">No messages yet</p>
+          <p className="text-xs text-neutral-400 mt-1 mb-4">Start a conversation with your child&apos;s teacher</p>
+          <button onClick={() => setShowNewMsg(true)}
+            className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
+            Send First Message
+          </button>
+        </div>
+      ) : threads.map(t => (
+        <button key={`${t.teacher_id}-${t.student_id}`} onClick={() => openThread(t)}
+          className="w-full bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm text-left flex items-start gap-3 hover:shadow-md transition-all">
+          <div className="w-11 h-11 rounded-full bg-primary-100 flex items-center justify-center font-bold text-primary-700 shrink-0">{t.teacher_name?.[0] ?? 'T'}</div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between"><p className="font-bold text-neutral-800 text-sm">{t.teacher_name}</p><p className="text-xs text-neutral-400">{t.last_sent_at?.split('T')[0]}</p></div>
+            <p className="text-xs text-neutral-500">{t.student_name}</p>
+            <p className="text-xs text-neutral-400 truncate mt-0.5">{t.last_message}</p>
+          </div>
+          {Number(t.unread_count) > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{t.unread_count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Notifications Tab ────────────────────────────────────────────────────────
+function NotificationsTab({ notifications, announcements, onRead }: { notifications: Notification[]; announcements: Announcement[]; onRead: (id: string) => void }) {
+  return (
+    <div className="space-y-5">
+      {announcements.length > 0 && (
+        <div>
+          <h2 className="text-lg font-bold text-neutral-800 mb-3">📢 Announcements</h2>
+          <div className="space-y-3">
+            {announcements.map(a => (
+              <div key={a.id} className="bg-white rounded-2xl p-4 border-l-4 border-primary-400 shadow-sm">
+                <p className="font-bold text-neutral-800 text-sm">{a.title}</p>
+                <p className="text-sm text-neutral-600 mt-1">{a.body}</p>
+                <p className="text-xs text-neutral-400 mt-2">By {a.author_name} · {a.created_at.split('T')[0]}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
+        <h2 className="text-lg font-bold text-neutral-800 mb-3">🔔 Updates</h2>
+        {notifications.length === 0 ? (
+          <div className="bg-white rounded-2xl p-10 text-center border border-neutral-100 shadow-sm">
+            <Bell size={40} className="text-neutral-300 mx-auto mb-3" />
+            <p className="text-neutral-500 font-medium">You&apos;re all caught up!</p>
+          </div>
+        ) : notifications.map(n => (
+          <div key={n.id} className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm mb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div><p className="font-bold text-neutral-800 text-sm">{n.section_name}</p><p className="text-xs text-neutral-500 mt-0.5">{n.completion_date.split('T')[0]} · {n.chunks_covered} topics covered</p></div>
+              <button onClick={() => onRead(n.id)} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">Dismiss</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InsightsTab({ insights, comparisons, activeChild }: { insights: ParentInsights | null; comparisons: ChildComparison[]; activeChild: Child | null }) {
+  const { t } = useTranslation();
+  if (!insights || !activeChild) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-neutral-300 animate-spin" />
+      </div>
+    );
+  }
+
+  const getStatusColor = (status: Goal['status']) => {
+    switch (status) {
+      case 'completed': return 'text-green-600 bg-green-50';
+      case 'in_progress': return 'text-blue-600 bg-blue-50';
+      case 'overdue': return 'text-red-600 bg-red-50';
+      default: return 'text-neutral-600 bg-neutral-50';
+    }
+  };
+
+  const getStatusIcon = (status: Goal['status']) => {
+    switch (status) {
+      case 'completed': return '✅';
+      case 'in_progress': return '🔄';
+      case 'overdue': return '⚠️';
+      default: return '⏳';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Progress Predictions */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <Target className="w-6 h-6 text-emerald-600" />
+          <h2 className="text-xl font-bold text-neutral-800">{t('Progress Predictions')}</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-emerald-800">{t('Next Week Attendance')}</span>
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-700">{insights.predictions.nextWeekAttendance}%</div>
+            <div className="text-xs text-emerald-600 mt-1">Predicted attendance rate</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-blue-800">End of Month Progress</span>
+              <BarChart3 className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="text-2xl font-bold text-blue-700">{insights.predictions.endOfMonthProgress}%</div>
+            <div className="text-xs text-blue-600 mt-1">Expected academic progress</div>
+          </div>
+        </div>
+
+        {insights.predictions.areasNeedingAttention.length > 0 && (
+          <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-amber-800 mb-2">Areas Needing Attention</h3>
+                <ul className="text-sm text-amber-700 space-y-1">
+                  {insights.predictions.areasNeedingAttention.map((area, idx) => (
+                    <li key={idx}>• {area}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Goal Setting */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <Target className="w-6 h-6 text-purple-600" />
+          <h2 className="text-xl font-bold text-neutral-800">Goal Setting</h2>
+        </div>
+
+        {insights.goals && (
+          <div className="space-y-4">
+            {Object.entries(insights.goals).map(([category, goals]) => (
+              <div key={category}>
+                <h3 className="font-semibold text-neutral-700 mb-3 capitalize flex items-center gap-2">
+                  {category === 'academic' && <BookOpen className="w-4 h-4" />}
+                  {category === 'behavioral' && <User className="w-4 h-4" />}
+                  {category === 'attendance' && <Calendar className="w-4 h-4" />}
+                  {category} Goals
+                </h3>
+                <div className="space-y-3">
+                  {goals.map(goal => (
+                    <div key={goal.id} className="border border-neutral-200 rounded-xl p-4 hover:bg-neutral-50 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-semibold text-neutral-800">{goal.title}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(goal.status)}`}>
+                              {getStatusIcon(goal.status)} {goal.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-neutral-600 mb-2">{goal.description}</p>
+                          <div className="flex items-center gap-4 text-xs text-neutral-500">
+                            <span>Target: {goal.target}</span>
+                            <span>Current: {goal.current}</span>
+                            <span>Due: {new Date(goal.deadline).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <div className="flex justify-between text-xs text-neutral-600 mb-1">
+                          <span>Progress</span>
+                          <span>{goal.current} / {goal.target}</span>
+                        </div>
+                        <div className="w-full bg-neutral-200 rounded-full h-2">
+                          <div
+                            className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, (parseFloat(goal.current) / parseFloat(goal.target.replace('%', ''))) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Child Comparison */}
+      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <BarChart3 className="w-6 h-6 text-indigo-600" />
+          <h2 className="text-xl font-bold text-neutral-800">Performance Comparison</h2>
+        </div>
+
+        <div className="space-y-3">
+          {comparisons.map(comp => (
+            <div key={comp.childId} className={`border rounded-xl p-4 ${comp.childId === activeChild.id ? 'border-emerald-300 bg-emerald-50' : 'border-neutral-200'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-semibold text-neutral-800">{comp.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-neutral-600">Rank #{comp.rank}</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${comp.trend === 'up' ? 'text-green-600 bg-green-50' : comp.trend === 'down' ? 'text-red-600 bg-red-50' : 'text-neutral-600 bg-neutral-50'}`}>
+                    {comp.trend === 'up' ? '↗️' : comp.trend === 'down' ? '↘️' : '→'} {comp.trend}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <div className="text-neutral-500">Attendance</div>
+                  <div className="font-semibold text-neutral-800">{comp.attendance}%</div>
+                </div>
+                <div>
+                  <div className="text-neutral-500">Progress</div>
+                  <div className="font-semibold text-neutral-800">{comp.progress}%</div>
+                </div>
+                <div>
+                  <div className="text-neutral-500">Participation</div>
+                  <div className="font-semibold text-neutral-800">{comp.participation}%</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEvents, calendarSyncEnabled, assistantReminders, translationSettings, onEmergencyContactsChange, onNotificationPrefsChange, onCalendarSyncChange, onAssistantRemindersChange, onTranslationSettingsChange }: {
+  emergencyContacts: EmergencyContact[];
+  notificationPrefs: NotificationPreference[];
+  calendarEvents: CalendarEvent[];
+  calendarSyncEnabled: boolean;
+  assistantReminders: boolean;
+  translationSettings: TranslationSettings;
+  onEmergencyContactsChange: (contacts: EmergencyContact[]) => void;
+  onNotificationPrefsChange: (prefs: NotificationPreference[]) => void;
+  onCalendarSyncChange: (enabled: boolean) => void;
+  onAssistantRemindersChange: (enabled: boolean) => void;
+  onTranslationSettingsChange: (settings: TranslationSettings) => void;
+  token: string;
+}) {
+  const { t } = useTranslation();
+  const [activeSection, setActiveSection] = useState<'emergency' | 'notifications' | 'calendar' | 'translation'>('emergency');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newRelation, setNewRelation] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newPriority, setNewPriority] = useState<number>(2);
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRelation, setEditRelation] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPriority, setEditPriority] = useState<number>(2);
+  const [editSaving, setEditSaving] = useState(false);
+
+  const [localPrefs, setLocalPrefs] = useState<NotificationPreference[]>(notificationPrefs);
+  useEffect(() => setLocalPrefs(notificationPrefs), [notificationPrefs]);
+
+  const languageNames: Record<string, string> = {
+    en: 'English',
+    hi: 'हिंदी (Hindi)',
+    te: 'తెలుగు (Telugu)',
+    ta: 'தமிழ் (Tamil)',
+    kn: 'ಕನ್ನಡ (Kannada)',
+    ml: 'മലയാളം (Malayalam)',
+    gu: 'ગુજરાતી (Gujarati)',
+    bn: 'বাংলা (Bengali)',
+    mr: 'मराठी (Marathi)',
+    pa: 'ਪੰਜਾਬੀ (Punjabi)'
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Settings Navigation */}
+      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'emergency', label: t('Emergency Contacts'), icon: Shield },
+            { id: 'notifications', label: t('Notifications'), icon: Bell },
+            { id: 'calendar', label: t('Calendar Integration'), icon: CalendarDays },
+            { id: 'translation', label: t('Translation Settings'), icon: Zap }
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveSection(id as any)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                activeSection === id ? 'bg-emerald-100 text-emerald-700' : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Emergency Contacts Section */}
+      {activeSection === 'emergency' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Shield className="w-6 h-6 text-red-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Emergency Contacts</h2>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-neutral-600">Manage who the school should contact in an emergency.</p>
+              <button onClick={() => setShowAddForm(s => !s)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm">{showAddForm ? 'Close' : 'Add contact'}</button>
+            </div>
+            {showAddForm && (
+              <div className="p-4 border border-neutral-200 rounded-xl space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name" className="col-span-1 p-2 border rounded-md" />
+                  <input value={newRelation} onChange={e => setNewRelation(e.target.value)} placeholder="Relation" className="col-span-1 p-2 border rounded-md" />
+                  <input value={newPhone} onChange={e => setNewPhone(e.target.value)} placeholder="Phone" className="col-span-1 p-2 border rounded-md" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-neutral-600">Priority</label>
+                  <select value={String(newPriority)} onChange={e => setNewPriority(Number(e.target.value))} className="p-2 border rounded-md text-sm">
+                    <option value="1">1 — Primary</option>
+                    <option value="2">2 — Secondary</option>
+                    <option value="3">3 — Other</option>
+                  </select>
+                  <div className="flex-1" />
+                  <button onClick={async () => {
+                    if (!newName.trim() || !newPhone.trim()) return;
+                    setCreating(true);
+                    try {
+                      const payload = { name: newName.trim(), relationship: newRelation.trim() || null, phone: newPhone.trim(), phone_type: null, is_primary: newPriority === 1 };
+                      const created = await apiPost<any>('/api/v1/parent/emergency-contacts', payload, token);
+                      const mapped = { id: created.id, name: created.name, relation: created.relationship || created.relation || '', phone: created.phone, priority: (created.is_primary ? 1 : 2) as 1 | 2 | 3, available: true };
+                      onEmergencyContactsChange([...emergencyContacts, mapped]);
+                      setNewName(''); setNewRelation(''); setNewPhone(''); setNewPriority(2); setShowAddForm(false);
+                    } catch (err) { console.error(err); alert('Failed to add contact'); }
+                    finally { setCreating(false); }
+                  }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm" disabled={creating}>{creating ? 'Adding…' : 'Add'}</button>
+                </div>
+              </div>
+            )}
+
+            {emergencyContacts.map(contact => (
+              <div key={contact.id} className="flex items-center justify-between p-4 border border-neutral-200 rounded-xl">
+                {editingId === contact.id ? (
+                  <div className="flex-1">
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <input value={editName} onChange={e => setEditName(e.target.value)} className="p-2 border rounded-md" />
+                      <input value={editRelation} onChange={e => setEditRelation(e.target.value)} className="p-2 border rounded-md" />
+                      <input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="p-2 border rounded-md" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select value={String(editPriority)} onChange={e => setEditPriority(Number(e.target.value))} className="p-2 border rounded-md text-sm">
+                        <option value="1">1 — Primary</option>
+                        <option value="2">2 — Secondary</option>
+                        <option value="3">3 — Other</option>
+                      </select>
+                      <div className="flex-1" />
+                      <button onClick={async () => {
+                        setEditSaving(true);
+                        try {
+                          const payload = { name: editName.trim(), relationship: editRelation.trim() || null, phone: editPhone.trim(), phone_type: null, is_primary: editPriority === 1 };
+                          const updated = await apiPut<any>(`/api/v1/parent/emergency-contacts/${contact.id}`, payload, token);
+                          const mapped = { id: updated.id, name: updated.name, relation: updated.relationship || updated.relation || '', phone: updated.phone, priority: (updated.is_primary ? 1 : 2) as 1 | 2 | 3, available: true };
+                          onEmergencyContactsChange(emergencyContacts.map(c => c.id === contact.id ? mapped : c));
+                          setEditingId(null);
+                        } catch (err) { console.error(err); alert('Failed to update contact'); }
+                        finally { setEditSaving(false); }
+                      }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-sm mr-2" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
+                      <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-neutral-100 rounded-xl text-sm">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-3 h-3 rounded-full ${contact.available ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <div>
+                        <div className="font-semibold text-neutral-800">{contact.name}</div>
+                        <div className="text-sm text-neutral-600">{contact.relation} • {contact.phone}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        contact.priority === 1 ? 'bg-red-100 text-red-700' :
+                        contact.priority === 2 ? 'bg-orange-100 text-orange-700' :
+                        'bg-neutral-100 text-neutral-700'
+                      }`}>
+                        Priority {contact.priority}
+                      </span>
+                      <button onClick={() => {
+                        setEditingId(contact.id); setEditName(contact.name); setEditRelation(contact.relation); setEditPhone(contact.phone); setEditPriority(contact.priority || 2);
+                      }} className="ml-2 text-sm text-emerald-700 px-3 py-1 rounded-md border border-emerald-100">Edit</button>
+                      <button onClick={async () => {
+                        if (!confirm('Delete this contact?')) return;
+                        try {
+                          await apiDelete(`/api/v1/parent/emergency-contacts/${contact.id}`, token);
+                          onEmergencyContactsChange(emergencyContacts.filter(c => c.id !== contact.id));
+                        } catch (err) { console.error(err); alert('Failed to delete'); }
+                      }} className="ml-2 text-sm text-red-600 px-3 py-1 rounded-md border border-red-100">Delete</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Section Editor */}
+      {activeSection === 'notifications' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <Bell className="w-6 h-6 text-blue-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Notification Preferences</h2>
+          </div>
+
+          <div className="space-y-4">
+            {localPrefs.map((pref, idx) => (
+              <div key={pref.type} className="p-4 border border-neutral-200 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="font-semibold text-neutral-800 capitalize">{pref.type}</div>
+                    <div className="text-sm text-neutral-600">Channels: {pref.channels.join(', ')}</div>
+                  </div>
+                  <label className="inline-flex items-center">
+                    <input type="checkbox" checked={pref.enabled} onChange={e => { const updated = [...localPrefs]; updated[idx] = { ...pref, enabled: e.target.checked }; setLocalPrefs(updated); }} />
+                    <span className="ml-2 text-sm">Enabled</span>
+                  </label>
+                </div>
+                <div className="flex items-center gap-3">
+                  {(['push','sms','email'] as const).map(ch => (
+                    <label key={ch} className="inline-flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={pref.channels.includes(ch)} onChange={e => {
+                        const updated = [...localPrefs];
+                        const channels = new Set(pref.channels);
+                        if (e.target.checked) channels.add(ch); else channels.delete(ch);
+                        updated[idx] = { ...pref, channels: Array.from(channels) };
+                        setLocalPrefs(updated);
+                      }} />
+                      <span className="capitalize">{ch}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex justify-end">
+              <button onClick={async () => {
+                try {
+                  await apiPut('/api/v1/parent/settings', { notification_prefs: localPrefs }, token);
+                  onNotificationPrefsChange(localPrefs);
+                  alert('Notification preferences saved');
+                } catch (e) { console.error(e); alert('Failed to save preferences'); }
+              }} className="px-4 py-2 bg-emerald-600 text-white rounded-xl">Save Preferences</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Section — Paid Feature */}
+      {activeSection === 'calendar' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <CalendarDays className="w-6 h-6 text-purple-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Calendar Integration</h2>
+            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">✨ Premium</span>
+          </div>
+          <p className="text-sm text-neutral-500 mb-6">Sync school events, homework deadlines and reminders directly to your calendar.</p>
+
+          <div className="rounded-2xl border-2 border-dashed border-purple-200 bg-purple-50/50 p-6 flex flex-col items-center text-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-purple-100 flex items-center justify-center text-3xl">📅</div>
+            <p className="font-bold text-neutral-800 text-base">Smart Calendar Sync</p>
+            <p className="text-sm text-neutral-500 max-w-xs leading-relaxed">
+              Automatically add homework due dates, school events and parent-teacher meetings to Google Calendar or Apple Calendar.
+            </p>
+
+            {/* Feature list */}
+            <div className="w-full space-y-2 my-1">
+              {[
+                { icon: '📆', label: 'Google Calendar & Apple Calendar sync' },
+                { icon: '🤖', label: 'Oakie AI reminders — smart nudges before deadlines' },
+                { icon: '🔔', label: 'Never miss a homework due date or school event' },
+              ].map(f => (
+                <div key={f.label} className="flex items-center gap-3 bg-white border border-purple-100 rounded-xl px-4 py-2.5 text-left">
+                  <span className="text-lg shrink-0">{f.icon}</span>
+                  <span className="text-sm text-neutral-700">{f.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="w-full bg-white border border-purple-200 rounded-xl p-4">
+              <p className="text-xs font-semibold text-neutral-600 mb-1">Coming soon — Subscription required</p>
+              <p className="text-xs text-neutral-400">Payment integration is being set up. You'll be notified when this feature is available for purchase.</p>
+            </div>
+            <button disabled className="w-full py-3 bg-purple-600 text-white rounded-xl font-semibold text-sm opacity-50 cursor-not-allowed flex items-center justify-center gap-2">
+              <CalendarDays size={16} /> Unlock Calendar Sync — Coming Soon
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Translation Section — Paid Feature */}
+      {activeSection === 'translation' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-2">
+            <Zap className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Translation</h2>
+            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">✨ Premium</span>
+          </div>
+          <p className="text-sm text-neutral-500 mb-6">Translate the parent portal into your local language — Hindi, Telugu, Tamil, Kannada and more.</p>
+
+          {/* Paid feature gate */}
+          <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 p-6 flex flex-col items-center text-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center text-3xl">🌐</div>
+            <p className="font-bold text-neutral-800 text-base">Multilingual Support</p>
+            <p className="text-sm text-neutral-500 max-w-xs leading-relaxed">
+              Read homework, updates, and announcements in your preferred language. Supports 10 Indian languages.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2 my-1">
+              {['हिंदी', 'తెలుగు', 'தமிழ்', 'ಕನ್ನಡ', 'മലയാളം', 'ગુજરાતી', 'বাংলা', 'मराठी'].map(lang => (
+                <span key={lang} className="text-xs px-2.5 py-1 rounded-full bg-white border border-indigo-200 text-indigo-700 font-medium">{lang}</span>
+              ))}
+            </div>
+            <div className="w-full bg-white border border-indigo-200 rounded-xl p-4 mt-1">
+              <p className="text-xs font-semibold text-neutral-600 mb-1">Coming soon — Subscription required</p>
+              <p className="text-xs text-neutral-400">Payment integration is being set up. You'll be notified when this feature is available for purchase.</p>
+            </div>
+            <button disabled className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm opacity-50 cursor-not-allowed flex items-center justify-center gap-2">
+              <Zap size={16} /> Unlock Translation — Coming Soon
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
