@@ -87,14 +87,14 @@ export default function FinanceDashboardPage() {
         <StatCard
           label="Today's Collections"
           value={`₹${dailyCollection?.total.toLocaleString('en-IN') || 0}`}
-          subtitle={`${dailyCollection?.count || 0} payments`}
-          variant="success"
+          sub={`${dailyCollection?.count || 0} payments`}
+          colorScheme="green"
         />
         <StatCard
           label="Total Pending"
           value={`₹${studentPending?.total_pending.toLocaleString('en-IN') || 0}`}
-          subtitle={`${studentPending?.student_count || 0} students`}
-          variant="warning"
+          sub={`${studentPending?.student_count || 0} students`}
+          colorScheme="amber"
         />
       </div>
 
