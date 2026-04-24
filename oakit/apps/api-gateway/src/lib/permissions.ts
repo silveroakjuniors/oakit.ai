@@ -20,6 +20,7 @@ export const PERMISSIONS = {
   VIEW_PROFIT:              'VIEW_PROFIT',
   VIEW_FEES:                'VIEW_FEES',
   COLLECT_PAYMENT:          'COLLECT_PAYMENT',
+  MANAGE_FEE_STRUCTURE:     'MANAGE_FEE_STRUCTURE',   // create/edit/delete fee structures & heads
   MANAGE_CONCESSION:        'MANAGE_CONCESSION',
   VIEW_RECONCILIATION:      'VIEW_RECONCILIATION',
   PERFORM_RECONCILIATION:   'PERFORM_RECONCILIATION',
@@ -35,17 +36,33 @@ export const PERMISSIONS = {
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 
 /**
- * Default permission sets applied when a role is first granted access to the
- * financial module.  The `principal` role receives every permission; other
- * roles receive a scoped subset appropriate to their responsibilities.
+ * Default permission sets per role.
  *
- * These defaults can be overridden on a per-user basis by the Principal via
- * `PUT /api/v1/financial/permissions/:userId`.
+ * Segregation of duties:
+ *  - principal       → everything (salary, expenses, fee structures, collection, reports)
+ *  - admin           → fee collection + fee structure management + reconciliation + reports
+ *                      NO salary, NO expenses (those are principal/accountant only)
+ *  - finance_manager → fee collection + view fees + view reconciliation + view reports
+ *                      (principal can grant additional permissions per-user)
+ *  - teacher/parent  → view fees only (parent portal)
  */
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
   principal:       Object.values(PERMISSIONS) as Permission[],
-  admin:           ['VIEW_FEES', 'COLLECT_PAYMENT', 'VIEW_RECONCILIATION', 'PERFORM_RECONCILIATION', 'VIEW_REPORTS', 'SEND_REMINDER'],
-  finance_manager: ['VIEW_FEES', 'COLLECT_PAYMENT', 'VIEW_RECONCILIATION', 'VIEW_REPORTS'],
+  admin:           [
+    'VIEW_FEES',
+    'COLLECT_PAYMENT',
+    'MANAGE_FEE_STRUCTURE',
+    'VIEW_RECONCILIATION',
+    'PERFORM_RECONCILIATION',
+    'VIEW_REPORTS',
+    'SEND_REMINDER',
+  ],
+  finance_manager: [
+    'VIEW_FEES',
+    'COLLECT_PAYMENT',
+    'VIEW_RECONCILIATION',
+    'VIEW_REPORTS',
+  ],
   teacher:         [],
   parent:          ['VIEW_FEES'],
 };

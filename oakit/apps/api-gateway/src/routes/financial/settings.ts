@@ -156,8 +156,10 @@ router.put(
       if (target.rows[0].school_id !== schoolId) {
         return res.status(403).json({ error: 'User does not belong to your school' });
       }
-      if (target.rows[0].role !== 'finance_manager') {
-        return res.status(400).json({ error: 'Permissions can only be updated for finance_manager role' });
+      // Principal can assign permissions to finance_manager or admin roles
+      const assignableRoles = ['finance_manager', 'admin'];
+      if (!assignableRoles.includes(target.rows[0].role)) {
+        return res.status(400).json({ error: 'Permissions can only be updated for finance_manager or admin roles' });
       }
 
       // Fetch before-state for audit log
