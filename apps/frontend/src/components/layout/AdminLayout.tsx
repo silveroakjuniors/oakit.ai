@@ -11,6 +11,7 @@ const navItems = [
   { href: '/admin/users',            label: 'Users & Roles',    icon: '👥',  group: 'school' },
   { href: '/admin/classes',          label: 'Classes',          icon: '🏫',  group: 'school' },
   { href: '/admin/students',         label: 'Students',         icon: '🎒',  group: 'school' },
+  { href: '/admin/enquiries',        label: 'Enquiries',        icon: '📬',  group: 'school' },
   { href: '/admin/curriculum',       label: 'Curriculum',       icon: '📄',  group: 'content' },
   { href: '/admin/textbook-planner', label: 'Textbook Planner', icon: '📚',  group: 'content' },
   { href: '/admin/supplementary',    label: 'Activities',       icon: '🎵',  group: 'content' },

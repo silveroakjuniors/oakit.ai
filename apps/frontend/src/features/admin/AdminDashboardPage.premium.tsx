@@ -309,7 +309,7 @@ export default function AdminDashboardPage() {
             [1,2,3,4].map(i => <div key={i} className="h-36 rounded-2xl bg-white border border-neutral-200/80 animate-pulse" />)
           ) : (
             <>
-              <StatCard onClick={() => setDrillModal('students')}  value={stats?.students ?? '—'}
+              <StatCard onClick={() => setDrillModal('students')} label="Total Students" value={stats?.students ?? '—'}
                 sub={`${stats?.classes ?? 0} classes · ${stats?.sections ?? 0} sections`}
                 icon={<Users className="w-4 h-4 text-blue-600" />}
                 accentColor="bg-blue-100"

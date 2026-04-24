@@ -26,8 +26,10 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:3000',
     channel: 'chrome',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    headless: false,
+    launchOptions: {
+      executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      headless: false,
+    },
     viewport: { width: 1280, height: 800 },
     // Screenshot on EVERY test (pass + fail) — visible in HTML report
     screenshot: 'on',

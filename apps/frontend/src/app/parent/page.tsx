@@ -375,7 +375,7 @@ export default function ParentPage() {
             apiGet<any[]>('/api/v1/parent/emergency-contacts', token),
             apiGet<any>('/api/v1/parent/settings', token),
           ]);
-          const mapped = rows.map(r => ({ id: r.id, name: r.name, relation: r.relationship || r.relation || '', phone: r.phone, priority: r.is_primary ? 1 : 2, available: true }));
+          const mapped = rows.map(r => ({ id: r.id, name: r.name, relation: r.relationship || r.relation || '', phone: r.phone, priority: (r.is_primary ? 1 : 2) as 1 | 2 | 3, available: true }));
           setEmergencyContacts(mapped);
           if (settings) {
             if (settings.notification_prefs) setNotificationPrefs(settings.notification_prefs);
@@ -1650,7 +1650,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
                     try {
                       const payload = { name: newName.trim(), relationship: newRelation.trim() || null, phone: newPhone.trim(), phone_type: null, is_primary: newPriority === 1 };
                       const created = await apiPost<any>('/api/v1/parent/emergency-contacts', payload, token);
-                      const mapped = { id: created.id, name: created.name, relation: created.relationship || created.relation || '', phone: created.phone, priority: created.is_primary ? 1 : 2, available: true };
+                      const mapped = { id: created.id, name: created.name, relation: created.relationship || created.relation || '', phone: created.phone, priority: (created.is_primary ? 1 : 2) as 1 | 2 | 3, available: true };
                       onEmergencyContactsChange([...emergencyContacts, mapped]);
                       setNewName(''); setNewRelation(''); setNewPhone(''); setNewPriority(2); setShowAddForm(false);
                     } catch (err) { console.error(err); alert('Failed to add contact'); }
@@ -1681,7 +1681,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
                         try {
                           const payload = { name: editName.trim(), relationship: editRelation.trim() || null, phone: editPhone.trim(), phone_type: null, is_primary: editPriority === 1 };
                           const updated = await apiPut<any>(`/api/v1/parent/emergency-contacts/${contact.id}`, payload, token);
-                          const mapped = { id: updated.id, name: updated.name, relation: updated.relationship || updated.relation || '', phone: updated.phone, priority: updated.is_primary ? 1 : 2, available: true };
+                          const mapped = { id: updated.id, name: updated.name, relation: updated.relationship || updated.relation || '', phone: updated.phone, priority: (updated.is_primary ? 1 : 2) as 1 | 2 | 3, available: true };
                           onEmergencyContactsChange(emergencyContacts.map(c => c.id === contact.id ? mapped : c));
                           setEditingId(null);
                         } catch (err) { console.error(err); alert('Failed to update contact'); }
