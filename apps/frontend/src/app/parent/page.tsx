@@ -575,28 +575,30 @@ export default function ParentPage() {
 
         {/* ── TOP HEADER BAR (desktop) ── */}
         <header className="hidden lg:flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 sticky top-0 z-50" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          {/* Logo + badge */}
-          <div className="flex items-center gap-3">
+          {/* Left: Logo + badge + greeting */}
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-1.5">
               <span className="font-black text-xl text-gray-900">Oakit</span>
               <span className="font-black text-xl text-amber-500">.ai</span>
             </div>
             <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Parent Portal</span>
-          </div>
-          {/* Right side */}
-          <div className="flex items-center gap-4">
-            {/* Greeting + Premium */}
-            <div className="flex items-center gap-3">
+            {/* Divider */}
+            <span className="w-px h-5 bg-gray-200" />
+            {/* Time-based greeting + parent name */}
+            <div className="flex items-center gap-1.5">
               <span className="text-sm text-gray-500">
-                {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'; })()},
+                {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning,' : h < 17 ? 'Good Afternoon,' : 'Good Evening,'; })()}
               </span>
               <span className="text-sm font-semibold text-gray-800">
                 {parentProfile?.name?.split(' ')[0] ?? 'there'}
               </span>
-              <button className="flex items-center gap-1.5 text-amber-500 font-semibold text-sm hover:text-amber-600 transition-colors ml-1">
-                <Star size={15} className="fill-amber-400 text-amber-400" /> Premium
-              </button>
             </div>
+          </div>
+          {/* Right side */}
+          <div className="flex items-center gap-4">
+            <button className="flex items-center gap-1.5 text-amber-500 font-semibold text-sm hover:text-amber-600 transition-colors">
+              <Star size={15} className="fill-amber-400 text-amber-400" /> Premium
+            </button>
             <button onClick={() => setTab('notifications')} className="relative w-9 h-9 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition-colors">
               <Bell size={17} className="text-gray-600" />
               {unreadNotifs > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotifs}</span>}
