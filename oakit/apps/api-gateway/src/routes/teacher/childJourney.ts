@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+﻿import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard } from '../../middleware/auth';
@@ -8,7 +8,7 @@ router.use(jwtVerify, schoolScope);
 
 const AI_SERVICE_URL = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-// ─── POST /teacher/child-journey — create/update entry ───────────────────────
+// ÔöÇÔöÇÔöÇ POST /teacher/child-journey ÔÇö create/update entry ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
@@ -45,7 +45,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
 
     const date = entry_date || new Date().toISOString().split('T')[0];
 
-    // Upsert — one entry per student per date per type
+    // Upsert ÔÇö one entry per student per date per type
     const r = await pool.query(
       `INSERT INTO child_journey_entries
          (school_id, student_id, section_id, teacher_id, entry_date, entry_type, raw_text, beautified_text, is_sent_to_parent, sent_at)
@@ -62,7 +62,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
     return res.status(201).json({ ...r.rows[0], student_name: student.name });
   } catch (err: any) {
     if (err.code === '23505') {
-      // Unique constraint — update instead
+      // Unique constraint ÔÇö update instead
       return res.status(409).json({ error: 'Entry already exists for this date. Use PUT to update.' });
     }
     console.error('[childJourney] POST', err);
@@ -70,7 +70,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /teacher/child-journey?section_id=&date= — list entries for section ─
+// ÔöÇÔöÇÔöÇ GET /teacher/child-journey?section_id=&date= ÔÇö list entries for section ÔöÇ
 router.get('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -98,9 +98,9 @@ router.get('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /parent/child-journey/:studentId/snapshot — daily AI snapshot ───────
+// ÔöÇÔöÇÔöÇ GET /parent/child-journey/:studentId/snapshot ÔÇö daily AI snapshot ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // Generates a warm 3-sentence child snapshot based on age + recent journey entries.
-// Cached per student per day — regenerates next day automatically.
+// Cached per student per day ÔÇö regenerates next day automatically.
 router.get('/parent/:studentId/snapshot', async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
@@ -193,8 +193,8 @@ Write exactly 3 sentences:
 
 Rules:
 - Warm, personal, parent-friendly tone
-- No bullet points, no headings — flowing sentences only
-- Do NOT mention "Oakie" or "AI" — write as if from the school
+- No bullet points, no headings ÔÇö flowing sentences only
+- Do NOT mention "Oakie" or "AI" ÔÇö write as if from the school
 - Keep it under 80 words total
 - Always positive and encouraging`;
 
@@ -214,7 +214,7 @@ Rules:
     // Fallback if AI unavailable
     if (!snapshot) {
       const firstName = student.name.split(' ')[0];
-      snapshot = `At ${ageText || 'this age'}, children like ${firstName} are developing curiosity, language, and social skills rapidly — every day brings new discoveries. ${recentHighlights ? `${firstName} has been showing wonderful engagement in the classroom recently.` : `${firstName} is settling in beautifully and growing every day.`} Keep encouraging conversations about school — your involvement makes all the difference!`;
+      snapshot = `At ${ageText || 'this age'}, children like ${firstName} are developing curiosity, language, and social skills rapidly ÔÇö every day brings new discoveries. ${recentHighlights ? `${firstName} has been showing wonderful engagement in the classroom recently.` : `${firstName} is settling in beautifully and growing every day.`} Keep encouraging conversations about school ÔÇö your involvement makes all the difference!`;
     }
 
     const result = { snapshot, student_name: student.name, age: ageText, generated_at: today };
@@ -231,7 +231,7 @@ Rules:
   }
 });
 
-// ─── GET /parent/child-journey/:studentId — parent views child's journey ─────
+// ÔöÇÔöÇÔöÇ GET /parent/child-journey/:studentId ÔÇö parent views child's journey ÔöÇÔöÇÔöÇÔöÇÔöÇ
 router.get('/parent/:studentId', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;

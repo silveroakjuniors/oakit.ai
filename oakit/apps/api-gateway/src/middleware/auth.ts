@@ -47,10 +47,24 @@ export function forceResetGuard(req: Request, res: Response, next: NextFunction)
 // Inject school_id from JWT and reject cross-school access
 export function schoolScope(req: Request, res: Response, next: NextFunction) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  if (req.user.role === 'super_admin') return next();
+  // super_admin and franchise_admin are not scoped to a single school
+  if (req.user.role === 'super_admin' || req.user.role === 'franchise_admin') return next();
   const paramSchoolId = req.params.school_id || req.body?.school_id;
   if (paramSchoolId && paramSchoolId !== req.user.school_id) {
     return res.status(403).json({ error: 'Access denied: cross-school request' });
+  }
+  return next();
+}
+
+// Franchise scope guard — ensures franchise_admin only sees schools in their franchise
+export function franchiseScope(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.user.role === 'super_admin') return next(); // super_admin bypasses all
+  if (req.user.role !== 'franchise_admin') {
+    return res.status(403).json({ error: 'Franchise admin access required' });
+  }
+  if (!(req.user as any).franchise_id) {
+    return res.status(403).json({ error: 'No franchise assigned to this account' });
   }
   return next();
 }

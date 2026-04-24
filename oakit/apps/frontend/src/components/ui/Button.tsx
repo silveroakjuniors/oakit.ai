@@ -11,31 +11,27 @@ const variants = {
   primary: `
     bg-primary-600 text-white
     hover:bg-primary-700
-    shadow-sm hover:shadow-md
     border border-primary-700/20
   `,
   secondary: `
-    bg-neutral-100 text-neutral-800
-    hover:bg-neutral-200
+    bg-white text-neutral-700
+    hover:bg-neutral-50
     border border-neutral-200
-    shadow-xs
   `,
   ghost: `
     bg-transparent text-primary-600
     hover:bg-primary-50
-    border border-primary-200
+    border border-transparent
   `,
   danger: `
     bg-red-500 text-white
     hover:bg-red-600
-    shadow-sm
     border border-red-600/20
   `,
   amber: `
-    bg-accent-500 text-white
-    hover:bg-accent-600
-    shadow-sm hover:shadow-md
-    border border-accent-600/20
+    bg-amber-500 text-white
+    hover:bg-amber-600
+    border border-amber-600/20
   `,
 };
 

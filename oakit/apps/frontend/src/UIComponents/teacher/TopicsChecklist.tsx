@@ -1,5 +1,5 @@
 'use client';
-import { BookOpen, CheckCircle2, ChevronDown, Clock, FileText } from 'lucide-react';
+import { BookOpen, CheckCircle2, ChevronDown, Clock, FileText, Play } from 'lucide-react';
 import { Button } from '@/UIComponents/primitives/Button';
 
 interface Activity { chunkId: string; label: string; subjectKey: string; }
@@ -11,14 +11,17 @@ interface TopicsChecklistProps {
   onSelectAll: () => void;
   onSubmit: () => void;
   onAsk: (label: string) => void;
+  onPlayVideo?: (label: string) => void;
   onExportPdf: () => void;
+  onHomework?: (chunkId: string, label: string) => void;
+  homeworkSentChunks?: Set<string>;
   submitting?: boolean;
   exporting?: boolean;
   completionMsg?: string;
   open: boolean;
   onToggleOpen: () => void;
   chunkLabelOverrides?: Record<string, string>;
-  completed?: boolean; // when true, show Ask Oakie buttons instead of checkboxes
+  completed?: boolean;
 }
 
 /**
@@ -26,7 +29,8 @@ interface TopicsChecklistProps {
  * Same style as Homework & Notes panel.
  */
 export function TopicsChecklist({
-  activities, selectedChunks, onToggle, onSelectAll, onSubmit, onAsk, onExportPdf,
+  activities, selectedChunks, onToggle, onSelectAll, onSubmit, onAsk, onPlayVideo, onExportPdf,
+  onHomework, homeworkSentChunks = new Set(),
   submitting = false, exporting = false, completionMsg, open, onToggleOpen, chunkLabelOverrides = {},
   completed = false,
 }: TopicsChecklistProps) {
@@ -86,7 +90,9 @@ export function TopicsChecklist({
                 className={`flex items-center gap-3 px-4 py-3 border-b border-neutral-50 last:border-0 transition-colors ${
                   checked ? 'bg-emerald-50/60' : 'bg-white hover:bg-neutral-50'
                 }`}>
-                {/* Checkbox — only shown when not completed */}
+                {/* Done icon when completed */}
+                {completed && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
+                {/* Mark done checkbox — only shown when not completed */}
                 {!completed && (
                   <div
                     onClick={() => onToggle(act.subjectKey)}
@@ -97,8 +103,6 @@ export function TopicsChecklist({
                     {checked && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                   </div>
                 )}
-                {/* Done icon when completed */}
-                {completed && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
                 <span
                   onClick={() => !completed && onToggle(act.subjectKey)}
                   className={`text-sm flex-1 ${completed ? 'text-emerald-700 cursor-default' : checked ? 'text-emerald-700 line-through opacity-60 cursor-pointer' : 'text-neutral-800 cursor-pointer'} transition-all`}
@@ -108,6 +112,33 @@ export function TopicsChecklist({
                     <span className="text-[10px] text-amber-600 font-medium ml-1">✏ Updated</span>
                   )}
                 </span>
+                {/* Play Video button — always shown */}
+                {onPlayVideo && (
+                  <button
+                    type="button"
+                    onClick={() => onPlayVideo(act.label)}
+                    title="Play video for this topic"
+                    className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    <Play className="w-3 h-3 fill-red-500" />
+                    Video
+                  </button>
+                )}
+                {/* Homework button */}
+                {onHomework && (
+                  <button
+                    type="button"
+                    onClick={() => onHomework(act.chunkId, act.label)}
+                    className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                      homeworkSentChunks.has(act.chunkId)
+                        ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                        : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                    }`}
+                    title={homeworkSentChunks.has(act.chunkId) ? 'View / Edit Homework' : 'Generate Homework'}
+                  >
+                    {homeworkSentChunks.has(act.chunkId) ? '✓ HW' : '📝 HW'}
+                  </button>
+                )}
                 {/* Ask Oakie button — always shown */}
                 <button
                   type="button"

@@ -43,17 +43,39 @@ function dayName(iso: string) {
 function HolidayImportModal({ year, token, onClose, onImported }: { year: string; token: string; onClose: () => void; onImported: () => void; }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ created: number; skipped: any[] } | null>(null);
+  const [result, setResult] = useState<{ created: number; skipped: any[]; _debug?: any } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Generate and download a sample CSV that Excel opens natively
+  function downloadSample() {
+    const rows = [
+      ['date', 'description'],
+      ['26-06-2026', 'Muharram'],
+      ['15-08-2026', 'Independence Day'],
+      ['25-08-2026', 'Eid Milad'],
+      ['14-09-2026', 'Ganesh Chaturthi'],
+      ['02-10-2026', 'Gandhi Jayanti'],
+      ['25-12-2026', 'Christmas'],
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'holidays-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function handleImport() {
     if (!file) return;
+    if (!year) { alert('No academic year configured. Please save the calendar first.'); return; }
     setLoading(true);
     const fd = new FormData(); fd.append('file', file);
     try {
       const res = await fetch(`${API_BASE}/api/v1/admin/calendar/${year}/holidays/import`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
       setResult(data); onImported();
     } catch (err: unknown) { alert(err instanceof Error ? err.message : 'Import failed'); }
     finally { setLoading(false); }
@@ -62,23 +84,82 @@ function HolidayImportModal({ year, token, onClose, onImported }: { year: string
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
       <Card className="w-full max-w-md">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Import Holidays from Excel</h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-1">Import Holidays</h2>
         {!result ? (
           <>
-            <p className="text-sm text-gray-500 mb-4">Upload an .xlsx file with columns: <strong>date</strong>, <strong>event_name</strong></p>
-            <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 mb-4" onClick={() => fileRef.current?.click()}>
-              <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
-              {file ? <p className="text-sm text-gray-700">{file.name}</p> : <p className="text-sm text-gray-400">Click to select .xlsx file</p>}
+            {/* Step 1 — Download template */}
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
+              <p className="text-xs font-semibold text-blue-700 mb-1">Step 1 — Download the template</p>
+              <p className="text-xs text-blue-600 mb-3">
+                Download the sample file, fill in your holidays, then upload it below.
+                Use <strong>DD-MM-YYYY</strong> format for dates (e.g. 26-06-2026).
+                Only rows with type <strong>Holiday</strong> are imported — Working Day rows are skipped automatically.
+              </p>
+              <button onClick={downloadSample}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs font-medium text-blue-700 hover:bg-blue-50 transition-colors">
+                ⬇ Download holidays-template.csv
+              </button>
+            </div>
+
+            {/* Step 2 — Upload */}
+            <p className="text-xs font-semibold text-gray-600 mb-2">Step 2 — Upload your filled file</p>
+            <p className="text-xs text-gray-400 mb-3">
+              Accepted: <strong>.xlsx</strong> or <strong>.csv</strong> · Required columns: <strong>date</strong>, <strong>description</strong> (or event_name)
+            </p>
+            <div
+              className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 transition-colors mb-4"
+              onClick={() => fileRef.current?.click()}>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                onChange={e => setFile(e.target.files?.[0] || null)} />
+              {file
+                ? <p className="text-sm text-gray-700 font-medium">📄 {file.name}</p>
+                : <>
+                    <p className="text-2xl mb-2">📂</p>
+                    <p className="text-sm text-gray-400">Click to select file</p>
+                    <p className="text-xs text-gray-300 mt-1">.xlsx, .xls or .csv</p>
+                  </>}
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={onClose} className="flex-1">Cancel</Button>
-              <Button onClick={handleImport} loading={loading} disabled={!file} className="flex-1">Import</Button>
+              <Button onClick={handleImport} loading={loading} disabled={!file} className="flex-1">
+                Import Holidays
+              </Button>
             </div>
           </>
         ) : (
           <>
-            <p className="text-sm text-green-700 mb-2">✓ {result.created} holidays imported</p>
-            {result.skipped.length > 0 && <ul className="text-xs text-gray-500 list-disc pl-4 max-h-32 overflow-y-auto mb-4">{result.skipped.map((s: any, i: number) => <li key={i}>Row {s.row}: {s.reason}</li>)}</ul>}
+            <div className={`border rounded-xl px-4 py-3 mb-4 ${result.created > 0 ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+              <p className={`text-sm font-semibold ${result.created > 0 ? 'text-green-700' : 'text-amber-700'}`}>
+                {result.created > 0
+                  ? `✓ ${result.created} holiday${result.created !== 1 ? 's' : ''} imported successfully`
+                  : '⚠ 0 holidays imported — see skipped rows below'}
+              </p>
+            </div>
+            {result.skipped && result.skipped.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-gray-600 mb-1.5">{result.skipped.length} rows skipped:</p>
+                <ul className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 max-h-48 overflow-y-auto space-y-1">
+                  {result.skipped.map((s: any, i: number) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-gray-400 shrink-0">Row {s.row}:</span>
+                      <span>{s.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-gray-400 mt-2">Rows with type "Working Day" are skipped — that's expected.</p>
+              </div>
+            )}
+            {result.created === 0 && (!result.skipped || result.skipped.length === 0) && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700">
+                <p className="font-medium mb-1">No rows were processed.</p>
+                <p>Make sure your file has a <strong>date</strong> column and a <strong>description</strong> column. Download the template above and use that format.</p>
+                {result._debug && (
+                  <p className="mt-2 text-red-500 font-mono text-[10px] break-all">
+                    Debug: {JSON.stringify(result._debug)}
+                  </p>
+                )}
+              </div>
+            )}
             <Button onClick={onClose} className="w-full">Done</Button>
           </>
         )}
@@ -89,6 +170,12 @@ function HolidayImportModal({ year, token, onClose, onImported }: { year: string
 
 interface PlanSummary {
   total_chunks: number;
+  chunks_already_assigned: number;
+  chunks_remaining: number;
+  chunks_this_month: number;
+  chunks_after_this_month: number;
+  months_to_finish: number | null;
+  last_assigned_date: string | null;
   total_working_days: number;
   net_curriculum_days: number;
   special_day_breakdown: Record<string, { full_day: number; half_day: number }>;
@@ -96,8 +183,8 @@ interface PlanSummary {
   recommendation: string;
 }
 
-function PreGenerationModal({ classId, academicYear, month, planYear, token, onProceed, onCancel }: {
-  classId: string; academicYear: string; month?: number; planYear?: number; token: string;
+function PreGenerationModal({ classId, sectionId: initialSectionId, academicYear, month, planYear, token, onProceed, onCancel }: {
+  classId: string; sectionId: string; academicYear: string; month?: number; planYear?: number; token: string;
   onProceed: () => void; onCancel: () => void;
 }) {
   const [summary, setSummary] = useState<PlanSummary | null>(null);
@@ -105,52 +192,118 @@ function PreGenerationModal({ classId, academicYear, month, planYear, token, onP
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const params = new URLSearchParams({ class_id: classId, academic_year: academicYear });
-    if (month != null) params.set('month', String(month));
-    if (planYear != null) params.set('plan_year', String(planYear));
-    apiGet<PlanSummary>(`/api/v1/admin/calendar/plan-summary?${params}`, token)
-      .then(setSummary)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load summary'))
-      .finally(() => setLoading(false));
+    async function load() {
+      try {
+        // Resolve section_id if not provided
+        let sectionId = initialSectionId;
+        if (!sectionId && classId) {
+          const sections = await apiGet<any[]>(`/api/v1/admin/classes/${classId}/sections`, token);
+          sectionId = sections[0]?.id || '';
+        }
+        const params = new URLSearchParams({ class_id: classId, academic_year: academicYear });
+        if (sectionId) params.set('section_id', sectionId);
+        if (month != null) params.set('month', String(month));
+        if (planYear != null) params.set('plan_year', String(planYear));
+        const data = await apiGet<PlanSummary>(`/api/v1/admin/calendar/plan-summary?${params}`, token);
+        setSummary(data);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load summary');
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, []);
 
   const fitColor = summary?.fit === 'exact' ? 'text-green-600' : summary?.fit === 'under' ? 'text-amber-600' : 'text-red-600';
+  const fitBg   = summary?.fit === 'exact' ? 'bg-green-50 border-green-200' : summary?.fit === 'under' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200';
   const fitLabel = summary?.fit === 'exact' ? '✓ Exact fit' : summary?.fit === 'under' ? '⚠ Under — chunks will cycle' : '✗ Over — not all curriculum covered';
+
+  const monthName = month ? MONTHS_FULL[month - 1] : '';
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-      <Card className="w-full max-w-lg">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Plan Generation Summary</h2>
-        {loading && <p className="text-sm text-gray-400 py-6 text-center">Loading summary…</p>}
+      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold text-gray-800 mb-1">
+          {month ? `Generate Plans — ${monthName} ${planYear}` : 'Generate Plans — Full Year'}
+        </h2>
+        <p className="text-xs text-gray-400 mb-4">Review the curriculum assignment before confirming</p>
+
+        {loading && <p className="text-sm text-gray-400 py-6 text-center">Calculating…</p>}
         {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
+
         {summary && (
-          <div className="flex flex-col gap-3 mb-5">
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-1">Curriculum Chunks</p>
-                <p className="text-xl font-bold text-gray-800">{summary.total_chunks}</p>
+          <div className="flex flex-col gap-4 mb-5">
+
+            {/* Curriculum overview */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Total Chunks</p>
+                <p className="text-2xl font-black text-gray-800">{summary.total_chunks}</p>
+                <p className="text-[10px] text-gray-400">in curriculum</p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-1">Working Days</p>
-                <p className="text-xl font-bold text-gray-800">{summary.total_working_days}</p>
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                <p className="text-[10px] text-blue-500 uppercase tracking-wide mb-1">Already Assigned</p>
+                <p className="text-2xl font-black text-blue-700">{summary.chunks_already_assigned}</p>
+                <p className="text-[10px] text-blue-400">before {monthName || 'this period'}</p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-1">Net Curriculum Days</p>
-                <p className="text-xl font-bold text-gray-800">{summary.net_curriculum_days}</p>
+              <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                <p className="text-[10px] text-emerald-500 uppercase tracking-wide mb-1">Remaining</p>
+                <p className="text-2xl font-black text-emerald-700">{summary.chunks_remaining}</p>
+                <p className="text-[10px] text-emerald-400">chunks left to cover</p>
               </div>
             </div>
+
+            {/* This month's assignment */}
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
+              <p className="text-xs font-bold text-gray-700 mb-2">
+                📅 {monthName ? `${monthName} ${planYear} Assignment` : 'This Period'}
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-gray-500">Teaching days this month</p>
+                  <p className="text-lg font-bold text-gray-800">{summary.net_curriculum_days}</p>
+                  <p className="text-[10px] text-gray-400">{summary.total_working_days} working − specials/holidays</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Chunks assigned this month</p>
+                  <p className="text-lg font-bold text-gray-800">{summary.chunks_this_month}</p>
+                  <p className="text-[10px] text-gray-400">of {summary.chunks_remaining} remaining</p>
+                </div>
+              </div>
+            </div>
+
+            {/* After this month */}
+            {summary.chunks_after_this_month > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
+                <p className="font-semibold text-amber-800 mb-1">📌 After {monthName}</p>
+                <p className="text-amber-700 text-xs">
+                  <strong>{summary.chunks_after_this_month} chunks</strong> remaining to cover
+                  {summary.months_to_finish != null
+                    ? ` — approximately <strong>${summary.months_to_finish} more month${summary.months_to_finish !== 1 ? 's' : ''}</strong> at this pace`
+                    : ''}.
+                </p>
+              </div>
+            )}
+            {summary.chunks_after_this_month === 0 && summary.chunks_remaining > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-700 font-medium">
+                ✅ All remaining curriculum will be covered this month.
+              </div>
+            )}
+
+            {/* Special day breakdown */}
             {Object.keys(summary.special_day_breakdown).length > 0 && (
               <div>
-                <p className="text-xs font-medium text-gray-600 mb-1">Special Day Breakdown</p>
+                <p className="text-xs font-medium text-gray-500 mb-1.5">Days deducted this month</p>
                 <div className="flex flex-col gap-1">
                   {Object.entries(summary.special_day_breakdown).map(([type, counts]) => {
                     const cfg = DAY_TYPE_CONFIG[type] ?? { icon: '📌', label: type };
                     return (
-                      <div key={type} className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 rounded px-2 py-1">
+                      <div key={type} className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-1.5">
                         <span>{cfg.icon} {cfg.label ?? type}</span>
-                        <span className="flex gap-3">
-                          {counts.full_day > 0 && <span>{counts.full_day} full</span>}
-                          {counts.half_day > 0 && <span>{counts.half_day} half</span>}
+                        <span className="flex gap-3 text-gray-400">
+                          {counts.full_day > 0 && <span>{counts.full_day} full day{counts.full_day !== 1 ? 's' : ''}</span>}
+                          {counts.half_day > 0 && <span>{counts.half_day} half day{counts.half_day !== 1 ? 's' : ''}</span>}
                         </span>
                       </div>
                     );
@@ -158,13 +311,22 @@ function PreGenerationModal({ classId, academicYear, month, planYear, token, onP
                 </div>
               </div>
             )}
-            <div className={`text-sm font-semibold ${fitColor}`}>{fitLabel}</div>
-            <p className="text-sm text-gray-600">{summary.recommendation}</p>
+
+            {/* Fit indicator */}
+            <div className={`rounded-xl p-3 border text-sm font-semibold ${fitBg} ${fitColor}`}>
+              {fitLabel} — {summary.recommendation}
+            </div>
           </div>
         )}
+
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={onCancel} className="flex-1">Cancel</Button>
-          <Button onClick={onProceed} disabled={loading || !!error} className="flex-1">Proceed</Button>
+          <button onClick={onCancel} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onProceed} disabled={loading || !!error}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors">
+            Confirm & Generate
+          </button>
         </div>
       </Card>
     </div>
@@ -535,7 +697,7 @@ export default function CalendarPage() {
           <div className="flex gap-2">
             {holidays.length > 0 && <Button size="sm" variant="ghost" loading={exportingHolidays} onClick={exportHolidayPdf}>Export PDF</Button>}
             <Button size="sm" variant="ghost" onClick={() => setShowHolidayList(v => !v)}>{showHolidayList ? 'Hide' : 'Show List'}</Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowImportModal(true)}>Import xlsx</Button>
+            <Button size="sm" variant="ghost" onClick={() => { if (!academicYear) { alert('Please save the academic year calendar first before importing holidays.'); return; } setShowImportModal(true); }}>Import xlsx</Button>
           </div>
         </div>
         <div className="flex gap-2 mb-3">
@@ -690,45 +852,17 @@ export default function CalendarPage() {
         </div>
       </Card>
 
-      {/* Generate Plans */}
+      {/* Link to Daily Planner */}
       <Card className="mb-6">
-        <h2 className="text-sm font-medium text-gray-700 mb-1">Generate Day Plans</h2>
-        <p className="text-xs text-gray-400 mb-4">Monthly is recommended — picks up from where the previous month left off.</p>
-        <div className="flex flex-col gap-3">
-          <select className="px-3 py-2 rounded-lg border border-gray-300 text-sm" value={planForm.class_id} onChange={e => setPlanForm(f => ({ ...f, class_id: e.target.value }))}>
-            <option value="">Select class...</option>
-            {classes.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-            {(['month','year'] as const).map(m => (
-              <button key={m} onClick={() => setPlanForm(f => ({ ...f, mode: m }))} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${planForm.mode === m ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>{m === 'month' ? 'Monthly' : 'Full Year'}</button>
-            ))}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-medium text-gray-700">Ready to generate plans?</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Once your calendar, holidays and special days are set, go to Daily Planner to generate day plans for each class.</p>
           </div>
-          {planForm.mode === 'month' && (
-            <div className="flex gap-2">
-              <select className="px-3 py-2 rounded-lg border border-gray-300 text-sm" value={planForm.month} onChange={e => setPlanForm(f => ({ ...f, month: parseInt(e.target.value) }))}>
-                {MONTHS_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-              </select>
-              <input type="number" min={2024} max={2040} className="px-3 py-2 rounded-lg border border-gray-300 text-sm w-24" value={planForm.plan_year} onChange={e => setPlanForm(f => ({ ...f, plan_year: parseInt(e.target.value) }))} />
-            </div>
-          )}
-          {msg && <p className={`text-sm ${msg.startsWith('✓') ? 'text-green-600' : 'text-gray-600'}`}>{msg}</p>}
-          {msg.startsWith('✓') && coverageReportSectionId && (
-            <Button size="sm" variant="ghost" onClick={() => setShowCoverageReport(true)}>
-              📊 View Coverage Report
-            </Button>
-          )}
-          <Button onClick={() => setShowPlanSummary(true)} loading={planLoading} disabled={!planForm.class_id} variant="secondary">
-            {planForm.mode === 'month' ? 'Generate Month Plans' : 'Generate Full Year Plans'}
-          </Button>
-          {planForm.class_id && academicYear && (
-            <div className="border-t border-gray-100 pt-3 mt-1">
-              <p className="text-xs text-gray-500 mb-2">Already generated plans? If you added special days or holidays after generating, refresh the planner to shift affected days forward.</p>
-              <Button size="sm" variant="ghost" onClick={refreshPlanner} loading={refreshingPlanner}>
-                🔄 Refresh Planner
-              </Button>
-            </div>
-          )}
+          <a href="/admin/plans"
+            className="shrink-0 ml-4 px-4 py-2 bg-primary text-white text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors">
+            Go to Daily Planner →
+          </a>
         </div>
       </Card>
 
@@ -750,28 +884,6 @@ export default function CalendarPage() {
       )}
 
       {showImportModal && <HolidayImportModal year={academicYear} token={token} onClose={() => setShowImportModal(false)} onImported={loadHolidays} />}
-
-      {showPlanSummary && (
-        <PreGenerationModal
-          classId={planForm.class_id}
-          academicYear={academicYear}
-          month={planForm.mode === 'month' ? planForm.month : undefined}
-          planYear={planForm.mode === 'month' ? planForm.plan_year : undefined}
-          token={token}
-          onProceed={() => { setShowPlanSummary(false); generatePlans(); }}
-          onCancel={() => setShowPlanSummary(false)}
-        />
-      )}
-
-      {showCoverageReport && coverageReportSectionId && (
-        <CoverageReport
-          classId={planForm.class_id}
-          sectionId={coverageReportSectionId}
-          academicYear={academicYear}
-          token={token}
-          onDismiss={() => setShowCoverageReport(false)}
-        />
-      )}
     </div>
   );
 }

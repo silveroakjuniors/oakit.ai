@@ -6,9 +6,11 @@ const REFRESH_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 
 export interface JwtPayload {
   user_id: string;
-  school_id: string; // null for super_admin — cast at sign time
+  id?: string; // alias for user_id — some routes use req.user!.id
+  school_id: string | null; // null for super_admin and franchise_admin
   role: string;
   permissions: string[];
+  franchise_id?: string | null; // set for franchise_admin users
   force_password_reset?: boolean;
   jti?: string;
 }

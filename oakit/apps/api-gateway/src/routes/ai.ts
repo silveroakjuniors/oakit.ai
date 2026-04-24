@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
+import multer from 'multer';
+import FormData from 'form-data';
 import { redis } from '../lib/redis';
 import { pool } from '../lib/db';
 import { getToday } from '../lib/today';
 import { jwtVerify, schoolScope, roleGuard } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/rateLimit';
+import { checkAndDeductCredits } from '../lib/aiCredits';
 import crypto from 'crypto';
 
 const router = Router();
@@ -47,12 +50,12 @@ const INAPPROPRIATE_PATTERNS = [
 
 // Off-topic keywords — logged as 'blocked_offtopic'
 const OFF_TOPIC_PATTERNS = [
-  /\bweather\b/i, /\btemperature\b/i, /\bforecast\b/i, /\brain\b/i, /\bsunny\b/i,
-  /\bnews\b/i, /\bpolitics\b/i, /\bsports\b/i, /\bcricket\b/i, /\bfootball\b/i,
+  /\bweather\b/i, /\btemperature\b/i, /\bforecast\b/i,
+  /\bnews\b/i, /\bpolitics\b/i, /\bcricket\b/i, /\bfootball\b/i,
   /\bstock\b/i, /\bshare price\b/i, /\bcrypto\b/i, /\bbitcoin\b/i,
-  /\brecipe\b/i, /\bcook\b/i, /\bfilm\b/i, /\bmovie\b/i, /\bsong\b/i,
-  /\bjoke\b/i, /\bfunny\b/i, /\blaugh\b/i,
-  /\bwho is\b/i, /\bwhat is the capital\b/i, /\bhistory of\b/i,
+  /\brecipe\b/i, /\bfilm\b/i, /\bmovie\b/i,
+  /\bjoke\b/i,
+  /\bwhat is the capital\b/i, /\bhistory of\b/i,
 ];
 
 function isInappropriate(text: string): boolean {
@@ -365,6 +368,19 @@ router.post('/query', async (req: Request, res: Response) => {
 
     // Log allowed query
     await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: cleanText, outcome: 'allowed' });
+
+    // ── Credit check — deduct before calling AI ───────────────────────────
+    const credit = await checkAndDeductCredits({
+      schoolId: school_id, actorId: user_id, actorRole: role, endpoint: 'query',
+    });
+    if (!credit.allowed) {
+      return res.status(402).json({
+        error: 'insufficient_credits',
+        message: 'Your school\'s AI credits have been exhausted. Please contact your administrator to recharge.',
+        balance_inr: (credit.balance_paise / 100).toFixed(2),
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     const cacheKey = `ai:${user_id}:${crypto.createHash('md5').update(cleanText + today).digest('hex')}`;
     const cached = await redis.get(cacheKey);
@@ -691,4 +707,144 @@ router.post('/student-query', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/ai/voice — transcribe audio via Gemini, then run through query pipeline
+// Requires voice_enabled = true in school_settings
+
+const voiceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['audio/webm', 'audio/ogg', 'audio/wav', 'audio/mp4', 'audio/mpeg', 'audio/m4a', 'video/webm'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Unsupported audio format'));
+  },
+});
+
+router.post('/voice', voiceUpload.single('audio'), async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id, role } = req.user!;
+
+    // Check voice is enabled for this school
+    const settingsRow = await pool.query(
+      `SELECT voice_enabled FROM school_settings WHERE school_id = $1`,
+      [school_id]
+    );
+    const voiceEnabled = settingsRow.rows[0]?.voice_enabled ?? false;
+    if (!voiceEnabled) {
+      return res.status(403).json({ error: 'Voice input is not enabled for your school. Contact your admin.' });
+    }
+
+    const audioFile = (req as any).file;
+    if (!audioFile) {
+      return res.status(400).json({ error: 'No audio file provided. Send audio as multipart field named "audio".' });
+    }
+
+    const today = await getToday(school_id);
+    const language = (req.body?.language as string) || 'en';
+
+    // Forward audio to AI service for Gemini transcription
+    const formData = new FormData();
+    formData.append('audio', audioFile.buffer, {
+      filename: audioFile.originalname || 'recording.webm',
+      contentType: audioFile.mimetype,
+    });
+    formData.append('language', language);
+
+    const transcribeResp = await axios.post(
+      `${AI()}/internal/transcribe`,
+      formData,
+      { headers: formData.getHeaders(), timeout: 30000 }
+    );
+
+    const transcript: string = transcribeResp.data?.transcript || '';
+    if (!transcript.trim()) {
+      return res.json({ transcript: '', response: "I couldn't hear that clearly. Please try again. 🎤" });
+    }
+
+    // Safety check on transcript
+    if (isInappropriate(transcript) || isOffTopic(transcript)) {
+      await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: `[VOICE] ${transcript}`, outcome: 'blocked_inappropriate' });
+      return res.json({ transcript, response: OFF_TOPIC_RESPONSE });
+    }
+
+    // Log the voice query
+    await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: `[VOICE] ${transcript}`, outcome: 'allowed' });
+
+    // Run through the normal query pipeline
+    const queryResp = await axios.post(`${AI()}/internal/query`, {
+      teacher_id: user_id,
+      school_id,
+      text: transcript,
+      query_date: today,
+      role,
+    }, { timeout: AI_TIMEOUT_MS });
+
+    return res.json({ transcript, ...queryResp.data });
+
+  } catch (err: unknown) {
+    const errMsg = getAiErrorMessage(err);
+    console.error('[ai.voice] error', errMsg);
+    return res.status(500).json({ error: `Voice processing failed: ${errMsg}` });
+  }
+});
+
+// GET /api/v1/ai/topic-summary — parent-friendly summary of today's topics
+// Query params: topics (comma-separated), class_name, child_name, completed (boolean)
+router.get('/topic-summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const topicsRaw = (req.query.topics as string || '').trim();
+    const className  = (req.query.class_name as string || 'Nursery').trim();
+    const childName  = (req.query.child_name as string || 'your child').trim();
+    const completed  = req.query.completed === 'true';
+
+    if (!topicsRaw) return res.status(400).json({ error: 'topics is required' });
+
+    const topics = topicsRaw.split(',').map(t => t.trim()).filter(Boolean);
+    if (topics.length === 0) return res.status(400).json({ error: 'No topics provided' });
+
+    // Cache per school+topics+completion combo (1 hour)
+    const cacheKey = `ai:topic-summary:${school_id}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topicsRaw + className).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json({ summary: cached });
+
+    try {
+      // Call the dedicated topic-summary endpoint — bypasses all query pipeline filters
+      const aiResp = await axios.post(`${AI()}/internal/topic-summary`, {
+        topics,
+        class_name: className,
+        child_name: childName,
+        completed,
+      }, { timeout: 15000 });
+
+      const summary: string = aiResp.data?.summary || topics.join(' · ');
+      if (summary) await redis.setEx(cacheKey, 3600, summary);
+      return res.json({ summary });
+    } catch {
+      // Fallback: strip "Week X Day Y" and join
+      const cleaned = topics
+        .map(t => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim())
+        .filter(Boolean);
+      return res.json({ summary: cleaned.length > 0 ? cleaned.join(' · ') : topics.join(' · ') });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/ai/voice-status — check if voice is enabled for this school
+router.get('/voice-status', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const row = await pool.query(
+      `SELECT voice_enabled FROM school_settings WHERE school_id = $1`,
+      [school_id]
+    );
+    return res.json({ voice_enabled: row.rows[0]?.voice_enabled ?? false });
+  } catch {
+    return res.json({ voice_enabled: false });
+  }
+});
+
 export default router;
+

@@ -7,7 +7,13 @@ import { getTeacherSections } from '../../lib/teacherSection';
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'admin'));
 
-const DEFAULT_PASSWORD = '123456';
+// Generate a random 8-char alphanumeric password for new/reset accounts
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let pwd = '';
+  for (let i = 0; i < 8; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+  return pwd;
+}
 
 async function generateUsername(schoolId: string, firstName: string, className: string, sectionLabel: string): Promise<string> {
   const base = `${firstName}-${className}-${sectionLabel}`
@@ -49,7 +55,6 @@ async function createOrResetAccount(schoolId: string, studentId: string, userId:
   if (!configRow.rows[0]?.enabled) throw new Error('Student portal is not enabled for this class');
 
   const firstName = st.name.split(' ')[0];
-  const hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
 
   // Check if account exists
   const existing = await pool.query(
@@ -58,22 +63,26 @@ async function createOrResetAccount(schoolId: string, studentId: string, userId:
   );
 
   if (existing.rows.length > 0) {
-    // Reset password
+    // Reset password — generate new random temp password
+    const tempPwd = generateTempPassword();
+    const hash = await bcrypt.hash(tempPwd, 12);
     await pool.query(
       'UPDATE student_accounts SET password_hash = $1, force_password_reset = true, updated_at = now() WHERE student_id = $2',
       [hash, studentId]
     );
-    return { username: existing.rows[0].username, password: DEFAULT_PASSWORD, is_new: false };
+    return { username: existing.rows[0].username, password: tempPwd, is_new: false };
   }
 
-  // Create new account
+  // Create new account — generate random temp password
+  const tempPwd = generateTempPassword();
+  const hash = await bcrypt.hash(tempPwd, 12);
   const username = await generateUsername(schoolId, firstName, st.class_name, st.section_label);
   await pool.query(
     `INSERT INTO student_accounts (school_id, student_id, username, password_hash, force_password_reset, created_by)
      VALUES ($1, $2, $3, $4, true, $5)`,
     [schoolId, studentId, username, hash, userId]
   );
-  return { username, password: DEFAULT_PASSWORD, is_new: true };
+  return { username, password: tempPwd, is_new: true };
 }
 
 // POST /generate — single or bulk (section_id)
@@ -139,14 +148,15 @@ router.post('/reset/:studentId', async (req: Request, res: Response) => {
       }
     }
 
-    const hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
+    const tempPwd = generateTempPassword();
+    const hash = await bcrypt.hash(tempPwd, 12);
     const result = await pool.query(
       `UPDATE student_accounts SET password_hash = $1, force_password_reset = true, updated_at = now()
        WHERE student_id = $2 AND school_id = $3 RETURNING username`,
       [hash, req.params.studentId, school_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'No account found for this student' });
-    return res.json({ username: result.rows[0].username, password: DEFAULT_PASSWORD, message: 'Password reset to default' });
+    return res.json({ username: result.rows[0].username, password: tempPwd, message: 'Password reset successfully' });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }

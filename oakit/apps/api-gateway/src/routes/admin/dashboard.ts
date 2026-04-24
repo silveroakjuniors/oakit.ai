@@ -382,7 +382,7 @@ router.get('/birthdays', async (req: Request, res: Response) => {
       `SELECT s.id as student_id, s.name, s.date_of_birth::text,
               c.name as class_name, sec.label as section_label,
               EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.date_of_birth))::int as current_age,
-              EXTRACT(YEAR FROM AGE(CURRENT_DATE + $2, s.date_of_birth))::int as turning_age,
+              EXTRACT(YEAR FROM AGE(CURRENT_DATE + ($2::int * INTERVAL '1 day'), s.date_of_birth))::int as turning_age,
               EXTRACT(MONTH FROM s.date_of_birth)::int as birth_month,
               EXTRACT(DAY FROM s.date_of_birth)::int as birth_day,
               (DATE_TRUNC('year', CURRENT_DATE) +

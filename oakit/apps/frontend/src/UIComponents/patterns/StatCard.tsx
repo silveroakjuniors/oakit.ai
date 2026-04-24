@@ -6,29 +6,33 @@ interface StatCardProps {
   subvalue?: string;
   icon?: ReactNode;
   trend?: { value: number; label?: string };
-  color?: 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
+  color?: 'primary' | 'success' | 'warning' | 'danger' | 'neutral' | 'blue' | 'purple';
   onClick?: () => void;
 }
 
-const colors = {
-  primary: { icon: 'bg-primary-50 text-primary-600', value: 'text-primary-700' },
-  success: { icon: 'bg-emerald-50 text-emerald-600', value: 'text-emerald-700' },
-  warning: { icon: 'bg-amber-50 text-amber-600',     value: 'text-amber-700'   },
-  danger:  { icon: 'bg-red-50 text-red-600',         value: 'text-red-700'     },
-  neutral: { icon: 'bg-neutral-100 text-neutral-600', value: 'text-neutral-800' },
+// Icon container tints — small usage only, not full card backgrounds
+const iconColors = {
+  primary: 'bg-primary-50 text-primary-600',
+  success: 'bg-emerald-50 text-emerald-600',
+  warning: 'bg-amber-50 text-amber-600',
+  danger:  'bg-red-50 text-red-600',
+  neutral: 'bg-neutral-100 text-neutral-500',
+  blue:    'bg-blue-50 text-blue-600',
+  purple:  'bg-purple-50 text-purple-600',
 };
 
 export function StatCard({ label, value, subvalue, icon, trend, color = 'neutral', onClick }: StatCardProps) {
-  const c = colors[color];
+  const ic = iconColors[color];
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl border border-neutral-200/80 shadow-card p-4 transition-all duration-150 ${onClick ? 'hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer' : ''}`}
+      className={`bg-white rounded-xl border border-neutral-200 p-4 transition-all duration-150 ${onClick ? 'hover:border-neutral-300 cursor-pointer' : ''}`}
+      style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-xs font-medium text-neutral-500 mb-1 truncate">{label}</p>
-          <p className={`text-2xl font-bold ${c.value}`}>{value}</p>
+          <p className="text-2xl font-semibold text-neutral-900 leading-tight">{value}</p>
           {subvalue && <p className="text-xs text-neutral-400 mt-0.5">{subvalue}</p>}
           {trend && (
             <div className={`flex items-center gap-1 mt-1.5 text-xs font-medium ${trend.value >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -38,7 +42,7 @@ export function StatCard({ label, value, subvalue, icon, trend, color = 'neutral
           )}
         </div>
         {icon && (
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${c.icon}`}>
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${ic}`}>
             {icon}
           </div>
         )}

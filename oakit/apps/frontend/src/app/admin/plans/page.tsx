@@ -44,6 +44,21 @@ function fmtDay(iso: string) {
 }
 
 // ── Plan Generator ────────────────────────────────────────────────────────────
+interface PlanSummary {
+  total_chunks: number;
+  chunks_already_assigned: number;
+  chunks_remaining: number;
+  chunks_this_month: number;
+  chunks_after_this_month: number;
+  months_to_finish: number | null;
+  total_working_days: number;
+  holiday_count: number;
+  net_curriculum_days: number;
+  special_day_breakdown: Record<string, { full_day: number; half_day: number }>;
+  fit: 'exact' | 'under' | 'over';
+  recommendation: string;
+}
+
 function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
   classId: string; className: string; hasCurriculum: boolean; onClose: () => void;
 }) {
@@ -61,7 +76,13 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
   const [generating, setGenerating] = useState<{ label: string; key: string } | null>(null);
   const [genProgress, setGenProgress] = useState(0);
   const [msg, setMsg] = useState('');
-  const [conflict, setConflict] = useState<{ message: string } | null>(null);
+  const [conflict, setConflict] = useState<{ message: string; month?: number; year?: number; holidayCount?: number } | null>(null);
+  const [summary, setSummary] = useState<PlanSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [firstSectionId, setFirstSectionId] = useState('');
+  const [showAddSpecialDay, setShowAddSpecialDay] = useState(false);
+  const [newSpecialDay, setNewSpecialDay] = useState({ date: '', label: '', note: '' });
+  const [savingSpecialDay, setSavingSpecialDay] = useState(false);
 
   useEffect(() => {
     apiGet<any[]>('/api/v1/admin/calendar', token).then(rows => {
@@ -76,17 +97,35 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
         }
       }
     }).catch(() => {});
+    // Fetch first section for summary
+    apiGet<any[]>(`/api/v1/admin/classes/${classId}/sections`, token)
+      .then(secs => { if (secs.length > 0) setFirstSectionId(secs[0].id); })
+      .catch(() => {});
   }, []);
+
+  // Load summary whenever month selection or calData changes
+  useEffect(() => {
+    if (!calData || !hasCurriculum) return;
+    const sel = validMonths.find(m => m.key === selectedKey);
+    if (mode === 'month' && !sel) return;
+    setSummaryLoading(true);
+    setSummary(null);
+    const params = new URLSearchParams({ class_id: classId, academic_year: calData.academic_year });
+    if (firstSectionId) params.set('section_id', firstSectionId);
+    if (mode === 'month' && sel) { params.set('month', String(sel.month)); params.set('plan_year', String(sel.year)); }
+    apiGet<PlanSummary>(`/api/v1/admin/calendar/plan-summary?${params}`, token)
+      .then(setSummary)
+      .catch(() => {})
+      .finally(() => setSummaryLoading(false));
+  }, [selectedKey, mode, calData, firstSectionId]);
 
   // Animate progress bar while generating, poll for completion
   useEffect(() => {
     if (!generating) { setGenProgress(0); return; }
     setGenProgress(5);
-    // Animate to 85% over ~20s
     const interval = setInterval(() => {
       setGenProgress(p => p < 85 ? p + (85 - p) * 0.08 : p);
     }, 800);
-    // Poll plan-status every 4s to detect completion
     const poll = setInterval(async () => {
       try {
         const res = await fetch(`${API_BASE}/api/v1/admin/calendar/plan-status/${classId}`, {
@@ -97,8 +136,7 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
         if (hasPlans) {
           setGenProgress(100);
           setTimeout(() => { setGenerating(null); setGenProgress(0); }, 1200);
-          clearInterval(poll);
-          clearInterval(interval);
+          clearInterval(poll); clearInterval(interval);
         }
       } catch { /* ignore */ }
     }, 4000);
@@ -132,7 +170,21 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (res.status === 409 && data.plans_exist) { setConflict({ message: data.message }); return; }
+      if (res.status === 409 && data.plans_exist) {
+        // Fetch holiday count for this month to show in confirmation
+        let holidayCount = 0;
+        if (selected) {
+          try {
+            const hRes = await apiGet<any[]>(`/api/v1/admin/calendar/${calData.academic_year}/holidays`, token);
+            holidayCount = hRes.filter((h: any) => {
+              const d = new Date(h.holiday_date);
+              return d.getMonth() + 1 === selected.month && d.getFullYear() === selected.year;
+            }).length;
+          } catch { /* ignore */ }
+        }
+        setConflict({ message: data.message, month: selected?.month, year: selected?.year, holidayCount });
+        return;
+      }
       if (!res.ok) throw new Error(data.error);
       const label = mode === 'month' && selected ? `${selected.label}` : 'full year';
       setMsg(`✓ Generating ${label} plans for ${data.sections} section(s). Runs in the background.`);
@@ -150,6 +202,10 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
     } catch (e: any) { setMsg(e.message); }
     finally { setRefreshing(false); }
   }
+
+  const fitColor = summary?.fit === 'exact' ? 'text-emerald-700' : summary?.fit === 'under' ? 'text-amber-700' : 'text-red-600';
+  const fitBg = summary?.fit === 'exact' ? 'bg-emerald-50 border-emerald-200' : summary?.fit === 'under' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200';
+  const monthName = selected ? MONTHS_FULL[selected.month - 1] : '';
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
@@ -174,7 +230,7 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
                 <ol className="text-xs text-neutral-500 flex flex-col gap-1.5 list-decimal list-inside">
                   <li>Go to <strong>Curriculum</strong> → upload PDF for {className}</li>
                   <li>Go to <strong>Calendar</strong> → set academic year, working days, holidays</li>
-                  <li>Come back here → click <strong>Assign Daily Planner</strong></li>
+                  <li>Come back here → click <strong>Generate Plans</strong></li>
                   <li>Choose Monthly or Full Year → Generate</li>
                 </ol>
               </div>
@@ -210,6 +266,124 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
                     {validMonths.map(vm => <option key={vm.key} value={vm.key}>{vm.label}</option>)}
                   </select>
                   {validMonths.length === 0 && <p className="text-xs text-red-500 mt-1">No valid months. Check your academic year dates in Calendar.</p>}
+                </div>
+              )}
+              {/* Plan summary — shown inline, loads automatically */}
+              {hasCurriculum && calData && (
+                <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4">
+                  {summaryLoading ? (
+                    <p className="text-xs text-neutral-400 text-center py-2">Calculating…</p>
+                  ) : summary ? (
+                    <div className="flex flex-col gap-3">
+                      {/* Stat row */}
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-white rounded-lg p-2.5 border border-neutral-100">
+                          <p className="text-[10px] text-neutral-400 uppercase tracking-wide mb-0.5">Total Chunks</p>
+                          <p className="text-xl font-black text-neutral-800">{summary.total_chunks}</p>
+                          <p className="text-[10px] text-neutral-400">in curriculum</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2.5 border border-neutral-100">
+                          <p className="text-[10px] text-neutral-400 uppercase tracking-wide mb-0.5">Teaching Days</p>
+                          <p className="text-xl font-black text-neutral-800">{summary.net_curriculum_days}</p>
+                          <p className="text-[10px] text-neutral-400">{mode === 'month' ? `in ${monthName}` : 'this year'}</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2.5 border border-neutral-100">
+                          <p className="text-[10px] text-neutral-400 uppercase tracking-wide mb-0.5">Assigning</p>
+                          <p className="text-xl font-black text-emerald-700">{summary.chunks_this_month ?? summary.total_chunks}</p>
+                          <p className="text-[10px] text-neutral-400">chunks {mode === 'month' ? 'this month' : 'total'}</p>
+                        </div>
+                      </div>
+                      {/* Remaining */}
+                      {(summary.chunks_after_this_month ?? 0) > 0 && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                          <strong>{summary.chunks_after_this_month}</strong> chunks remaining after {monthName}
+                          {summary.months_to_finish != null && ` · ~${summary.months_to_finish} more month${summary.months_to_finish !== 1 ? 's' : ''} to finish`}
+                        </div>
+                      )}
+                      {/* Days breakdown */}
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[10px] text-neutral-400 uppercase tracking-wide font-semibold">Days breakdown</p>
+                        <div className="flex items-center justify-between text-xs text-neutral-600 bg-white rounded px-2.5 py-1.5 border border-neutral-100">
+                          <span>📅 Working days</span>
+                          <span className="font-semibold text-neutral-800">{summary.total_working_days}</span>
+                        </div>
+                        <div className={`flex items-center justify-between text-xs rounded px-2.5 py-1.5 border ${(summary.holiday_count ?? 0) > 0 ? 'bg-red-50 border-red-100 text-red-700' : 'bg-white border-neutral-100 text-neutral-400'}`}>
+                          <span>🎉 Holidays</span>
+                          <span className="font-semibold">
+                            {(summary.holiday_count ?? 0) > 0 ? `−${summary.holiday_count} day${summary.holiday_count !== 1 ? 's' : ''}` : 'None configured'}
+                          </span>
+                        </div>
+                        {Object.entries(summary.special_day_breakdown).map(([type, counts]) => (
+                          <div key={type} className="flex items-center justify-between text-xs text-neutral-600 bg-white rounded px-2.5 py-1.5 border border-neutral-100">
+                            <span className="capitalize">📌 {type.replace(/_/g, ' ')}</span>
+                            <span className="text-neutral-500">
+                              {counts.full_day > 0 && `−${counts.full_day} full`}
+                              {counts.full_day > 0 && counts.half_day > 0 && ', '}
+                              {counts.half_day > 0 && `−${counts.half_day} half`}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between text-xs bg-emerald-50 border border-emerald-200 rounded px-2.5 py-1.5 font-semibold text-emerald-800">
+                          <span>✅ Net teaching days</span>
+                          <span>{summary.net_curriculum_days}</span>
+                        </div>
+                      </div>
+                      {/* Add special day */}
+                      {!showAddSpecialDay ? (
+                        <button onClick={() => setShowAddSpecialDay(true)}
+                          className="w-full text-xs text-primary-600 border border-primary-200 rounded-lg py-2 hover:bg-primary-50 transition-colors font-medium">
+                          + Add a special day (Blue Day, Sports Day, etc.)
+                        </button>
+                      ) : (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex flex-col gap-2">
+                          <p className="text-xs font-semibold text-blue-800">Add Special Day</p>
+                          <p className="text-[10px] text-blue-600">Special days are always full day and will be excluded from curriculum planning.</p>
+                          <input type="date" value={newSpecialDay.date} onChange={e => setNewSpecialDay(s => ({ ...s, date: e.target.value }))}
+                            min={mode === 'month' && selected ? `${selected.year}-${String(selected.month).padStart(2,'0')}-01` : undefined}
+                            max={mode === 'month' && selected ? `${selected.year}-${String(selected.month).padStart(2,'0')}-${new Date(selected.year, selected.month, 0).getDate()}` : undefined}
+                            className="w-full px-3 py-2 border border-blue-200 rounded-lg text-xs bg-white focus:outline-none" />
+                          <input type="text" placeholder="Label (e.g. Blue Day, Sports Day, Annual Day)"
+                            value={newSpecialDay.label} onChange={e => setNewSpecialDay(s => ({ ...s, label: e.target.value }))}
+                            className="w-full px-3 py-2 border border-blue-200 rounded-lg text-xs bg-white focus:outline-none" />
+                          <textarea placeholder="Instructions for teachers (optional)"
+                            value={newSpecialDay.note} onChange={e => setNewSpecialDay(s => ({ ...s, note: e.target.value }))}
+                            rows={2} className="w-full px-3 py-2 border border-blue-200 rounded-lg text-xs bg-white focus:outline-none resize-none" />
+                          <div className="flex gap-2">
+                            <button onClick={() => { setShowAddSpecialDay(false); setNewSpecialDay({ date: '', label: '', note: '' }); }}
+                              className="flex-1 py-1.5 text-xs border border-neutral-200 rounded-lg hover:bg-neutral-50">Cancel</button>
+                            <button disabled={!newSpecialDay.date || !newSpecialDay.label || savingSpecialDay}
+                              onClick={async () => {
+                                if (!calData || !newSpecialDay.date || !newSpecialDay.label) return;
+                                setSavingSpecialDay(true);
+                                try {
+                                  await apiPost(`/api/v1/admin/calendar/${calData.academic_year}/special-days`, {
+                                    from_date: newSpecialDay.date, to_date: newSpecialDay.date,
+                                    day_type: 'event', label: newSpecialDay.label,
+                                    activity_note: newSpecialDay.note || null, duration_type: 'full_day',
+                                  }, token);
+                                  setShowAddSpecialDay(false);
+                                  setNewSpecialDay({ date: '', label: '', note: '' });
+                                  setSummary(null); setSummaryLoading(true);
+                                  const sel = validMonths.find(m => m.key === selectedKey);
+                                  const params = new URLSearchParams({ class_id: classId, academic_year: calData.academic_year });
+                                  if (firstSectionId) params.set('section_id', firstSectionId);
+                                  if (mode === 'month' && sel) { params.set('month', String(sel.month)); params.set('plan_year', String(sel.year)); }
+                                  setSummary(await apiGet<PlanSummary>(`/api/v1/admin/calendar/plan-summary?${params}`, token));
+                                } catch (e: any) { alert(e.message); }
+                                finally { setSavingSpecialDay(false); }
+                              }}
+                              className="flex-1 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 font-medium">
+                              {savingSpecialDay ? 'Saving…' : 'Add Special Day'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {/* Fit */}
+                      <div className={`rounded-lg px-3 py-2 text-xs font-medium border ${fitBg} ${fitColor}`}>
+                        {summary.recommendation}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
               {msg && <p className={`text-sm px-3 py-2 rounded-lg ${msg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>{msg}</p>}
@@ -329,13 +503,40 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
                 </div>
               </div>
               {conflict && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <p className="text-sm font-medium text-red-800 mb-1">Plans Already Exist</p>
-                  <p className="text-xs text-red-600 mb-3">{conflict.message}</p>
-                  <p className="text-xs text-red-500 mb-3">⚠ Regenerating will delete all completion records for this period.</p>
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xl shrink-0">⚠️</span>
+                    <div>
+                      <p className="text-sm font-semibold text-amber-900">Plans already exist for {conflict.month ? `${MONTHS_FULL[conflict.month - 1]} ${conflict.year}` : 'this period'}</p>
+                      <p className="text-xs text-amber-700 mt-0.5">Regenerating will delete existing plans and teacher completion records for this month.</p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-amber-200 rounded-lg px-3 py-2.5 flex flex-col gap-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-neutral-600">Holidays in this month</span>
+                      <span className={`font-semibold ${(conflict.holidayCount ?? 0) > 0 ? 'text-emerald-700' : 'text-neutral-400'}`}>
+                        {(conflict.holidayCount ?? 0) > 0 ? `✓ ${conflict.holidayCount} holiday${conflict.holidayCount !== 1 ? 's' : ''} will be considered` : 'None configured'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-neutral-600">Teacher completions</span>
+                      <span className="font-semibold text-red-600">Will be deleted</span>
+                    </div>
+                  </div>
+                  {(conflict.holidayCount ?? 0) === 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                      💡 No holidays configured for this month. Go to <strong>Calendar → Holidays</strong> to add them before regenerating.
+                    </div>
+                  )}
                   <div className="flex gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => setConflict(null)} className="flex-1">Cancel</Button>
-                    <Button variant="danger" size="sm" onClick={() => { setConflict(null); generate(true); }} className="flex-1">Regenerate</Button>
+                    <button onClick={() => setConflict(null)}
+                      className="flex-1 py-2.5 text-sm border border-neutral-200 rounded-xl hover:bg-neutral-50 transition-colors font-medium">
+                      Cancel
+                    </button>
+                    <button onClick={() => { setConflict(null); generate(true); }}
+                      className="flex-1 py-2.5 text-sm bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors font-semibold">
+                      Regenerate Plans
+                    </button>
                   </div>
                 </div>
               )}
@@ -1026,7 +1227,7 @@ export default function PlansPage() {
                   )}
                   <Button size="sm" variant="secondary"
                     onClick={() => setGeneratingClass({ id: classSections[0].class_id, name: className, hasCurriculum })}>
-                    📅 Assign Daily Planner
+                    🗓️ Generate Plans
                   </Button>
                   <span className="text-xs text-neutral-400">{classSections.length} section{classSections.length > 1 ? 's' : ''}</span>
                 </div>

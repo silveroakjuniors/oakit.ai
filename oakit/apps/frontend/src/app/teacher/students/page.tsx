@@ -1,10 +1,11 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
+import { X, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface Student { id: string; name: string; class_name: string; section_label: string; photo_url?: string; }
 interface Section { section_id: string; section_label: string; class_name: string; role: string; }
@@ -12,8 +13,130 @@ interface Observation { id: string; obs_text: string | null; categories: string[
 interface Milestone { id: string; domain: string; description: string; position: number; is_custom: boolean; achieved_at: string | null; achieved_by: string | null; }
 interface MilestoneData { class_level: string; milestones: Milestone[]; total: number; achieved: number; completion_pct: number; }
 
-const CATEGORIES = ['Behavior', 'Social Skills', 'Academic Progress', 'Motor Skills', 'Language', 'Other'];
+const CATEGORY_CONFIG = [
+  { id: 'Cognitive Skills',         label: 'Cognitive Skills',         icon: '🧠', color: 'text-pink-700',    bg: 'bg-pink-50',    border: 'border-pink-200' },
+  { id: 'Language & Communication', label: 'Language & Communication', icon: '🗣️', color: 'text-purple-700',  bg: 'bg-purple-50',  border: 'border-purple-200' },
+  { id: 'Social Interaction',       label: 'Social Interaction',       icon: '🤝', color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+  { id: 'Motor Skills',             label: 'Motor Skills',             icon: '🏃', color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200' },
+  { id: 'Emotional Development',    label: 'Emotional Development',    icon: '💛', color: 'text-yellow-700',  bg: 'bg-yellow-50',  border: 'border-yellow-200' },
+  { id: 'Creative Expression',      label: 'Creative Expression',      icon: '🎨', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+  { id: 'Academic Progress',        label: 'Academic Progress',        icon: '📚', color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
+  { id: 'Behavior',                 label: 'Behavior',                 icon: '⭐', color: 'text-orange-700',  bg: 'bg-orange-50',  border: 'border-orange-200' },
+  { id: 'Physical Health',          label: 'Physical Health',          icon: '💪', color: 'text-teal-700',    bg: 'bg-teal-50',    border: 'border-teal-200' },
+  { id: 'Other',                    label: 'Other',                    icon: '📌', color: 'text-neutral-700', bg: 'bg-neutral-50', border: 'border-neutral-200' },
+] as const;
+
+type CategoryConfig = typeof CATEGORY_CONFIG[number];
+
 const DOMAIN_ICONS: Record<string, string> = { Cognitive: '🧠', Social: '🤝', Motor: '🏃', Language: '🗣️', Other: '📌' };
+
+const AI_PROMPTS: Record<string, string[]> = {
+  'Cognitive Skills':         ['Shows strong problem-solving ability', 'Needs support with memory and recall', 'Excellent pattern recognition', 'Struggles with abstract concepts'],
+  'Language & Communication': ['Communicates clearly and confidently', 'Vocabulary is expanding well', 'Needs encouragement to speak up', 'Excellent listening skills'],
+  'Social Interaction':       ['Works well in group activities', 'Needs support sharing with peers', 'Shows leadership qualities', 'Prefers to work independently'],
+  'Motor Skills':             ['Fine motor skills are developing well', 'Needs support with pencil grip', 'Excellent coordination and balance', 'Struggles with cutting and pasting'],
+  'Emotional Development':    ['Manages emotions well', 'Gets frustrated easily, needs calming strategies', 'Shows empathy towards classmates', 'Separation anxiety observed'],
+  'Creative Expression':      ['Shows great imagination in art', 'Loves storytelling and role play', 'Excellent musical sense', 'Needs encouragement to try new activities'],
+  'Academic Progress':        ['Performing above grade level', 'Needs additional support in reading', 'Excellent number sense', 'Making steady progress'],
+  'Behavior':                 ['Follows classroom rules consistently', 'Needs reminders about classroom expectations', 'Positive attitude and enthusiasm', 'Disruptive during group time'],
+  'Physical Health':          ['Active and energetic', 'Tires easily, may need rest breaks', 'Good appetite and hydration habits', 'Needs support with self-care routines'],
+  'Other':                    ['General positive progress noted', 'Parent meeting recommended', 'Requires follow-up next week', 'Showing improvement overall'],
+};
+
+function ObservationModal({ student, category, token, onClose, onSaved }: {
+  student: Student; category: CategoryConfig; token: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [obsText, setObsText] = useState('');
+  const [obsShare, setObsShare] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const suggestions = AI_PROMPTS[category.id] || AI_PROMPTS['Other'];
+
+  async function save() {
+    if (!obsText.trim()) { setError('Please write an observation note.'); return; }
+    setSaving(true); setError('');
+    try {
+      await apiPost('/api/v1/teacher/observations', {
+        student_id: student.id, obs_text: obsText.trim(),
+        categories: [category.id], share_with_parent: obsShare,
+      }, token);
+      onSaved(); onClose();
+    } catch (e: any) { setError(e.message || 'Failed to save'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full lg:w-[480px] bg-white rounded-t-3xl lg:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className={`flex items-center justify-between px-5 py-4 ${category.bg} border-b ${category.border}`}>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{category.icon}</span>
+            <div>
+              <p className="text-sm font-bold text-neutral-800">{category.label}</p>
+              <p className="text-xs text-neutral-500">{student.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Sparkles size={13} className="text-primary-500" />
+              <p className="text-xs font-semibold text-neutral-600">Oakie suggestions — tap to use</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((s, i) => (
+                <button key={i} onClick={() => setObsText(s)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-all text-left ${
+                    obsText === s ? `${category.bg} ${category.border} ${category.color} font-semibold` : 'border-neutral-200 text-neutral-600 hover:border-primary-300 hover:bg-primary-50'
+                  }`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-neutral-600 mb-1.5">Your observation</p>
+            <textarea value={obsText} onChange={e => setObsText(e.target.value.slice(0, 500))}
+              placeholder={`Write your observation about ${student.name.split(' ')[0]}...`}
+              rows={4} autoFocus
+              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400 resize-none" />
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-xs text-neutral-400">{obsText.length}/500</span>
+              {obsText.length > 0 && <button onClick={() => setObsText('')} className="text-xs text-neutral-400 hover:text-neutral-600">Clear</button>}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between px-3 py-2.5 bg-neutral-50 rounded-xl border border-neutral-100">
+            <div>
+              <p className="text-xs font-semibold text-neutral-700">Share with parent</p>
+              <p className="text-[10px] text-neutral-400">Parent will see this in their portal</p>
+            </div>
+            <button onClick={() => setObsShare(v => !v)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${obsShare ? 'bg-primary-600' : 'bg-neutral-200'}`}>
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${obsShare ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+
+          {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+        </div>
+
+        <div className="px-5 pb-5 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50 transition-colors">Cancel</button>
+          <button onClick={save} disabled={saving || !obsText.trim()}
+            className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {saving ? 'Saving…' : 'Save Observation'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function TeacherStudentsPage() {
   const router = useRouter();
@@ -25,18 +148,10 @@ export default function TeacherStudentsPage() {
   const [studentTab, setStudentTab] = useState<'observations' | 'milestones'>('observations');
   const [observations, setObservations] = useState<Observation[]>([]);
   const [milestoneData, setMilestoneData] = useState<MilestoneData | null>(null);
-  const [obsText, setObsText] = useState('');
-  const [obsCategories, setObsCategories] = useState<string[]>([]);
-  const [obsShare, setObsShare] = useState(false);
-  const [savingObs, setSavingObs] = useState(false);
-  const [obsError, setObsError] = useState('');
-  const [obsMsg, setObsMsg] = useState('');
   const [togglingMilestone, setTogglingMilestone] = useState<string | null>(null);
+  const [modalCategory, setModalCategory] = useState<CategoryConfig | null>(null);
 
-  useEffect(() => {
-    if (!token) { router.push('/login'); return; }
-    loadSections();
-  }, []);
+  useEffect(() => { if (!token) { router.push('/login'); return; } loadSections(); }, []);
 
   async function loadSections() {
     try {
@@ -47,16 +162,12 @@ export default function TeacherStudentsPage() {
   }
 
   async function loadStudents(sectionId: string) {
-    try {
-      const data = await apiGet<Student[]>(`/api/v1/teacher/sections/${sectionId}/students`, token);
-      setStudents(data);
-    } catch {}
+    try { setStudents(await apiGet<Student[]>(`/api/v1/teacher/sections/${sectionId}/students`, token)); } catch {}
   }
 
   async function openStudent(student: Student) {
     setActiveStudent(student);
     setStudentTab('observations');
-    setObsText(''); setObsCategories([]); setObsShare(false); setObsError(''); setObsMsg('');
     await Promise.all([loadObservations(student.id), loadMilestones(student.id)]);
   }
 
@@ -66,22 +177,6 @@ export default function TeacherStudentsPage() {
 
   async function loadMilestones(studentId: string) {
     try { setMilestoneData(await apiGet<MilestoneData>(`/api/v1/teacher/milestones/${studentId}`, token)); } catch {}
-  }
-
-  async function saveObservation() {
-    if (!obsText.trim() && obsCategories.length === 0) { setObsError('Please add a note or select a category.'); return; }
-    if (obsText.length > 500) { setObsError('Note must be 500 characters or less.'); return; }
-    setSavingObs(true); setObsError(''); setObsMsg('');
-    try {
-      await apiPost('/api/v1/teacher/observations', {
-        student_id: activeStudent!.id, obs_text: obsText.trim() || null,
-        categories: obsCategories, share_with_parent: obsShare,
-      }, token);
-      setObsText(''); setObsCategories([]); setObsShare(false);
-      setObsMsg('✓ Observation saved');
-      await loadObservations(activeStudent!.id);
-    } catch (e: any) { setObsError(e.message || 'Failed to save'); }
-    finally { setSavingObs(false); }
   }
 
   async function toggleMilestone(milestoneId: string, achieved: boolean) {
@@ -108,6 +203,13 @@ export default function TeacherStudentsPage() {
     } catch {}
   }
 
+  const obsByCategory = observations.reduce((acc: Record<string, number>, obs) => {
+    obs.categories.forEach(c => { acc[c] = (acc[c] || 0) + 1; });
+    return acc;
+  }, {});
+
+  const coveredCategories = Object.keys(obsByCategory).length;
+
   const groupedMilestones = milestoneData?.milestones.reduce((acc: Record<string, Milestone[]>, m) => {
     if (!acc[m.domain]) acc[m.domain] = [];
     acc[m.domain].push(m);
@@ -116,6 +218,11 @@ export default function TeacherStudentsPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col">
+      {modalCategory && activeStudent && (
+        <ObservationModal student={activeStudent} category={modalCategory} token={token}
+          onClose={() => setModalCategory(null)} onSaved={() => loadObservations(activeStudent.id)} />
+      )}
+
       <header className="text-white px-4 py-3 flex items-center justify-between shrink-0"
         style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%)' }}>
         <div className="flex items-center gap-3">
@@ -128,7 +235,6 @@ export default function TeacherStudentsPage() {
 
       {!activeStudent ? (
         <div className="p-4 max-w-2xl mx-auto w-full">
-          {/* Section selector */}
           {sections.length > 1 && (
             <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
               {sections.map(s => (
@@ -139,13 +245,11 @@ export default function TeacherStudentsPage() {
               ))}
             </div>
           )}
-
           <div className="flex flex-col gap-2">
             {students.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-3xl mb-2">🎒</p>
                 <p className="text-sm text-neutral-500">No students found</p>
-                <p className="text-xs text-neutral-400 mt-1">Students are loaded from your section&apos;s attendance records</p>
               </div>
             )}
             {students.map(s => (
@@ -165,7 +269,6 @@ export default function TeacherStudentsPage() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full">
-          {/* Student tab bar */}
           <div className="flex bg-white border-b border-neutral-200 px-4">
             {(['observations', 'milestones'] as const).map(t => (
               <button key={t} onClick={() => setStudentTab(t)}
@@ -178,70 +281,93 @@ export default function TeacherStudentsPage() {
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-8">
             {studentTab === 'observations' && (
               <>
-                {/* Add observation form */}
+                {/* Summary */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
-                  <p className="text-sm font-semibold text-neutral-700 mb-3">Add Observation</p>
-                  <textarea value={obsText} onChange={e => setObsText(e.target.value.slice(0, 500))}
-                    placeholder="Write a note about this student... (optional if category selected)"
-                    rows={3} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-primary-400 resize-none mb-2" />
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-neutral-400">{obsText.length}/500</span>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-bold text-neutral-800">{activeStudent.name}</p>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                      coveredCategories === 0 ? 'bg-red-100 text-red-600' :
+                      coveredCategories < CATEGORY_CONFIG.length / 2 ? 'bg-amber-100 text-amber-700' :
+                      'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {coveredCategories}/{CATEGORY_CONFIG.length} categories covered
+                    </span>
                   </div>
-                  {/* Category chips */}
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {CATEGORIES.map(cat => (
-                      <button key={cat} onClick={() => setObsCategories(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])}
-                        className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${obsCategories.includes(cat) ? 'bg-primary-600 text-white border-primary-600' : 'border-neutral-200 text-neutral-600 hover:border-primary-300'}`}>
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Share toggle */}
-                  <label className="flex items-center gap-2 cursor-pointer mb-3">
-                    <div onClick={() => setObsShare(!obsShare)}
-                      className={`w-10 h-6 rounded-full transition-colors relative ${obsShare ? 'bg-primary-600' : 'bg-neutral-200'}`}>
-                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${obsShare ? 'left-5' : 'left-1'}`} />
-                    </div>
-                    <span className="text-xs text-neutral-600">Share with parent</span>
-                  </label>
-                  {obsError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl mb-2">{obsError}</p>}
-                  {obsMsg && <p className="text-xs text-green-600 mb-2">{obsMsg}</p>}
-                  <button onClick={saveObservation} disabled={savingObs}
-                    className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors">
-                    {savingObs ? 'Saving...' : 'Save Observation'}
-                  </button>
+                  <p className="text-xs text-neutral-400">Tap any category below to add an observation</p>
                 </div>
 
-                {/* Observation history */}
+                {/* Category grid */}
+                <div className="grid grid-cols-2 gap-2">
+                  {CATEGORY_CONFIG.map(cat => {
+                    const count = obsByCategory[cat.id] || 0;
+                    return (
+                      <button key={cat.id} onClick={() => setModalCategory(cat)}
+                        className={`flex items-center gap-2.5 px-3 py-3 rounded-2xl border-2 text-left transition-all hover:shadow-sm active:scale-95 ${
+                          count > 0 ? `${cat.bg} ${cat.border}` : 'bg-white border-neutral-200 hover:border-neutral-300'
+                        }`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-base ${count > 0 ? cat.bg : 'bg-neutral-100'}`}>
+                          {cat.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-semibold leading-tight ${count > 0 ? cat.color : 'text-neutral-700'}`}>{cat.label}</p>
+                          {count > 0 && <p className={`text-[10px] font-medium mt-0.5 ${cat.color} opacity-70`}>{count} note{count > 1 ? 's' : ''}</p>}
+                        </div>
+                        {count === 0 ? (
+                          <div className="w-5 h-5 rounded-full border-2 border-neutral-200 shrink-0" />
+                        ) : (
+                          <CheckCircle2 size={16} className={`${cat.color} shrink-0`} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* History */}
                 {observations.length > 0 && (
                   <div className="flex flex-col gap-3">
-                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">History</p>
-                    {observations.map(obs => (
-                      <div key={obs.id} className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
-                        {obs.obs_text && <p className="text-sm text-neutral-700 mb-2">{obs.obs_text}</p>}
-                        {obs.categories.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mb-2">
-                            {obs.categories.map(c => <span key={c} className="text-xs bg-primary-50 text-primary-700 px-2 py-0.5 rounded-full">{c}</span>)}
+                    <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">All Observations ({observations.length})</p>
+                    {observations.map(obs => {
+                      const catConfig = CATEGORY_CONFIG.find(c => obs.categories.includes(c.id));
+                      return (
+                        <div key={obs.id} className={`bg-white rounded-2xl p-4 shadow-sm border ${catConfig?.border || 'border-neutral-100'}`}>
+                          <div className="flex items-start gap-2 mb-2">
+                            {catConfig && <span className="text-base shrink-0">{catConfig.icon}</span>}
+                            <div className="flex-1 min-w-0">
+                              {obs.categories.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mb-1.5">
+                                  {obs.categories.map(c => {
+                                    const cc = CATEGORY_CONFIG.find(x => x.id === c);
+                                    return <span key={c} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cc?.bg || 'bg-neutral-100'} ${cc?.color || 'text-neutral-600'}`}>{c}</span>;
+                                  })}
+                                </div>
+                              )}
+                              {obs.obs_text && <p className="text-sm text-neutral-700 leading-relaxed">{obs.obs_text}</p>}
+                            </div>
                           </div>
-                        )}
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs text-neutral-400">{obs.obs_date} · {obs.teacher_name}</p>
-                          <button onClick={() => toggleObsShare(obs.id, obs.share_with_parent)}
-                            className={`text-xs px-2 py-1 rounded-lg transition-colors ${obs.share_with_parent ? 'bg-green-50 text-green-700' : 'bg-neutral-50 text-neutral-500'}`}>
-                            {obs.share_with_parent ? '👁 Shared' : 'Share'}
-                          </button>
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs text-neutral-400">{obs.obs_date} · {obs.teacher_name}</p>
+                            <button onClick={() => toggleObsShare(obs.id, obs.share_with_parent)}
+                              className={`text-xs px-2.5 py-1 rounded-lg transition-colors font-medium ${obs.share_with_parent ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-neutral-50 text-neutral-500 border border-neutral-200'}`}>
+                              {obs.share_with_parent ? '👁 Shared' : 'Share'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
-                {observations.length === 0 && <p className="text-sm text-neutral-400 text-center py-4">No observations yet</p>}
+                {observations.length === 0 && (
+                  <div className="text-center py-6">
+                    <p className="text-2xl mb-2">📝</p>
+                    <p className="text-sm text-neutral-500 font-medium">No observations yet</p>
+                    <p className="text-xs text-neutral-400 mt-1">Tap any category above to add your first observation</p>
+                  </div>
+                )}
               </>
             )}
 
             {studentTab === 'milestones' && milestoneData && (
               <>
-                {/* Progress */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-neutral-700">{milestoneData.class_level} Milestones</p>
@@ -252,8 +378,6 @@ export default function TeacherStudentsPage() {
                   </div>
                   <p className="text-xs text-neutral-400 mt-1.5">{milestoneData.achieved} of {milestoneData.total} achieved</p>
                 </div>
-
-                {/* Milestones by domain */}
                 {Object.entries(groupedMilestones).map(([domain, items]) => (
                   <div key={domain} className="bg-white rounded-2xl shadow-sm border border-neutral-100 overflow-hidden">
                     <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-100">
@@ -268,7 +392,7 @@ export default function TeacherStudentsPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm ${m.achieved_at ? 'text-green-700' : 'text-neutral-700'}`}>{m.description}</p>
-                          {m.achieved_at && <p className="text-xs text-green-500 mt-0.5">Achieved {m.achieved_at} by {m.achieved_by}</p>}
+                          {m.achieved_at && <p className="text-xs text-green-500 mt-0.5">Achieved {m.achieved_at}</p>}
                         </div>
                       </button>
                     ))}

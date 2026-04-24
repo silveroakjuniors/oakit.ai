@@ -41,7 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Get settings
     const settingsRow = await pool.query(
-      `SELECT notes_expiry_days, ai_plan_mode FROM school_settings WHERE school_id = $1`,
+      `SELECT notes_expiry_days, ai_plan_mode, voice_enabled FROM school_settings WHERE school_id = $1`,
       [school_id]
     );
     if (settingsRow.rows.length === 0) {
@@ -59,6 +59,7 @@ router.get('/', async (req: Request, res: Response) => {
       contact_address: school.contact?.address ?? '',
       notes_expiry_days: settingsRow.rows[0]?.notes_expiry_days ?? 14,
       ai_plan_mode: settingsRow.rows[0]?.ai_plan_mode ?? 'standard',
+      voice_enabled: settingsRow.rows[0]?.voice_enabled ?? false,
       logo_url: school.logo_path ? getPublicUrl(school.logo_path) : null,
       primary_color: school.primary_color ?? '#1A3C2E',
       tagline: school.tagline ?? '',
@@ -123,11 +124,24 @@ router.put('/', async (req: Request, res: Response) => {
       );
     }
 
+    // Voice feature toggle
+    const { voice_enabled } = req.body;
+    if (voice_enabled !== undefined) {
+      await pool.query(
+        `INSERT INTO school_settings (school_id, voice_enabled, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (school_id) DO UPDATE
+         SET voice_enabled = EXCLUDED.voice_enabled, updated_at = now()`,
+        [school_id, Boolean(voice_enabled)]
+      );
+    }
+
     // Return updated settings
     const updated = await pool.query(
       `SELECT s.name as school_name, s.subdomain, s.contact, s.logo_path, s.primary_color, s.tagline,
               COALESCE(ss.notes_expiry_days, 14) as notes_expiry_days,
-              COALESCE(ss.ai_plan_mode, 'standard') as ai_plan_mode
+              COALESCE(ss.ai_plan_mode, 'standard') as ai_plan_mode,
+              COALESCE(ss.voice_enabled, false) as voice_enabled
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
        WHERE s.id = $1`,
@@ -142,6 +156,7 @@ router.put('/', async (req: Request, res: Response) => {
       contact_address: r.contact?.address ?? '',
       notes_expiry_days: r.notes_expiry_days,
       ai_plan_mode: r.ai_plan_mode ?? 'standard',
+      voice_enabled: r.voice_enabled ?? false,
       logo_url: r.logo_path ? getPublicUrl(r.logo_path) : null,
       primary_color: r.primary_color ?? '#1A3C2E',
       tagline: r.tagline ?? '',
