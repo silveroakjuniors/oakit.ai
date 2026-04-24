@@ -60,7 +60,20 @@ export default function ReconciliationPage() {
   const [cashLogs, setCashLogs] = useState<CashLog[]>([]);
   const [cashLogsLoading, setCashLogsLoading] = useState(false);
 
+  // Permissions
+  const [canPerform, setCanPerform] = useState(false);
+  const [canView, setCanView] = useState(false);
+  const [permsLoaded, setPermsLoaded] = useState(false);
+
   useEffect(() => {
+    apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+      .then(d => {
+        const perms = d.permissions || [];
+        setCanView(perms.includes('VIEW_RECONCILIATION'));
+        setCanPerform(perms.includes('PERFORM_RECONCILIATION'));
+        setPermsLoaded(true);
+      })
+      .catch(() => setPermsLoaded(true));
     loadCashLogs();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
@@ -152,13 +165,24 @@ export default function ReconciliationPage() {
     }
   }
 
+  if (permsLoaded && !canView && !canPerform) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-[300px] text-center">
+        <p className="text-4xl mb-3">🔒</p>
+        <p className="text-base font-semibold text-gray-700 mb-1">Access Restricted</p>
+        <p className="text-sm text-gray-400">You don't have permission to view reconciliation data.<br />Contact the Principal to request access.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-primary">Reconciliation</h1>
       </div>
 
-      {/* Bank statement upload */}
+      {/* Bank statement upload — only for users with PERFORM_RECONCILIATION */}
+      {canPerform && (
       <Card className="mb-6">
         <h2 className="text-sm font-semibold text-gray-700 mb-4">Bank Statement Upload</h2>
         <div className="flex items-center gap-3 mb-4">
@@ -240,8 +264,10 @@ export default function ReconciliationPage() {
           <p className="text-sm text-red-500">Processing failed. Please try again.</p>
         )}
       </Card>
+      )} {/* end canPerform */}
 
-      {/* Cash reconciliation */}
+      {/* Cash reconciliation — only for users with PERFORM_RECONCILIATION */}
+      {canPerform && (
       <Card className="mb-6">
         <h2 className="text-sm font-semibold text-gray-700 mb-4">Cash Reconciliation</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -274,8 +300,9 @@ export default function ReconciliationPage() {
         {cashError && <p className="text-xs text-red-500 mb-2">{cashError}</p>}
         {cashSuccess && <p className="text-xs text-green-600 mb-2">{cashSuccess}</p>}
       </Card>
+      )} {/* end canPerform */}
 
-      {/* Cash logs table */}
+      {/* Cash logs table — visible to anyone with VIEW_RECONCILIATION or PERFORM_RECONCILIATION */}
       <Card>
         <h2 className="text-sm font-semibold text-gray-700 mb-4">Cash Reconciliation Logs</h2>
         {cashLogsLoading ? (

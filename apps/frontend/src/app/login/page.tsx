@@ -15,367 +15,297 @@ interface LoginResponse {
   force_password_reset?: boolean;
 }
 
-interface AiHealthResponse {
-  ai?: 'up' | 'down';
-  status?: string;
-}
-
 export default function LoginPage() {
   const router = useRouter();
-  const [isSuperAdminLogin, setIsSuperAdminLogin] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isSuperAdminLogin, setIsSuperAdminLogin] = useState(false);
   const [schoolCode, setSchoolCodeState] = useState('');
   const [schoolName, setSchoolName] = useState('');
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isParentLogin, setIsParentLogin] = useState(false);
-  const [parentDemoAccounts, setParentDemoAccounts] = useState<string[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [aiStatus, setAiStatus] = useState<'checking' | 'up' | 'down'>('checking');
 
-  // --- Logic: Hydration Fix & Load Saved Code ---
   useEffect(() => {
-    const isSuperAdminMode = typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('superadmin') === '1';
-    setIsSuperAdminLogin(isSuperAdminMode);
-
-    // Check if this looks like a parent login (common parent mobile patterns)
-    const urlParams = new URLSearchParams(window.location.search);
-    const isParentMode = urlParams.get('role') === 'parent' || mobile.startsWith('980000000');
-    setIsParentLogin(isParentMode);
-
-    // Set demo parent accounts
-    setParentDemoAccounts(['9800000004', '9800000005', '9800000006']);
-
-    if (isSuperAdminMode) {
-      setSchoolCodeState('platform');
-      setMounted(true);
-      return;
-    }
-
+    const params = new URLSearchParams(window.location.search);
+    const superAdmin = params.get('superadmin') === '1';
+    setIsSuperAdminLogin(superAdmin);
+    if (superAdmin) { setSchoolCodeState('platform'); setMounted(true); return; }
     const saved = getSchoolCode();
-    if (saved) {
-      setSchoolCodeState(saved);
-      fetchSchoolName(saved);
-    }
+    if (saved) { setSchoolCodeState(saved); fetchSchoolName(saved); }
     setMounted(true);
   }, []);
 
   useEffect(() => {
     if (!isSuperAdminLogin) return;
-
     let active = true;
-    const checkAi = async () => {
+    const check = async () => {
       try {
-        setAiStatus('checking');
         const res = await fetch(`${API_BASE}/health/ai`);
-        const data: AiHealthResponse = await res.json().catch(() => ({}));
+        const d = await res.json().catch(() => ({}));
         if (!active) return;
-        if (res.ok && data.ai === 'up') setAiStatus('up');
-        else setAiStatus('down');
-      } catch {
-        if (active) setAiStatus('down');
-      }
+        setAiStatus(res.ok && d.ai === 'up' ? 'up' : 'down');
+      } catch { if (active) setAiStatus('down'); }
     };
-
-    checkAi();
-    const id = window.setInterval(checkAi, 30000);
-    return () => {
-      active = false;
-      window.clearInterval(id);
-    };
+    check();
+    const id = window.setInterval(check, 30000);
+    return () => { active = false; window.clearInterval(id); };
   }, [isSuperAdminLogin]);
 
   async function fetchSchoolName(code: string) {
     if (!code || code.length < 2) { setSchoolName(''); return; }
     try {
       const res = await fetch(`${API_BASE}/api/v1/auth/school-info?code=${encodeURIComponent(code.toLowerCase())}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSchoolName(data.name || '');
-      } else {
-        setSchoolName('');
-      }
+      if (res.ok) { const d = await res.json(); setSchoolName(d.name || ''); }
+      else setSchoolName('');
     } catch { setSchoolName(''); }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
-    
-    if (!schoolCode.trim()) {
-      setError('School code is required');
-      return;
-    }
-
-    if (mobile && !/^\d{10}$/.test(mobile)) {
-      setError('Mobile number must be 10 digits');
-      return;
-    }
-
+    if (!schoolCode.trim()) { setError('School code is required'); return; }
+    if (mobile && !/^\d{10}$/.test(mobile)) { setError('Mobile number must be 10 digits'); return; }
     setLoading(true);
     try {
-      const submittedSchoolCode = isSuperAdminLogin ? 'platform' : schoolCode.trim().toLowerCase();
+      const code = isSuperAdminLogin ? 'platform' : schoolCode.trim().toLowerCase();
       const data = await apiPost<LoginResponse>('/api/v1/auth/login', {
-        school_code: submittedSchoolCode,
-        mobile: mobile.trim(),
-        password,
+        school_code: code, mobile: mobile.trim(), password,
       });
-      
       setToken(data.token);
       setRole(data.role);
-      setSchoolCode(submittedSchoolCode);
-
-      // Fetch and apply brand colour in background
+      setSchoolCode(code);
       try {
-        const settingsRes = await fetch(`${API_BASE}/api/v1/admin/settings`, {
-          headers: { Authorization: `Bearer ${data.token}` },
-        });
-        if (settingsRes.ok) {
-          const s = await settingsRes.json();
-          if (s.primary_color) applyBrandColor(s.primary_color);
-          if (s.tagline !== undefined) saveTagline(s.tagline || '');
-        }
+        const s = await fetch(`${API_BASE}/api/v1/admin/settings`, { headers: { Authorization: `Bearer ${data.token}` } });
+        if (s.ok) { const sd = await s.json(); if (sd.primary_color) applyBrandColor(sd.primary_color); if (sd.tagline !== undefined) saveTagline(sd.tagline || ''); }
       } catch { /* non-critical */ }
-      
-      if (data.force_password_reset) { 
-        router.push('/auth/change-password'); 
-        return; 
-      }
+      if (data.force_password_reset) { router.push('/auth/change-password'); return; }
       router.push(getRoleRedirect(data.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid credentials');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
-  // Prevent hydration mismatch by returning a skeleton or null until mounted
-  if (!mounted) {
-    return <div className="min-h-screen bg-[#1a4a2e]" />;
-  }
+  if (!mounted) return <div className="min-h-screen" style={{ background: '#0D1F14' }} />;
 
-  return (
-    <div className="min-h-screen flex bg-white font-sans">
-      
-      {/* --- Left Panel: Branding --- */}
-      <div className="hidden lg:flex lg:w-[45%] bg-[#1a4a2e] flex-col justify-between p-16 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-          <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-400 blur-[120px]" />
-          <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] rounded-full bg-emerald-500 blur-[100px]" />
-        </div>
-        <div className="relative z-10">
-          <OakitLogo size="md" variant="light" showTagline />
-        </div>
-        <div className="relative z-10 flex flex-col items-center text-center">
-          <div className="relative group">
-            <div className="absolute -inset-1 bg-emerald-500/20 rounded-full blur group-hover:blur-xl transition duration-1000"></div>
-            <img src="/oakie.png" alt="Oakie AI" className="relative w-64 h-auto object-contain brightness-110 drop-shadow-2xl animate-float" />
+  // ── Super-admin: dark platform login ─────────────────────────────────
+  if (isSuperAdminLogin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg,#09090B 0%,#18181B 60%,#1C1917 100%)' }}>
+        <div className="absolute inset-0 opacity-[0.025]"
+          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
+        <div className="relative w-full max-w-sm z-10">
+          <div className="text-center mb-8">
+            <OakitLogo size="md" variant="light" />
+            <span className="mt-3 inline-block text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1 rounded-full"
+              style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              Platform Admin
+            </span>
           </div>
-          <h2 className="text-white text-3xl font-black mt-8 tracking-tight">I am Oakie</h2>
-          <p className="text-emerald-400/80 font-bold uppercase tracking-[0.2em] text-xs mt-2">Your Personal AI Mentor</p>
+          <div className="rounded-2xl p-8" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)' }}>
+            <div className="flex items-center justify-between mb-6">
+              <h1 className="text-xl font-bold text-white">Sign In</h1>
+              <div className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+                aiStatus === 'up' ? 'text-emerald-400' : aiStatus === 'down' ? 'text-red-400' : 'text-amber-400'
+              }`} style={{ background: 'rgba(255,255,255,0.06)' }}>
+                <span className={`w-1.5 h-1.5 rounded-full ${aiStatus === 'up' ? 'bg-emerald-400 animate-pulse' : aiStatus === 'down' ? 'bg-red-400' : 'bg-amber-400 animate-pulse'}`} />
+                AI {aiStatus === 'up' ? 'Online' : aiStatus === 'down' ? 'Down' : '…'}
+              </div>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-widest block mb-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Mobile</label>
+                <input type="tel" placeholder="10-digit number" value={mobile}
+                  onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} required
+                  className="w-full px-4 py-3 rounded-xl text-sm font-medium text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-white/20 transition-all"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }} />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-widest block mb-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Password</label>
+                <div className="relative">
+                  <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password}
+                    onChange={e => setPassword(e.target.value)} required
+                    className="w-full px-4 py-3 pr-11 rounded-xl text-sm font-medium text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-white/20 transition-all"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }} />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+              {error && <p className="text-xs font-medium rounded-xl px-3 py-2.5" style={{ background: 'rgba(239,68,68,0.12)', color: '#FCA5A5', border: '1px solid rgba(239,68,68,0.2)' }}>{error}</p>}
+              <button type="submit" disabled={loading}
+                className="w-full py-3 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-40 active:scale-[0.98]"
+                style={{ background: 'linear-gradient(135deg,#1F7A5A,#2A9470)', boxShadow: '0 4px 16px rgba(31,122,90,0.3)' }}>
+                {loading ? <Loader2 size={16} className="animate-spin" /> : null}
+                {loading ? 'Signing in…' : 'Sign In →'}
+              </button>
+            </form>
+          </div>
+          <p className="text-center mt-5">
+            <button onClick={() => { localStorage.removeItem('oakit_school_code'); window.location.reload(); }}
+              className="text-[11px] transition-colors" style={{ color: 'rgba(255,255,255,0.2)' }}>
+              Reset Connection
+            </button>
+          </p>
         </div>
+      </div>
+    );
+  }
+
+  // ── Standard login: split-screen, one form for all roles ─────────────
+  return (
+    <div className="min-h-screen flex" style={{ fontFamily: "'Inter',-apple-system,sans-serif" }}>
+
+      {/* Left panel */}
+      <div className="hidden lg:flex lg:w-[44%] flex-col justify-between p-14 relative overflow-hidden"
+        style={{ background: 'linear-gradient(160deg,#0D1F14 0%,#1a4a2e 50%,#1F7A5A 100%)' }}>
+        {/* Blobs */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full blur-3xl opacity-20" style={{ background: '#52B788' }} />
+          <div className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl opacity-15" style={{ background: '#2EC4B6' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full blur-3xl opacity-10" style={{ background: '#74C69D' }} />
+        </div>
+
+        {/* Logo */}
         <div className="relative z-10">
-          <div className="h-1 w-12 bg-emerald-500 mb-6 rounded-full" />
-          <blockquote className="text-emerald-50/90 text-xl font-medium leading-relaxed italic max-w-sm">
+          <OakitLogo size="sm" variant="light" showTagline />
+        </div>
+
+        {/* Oakie + headline */}
+        <div className="relative z-10 flex flex-col items-center text-center">
+          <div className="relative mb-6">
+            <div className="absolute -inset-6 rounded-full blur-2xl opacity-25" style={{ background: '#52B788' }} />
+            <img src="/oakie.png" alt="Oakie AI" className="relative w-52 h-auto object-contain drop-shadow-2xl"
+              style={{ animation: 'float 4s ease-in-out infinite' }} />
+          </div>
+          <h2 className="text-white text-3xl font-black tracking-tight leading-tight">
+            I am Oakie
+          </h2>
+          <p className="text-emerald-300/70 text-sm mt-2 font-medium tracking-wide uppercase" style={{ letterSpacing: '0.15em' }}>
+            Your School's AI Mentor
+          </p>
+          <div className="flex items-center gap-3 mt-6">
+            {['Teachers', 'Admins', 'Principals', 'Parents'].map(r => (
+              <span key={r} className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+                style={{ background: 'rgba(255,255,255,0.10)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                {r}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Quote */}
+        <div className="relative z-10">
+          <div className="h-px w-10 mb-5 rounded-full" style={{ background: 'rgba(82,183,136,0.5)' }} />
+          <p className="text-emerald-50/70 text-base italic leading-relaxed max-w-xs">
             "Empowering schools with AI-driven curriculum management."
-          </blockquote>
+          </p>
         </div>
       </div>
 
-      {/* --- Right Panel: Form --- */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 bg-slate-50">
+      {/* Right panel */}
+      <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 bg-gray-50">
+        {/* Mobile logo */}
         <div className="lg:hidden mb-10">
           <OakitLogo size="sm" variant="dark" showTagline />
         </div>
 
-        <div className="w-full max-w-md bg-white p-10 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 animate-in fade-in slide-in-from-bottom-6 duration-700">
-          <div className="mb-10 text-center lg:text-left">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-              {isParentLogin ? 'Welcome, Parent! 👨‍👩‍👧‍👦' : 'Welcome back'}
-            </h1>
-            <p className="text-slate-500 font-medium mt-2 text-sm italic">
-              {isParentLogin
-                ? 'Connect with your child\'s learning journey and stay updated on their progress.'
-                : schoolCode
-                  ? schoolName
-                    ? `Signing you into ${schoolName} (${schoolCode.toUpperCase()})`
-                    : `Signing you into ${schoolCode.toUpperCase()}`
-                  : 'Sign in to continue to Oakit.'}
-            </p>
-            
-            {isParentLogin && (
-              <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                  <span className="text-sm font-semibold text-emerald-800">Demo Parent Accounts</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {parentDemoAccounts.map(account => (
-                    <button
-                      key={account}
-                      onClick={() => setMobile(account)}
-                      className="px-3 py-1 text-xs bg-white border border-emerald-300 rounded-full text-emerald-700 hover:bg-emerald-100 transition-colors"
-                    >
-                      {account}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-emerald-600 mt-2">Click any demo account to auto-fill</p>
-              </div>
-            )}
-            
-            {isSuperAdminLogin && (
-              <div className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold border ${
-                aiStatus === 'up'
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : aiStatus === 'down'
-                    ? 'bg-rose-50 text-rose-700 border-rose-200'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
-              }`}>
-                <span>{aiStatus === 'up' ? '●' : aiStatus === 'down' ? '◉' : '◌'}</span>
-                <span>
-                  {aiStatus === 'up'
-                    ? 'AI Service: Online'
-                    : aiStatus === 'down'
-                      ? 'AI Service: Down'
-                      : 'AI Service: Checking...'}
-                </span>
-              </div>
-            )}
-          </div>
+        <div className="w-full max-w-md">
+          {/* Card */}
+          <div className="bg-white rounded-3xl shadow-xl shadow-gray-200/60 border border-gray-100 p-9">
+            <div className="mb-8">
+              <h1 className="text-2xl font-black text-gray-900 tracking-tight">Welcome back</h1>
+              <p className="text-sm text-gray-400 mt-1.5">
+                {schoolName
+                  ? `Signing into ${schoolName}`
+                  : schoolCode
+                    ? `School: ${schoolCode.toUpperCase()}`
+                    : 'Sign in to continue to Oakit'}
+              </p>
+            </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            
-            {/* School Code: Display ONLY if no saved code is found in storage */}
-            {!isSuperAdminLogin && !getSchoolCode() && (
-              <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-                <div className="flex items-center justify-between ml-1">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">School Code</label>
-                  {isParentLogin && (
-                    <button 
-                      onClick={() => alert('Contact your school administration for the school code. Common codes: sojs, demo, test')}
-                      className="text-xs text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
-                    >
-                      Forgot Code?
-                    </button>
-                  )}
-                </div>
-                <div className="relative group">
-                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
-                    <School size={18} />
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* School code — only if not cached */}
+              {!getSchoolCode() && (
+                <div>
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest block mb-2">School Code</label>
+                  <div className="relative">
+                    <School size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
+                    <input type="text" placeholder="e.g. sojs" value={schoolCode}
+                      onChange={e => { setSchoolCodeState(e.target.value); fetchSchoolName(e.target.value); }} required
+                      className="w-full pl-11 pr-4 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 transition-all" />
                   </div>
-                  <input
-                    type="text"
-                    placeholder="e.g. sojs"
-                    value={schoolCode}
-                    onChange={e => { setSchoolCodeState(e.target.value); fetchSchoolName(e.target.value); }}
-                    required
-                    className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-bold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Mobile Number</label>
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
-                  <Smartphone size={18} />
-                </div>
-                <input
-                  type="tel"
-                  placeholder="10-digit number"
-                  value={mobile}
-                  onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  required
-                  className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-bold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between ml-1">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Password</label>
-                <Link href="/auth/forgot-password" className="text-xs text-emerald-700 font-black hover:underline underline-offset-4">
-                  Forgot?
-                </Link>
-              </div>
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
-                  <Lock size={18} />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  className="w-full pl-12 pr-12 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-bold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="bg-rose-50 border border-rose-100 rounded-2xl px-4 py-3 flex items-center gap-3 animate-shake">
-                <AlertCircle className="text-rose-500 shrink-0" size={18} />
-                <p className="text-xs text-rose-700 font-bold uppercase tracking-tight">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#1a4a2e] text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-emerald-900/20 hover:bg-emerald-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-            >
-              {loading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <Loader2 className="animate-spin" size={20} />
-                  <span>SIGNING IN...</span>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-2">
-                  SIGN IN
-                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                 </div>
               )}
-            </button>
-          </form>
 
-          {/* Hidden "Clear Cache" button for testing/emergencies */}
-          <div className="mt-8 text-center">
-            <button 
-              onClick={() => { localStorage.removeItem('oakit_school_code'); window.location.reload(); }}
-              className="text-[10px] text-slate-300 font-bold hover:text-emerald-600 transition-colors uppercase tracking-[0.2em]"
-            >
-              Reset Connection
-            </button>
+              <div>
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Mobile Number</label>
+                <div className="relative">
+                  <Smartphone size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
+                  <input type="tel" placeholder="10-digit number" value={mobile}
+                    onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} required
+                    className="w-full pl-11 pr-4 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 transition-all" />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Password</label>
+                  <Link href="/auth/forgot-password" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors">
+                    Forgot?
+                  </Link>
+                </div>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
+                  <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password}
+                    onChange={e => setPassword(e.target.value)} required
+                    className="w-full pl-11 pr-11 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 transition-all" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors">
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2.5 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
+                  <AlertCircle size={15} className="text-red-400 shrink-0" />
+                  <p className="text-xs text-red-600 font-semibold">{error}</p>
+                </div>
+              )}
+
+              <button type="submit" disabled={loading}
+                className="w-full py-4 rounded-2xl text-white font-bold text-sm transition-all disabled:opacity-50 active:scale-[0.98] flex items-center justify-center gap-2"
+                style={{
+                  background: 'linear-gradient(135deg,#1a4a2e 0%,#1F7A5A 100%)',
+                  boxShadow: '0 8px 24px rgba(31,122,90,0.30)',
+                }}>
+                {loading ? <Loader2 size={18} className="animate-spin" /> : null}
+                {loading ? 'Signing in…' : 'Sign In'}
+                {!loading && <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />}
+              </button>
+            </form>
           </div>
 
-          {/* Student login link */}
-          <div className="text-center mt-4">
-            <Link href="/student/login"
-              className="text-xs text-slate-400 hover:text-emerald-400 transition-colors">
-              🎒 Student? Log in here
+          {/* Footer links */}
+          <div className="flex items-center justify-between mt-6 px-1">
+            <Link href="/student/login" className="text-sm text-gray-400 hover:text-emerald-600 transition-colors">
+              🎒 Student login
             </Link>
+            <button onClick={() => { localStorage.removeItem('oakit_school_code'); window.location.reload(); }}
+              className="text-xs text-gray-300 hover:text-gray-500 transition-colors">
+              Reset connection
+            </button>
           </div>
         </div>
       </div>
 
       <style jsx global>{`
-        @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-15px); } }
-        .animate-float { animation: float 4s ease-in-out infinite; }
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
-        .animate-shake { animation: shake 0.3s ease-in-out; }
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
       `}</style>
     </div>
   );

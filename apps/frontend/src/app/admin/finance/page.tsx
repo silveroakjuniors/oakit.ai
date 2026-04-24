@@ -31,6 +31,18 @@ interface CashReconciliation {
   status: string;
 }
 
+const ALL_TILES = [
+  { path: '/admin/finance/fees',          icon: '💳', label: 'Fee Collection',  perm: 'COLLECT_PAYMENT' },
+  { path: '/admin/finance/concessions',   icon: '🎁', label: 'Concessions',     perm: 'MANAGE_CONCESSION' },
+  { path: '/admin/finance/reconciliation',icon: '🔍', label: 'Reconciliation',  perm: 'VIEW_RECONCILIATION' },
+  { path: '/admin/finance/enquiries',     icon: '📝', label: 'Admissions',      perm: 'VIEW_FEES' },
+  { path: '/admin/finance/fee-structures',icon: '🏷️', label: 'Fee Structures',  perm: 'MANAGE_FEE_STRUCTURE' },
+  { path: '/admin/finance/expenses',      icon: '🧾', label: 'Expenses',        perm: 'VIEW_EXPENSE' },
+  { path: '/admin/finance/salary',        icon: '👔', label: 'Salary',          perm: 'VIEW_SALARY' },
+  { path: '/admin/finance/reports',       icon: '📈', label: 'Reports',         perm: 'VIEW_REPORTS' },
+  { path: '/admin/finance/profitability', icon: '💹', label: 'Profitability',   perm: 'VIEW_PROFIT' },
+] as const;
+
 export default function FinanceDashboardPage() {
   const token = getToken() || '';
   const router = useRouter();
@@ -40,9 +52,13 @@ export default function FinanceDashboardPage() {
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
   const [cashTasks, setCashTasks] = useState<CashReconciliation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState<string[]>([]);
 
   useEffect(() => {
     loadDashboard();
+    apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+      .then(d => setPermissions(d.permissions || []))
+      .catch(() => {});
   }, []);
 
   async function loadDashboard() {
@@ -169,36 +185,18 @@ export default function FinanceDashboardPage() {
         </div>
       </Card>
 
-      {/* Navigation links */}
+      {/* Navigation links — filtered by permission */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <button
-          onClick={() => router.push('/admin/finance/fees')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">💳</span>
-          <p className="text-sm font-semibold text-gray-800">Fee Collection</p>
-        </button>
-        <button
-          onClick={() => router.push('/admin/finance/concessions')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">🎁</span>
-          <p className="text-sm font-semibold text-gray-800">Concessions</p>
-        </button>
-        <button
-          onClick={() => router.push('/admin/finance/reconciliation')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">🔍</span>
-          <p className="text-sm font-semibold text-gray-800">Reconciliation</p>
-        </button>
-        <button
-          onClick={() => router.push('/admin/finance/enquiries')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">📝</span>
-          <p className="text-sm font-semibold text-gray-800">Enquiries</p>
-        </button>
+        {ALL_TILES.filter(t => permissions.includes(t.perm)).map(({ path, icon, label }) => (
+          <button
+            key={path}
+            onClick={() => router.push(path)}
+            className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
+          >
+            <span className="text-2xl block mb-2">{icon}</span>
+            <p className="text-sm font-semibold text-gray-800">{label}</p>
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ const router = Router();
 router.use(jwtVerify, salaryPinGuard, permissionGuard('VIEW_SALARY'));
 
 // ── POST /staff/:userId/config — Set staff salary config ─────────────────────
-router.post('/staff/:userId/config', async (req, res) => {
+router.post('/staff/:userId/config', permissionGuard('EDIT_SALARY'), async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { userId } = req.params;
@@ -53,7 +53,7 @@ router.get('/staff/:userId/config', async (req, res) => {
 });
 
 // ── PUT /working-days — Set monthly working days ──────────────────────────────
-router.put('/working-days', async (req, res) => {
+router.put('/working-days', permissionGuard('EDIT_SALARY'), async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { year, month, working_days, calculation_method } = req.body;

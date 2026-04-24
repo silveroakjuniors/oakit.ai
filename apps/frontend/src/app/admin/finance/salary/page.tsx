@@ -29,6 +29,7 @@ export default function SalaryPage() {
   const [pinState, setPinState] = useState<PinState>(
     salarySessionUnlocked ? 'unlocked' : 'checking_pin_status'
   );
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   // Setup form
   const [setupPin, setSetupPin] = useState('');
@@ -54,12 +55,22 @@ export default function SalaryPage() {
 
   // Check PIN status on mount
   useEffect(() => {
-    if (salarySessionUnlocked) {
-      setPinState('unlocked');
-      loadSalaryRecords();
-      return;
-    }
-    checkPinStatus();
+    // First verify the user has VIEW_SALARY permission
+    apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+      .then(d => {
+        const hasPerm = (d.permissions || []).includes('VIEW_SALARY');
+        setHasPermission(hasPerm);
+        if (!hasPerm) return;
+        if (salarySessionUnlocked) {
+          setPinState('unlocked');
+          loadSalaryRecords();
+        } else {
+          checkPinStatus();
+        }
+      })
+      .catch(() => {
+        setHasPermission(false);
+      });
   }, []);
 
   // Countdown timer for lockout
@@ -174,14 +185,24 @@ export default function SalaryPage() {
   }
 
   // ── Render: checking ──────────────────────────────────────────────────────
-  if (pinState === 'checking_pin_status') {
+  if (hasPermission === null || pinState === 'checking_pin_status') {
     return (
       <div className="p-6 flex items-center justify-center min-h-[300px]">
-        <p className="text-gray-500 text-sm">Checking PIN status…</p>
+        <p className="text-gray-500 text-sm">Checking access…</p>
       </div>
     );
   }
 
+  // ── Render: no permission ─────────────────────────────────────────────────
+  if (hasPermission === false) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-[300px] text-center">
+        <p className="text-4xl mb-3">🔒</p>
+        <p className="text-base font-semibold text-gray-700 mb-1">Access Restricted</p>
+        <p className="text-sm text-gray-400">You don't have permission to view salary data.<br />Contact the Principal to request access.</p>
+      </div>
+    );
+  }
   // ── Render: PIN setup ─────────────────────────────────────────────────────
   if (pinState === 'pin_not_set') {
     return (
@@ -299,6 +320,7 @@ export default function SalaryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
+                  <th className="py-2 px-2 text-xs font-medium text-gray-400 w-8">#</th>
                   <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Staff Name</th>
                   <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Net Salary</th>
                   <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Status</th>
@@ -306,8 +328,9 @@ export default function SalaryPage() {
                 </tr>
               </thead>
               <tbody>
-                {salaryRecords.map(rec => (
+                {salaryRecords.map((rec, idx) => (
                   <tr key={rec.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-2 px-2 text-center text-xs text-gray-400">{idx + 1}</td>
                     <td className="py-2 px-3 font-medium text-gray-800">{rec.staff_name}</td>
                     <td className="py-2 px-3 text-right text-gray-700">
                       ₹{rec.net_salary.toLocaleString('en-IN')}

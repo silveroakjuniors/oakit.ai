@@ -1,0 +1,3 @@
+export function StatsRow({ attendance, progress, unreadMessages, unreadNotifs }) {
+  return null;
+}

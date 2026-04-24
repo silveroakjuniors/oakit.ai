@@ -330,6 +330,21 @@ export default function PrincipalDashboard() {
               ))}
             </div>
 
+            {/* Finance entry point */}
+            <Link
+              href="/principal/finance"
+              className="bg-white border border-neutral-100 rounded-2xl shadow-sm px-4 py-3 flex items-center gap-3 hover:shadow-md hover:-translate-y-0.5 transition-all"
+            >
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
+                <span className="text-xl">💰</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-neutral-800">Finance Module</p>
+                <p className="text-xs text-neutral-400">Fee structures · Salary · Expenses · Reconciliation · Permissions</p>
+              </div>
+              <span className="text-neutral-300 text-lg shrink-0">›</span>
+            </Link>
+
             {/* -- Birthdays � collapsible -- */}
             {birthdays.length > 0 && (
               <Collapsible

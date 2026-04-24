@@ -900,6 +900,7 @@ export default function StudentsPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [incompleteParentsOnly, setIncompleteParentsOnly] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -926,6 +927,7 @@ export default function StudentsPage() {
       if (filterClass) params.set('class_id', filterClass);
       if (filterSection) params.set('section_id', filterSection);
       if (showInactive) params.set('include_inactive', 'true');
+      if (incompleteParentsOnly) params.set('incomplete_parents', 'true');
       const [studs, cls] = await Promise.all([
         apiGet<Student[]>(`/api/v1/admin/students?${params}`, token),
         apiGet<Class[]>('/api/v1/admin/classes', token),
@@ -962,7 +964,7 @@ export default function StudentsPage() {
     } catch { /* ignore — coverage report button will be hidden if no section */ }
   }
 
-  useEffect(() => { load(); }, [filterClass, filterSection, showInactive]);
+  useEffect(() => { load(); }, [filterClass, filterSection, showInactive, incompleteParentsOnly]);
 
   async function generateCredential(student: Student) {
     setGeneratingId(student.id); setNewCred(null);
@@ -1092,6 +1094,10 @@ export default function StudentsPage() {
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
             <span className="text-gray-600">Show terminated</span>
           </label>
+          <label className="flex items-center gap-2 px-3 py-2.5 border border-amber-200 rounded-xl text-sm bg-amber-50 cursor-pointer">
+            <input type="checkbox" checked={incompleteParentsOnly} onChange={e => setIncompleteParentsOnly(e.target.checked)} className="rounded accent-amber-500" />
+            <span className="text-amber-700 font-medium">⚠ Missing parent info</span>
+          </label>
         </div>
       </div>
 
@@ -1138,15 +1144,23 @@ export default function StudentsPage() {
                     {(student.father_name || student.parent_contact) && (
                       <p className="text-xs text-gray-500">
                         👨 {student.father_name || '—'}{student.parent_contact && <span className="text-gray-400 ml-1">{student.parent_contact}</span>}
+                        {(!student.father_name || !student.parent_contact) && <span className="ml-1 text-amber-500 text-[10px] font-semibold">⚠ incomplete</span>}
                       </p>
+                    )}
+                    {(!student.father_name && !student.parent_contact) && (
+                      <p className="text-xs text-amber-600">👨 Father details missing</p>
                     )}
                     {(student.mother_name || student.mother_contact) && (
                       <p className="text-xs text-gray-500">
                         👩 {student.mother_name || '—'}{student.mother_contact && <span className="text-gray-400 ml-1">{student.mother_contact}</span>}
+                        {(!student.mother_name || !student.mother_contact) && <span className="ml-1 text-amber-500 text-[10px] font-semibold">⚠ incomplete</span>}
                       </p>
                     )}
+                    {(!student.mother_name && !student.mother_contact) && (student.father_name || student.parent_contact) && (
+                      <p className="text-xs text-amber-600">👩 Mother details missing</p>
+                    )}
                     {!student.father_name && !student.mother_name && !student.parent_contact && !student.mother_contact && (
-                      <p className="text-xs text-gray-400 italic">No parent details</p>
+                      <p className="text-xs text-amber-600 italic">⚠ No parent details on file</p>
                     )}
                   </div>
 

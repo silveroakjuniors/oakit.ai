@@ -383,7 +383,14 @@ export default function ParentPage() {
 
       const kids = kidsResult.status === 'fulfilled' ? kidsResult.value : [];
       const notifs = notifsResult.status === 'fulfilled' ? notifsResult.value : [];
-      if (profileResult.status === 'fulfilled') setParentProfile(profileResult.value);
+      if (profileResult.status === 'fulfilled') {
+        const p = profileResult.value;
+        // If name is empty/null, use a formatted version of mobile as display name
+        if (!p.name?.trim() && p.mobile) {
+          p.name = `Parent (${p.mobile.slice(-4)})`;
+        }
+        setParentProfile(p);
+      }
 
       setChildren(kids);
       setNotifications(notifs);
@@ -600,7 +607,7 @@ export default function ParentPage() {
                 {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning,' : h < 17 ? 'Good Afternoon,' : 'Good Evening,'; })()}
               </span>
               <span className="text-sm font-semibold text-gray-800">
-                {parentProfile?.name ? parentProfile.name.split(' ')[0] : activeChild?.name?.split(' ')[0] ?? 'there'}
+                {parentProfile?.name?.trim() ? parentProfile.name.split(' ')[0] : 'Parent'}
               </span>
             </div>
           </div>
@@ -626,7 +633,7 @@ export default function ParentPage() {
                 </div>
                 <div className="hidden xl:block text-left">
                   <p className="text-sm font-semibold text-gray-800 leading-tight">
-                    {parentProfile?.name ?? activeChild?.name?.split(' ')[0] ?? 'Parent'}
+                    {parentProfile?.name?.trim() || 'Parent'}
                   </p>
                   <p className="text-xs text-gray-400">Parent</p>
                 </div>

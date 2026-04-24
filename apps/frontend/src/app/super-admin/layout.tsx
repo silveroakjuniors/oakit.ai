@@ -9,6 +9,7 @@ import { clearToken } from '@/lib/auth';
 const navItems = [
   { href: '/super-admin',         label: 'Dashboard', icon: '⊞' },
   { href: '/super-admin/schools', label: 'Schools',   icon: '🏫' },
+  { href: '/super-admin/finance', label: 'Finance',   icon: '💰' },
 ];
 
 export default function SuperAdminLayout({ children }: { children: ReactNode }) {

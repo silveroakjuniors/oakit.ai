@@ -1,12 +1,36 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import OakitLogo from '@/components/OakitLogo';
-import { clearToken } from '@/lib/auth';
+import { clearToken, getToken } from '@/lib/auth';
+import { apiGet } from '@/lib/api';
 
-const navItems = [
+// ── Finance permission helpers ────────────────────────────────────────────────
+// These mirror the backend PERMISSIONS constants.
+const FIN_PERMS = {
+  VIEW_FEES:            'VIEW_FEES',
+  COLLECT_PAYMENT:      'COLLECT_PAYMENT',
+  MANAGE_FEE_STRUCTURE: 'MANAGE_FEE_STRUCTURE',
+  VIEW_EXPENSE:         'VIEW_EXPENSE',
+  ADD_EXPENSE:          'ADD_EXPENSE',
+  VIEW_SALARY:          'VIEW_SALARY',
+  VIEW_REPORTS:         'VIEW_REPORTS',
+  VIEW_RECONCILIATION:  'VIEW_RECONCILIATION',
+  MANAGE_CONCESSION:    'MANAGE_CONCESSION',
+} as const;
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  group: string;
+  /** If set, item is only shown when user has this financial permission */
+  requirePerm?: string;
+}
+
+const navItems: NavItem[] = [
   { href: '/admin',                  label: 'Dashboard',        icon: '⊞',  group: 'main' },
   { href: '/admin/users',            label: 'Users & Roles',    icon: '👥',  group: 'school' },
   { href: '/admin/classes',          label: 'Classes',          icon: '🏫',  group: 'school' },
@@ -17,6 +41,15 @@ const navItems = [
   { href: '/admin/supplementary',    label: 'Activities',       icon: '🎵',  group: 'content' },
   { href: '/admin/calendar',         label: 'Calendar',         icon: '📅',  group: 'content' },
   { href: '/admin/plans',            label: 'Daily Planner',    icon: '🗓️', group: 'content' },
+  // Finance — each item gated by the relevant permission
+  { href: '/admin/finance',                label: 'Finance',          icon: '💰',  group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
+  { href: '/admin/finance/fee-structures', label: 'Fee Structures',   icon: '🏷️', group: 'finance', requirePerm: FIN_PERMS.MANAGE_FEE_STRUCTURE },
+  { href: '/admin/finance/fees',           label: 'Fee Collection',   icon: '💳',  group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
+  { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: '📝',  group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
+  { href: '/admin/finance/concessions',    label: 'Concessions',      icon: '🎁',  group: 'finance', requirePerm: FIN_PERMS.MANAGE_CONCESSION },
+  { href: '/admin/finance/expenses',       label: 'Expenses',         icon: '🧾',  group: 'finance', requirePerm: FIN_PERMS.VIEW_EXPENSE },
+  { href: '/admin/finance/salary',         label: 'Salary',           icon: '👔',  group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
+  { href: '/admin/finance/reports',        label: 'Reports',          icon: '📈',  group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
   { href: '/admin/reports',          label: 'Reports',          icon: '📊',  group: 'insights' },
   { href: '/admin/announcements',    label: 'Announcements',    icon: '📢',  group: 'insights' },
   { href: '/admin/audit',            label: 'Audit Log',        icon: '🔍',  group: 'insights' },
@@ -28,12 +61,23 @@ const NAV_GROUPS = [
   { key: 'main',     label: null },
   { key: 'school',   label: 'School' },
   { key: 'content',  label: 'Content' },
+  { key: 'finance',  label: 'Finance' },
   { key: 'insights', label: 'Insights' },
   { key: 'system',   label: 'System' },
 ];
 
-function SidebarContent({ pathname, onClose }: { pathname: string; onClose?: () => void }) {
+function SidebarContent({ pathname, permissions, onClose }: { pathname: string; permissions: string[]; onClose?: () => void }) {
   const router = useRouter();
+
+  // Filter nav items based on financial permissions
+  const visibleItems = navItems.filter(item => {
+    if (!item.requirePerm) return true;
+    return permissions.includes(item.requirePerm);
+  });
+
+  // Only show Finance group header if at least one finance item is visible
+  const hasFinanceItems = visibleItems.some(i => i.group === 'finance');
+
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -44,7 +88,9 @@ function SidebarContent({ pathname, onClose }: { pathname: string; onClose?: () 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5 overflow-y-auto">
         {NAV_GROUPS.map(group => {
-          const items = navItems.filter(i => i.group === group.key);
+          if (group.key === 'finance' && !hasFinanceItems) return null;
+          const items = visibleItems.filter(i => i.group === group.key);
+          if (items.length === 0) return null;
           return (
             <div key={group.key} className={group.label ? 'mt-4 first:mt-0' : ''}>
               {group.label && (
@@ -87,6 +133,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [finPerms, setFinPerms] = useState<string[]>([]);
+
+  // Fetch the user's effective financial permissions once on mount
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+      .then(data => setFinPerms(data.permissions || []))
+      .catch(() => setFinPerms([]));
+  }, []);
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-50">
@@ -124,7 +180,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <div className="flex flex-1 min-h-0">
         {/* Desktop sidebar — white */}
         <aside className="hidden lg:flex flex-col w-56 shrink-0 bg-white border-r border-neutral-200">
-          <SidebarContent pathname={pathname} />
+          <SidebarContent pathname={pathname} permissions={finPerms} />
         </aside>
 
         {/* Mobile drawer backdrop */}
@@ -136,7 +192,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 <OakitLogo size="xs" variant="dark" />
                 <button onClick={() => setDrawerOpen(false)} className="text-neutral-400 hover:text-neutral-700 w-8 h-8 flex items-center justify-center rounded-lg">✕</button>
               </div>
-              <SidebarContent pathname={pathname} onClose={() => setDrawerOpen(false)} />
+              <SidebarContent pathname={pathname} permissions={finPerms} onClose={() => setDrawerOpen(false)} />
             </aside>
           </div>
         )}

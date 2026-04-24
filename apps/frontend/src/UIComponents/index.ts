@@ -14,6 +14,7 @@
 
 // Tokens
 export * from './tokens';
+export { brand, vivid, navColors, backgrounds, glassCard } from './tokens';
 
 // Primitives
 export { Button } from './primitives/Button';
@@ -27,6 +28,8 @@ export { Avatar } from './primitives/Avatar';
 
 // Components
 export { Card } from './components/Card';
+export { GlassCard } from './components/GlassCard';
+export { Ring } from './components/Ring';
 export { CollapsiblePanel } from './components/CollapsiblePanel';
 export { Alert } from './components/Alert';
 export type { AlertVariant } from './components/Alert';

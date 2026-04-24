@@ -130,6 +130,32 @@ router.get('/permissions', async (req, res) => {
   }
 });
 
+// ── GET /api/v1/financial/staff ───────────────────────────────────────────────
+// Principal only — list all staff users with their current financial permissions.
+router.get(
+  '/staff',
+  roleGuard('principal'),
+  async (req, res) => {
+    try {
+      const schoolId = req.user!.school_id;
+      const result = await pool.query(
+        `SELECT u.id, u.name, r.name as role, u.financial_permissions
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+         WHERE u.school_id = $1
+           AND r.name NOT IN ('principal', 'super_admin', 'franchise_admin', 'parent', 'student')
+           AND u.is_active = true
+         ORDER BY r.name, u.name`,
+        [schoolId]
+      );
+      return res.json(result.rows);
+    } catch (err) {
+      console.error('[financial/staff GET]', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 // ── PUT /api/v1/financial/permissions/:userId ─────────────────────────────────
 // Principal only — update a Finance_Manager's financial permission set.
 router.put(
@@ -156,8 +182,10 @@ router.put(
       if (target.rows[0].school_id !== schoolId) {
         return res.status(403).json({ error: 'User does not belong to your school' });
       }
-      if (target.rows[0].role !== 'finance_manager') {
-        return res.status(400).json({ error: 'Permissions can only be updated for finance_manager role' });
+      // Principal can assign permissions to finance_manager, admin, or any staff role
+      const nonAssignableRoles = ['principal', 'super_admin', 'franchise_admin', 'parent', 'student'];
+      if (nonAssignableRoles.includes(target.rows[0].role)) {
+        return res.status(400).json({ error: 'Cannot override permissions for this role' });
       }
 
       // Fetch before-state for audit log

@@ -75,8 +75,14 @@ export default function ReportsPage() {
       if (Array.isArray(data)) {
         setReportData(data);
       } else if (data && typeof data === 'object') {
-        // Wrap single object in array for table rendering
-        setReportData([data as Record<string, unknown>]);
+        // daily-collection returns { date, payments: [...], total }
+        const obj = data as Record<string, unknown>;
+        if (Array.isArray(obj.payments)) {
+          setReportData(obj.payments as Record<string, unknown>[]);
+        } else {
+          // Wrap single summary object in array for table rendering
+          setReportData([obj]);
+        }
       } else {
         setReportData([]);
       }

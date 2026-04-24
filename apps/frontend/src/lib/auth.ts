@@ -53,6 +53,7 @@ export function getRoleRedirect(role: string): string {
   if (['teacher', 'class teacher', 'supporting teacher'].includes(r)) return '/teacher';
   if (r === 'parent') return '/parent';
   if (r === 'super_admin') return '/super-admin';
+  if (r === 'finance_manager') return '/admin'; // accountant uses admin portal
   // Any unrecognised role — fall back to login so they don't get stuck
   return '/login';
 }
