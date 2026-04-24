@@ -192,6 +192,7 @@ const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
   { id: 'home',          Icon: Home,           label: 'Home' },
   { id: 'calendar',      Icon: Calendar,       label: 'Calendar' },
   { id: 'progress',      Icon: TrendingUp,     label: 'Progress' },
+  { id: 'insights',      Icon: BarChart3,      label: 'Insights' },
   { id: 'assignments',   Icon: ClipboardList,  label: 'Assignments' },
   { id: 'messages',      Icon: MessageSquare,  label: 'Messages' },
   { id: 'notifications', Icon: Bell,           label: 'Updates' },
@@ -241,7 +242,7 @@ function ChildAvatar({ child, size = 'md', token, onUploaded }: {
           <div className="relative max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
             <img src={preview} alt={child.name} className="w-full rounded-2xl object-contain max-h-[70vh]" />
             <button onClick={() => setPreview(null)}
-              className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70">✕</button>
+              className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70"><X size={14} /></button>
             <p className="text-white text-center mt-3 font-semibold">{child.name}</p>
           </div>
         </div>
@@ -256,12 +257,12 @@ function ChildAvatar({ child, size = 'md', token, onUploaded }: {
           </>
         ) : (
           <div className={`${sz} rounded-full bg-white/20 flex items-center justify-center font-bold text-white`}>
-            {uploading ? <span className="text-xs animate-spin">⏳</span> : child.name[0]}
+            {uploading ? <Loader2 size={12} className="animate-spin text-white" /> : child.name[0]}
           </div>
         )}
         {/* Camera overlay on hover */}
         <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-          <span className="text-white text-xs">📷</span>
+          <Camera size={16} className="text-white" />
         </div>
         {token && <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleFile} />}
       </label>
@@ -358,9 +359,10 @@ export default function ParentPage() {
   async function init() {
     setLoading(true);
     try {
-      const [kidsResult, notifsResult] = await Promise.allSettled([
+      const [kidsResult, notifsResult, profileResult] = await Promise.allSettled([
         apiGet<Child[]>('/api/v1/parent/children', token),
         apiGet<Notification[]>('/api/v1/parent/notifications', token),
+        apiGet<{ name: string; mobile: string }>('/api/v1/parent/profile', token),
       ]);
 
       // Handle force_password_reset — redirect to change-password
@@ -381,11 +383,17 @@ export default function ParentPage() {
 
       const kids = kidsResult.status === 'fulfilled' ? kidsResult.value : [];
       const notifs = notifsResult.status === 'fulfilled' ? notifsResult.value : [];
+      if (profileResult.status === 'fulfilled') setParentProfile(profileResult.value);
+
       setChildren(kids);
       setNotifications(notifs);
       apiGet<Announcement[]>('/api/v1/parent/announcements', token).then(setAnnouncements).catch(() => {});
       apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {});
-      apiGet<{ name: string; mobile: string }>('/api/v1/parent/profile', token).then(setParentProfile).catch(() => {});
+      // Fetch parent profile with await so name is ready before loading clears
+      try {
+        const profile = await apiGet<{ name: string; mobile: string }>('/api/v1/parent/profile', token);
+        setParentProfile(profile);
+      } catch { /* non-critical */ }
       
       // Load emergency contacts and settings from API (fallback to mock data)
       (async () => {
@@ -407,6 +415,8 @@ export default function ParentPage() {
           loadMockFeaturesData(true);
         }
       })();
+      // Always load insights mock data (no real API yet)
+      loadMockFeaturesData(false);
       
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id); }
     } catch { /* ignore */ }
@@ -540,7 +550,7 @@ export default function ParentPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50 p-6">
         <div className="text-center max-w-sm">
-          <p className="text-4xl mb-4">⚠️</p>
+          <AlertCircle size={32} className="text-amber-500 mx-auto mb-3" />
           <p className="text-neutral-700 font-semibold mb-2">Something went wrong</p>
           <p className="text-sm text-neutral-500 mb-4 bg-red-50 border border-red-100 rounded-xl px-4 py-3">{initError}</p>
           <button onClick={() => { setInitError(null); setLoading(true); init(); }}
@@ -584,13 +594,13 @@ export default function ParentPage() {
             <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Parent Portal</span>
             {/* Divider */}
             <span className="w-px h-5 bg-gray-200" />
-            {/* Time-based greeting + parent name */}
+            {/* Time-based greeting + parent name — always visible */}
             <div className="flex items-center gap-1.5">
               <span className="text-sm text-gray-500">
                 {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning,' : h < 17 ? 'Good Afternoon,' : 'Good Evening,'; })()}
               </span>
               <span className="text-sm font-semibold text-gray-800">
-                {parentProfile?.name?.split(' ')[0] ?? 'there'}
+                {parentProfile?.name ? parentProfile.name.split(' ')[0] : activeChild?.name?.split(' ')[0] ?? 'there'}
               </span>
             </div>
           </div>
@@ -616,7 +626,7 @@ export default function ParentPage() {
                 </div>
                 <div className="hidden xl:block text-left">
                   <p className="text-sm font-semibold text-gray-800 leading-tight">
-                    {parentProfile?.name ?? 'Parent'}
+                    {parentProfile?.name ?? activeChild?.name?.split(' ')[0] ?? 'Parent'}
                   </p>
                   <p className="text-xs text-gray-400">Parent</p>
                 </div>
@@ -904,7 +914,7 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
               </div>
               <button onClick={download} disabled={downloading}
                 className="w-full py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                {downloading ? <Loader2 size={16} className="animate-spin" /> : '↓'} Download File
+                {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download File
               </button>
             </div>
           )}
@@ -997,23 +1007,83 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </button>
       </div>
 
-      {/* Stat cards row */}
-      <div className="grid grid-cols-4 gap-3">
-        {([
-          { label: 'Attendance', value: `${attPct}%`, sub: attPct >= 90 ? 'Excellent' : 'This Month', Icon: CalendarDays, color: 'text-emerald-600', bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
-          { label: 'Progress',   value: `${pct.toFixed(1)}%`, sub: 'This Term',  Icon: TrendingUp,   color: 'text-blue-600',   bg: 'bg-blue-50',   iconColor: 'text-blue-500' },
-          { label: 'Messages',   value: String(unreadMessages), sub: 'Unread',   Icon: MessageSquare, color: 'text-purple-600', bg: 'bg-purple-50', iconColor: 'text-purple-500' },
-          { label: 'Updates',    value: String(unreadNotifs),   sub: 'New',      Icon: Bell,          color: 'text-amber-600',  bg: 'bg-amber-50',  iconColor: 'text-amber-500' },
-        ] as const).map(s => (
-          <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-            <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center mb-2`}>
-              <s.Icon size={16} className={s.iconColor} />
+      {/* Stat cards row — 4 colored cards with mini donut graphs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Attendance */}
+        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#d1fae5,#a7f3d0)', border: '1px solid #6ee7b7' }}>
+          <div className="relative flex-shrink-0 w-12 h-12">
+            <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
+              <circle cx="24" cy="24" r="18" fill="none" stroke="#059669" strokeWidth="5"
+                strokeDasharray={`${(attPct / 100) * 113} 113`} strokeLinecap="round" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <CalendarDays size={14} className="text-emerald-700" />
             </div>
-            <p className="text-2xl font-bold text-gray-900 leading-none">{s.value}</p>
-            <p className="text-xs text-gray-400 mt-1">{s.label}</p>
-            <p className={`text-xs font-medium mt-0.5 ${s.color}`}>{s.sub}</p>
           </div>
-        ))}
+          <div>
+            <p className="text-2xl font-black text-emerald-900 leading-none">{attPct}%</p>
+            <p className="text-xs font-semibold text-emerald-700 mt-0.5">Attendance</p>
+            <p className="text-[10px] text-emerald-600">{attPct >= 90 ? 'Excellent' : 'This Month'}</p>
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', border: '1px solid #93c5fd' }}>
+          <div className="relative flex-shrink-0 w-12 h-12">
+            <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
+              <circle cx="24" cy="24" r="18" fill="none" stroke="#2563eb" strokeWidth="5"
+                strokeDasharray={`${(pct / 100) * 113} 113`} strokeLinecap="round" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <TrendingUp size={14} className="text-blue-700" />
+            </div>
+          </div>
+          <div>
+            <p className="text-2xl font-black text-blue-900 leading-none">{pct.toFixed(1)}%</p>
+            <p className="text-xs font-semibold text-blue-700 mt-0.5">Progress</p>
+            <p className="text-[10px] text-blue-600">This Term</p>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd' }}>
+          <div className="relative flex-shrink-0 w-12 h-12">
+            <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
+              <circle cx="24" cy="24" r="18" fill="none" stroke="#7c3aed" strokeWidth="5"
+                strokeDasharray={`${Math.min(unreadMessages * 20, 113)} 113`} strokeLinecap="round" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <MessageSquare size={14} className="text-purple-700" />
+            </div>
+          </div>
+          <div>
+            <p className="text-2xl font-black text-purple-900 leading-none">{unreadMessages}</p>
+            <p className="text-xs font-semibold text-purple-700 mt-0.5">Messages</p>
+            <p className="text-[10px] text-purple-600">Unread</p>
+          </div>
+        </div>
+
+        {/* Updates */}
+        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fcd34d' }}>
+          <div className="relative flex-shrink-0 w-12 h-12">
+            <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+              <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
+              <circle cx="24" cy="24" r="18" fill="none" stroke="#d97706" strokeWidth="5"
+                strokeDasharray={`${Math.min(unreadNotifs * 20, 113)} 113`} strokeLinecap="round" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Bell size={14} className="text-amber-700" />
+            </div>
+          </div>
+          <div>
+            <p className="text-2xl font-black text-amber-900 leading-none">{unreadNotifs}</p>
+            <p className="text-xs font-semibold text-amber-700 mt-0.5">Updates</p>
+            <p className="text-[10px] text-amber-600">New</p>
+          </div>
+        </div>
       </div>
 
       {/* Today's Feed + This Week */}
@@ -1164,13 +1234,16 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
                 <button key={note.id} onClick={() => onNoteClick(note)}
                   className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-3 transition-colors border border-gray-100">
                   {note.note_text && <p className="text-sm text-gray-700 line-clamp-2 mb-1">{note.note_text}</p>}
-                  {note.file_name && <div className="flex items-center gap-2"><span>📎</span><p className="text-xs font-medium text-gray-700 truncate flex-1">{note.file_name}</p><span className="text-xs text-emerald-600 font-medium">Download ↓</span></div>}
+                  {note.file_name && <div className="flex items-center gap-2"><Paperclip size={12} className="text-gray-400 flex-shrink-0" /><p className="text-xs font-medium text-gray-700 truncate flex-1">{note.file_name}</p><span className="text-xs text-emerald-600 font-medium flex items-center gap-0.5"><Download size={11} /> Download</span></div>}
                   <p className={`text-xs mt-1 ${dl <= 3 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{dl <= 0 ? 'Expires today' : `Expires in ${dl} day${dl === 1 ? '' : 's'}`}</p>
                 </button>
               );
             })}
           </div>
-          <p className="text-xs text-amber-600 mt-3">⚠ Notes auto-delete after expiry. Download attachments you need to keep.</p>
+          <div className="flex items-start gap-2 text-xs text-amber-600 mt-3">
+            <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
+            <span>Notes auto-delete after expiry. Download attachments you need to keep.</span>
+          </div>
         </div>
       )}
 
@@ -1211,25 +1284,79 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
     const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d;
   });
 
+  // Week schedule — fetch once per child
+  const [weekSchedule, setWeekSchedule] = useState<Record<string, string[]>>({});
+  const [drawerDay, setDrawerDay] = useState<{ date: string; label: string; topics: string[]; isToday: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!activeChild?.id || !token) return;
+    apiGet<{ week_start: string; days: Record<string, string[]> }>(
+      `/api/v1/parent/child/${activeChild.id}/week-schedule`, token
+    ).then(d => setWeekSchedule(d.days ?? {})).catch(() => {});
+  }, [activeChild?.id]);
+
+  function openDay(d: Date, i: number) {
+    const dateStr = d.toISOString().split('T')[0];
+    const topics = weekSchedule[dateStr] ?? [];
+    const isToday = d.toDateString() === today.toDateString();
+    const label = `${weekDays[i]} ${d.getDate()} ${d.toLocaleDateString('en-IN', { month: 'short' })}`;
+    setDrawerDay({ date: dateStr, label, topics, isToday });
+  }
+
   return (
+    <>
+      {/* Day Plan Drawer */}
+      {drawerDay && (
+        <DayPlanDrawer
+          day={drawerDay}
+          activeChild={activeChild}
+          token={token}
+          onClose={() => setDrawerDay(null)}
+        />
+      )}
+
     <div className="p-4 space-y-4">
 
       {/* Row 1 — Weekly Schedule */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <p className="text-sm font-bold text-gray-800 mb-3">📅 Weekly Schedule</p>
-        <div className="space-y-1.5">
+        <div className="flex items-center gap-2 mb-3">
+          <CalendarDays size={15} className="text-gray-500" />
+          <p className="text-sm font-bold text-gray-800">Weekly Schedule</p>
+        </div>
+        <div className="space-y-1">
           {weekDates.map((d, i) => {
             const isToday = d.toDateString() === today.toDateString();
+            const dateStr = d.toISOString().split('T')[0];
+            const topics = weekSchedule[dateStr] ?? [];
+            const hasTopics = topics.length > 0;
             return (
-              <div key={i} className={`flex items-center justify-between py-1.5 px-2 rounded-lg ${isToday ? 'bg-emerald-50' : ''}`}>
+              <button
+                key={i}
+                onClick={() => openDay(d, i)}
+                className={`w-full flex items-center justify-between py-2 px-2.5 rounded-xl transition-all text-left group ${
+                  isToday ? 'bg-emerald-50 border border-emerald-100' : 'hover:bg-gray-50'
+                }`}
+              >
                 <div>
                   <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
                   <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
                     {d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
                   </p>
+                  {hasTopics && (
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">
+                      {topics[0]}
+                    </p>
+                  )}
                 </div>
-                <span className={`w-2 h-2 rounded-full ${isToday ? 'bg-emerald-500' : 'bg-gray-200'}`} />
-              </div>
+                <div className="flex items-center gap-1.5">
+                  {hasTopics && (
+                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                      {topics.length} topic{topics.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  <ChevronRight size={13} className={`text-gray-300 group-hover:text-gray-500 transition-colors ${isToday ? 'text-emerald-400' : ''}`} />
+                </div>
+              </button>
             );
           })}
         </div>
@@ -1237,7 +1364,10 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
 
       {/* Row 2 — Progress */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <p className="text-sm font-bold text-gray-800 mb-3">📈 Progress</p>
+        <div className="flex items-center gap-2 mb-3">
+          <TrendingUp size={15} className="text-gray-500" />
+          <p className="text-sm font-bold text-gray-800">Progress</p>
+        </div>
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-xs text-gray-500">Curriculum</p>
           <p className="text-xs font-bold text-emerald-600">{pct.toFixed(1)}%</p>
@@ -1251,7 +1381,7 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div>
-            <p className="text-sm font-bold text-gray-800">📸 Class Feed</p>
+            <p className="text-sm font-bold text-gray-800">Class Feed</p>
             <p className="text-xs text-gray-400">Photos from school</p>
           </div>
           <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
@@ -1260,7 +1390,7 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
         </div>
         {classFeed.length === 0 ? (
           <div className="p-6 text-center">
-            <p className="text-2xl mb-2">📷</p>
+            <ImageIcon size={28} className="text-gray-300 mx-auto mb-2" />
             <p className="text-xs text-gray-400">No photos yet</p>
           </div>
         ) : (
@@ -1279,7 +1409,7 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
                   )}
                   {!img && (
                     <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2" style={{ height: 80 }}>
-                      <span className="text-3xl">📷</span>
+                      <ImageIcon size={28} className="text-emerald-300" />
                     </div>
                   )}
                   {post.caption && (
@@ -1384,10 +1514,119 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
         </div>
       )}
     </div>
+    </>
   );
 }
 
-// ─── Calendar Tab ─────────────────────────────────────────────────────────────
+// ─── Day Plan Drawer ──────────────────────────────────────────────────────────
+function DayPlanDrawer({ day, activeChild, token, onClose }: {
+  day: { date: string; label: string; topics: string[]; isToday: boolean };
+  activeChild: Child | null;
+  token: string;
+  onClose: () => void;
+}) {
+  const [summary, setSummary] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const today = new Date().toISOString().split('T')[0];
+  const isPast = day.date < today;
+
+  useEffect(() => {
+    if (day.topics.length === 0) return;
+    const cacheKey = `topic-summary:${activeChild?.id}:${day.date}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const { ts, text } = JSON.parse(cached);
+        if (ts === today) { setSummary(text); return; }
+      } catch {}
+    }
+    setLoading(true);
+    const params = new URLSearchParams({
+      topics: day.topics.join(','),
+      class_name: activeChild?.class_name ?? 'Nursery',
+      child_name: activeChild?.name?.split(' ')[0] ?? 'your child',
+      completed: String(isPast),
+    });
+    apiGet<{ summary: string }>(`/api/v1/ai/topic-summary?${params}`, token)
+      .then(d => {
+        setSummary(d.summary);
+        localStorage.setItem(cacheKey, JSON.stringify({ ts: today, text: d.summary }));
+      })
+      .catch(() => setSummary(day.topics.join(' · ')))
+      .finally(() => setLoading(false));
+  }, [day.date]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+      <div className="relative z-10 bg-white ml-auto w-full xl:w-80 h-full overflow-y-auto shadow-2xl border-l border-gray-100" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className={`px-5 py-4 border-b border-gray-100 flex items-center justify-between ${day.isToday ? 'bg-emerald-50' : 'bg-gray-50'}`}>
+          <div>
+            <p className={`text-xs font-bold uppercase tracking-widest ${day.isToday ? 'text-emerald-600' : 'text-gray-400'}`}>
+              {day.isToday ? 'Today' : isPast ? 'Past' : 'Upcoming'}
+            </p>
+            <p className="text-base font-bold text-gray-900 mt-0.5">{day.label}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50">
+            <X size={14} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-5">
+          {day.topics.length === 0 ? (
+            <div className="text-center py-8">
+              <CalendarDays size={36} className="text-gray-200 mx-auto mb-3" />
+              <p className="text-sm text-gray-400">No plan scheduled for this day</p>
+            </div>
+          ) : (
+            <>
+              {/* AI Summary card */}
+              <div className={`rounded-2xl p-4 ${day.isToday ? 'bg-emerald-50 border border-emerald-100' : isPast ? 'bg-blue-50 border border-blue-100' : 'bg-amber-50 border border-amber-100'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles size={14} className={day.isToday ? 'text-emerald-600' : isPast ? 'text-blue-600' : 'text-amber-600'} />
+                  <p className={`text-xs font-bold uppercase tracking-wide ${day.isToday ? 'text-emerald-700' : isPast ? 'text-blue-700' : 'text-amber-700'}`}>
+                    {isPast ? 'What was covered' : 'What will be covered'}
+                  </p>
+                </div>
+                {loading ? (
+                  <div className="flex items-center gap-2 py-1">
+                    <Loader2 size={14} className="animate-spin text-gray-400" />
+                    <p className="text-xs text-gray-400">Generating summary…</p>
+                  </div>
+                ) : (
+                  <p className={`text-sm leading-relaxed ${day.isToday ? 'text-emerald-800' : isPast ? 'text-blue-800' : 'text-amber-800'}`}>
+                    {summary}
+                  </p>
+                )}
+              </div>
+
+              {/* Topic list */}
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+                  {day.topics.length} Topic{day.topics.length > 1 ? 's' : ''}
+                </p>
+                <div className="space-y-2">
+                  {day.topics.map((topic, i) => (
+                    <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
+                      <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                        {isPast
+                          ? <CheckCircle2 size={14} className="text-emerald-500" />
+                          : <span className="text-[10px] font-bold text-gray-400 bg-gray-200 w-5 h-5 rounded-full flex items-center justify-center">{i + 1}</span>
+                        }
+                      </span>
+                      <p className="text-sm text-gray-700 leading-snug">{topic}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 function CalendarTab({ events }: { events: CalendarEvent[] }) {
   const today = new Date();
   return (
@@ -2018,10 +2257,10 @@ function InsightsTab({ insights, comparisons, activeChild }: { insights: ParentI
 
   const getStatusIcon = (status: Goal['status']) => {
     switch (status) {
-      case 'completed': return '✅';
-      case 'in_progress': return '🔄';
-      case 'overdue': return '⚠️';
-      default: return '⏳';
+      case 'completed': return <CheckCircle2 size={12} className="text-green-600" />;
+      case 'in_progress': return <RefreshCw size={12} className="text-blue-600" />;
+      case 'overdue': return <AlertCircle size={12} className="text-red-600" />;
+      default: return <Clock size={12} className="text-neutral-400" />;
     }
   };
 
