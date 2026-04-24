@@ -823,10 +823,14 @@ export default function ParentPage() {
             </div>
           </main>
 
-          {/* ── RIGHT PANEL (desktop only) ── */}
+          {/* ── CLASS FEED COLUMN (desktop only) ── */}
           <aside className="hidden xl:flex flex-col w-64 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
-            <RightPanel
-              classFeed={classFeed}
+            <ClassFeedColumn classFeed={classFeed} />
+          </aside>
+
+          {/* ── WEEKLY SCHEDULE COLUMN (desktop only) ── */}
+          <aside className="hidden xl:flex flex-col w-56 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
+            <SchedulePanel
               progress={activeCache?.progress ?? null}
               activeChild={activeChild}
               invoice={invoice}
@@ -1334,23 +1338,100 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
   );
 }
 
-// ─── Right Panel ─────────────────────────────────────────────────────────────
-function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, token, notifications, announcements }: {
-  classFeed: any[]; progress: ProgressData | null; activeChild: Child | null;
+// ─── Class Feed Column ────────────────────────────────────────────────────────
+function ClassFeedColumn({ classFeed }: { classFeed: any[] }) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white sticky top-0 z-10">
+        <div>
+          <p className="text-sm font-bold text-gray-800">Class Feed</p>
+          <p className="text-xs text-gray-400">Photos from school</p>
+        </div>
+        <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
+        </span>
+      </div>
+
+      {/* Feed items */}
+      <div className="flex-1 overflow-y-auto">
+        {classFeed.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 text-center px-4">
+            <ImageIcon size={32} className="text-gray-200 mb-3" />
+            <p className="text-sm font-medium text-gray-400">No photos yet</p>
+            <p className="text-xs text-gray-300 mt-1">Photos shared by teachers will appear here</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {classFeed.map((post: any) => {
+              const img = post.images?.[0];
+              const timeAgo = (() => {
+                const diff = Date.now() - new Date(post.created_at).getTime();
+                const mins = Math.floor(diff / 60000);
+                if (mins < 60) return `${mins}m ago`;
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return `${hrs}h ago`;
+                return `${Math.floor(hrs / 24)}d ago`;
+              })();
+              return (
+                <div key={post.id} className="p-3">
+                  {img ? (
+                    <img src={img} alt={post.caption ?? ''} className="w-full rounded-xl object-cover mb-2.5" style={{ height: 150 }} />
+                  ) : (
+                    <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2.5" style={{ height: 100 }}>
+                      <ImageIcon size={28} className="text-emerald-300" />
+                    </div>
+                  )}
+                  {/* Extra images row */}
+                  {post.images?.length > 1 && (
+                    <div className="flex gap-1.5 mb-2">
+                      {post.images.slice(1, 4).map((img2: string, i: number) => (
+                        <img key={i} src={img2} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+                      ))}
+                      {post.images.length > 4 && (
+                        <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">
+                          +{post.images.length - 4}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {post.caption && <p className="text-xs text-gray-700 line-clamp-2 mb-2 leading-relaxed">{post.caption}</p>}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold text-gray-600">by {post.poster_name}</p>
+                      <p className="text-[10px] text-gray-400">{timeAgo}</p>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
+                      <Heart size={12} className="fill-pink-400 text-pink-400" />
+                      <span>{post.like_count ?? 0}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Schedule Panel ───────────────────────────────────────────────────────────
+function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, notifications, announcements }: {
+  progress: ProgressData | null; activeChild: Child | null;
   invoice: any; onFeesClick: () => void; token: string;
   notifications: Notification[]; announcements: Announcement[];
 }) {
   const pct = progress?.coverage_pct ?? 0;
   const today = new Date();
   const weekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
-  const todayDow = today.getDay(); // 0=Sun
+  const todayDow = today.getDay();
   const weekStart = new Date(today);
   weekStart.setDate(today.getDate() - ((todayDow + 6) % 7));
   const weekDates = Array.from({ length: 5 }, (_, i) => {
     const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d;
   });
 
-  // Week schedule — fetch once per child
   const [weekSchedule, setWeekSchedule] = useState<Record<string, string[]>>({});
   const [drawerDay, setDrawerDay] = useState<{ date: string; label: string; topics: string[]; isToday: boolean } | null>(null);
 
@@ -1371,199 +1452,141 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
 
   return (
     <>
-      {/* Day Plan Drawer */}
       {drawerDay && (
-        <DayPlanDrawer
-          day={drawerDay}
-          activeChild={activeChild}
-          token={token}
-          onClose={() => setDrawerDay(null)}
-        />
+        <DayPlanDrawer day={drawerDay} activeChild={activeChild} token={token} onClose={() => setDrawerDay(null)} />
       )}
+      <div className="p-4 space-y-4">
 
-    <div className="p-4 space-y-4">
-
-      {/* Row 1 — Class Feed (top of right column) */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div>
-            <p className="text-sm font-bold text-gray-800">Class Feed</p>
-            <p className="text-xs text-gray-400">Photos from school</p>
+        {/* Weekly Schedule */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <CalendarDays size={15} className="text-gray-500" />
+            <p className="text-sm font-bold text-gray-800">Weekly Schedule</p>
           </div>
-          <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
-          </span>
-        </div>
-        {classFeed.length === 0 ? (
-          <div className="p-6 text-center">
-            <ImageIcon size={28} className="text-gray-300 mx-auto mb-2" />
-            <p className="text-xs text-gray-400">No photos yet</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {classFeed.slice(0, 4).map((post: any) => {
-              const img = post.images?.[0];
+          <div className="space-y-1">
+            {weekDates.map((d, i) => {
+              const isToday = d.toDateString() === today.toDateString();
+              const dateStr = d.toISOString().split('T')[0];
+              const topics = weekSchedule[dateStr] ?? [];
+              const hasTopics = topics.length > 0;
               return (
-                <div key={post.id} className="p-3">
-                  {img ? (
-                    <img src={img} alt={post.caption ?? ''} className="w-full rounded-xl object-cover mb-2" style={{ height: 130 }} />
-                  ) : (
-                    <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2" style={{ height: 80 }}>
-                      <ImageIcon size={28} className="text-emerald-300" />
-                    </div>
-                  )}
-                  {post.caption && <p className="text-xs text-gray-700 line-clamp-2 mb-1.5 leading-relaxed">{post.caption}</p>}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] font-medium text-gray-500">by {post.poster_name}</p>
-                      <p className="text-[10px] text-gray-400">{new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
-                      <Heart size={12} className="fill-pink-400 text-pink-400" />
-                      <span>{post.like_count ?? 0}</span>
-                    </div>
+                <button key={i} onClick={() => openDay(d, i)}
+                  className={`w-full flex items-center justify-between py-2 px-2.5 rounded-xl transition-all text-left group ${isToday ? 'bg-emerald-50 border border-emerald-100' : 'hover:bg-gray-50'}`}>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
+                    <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
+                      {d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
+                    </p>
+                    {hasTopics && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{topics[0]}</p>}
                   </div>
-                </div>
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-1">
+                    {hasTopics && (
+                      <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                        {topics.length}
+                      </span>
+                    )}
+                    <ChevronRight size={12} className={`text-gray-300 group-hover:text-gray-500 ${isToday ? 'text-emerald-400' : ''}`} />
+                  </div>
+                </button>
               );
             })}
           </div>
-        )}
-        {classFeed.length > 4 && (
-          <div className="px-4 py-2.5 border-t border-gray-50">
-            <button className="w-full text-xs text-emerald-600 font-medium text-center hover:text-emerald-700 flex items-center justify-center gap-1">
-              View All Photos <ChevronRight size={11} />
+        </div>
+
+        {/* Progress */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp size={15} className="text-gray-500" />
+            <p className="text-sm font-bold text-gray-800">Progress</p>
+          </div>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-xs text-gray-500">Curriculum</p>
+            <p className="text-xs font-bold text-emerald-600">{pct.toFixed(1)}%</p>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-1.5">
+            <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
+        {/* Quick Links */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ArrowRight size={15} className="text-gray-500" />
+            <p className="text-sm font-bold text-gray-800">Quick Links</p>
+          </div>
+          <div className="space-y-2">
+            {activeChild && (
+              <a href={`/parent/journey?student_id=${activeChild.id}`}
+                className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
+                <div className="flex items-center gap-2">
+                  <BookOpen size={13} className="text-gray-500" />
+                  <span className="text-xs font-medium text-gray-700">Child&apos;s Journey</span>
+                </div>
+                <ArrowRight size={11} className="text-gray-400" />
+              </a>
+            )}
+            <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-100 transition-all">
+              <div className="flex items-center gap-2">
+                <Star size={13} className="text-amber-500 fill-amber-400" />
+                <span className="text-xs font-medium text-amber-700">Premium Features</span>
+              </div>
+              <ArrowRight size={11} className="text-amber-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Weekly Updates */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Bell size={15} className="text-gray-500" />
+            <p className="text-sm font-bold text-gray-800">Weekly Updates</p>
+          </div>
+          {announcements.length === 0 && notifications.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-2">No updates this week</p>
+          ) : (
+            <div className="space-y-2.5">
+              {announcements.slice(0, 2).map(a => (
+                <div key={a.id} className="flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-gray-800 truncate">{a.title}</p>
+                    <p className="text-[11px] text-gray-500 line-clamp-2">{a.body}</p>
+                  </div>
+                </div>
+              ))}
+              {notifications.slice(0, 2).map(n => (
+                <div key={n.id} className="flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-gray-800 truncate">{n.section_name}</p>
+                    <p className="text-[11px] text-gray-500">{n.chunks_covered} topics · {n.completion_date.split('T')[0]}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Fees Due */}
+        {invoice && invoice.net_payable > 0 && (
+          <div className="bg-orange-50 rounded-2xl border border-orange-100 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <CreditCard size={15} className="text-orange-500" />
+              <p className="text-sm font-bold text-orange-800">Fees Due</p>
+            </div>
+            <p className="text-2xl font-black text-orange-700 mb-1">₹{invoice.net_payable.toLocaleString('en-IN')}</p>
+            {invoice.accounts?.[0]?.due_date && (
+              <p className="text-xs text-orange-600 mb-3">
+                Due on {new Date(invoice.accounts[0].due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
+            )}
+            <button onClick={onFeesClick}
+              className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
+              Pay Now <ArrowRight size={14} />
             </button>
           </div>
         )}
       </div>
-
-      {/* Row 2 — Weekly Schedule */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <CalendarDays size={15} className="text-gray-500" />
-          <p className="text-sm font-bold text-gray-800">Weekly Schedule</p>
-        </div>
-        <div className="space-y-1">
-          {weekDates.map((d, i) => {
-            const isToday = d.toDateString() === today.toDateString();
-            const dateStr = d.toISOString().split('T')[0];
-            const topics = weekSchedule[dateStr] ?? [];
-            const hasTopics = topics.length > 0;
-            return (
-              <button key={i} onClick={() => openDay(d, i)}
-                className={`w-full flex items-center justify-between py-2 px-2.5 rounded-xl transition-all text-left group ${isToday ? 'bg-emerald-50 border border-emerald-100' : 'hover:bg-gray-50'}`}>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
-                  <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
-                    {d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
-                  </p>
-                  {hasTopics && <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">{topics[0]}</p>}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {hasTopics && (
-                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
-                      {topics.length} topic{topics.length > 1 ? 's' : ''}
-                    </span>
-                  )}
-                  <ChevronRight size={13} className={`text-gray-300 group-hover:text-gray-500 transition-colors ${isToday ? 'text-emerald-400' : ''}`} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Row 3 — Progress */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingUp size={15} className="text-gray-500" />
-          <p className="text-sm font-bold text-gray-800">Progress</p>
-        </div>
-        <div className="flex items-center justify-between mb-1.5">
-          <p className="text-xs text-gray-500">Curriculum</p>
-          <p className="text-xs font-bold text-emerald-600">{pct.toFixed(1)}%</p>
-        </div>
-        <div className="w-full bg-gray-100 rounded-full h-1.5">
-          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-
-      {/* Row 4 — Weekly Updates */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Bell size={15} className="text-gray-500" />
-          <p className="text-sm font-bold text-gray-800">Weekly Updates</p>
-        </div>
-        {announcements.length === 0 && notifications.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-2">No updates this week</p>
-        ) : (
-          <div className="space-y-2.5">
-            {announcements.slice(0, 2).map(a => (
-              <div key={a.id} className="flex items-start gap-2.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-800 truncate">{a.title}</p>
-                  <p className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed">{a.body}</p>
-                </div>
-              </div>
-            ))}
-            {notifications.slice(0, 2).map(n => (
-              <div key={n.id} className="flex items-start gap-2.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-800 truncate">{n.section_name}</p>
-                  <p className="text-[11px] text-gray-500">{n.chunks_covered} topics covered · {n.completion_date.split('T')[0]}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Row 5 — Quick Links */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <p className="text-sm font-bold text-gray-800 mb-3">🔗 Quick Links</p>
-        <div className="space-y-2">
-          {activeChild && (
-            <a href={`/parent/journey?student_id=${activeChild.id}`}
-              className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
-              <div className="flex items-center gap-2">
-                <BookOpen size={14} className="text-gray-500" />
-                <span className="text-xs font-medium text-gray-700">Child&apos;s Journey</span>
-              </div>
-              <ArrowRight size={12} className="text-gray-400" />
-            </a>
-          )}
-          <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-100 transition-all">
-            <div className="flex items-center gap-2">
-              <Star size={14} className="text-amber-500 fill-amber-400" />
-              <span className="text-xs font-medium text-amber-700">Premium Features</span>
-            </div>
-            <ArrowRight size={12} className="text-amber-400" />
-          </button>
-        </div>
-      </div>
-
-      {/* Row 6 — Fees Due */}
-      {invoice && invoice.net_payable > 0 && (
-        <div className="bg-orange-50 rounded-2xl border border-orange-100 p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <CreditCard size={16} className="text-orange-500" />
-            <p className="text-sm font-bold text-orange-800">Fees Due</p>
-          </div>
-          <p className="text-2xl font-black text-orange-700 mb-1">₹{invoice.net_payable.toLocaleString('en-IN')}</p>
-          {invoice.accounts?.[0]?.due_date && (
-            <p className="text-xs text-orange-600 mb-3">
-              Due on {new Date(invoice.accounts[0].due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-            </p>
-          )}
-          <button onClick={onFeesClick}
-            className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
-            Pay Now <ArrowRight size={14} />
-          </button>
-        </div>
-      )}
-    </div>
     </>
   );
 }
