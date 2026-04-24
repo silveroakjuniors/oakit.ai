@@ -805,6 +805,7 @@ export default function ParentPage() {
                       unreadNotifs={unreadNotifs}
                       invoice={invoice}
                       parentProfile={parentProfile}
+                      classFeed={classFeed}
                     />
                   )}
                   {tab === 'calendar' && <CalendarTab events={calendarEvents} />}
@@ -929,13 +930,38 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
 }
 
 // ─── Home Tab ────────────────────────────────────────────────────────────────
-function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile }: {
+function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed }: {
   feed: ChildFeed | null; progress: ProgressData | null; attendance: AttendanceData | null; activeChild: Child | null;
   announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
   token: string; onChildUpdate: (url: string) => void;
   unreadMessages: number; unreadNotifs: number; invoice: any;
   parentProfile: { name: string; mobile: string } | null;
+  classFeed: any[];
 }) {
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // Fetch AI summary for today's topics — cached once per day per child
+  useEffect(() => {
+    if (!feed?.topics?.length || !activeChild?.id || !token) return;
+    const today = new Date().toISOString().split('T')[0];
+    const cacheKey = `feed-summary:${activeChild.id}:${today}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) { setAiSummary(cached); return; }
+
+    setSummaryLoading(true);
+    const completed = !!feed.attendance; // if attendance marked, topics were covered today
+    const params = new URLSearchParams({
+      topics: feed.topics.join(','),
+      class_name: activeChild.class_name ?? 'Nursery',
+      child_name: activeChild.name.split(' ')[0],
+      completed: String(completed),
+    });
+    apiGet<{ summary: string }>(`/api/v1/ai/topic-summary?${params}`, token)
+      .then(d => { setAiSummary(d.summary); localStorage.setItem(cacheKey, d.summary); })
+      .catch(() => {})
+      .finally(() => setSummaryLoading(false));
+  }, [feed?.topics?.join(','), activeChild?.id]);
   if (!activeChild) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <User size={48} className="text-gray-300 mb-3" />
@@ -1088,48 +1114,114 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
       {/* Today's Feed + This Week */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Today's Feed */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-1.5">
+        {/* Today's Feed — AI summary + teacher notes */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
             <ClipboardList size={13} className="text-gray-400" /> Today&apos;s Feed
           </p>
+
+          {/* AI-generated summary */}
           {feed?.special_label ? (
             <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
               <p className="text-sm font-semibold text-amber-800">{feed.special_label}</p>
             </div>
           ) : feed?.topics && feed.topics.length > 0 ? (
-            <>
-              <p className="text-sm text-gray-600 leading-relaxed mb-3">
-                Today, your child learned about {feed.topics.slice(0, 2).join(' and ')}.
-                {feed.topics.length > 2 && ` Also covered: ${feed.topics.slice(2).join(', ')}.`}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+              {summaryLoading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 size={13} className="animate-spin text-emerald-500" />
+                  <p className="text-xs text-emerald-600">Generating summary…</p>
+                </div>
+              ) : aiSummary ? (
+                <p className="text-sm text-emerald-800 leading-relaxed">{aiSummary}</p>
+              ) : (
+                <p className="text-sm text-emerald-800 leading-relaxed">
+                  {feed.attendance
+                    ? `Today, ${activeChild.name.split(' ')[0]} learned about ${feed.topics.slice(0, 2).join(' and ')}.`
+                    : `Today, ${activeChild.name.split(' ')[0]} will learn about ${feed.topics.slice(0, 2).join(' and ')}.`}
+                </p>
+              )}
+              {/* Topic chips */}
+              <div className="flex flex-wrap gap-1.5 mt-2">
                 {feed.topics.map((topic, i) => (
-                  <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">{topic}</span>
+                  <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-emerald-700 border border-emerald-200">{topic}</span>
                 ))}
               </div>
-            </>
+            </div>
           ) : (
-            <p className="text-sm text-gray-400 py-4 text-center">No feed data yet for today</p>
+            <p className="text-sm text-gray-400 py-2 text-center">No feed data yet for today</p>
           )}
 
-          {/* Homework section */}
+          {/* Homework */}
           {feed?.homework && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
-                <BookOpen size={13} className="text-gray-500" /> Homework
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-xs font-bold text-gray-600 mb-2 flex items-center gap-1.5">
+                <BookOpen size={12} className="text-gray-400" /> Homework
               </p>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {(feed.homework.formatted_text || feed.homework.raw_text).split('\n').filter(Boolean).slice(0, 3).map((line, i) => (
                   <div key={i} className="flex items-start gap-2">
-                    <span className="text-gray-400 text-xs mt-0.5 flex-shrink-0">{i + 1}.</span>
+                    <span className="text-gray-300 text-xs mt-0.5 flex-shrink-0 font-bold">{i + 1}.</span>
                     <p className="text-sm text-gray-600 leading-relaxed">{line.replace(/^\d+\.\s*/, '')}</p>
                   </div>
                 ))}
               </div>
-              <button onClick={() => onTabChange('assignments')} className="mt-3 text-xs text-emerald-600 font-medium flex items-center gap-1 hover:text-emerald-700">
-                View All Updates <ChevronRight size={12} />
+              <button onClick={() => onTabChange('assignments')} className="mt-2 text-xs text-emerald-600 font-medium flex items-center gap-1 hover:text-emerald-700">
+                View All <ChevronRight size={11} />
               </button>
+            </div>
+          )}
+
+          {/* Teacher Notes inline */}
+          {feed?.notes && feed.notes.length > 0 && (
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-xs font-bold text-gray-600 mb-2 flex items-center gap-1.5">
+                <ClipboardList size={12} className="text-gray-400" /> Teacher Notes
+              </p>
+              <div className="space-y-2">
+                {feed.notes.slice(0, 2).map(note => {
+                  const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
+                  return (
+                    <button key={note.id} onClick={() => onNoteClick(note)}
+                      className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2.5 transition-colors border border-gray-100">
+                      {note.note_text && <p className="text-xs text-gray-700 line-clamp-2">{note.note_text}</p>}
+                      {note.file_name && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Paperclip size={11} className="text-gray-400" />
+                          <p className="text-xs text-gray-500 truncate flex-1">{note.file_name}</p>
+                          <Download size={11} className="text-emerald-500" />
+                        </div>
+                      )}
+                      <p className={`text-[10px] mt-1 ${dl <= 3 ? 'text-red-500' : 'text-gray-400'}`}>
+                        Expires in {dl} day{dl === 1 ? '' : 's'}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Class Feed preview — 2 photos */}
+          {classFeed.length > 0 && (
+            <div className="border-t border-gray-100 pt-3">
+              <p className="text-xs font-bold text-gray-600 mb-2 flex items-center gap-1.5">
+                <ImageIcon size={12} className="text-gray-400" /> Class Photos
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {classFeed.slice(0, 2).map((post: any) => {
+                  const img = post.images?.[0];
+                  return img ? (
+                    <div key={post.id} className="rounded-xl overflow-hidden border border-gray-100 relative">
+                      <img src={img} alt={post.caption ?? ''} className="w-full object-cover" style={{ height: 80 }} />
+                      <div className="absolute bottom-1 right-1 flex items-center gap-0.5 bg-black/50 rounded-full px-1.5 py-0.5">
+                        <Heart size={9} className="text-pink-300 fill-pink-300" />
+                        <span className="text-[9px] text-white font-bold">{post.like_count ?? 0}</span>
+                      </div>
+                    </div>
+                  ) : null;
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -1221,32 +1313,6 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </div>
       </div>
 
-      {/* Teacher notes */}
-      {feed?.notes && feed.notes.length > 0 && (
-        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-          <p className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <ClipboardList size={15} className="text-gray-500" /> Teacher Notes
-          </p>
-          <div className="space-y-2">
-            {feed.notes.map(note => {
-              const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
-              return (
-                <button key={note.id} onClick={() => onNoteClick(note)}
-                  className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-3 transition-colors border border-gray-100">
-                  {note.note_text && <p className="text-sm text-gray-700 line-clamp-2 mb-1">{note.note_text}</p>}
-                  {note.file_name && <div className="flex items-center gap-2"><Paperclip size={12} className="text-gray-400 flex-shrink-0" /><p className="text-xs font-medium text-gray-700 truncate flex-1">{note.file_name}</p><span className="text-xs text-emerald-600 font-medium flex items-center gap-0.5"><Download size={11} /> Download</span></div>}
-                  <p className={`text-xs mt-1 ${dl <= 3 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{dl <= 0 ? 'Expires today' : `Expires in ${dl} day${dl === 1 ? '' : 's'}`}</p>
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex items-start gap-2 text-xs text-amber-600 mt-3">
-            <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
-            <span>Notes auto-delete after expiry. Download attachments you need to keep.</span>
-          </div>
-        </div>
-      )}
-
       {/* Announcements */}
       {announcements.length > 0 && (
         <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
@@ -1317,67 +1383,7 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
 
     <div className="p-4 space-y-4">
 
-      {/* Row 1 — Weekly Schedule */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <CalendarDays size={15} className="text-gray-500" />
-          <p className="text-sm font-bold text-gray-800">Weekly Schedule</p>
-        </div>
-        <div className="space-y-1">
-          {weekDates.map((d, i) => {
-            const isToday = d.toDateString() === today.toDateString();
-            const dateStr = d.toISOString().split('T')[0];
-            const topics = weekSchedule[dateStr] ?? [];
-            const hasTopics = topics.length > 0;
-            return (
-              <button
-                key={i}
-                onClick={() => openDay(d, i)}
-                className={`w-full flex items-center justify-between py-2 px-2.5 rounded-xl transition-all text-left group ${
-                  isToday ? 'bg-emerald-50 border border-emerald-100' : 'hover:bg-gray-50'
-                }`}
-              >
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
-                  <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
-                    {d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
-                  </p>
-                  {hasTopics && (
-                    <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">
-                      {topics[0]}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {hasTopics && (
-                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
-                      {topics.length} topic{topics.length > 1 ? 's' : ''}
-                    </span>
-                  )}
-                  <ChevronRight size={13} className={`text-gray-300 group-hover:text-gray-500 transition-colors ${isToday ? 'text-emerald-400' : ''}`} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Row 2 — Progress */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <TrendingUp size={15} className="text-gray-500" />
-          <p className="text-sm font-bold text-gray-800">Progress</p>
-        </div>
-        <div className="flex items-center justify-between mb-1.5">
-          <p className="text-xs text-gray-500">Curriculum</p>
-          <p className="text-xs font-bold text-emerald-600">{pct.toFixed(1)}%</p>
-        </div>
-        <div className="w-full bg-gray-100 rounded-full h-1.5">
-          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-
-      {/* Row 3 — Class Feed */}
+      {/* Row 1 — Class Feed (top of right column) */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <div>
@@ -1399,28 +1405,18 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
               const img = post.images?.[0];
               return (
                 <div key={post.id} className="p-3">
-                  {img && (
-                    <img
-                      src={img}
-                      alt={post.caption ?? ''}
-                      className="w-full rounded-xl object-cover mb-2"
-                      style={{ height: 130 }}
-                    />
-                  )}
-                  {!img && (
+                  {img ? (
+                    <img src={img} alt={post.caption ?? ''} className="w-full rounded-xl object-cover mb-2" style={{ height: 130 }} />
+                  ) : (
                     <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2" style={{ height: 80 }}>
                       <ImageIcon size={28} className="text-emerald-300" />
                     </div>
                   )}
-                  {post.caption && (
-                    <p className="text-xs text-gray-700 line-clamp-2 mb-1.5 leading-relaxed">{post.caption}</p>
-                  )}
+                  {post.caption && <p className="text-xs text-gray-700 line-clamp-2 mb-1.5 leading-relaxed">{post.caption}</p>}
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-[11px] font-medium text-gray-500">by {post.poster_name}</p>
-                      <p className="text-[10px] text-gray-400">
-                        {new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </p>
+                      <p className="text-[10px] text-gray-400">{new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
                     </div>
                     <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
                       <Heart size={12} className="fill-pink-400 text-pink-400" />
@@ -1434,16 +1430,70 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
         )}
         {classFeed.length > 4 && (
           <div className="px-4 py-2.5 border-t border-gray-50">
-            <button className="w-full text-xs text-emerald-600 font-medium text-center hover:text-emerald-700">
-              View All Photos →
+            <button className="w-full text-xs text-emerald-600 font-medium text-center hover:text-emerald-700 flex items-center justify-center gap-1">
+              View All Photos <ChevronRight size={11} />
             </button>
           </div>
         )}
       </div>
 
-      {/* Row 4 — Weekly Updates (announcements / notifications) */}
+      {/* Row 2 — Weekly Schedule */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <p className="text-sm font-bold text-gray-800 mb-3">🔔 Weekly Updates</p>
+        <div className="flex items-center gap-2 mb-3">
+          <CalendarDays size={15} className="text-gray-500" />
+          <p className="text-sm font-bold text-gray-800">Weekly Schedule</p>
+        </div>
+        <div className="space-y-1">
+          {weekDates.map((d, i) => {
+            const isToday = d.toDateString() === today.toDateString();
+            const dateStr = d.toISOString().split('T')[0];
+            const topics = weekSchedule[dateStr] ?? [];
+            const hasTopics = topics.length > 0;
+            return (
+              <button key={i} onClick={() => openDay(d, i)}
+                className={`w-full flex items-center justify-between py-2 px-2.5 rounded-xl transition-all text-left group ${isToday ? 'bg-emerald-50 border border-emerald-100' : 'hover:bg-gray-50'}`}>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
+                  <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
+                    {d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
+                  </p>
+                  {hasTopics && <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">{topics[0]}</p>}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {hasTopics && (
+                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                      {topics.length} topic{topics.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  <ChevronRight size={13} className={`text-gray-300 group-hover:text-gray-500 transition-colors ${isToday ? 'text-emerald-400' : ''}`} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Row 3 — Progress */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <TrendingUp size={15} className="text-gray-500" />
+          <p className="text-sm font-bold text-gray-800">Progress</p>
+        </div>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-xs text-gray-500">Curriculum</p>
+          <p className="text-xs font-bold text-emerald-600">{pct.toFixed(1)}%</p>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-1.5">
+          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      {/* Row 4 — Weekly Updates */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Bell size={15} className="text-gray-500" />
+          <p className="text-sm font-bold text-gray-800">Weekly Updates</p>
+        </div>
         {announcements.length === 0 && notifications.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-2">No updates this week</p>
         ) : (
