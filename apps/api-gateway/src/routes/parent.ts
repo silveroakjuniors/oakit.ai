@@ -48,6 +48,7 @@ router.get('/children', async (req: Request, res: Response) => {
     const { user_id, school_id } = req.user!;
     const result = await pool.query(
       `SELECT s.id, s.name, s.father_name, s.mother_name,
+              s.parent_contact, s.mother_contact, s.date_of_birth::text,
               s.photo_path,
               c.name as class_name, sec.label as section_label,
               sec.id as section_id, s.class_id

@@ -97,14 +97,24 @@ function useTranslation() {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Child { id: string; name: string; class_name: string; section_label: string; section_id: string; class_id: string; photo_url?: string; }
+interface Child { id: string; name: string; class_name: string; section_label: string; section_id: string; class_id: string; photo_url?: string; father_name?: string | null; mother_name?: string | null; parent_contact?: string | null; mother_contact?: string | null; date_of_birth?: string | null; }
 interface NoteItem { id: string; note_text: string | null; file_name: string | null; file_size: number | null; expires_at: string; created_at: string; }
 interface ChildFeed {
   student_id: string; name: string; class_name: string; section_label: string;
+  feed_date: string; // YYYY-MM-DD — from time machine or real today
   attendance: { status: string; is_late: boolean; arrived_at: string | null } | null;
   topics: string[]; plan_status: string | null; special_label: string | null;
   homework: { formatted_text: string; raw_text: string } | null;
   notes: NoteItem[];
+}
+interface StudentProfile {
+  id: string; name: string; class_name: string; section_label: string;
+  father_name: string | null; mother_name: string | null;
+  parent_contact: string | null; mother_contact: string | null;
+  date_of_birth: string | null; photo_url?: string;
+}
+interface Observation {
+  id: string; obs_text: string; categories: string[]; obs_date: string; teacher_name: string;
 }
 interface AttendanceData {
   records: { attend_date: string; status: string; is_late: boolean }[];
@@ -824,7 +834,7 @@ export default function ParentPage() {
                   {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} />}
                   {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
                   {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
-                  {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
+                  {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} token={token} />}
                 </div>
               )}
             </div>
@@ -940,6 +950,119 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
   );
 }
 
+// ─── Student Profile Modal ────────────────────────────────────────────────────
+function StudentProfileModal({ child, token, onClose }: { child: Child; token: string; onClose: () => void }) {
+  function formatDob(dob: string | null | undefined) {
+    if (!dob) return '—';
+    const d = new Date(dob.split('T')[0] + 'T12:00:00');
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function calcAge(dob: string | null | undefined) {
+    if (!dob) return '';
+    const d = new Date(dob.split('T')[0] + 'T12:00:00');
+    const now = new Date();
+    const months = (now.getFullYear() - d.getFullYear()) * 12 + now.getMonth() - d.getMonth() + (now.getDate() < d.getDate() ? -1 : 0);
+    const y = Math.floor(months / 12), m = months % 12;
+    return y > 0 ? `${y}y ${m}m` : `${m} months`;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-end lg:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative z-10 bg-white w-full lg:w-[480px] rounded-t-3xl lg:rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="lg:hidden flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-neutral-200" /></div>
+        {/* Header */}
+        <div className="bg-gradient-to-r from-emerald-600 to-emerald-500 px-5 py-5 rounded-t-3xl lg:rounded-t-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-white font-bold text-base">Student Profile</p>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30"><X size={14} /></button>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-white/20 overflow-hidden flex items-center justify-center border-2 border-white/30 flex-shrink-0">
+              {child.photo_url ? (
+                <img src={child.photo_url.startsWith('http') ? child.photo_url : `${API_BASE}${child.photo_url}`} alt={child.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-white font-black text-2xl">{child.name[0]}</span>
+              )}
+            </div>
+            <div>
+              <p className="text-white font-black text-xl leading-tight">{child.name}</p>
+              <p className="text-white/80 text-sm mt-0.5">{child.class_name} · Section {child.section_label}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-5 space-y-4">
+          {/* DOB */}
+          {child.date_of_birth && (
+            <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <span className="text-base">🎂</span>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">Date of Birth</p>
+                <p className="text-sm font-semibold text-gray-800">{formatDob(child.date_of_birth)}</p>
+                <p className="text-xs text-gray-500">{calcAge(child.date_of_birth)} old</p>
+              </div>
+            </div>
+          )}
+
+          {/* Parents */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Parent / Guardian</p>
+            <div className="space-y-2">
+              {(child.father_name || child.parent_contact) && (
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <User size={16} className="text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Father</p>
+                    <p className="text-sm font-semibold text-gray-800">{child.father_name || '—'}</p>
+                    {child.parent_contact && <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><Phone size={10} /> {child.parent_contact}</p>}
+                  </div>
+                </div>
+              )}
+              {(child.mother_name || child.mother_contact) && (
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="w-9 h-9 rounded-xl bg-pink-100 flex items-center justify-center flex-shrink-0">
+                    <User size={16} className="text-pink-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Mother</p>
+                    <p className="text-sm font-semibold text-gray-800">{child.mother_name || '—'}</p>
+                    {child.mother_contact && <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><Phone size={10} /> {child.mother_contact}</p>}
+                  </div>
+                </div>
+              )}
+              {!child.father_name && !child.mother_name && !child.parent_contact && !child.mother_contact && (
+                <p className="text-sm text-gray-400 text-center py-2">No parent contact info on file</p>
+              )}
+            </div>
+          </div>
+
+          {/* Class info */}
+          <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+              <BookOpen size={16} className="text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Class</p>
+              <p className="text-sm font-semibold text-gray-800">{child.class_name} · Section {child.section_label}</p>
+            </div>
+          </div>
+
+          <a href={`/parent/journey?student_id=${child.id}`}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">
+            <BookOpen size={14} /> View Child&apos;s Journey
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Home Tab ────────────────────────────────────────────────────────────────
 function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed }: {
   feed: ChildFeed | null; progress: ProgressData | null; attendance: AttendanceData | null; activeChild: Child | null;
@@ -951,17 +1074,21 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 }) {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  // Use feed_date from API (respects time machine) — fall back to real today
+  const feedDateStr = feed?.feed_date ?? new Date().toISOString().split('T')[0];
+  const feedDate = new Date(feedDateStr + 'T12:00:00');
 
   // Fetch AI summary for today's topics — cached once per day per child
   useEffect(() => {
     if (!feed?.topics?.length || !activeChild?.id || !token) return;
-    const today = new Date().toISOString().split('T')[0];
-    const cacheKey = `feed-summary:${activeChild.id}:${today}`;
+    const cacheKey = `feed-summary:${activeChild.id}:${feedDateStr}`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) { setAiSummary(cached); return; }
 
     setSummaryLoading(true);
-    const completed = !!feed.attendance; // if attendance marked, topics were covered today
+    const completed = !!feed.attendance;
     const params = new URLSearchParams({
       topics: feed.topics.join(','),
       class_name: activeChild.class_name ?? 'Nursery',
@@ -973,6 +1100,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       .catch(() => {})
       .finally(() => setSummaryLoading(false));
   }, [feed?.topics?.join(','), activeChild?.id]);
+
   if (!activeChild) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <User size={48} className="text-gray-300 mb-3" />
@@ -983,21 +1111,22 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
   const att = feed?.attendance;
   const attPct = attendance?.attendance_pct ?? 0;
   const attLabel = !att ? 'Not marked' : att.status === 'present' && att.is_late ? 'Late' : att.status === 'present' ? 'Present' : 'Absent';
-  const pct = progress?.coverage_pct ?? 0;
 
-  // Week calendar
-  const today = new Date();
+  // Week calendar — anchored to feed_date (time machine aware)
   const weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const todayDow = today.getDay();
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - ((todayDow + 6) % 7));
+  const feedDow = feedDate.getDay(); // 0=Sun
+  const weekStartDate = new Date(feedDate);
+  weekStartDate.setDate(feedDate.getDate() - ((feedDow + 6) % 7));
   const weekDates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d;
+    const d = new Date(weekStartDate); d.setDate(weekStartDate.getDate() + i); return d;
   });
   const attRecords = attendance?.records ?? [];
 
   return (
     <div className="space-y-5">
+      {/* Student profile modal */}
+      {profileOpen && <StudentProfileModal child={activeChild} token={token} onClose={() => setProfileOpen(false)} />}
+
       {/* Child profile card */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
         {/* Editable child photo */}
@@ -1039,7 +1168,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
             <span className="text-xs text-emerald-600 font-medium">Active</span>
           </div>
         </div>
-        <button onClick={() => onTabChange('progress')} className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium hover:text-emerald-700 flex-shrink-0">
+        <button onClick={() => setProfileOpen(true)} className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium hover:text-emerald-700 flex-shrink-0">
           View Profile <ChevronRight size={14} />
         </button>
       </div>
@@ -1071,14 +1200,14 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
             <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
               <circle cx="24" cy="24" r="18" fill="none" stroke="#2563eb" strokeWidth="5"
-                strokeDasharray={`${(pct / 100) * 113} 113`} strokeLinecap="round" />
+                strokeDasharray={`${((progress?.coverage_pct ?? 0) / 100) * 113} 113`} strokeLinecap="round" />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
               <TrendingUp size={14} className="text-blue-700" />
             </div>
           </div>
           <div>
-            <p className="text-2xl font-black text-blue-900 leading-none">{pct.toFixed(1)}%</p>
+            <p className="text-2xl font-black text-blue-900 leading-none">{(progress?.coverage_pct ?? 0).toFixed(1)}%</p>
             <p className="text-xs font-semibold text-blue-700 mt-0.5">Progress</p>
             <p className="text-[10px] text-blue-600">This Term</p>
           </div>
@@ -1127,9 +1256,14 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Today's Feed — AI summary + teacher notes */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
-            <ClipboardList size={13} className="text-gray-400" /> Today&apos;s Feed
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+              <ClipboardList size={13} className="text-gray-400" /> Today&apos;s Feed
+            </p>
+            <span className="text-xs font-semibold text-gray-500 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">
+              {feedDate.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+          </div>
 
           {/* AI-generated summary */}
           {feed?.special_label ? (
@@ -1207,16 +1341,15 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
           )}
         </div>
 
-        {/* This Week + Curriculum Progress + Quick Actions */}
+        {/* This Week */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-          {/* This Week */}
           <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
             <CalendarDays size={13} className="text-gray-400" /> This Week
           </p>
           <div className="flex justify-between">
             {weekDays.map((d, i) => {
               const dateObj = weekDates[i];
-              const isToday = dateObj.toDateString() === today.toDateString();
+              const isToday = dateObj.toISOString().split('T')[0] === feedDateStr;
               const dateStr = dateObj.toISOString().split('T')[0];
               const rec = attRecords.find(r => r.attend_date.split('T')[0] === dateStr);
               const dotColor = !rec ? 'bg-gray-200' : rec.status === 'present' && !rec.is_late ? 'bg-emerald-500' : rec.status === 'present' ? 'bg-amber-500' : 'bg-red-500';
@@ -1236,54 +1369,6 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
           <button onClick={() => onTabChange('calendar')} className="w-full text-xs text-emerald-600 font-medium flex items-center justify-center gap-1 hover:text-emerald-700 py-1">
             View Full Calendar <ChevronRight size={11} />
           </button>
-
-          {/* Curriculum Progress */}
-          <div className="border-t border-gray-100 pt-3">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2 flex items-center gap-1.5">
-              <TrendingUp size={13} className="text-gray-400" /> Curriculum Progress
-            </p>
-            <div className="flex items-center gap-3">
-              <div className="relative flex-shrink-0 w-14 h-14">
-                <svg width="56" height="56" style={{ transform: 'rotate(-90deg)' }}>
-                  <circle cx="28" cy="28" r="22" fill="none" stroke="#F3F4F6" strokeWidth="6" />
-                  <circle cx="28" cy="28" r="22" fill="none" stroke="#10B981" strokeWidth="6"
-                    strokeDasharray={`${(pct / 100) * 138} 138`} strokeLinecap="round" />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <p className="text-xs font-black text-gray-900">{pct.toFixed(0)}%</p>
-                </div>
-              </div>
-              <div className="flex-1">
-                <p className="text-sm text-gray-500"><span className="font-semibold text-gray-800">{pct.toFixed(1)}%</span> covered this term</p>
-                <div className="mt-1.5 w-full bg-gray-100 rounded-full h-1.5">
-                  <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="border-t border-gray-100 pt-3">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2 flex items-center gap-1.5">
-              <Zap size={13} className="text-gray-400" /> Quick Actions
-            </p>
-            <div className="grid grid-cols-4 gap-2">
-              {([
-                { Icon: BarChart3,     label: 'Report Card', action: () => onTabChange('reports'),       bg: 'bg-blue-50',    iconColor: 'text-blue-500' },
-                { Icon: ImageIcon,     label: 'Gallery',     action: () => onTabChange('notifications'), bg: 'bg-purple-50',  iconColor: 'text-purple-500' },
-                { Icon: MessageSquare, label: 'Messages',    action: () => onTabChange('messages'),      bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
-                { Icon: CreditCard,    label: 'Fee Details', action: () => onTabChange('fees'),          bg: 'bg-orange-50',  iconColor: 'text-orange-500' },
-              ] as const).map(a => (
-                <button key={a.label} onClick={a.action}
-                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
-                  <div className={`w-9 h-9 rounded-xl ${a.bg} flex items-center justify-center`}>
-                    <a.Icon size={16} className={a.iconColor} />
-                  </div>
-                  <span className="text-[9px] font-semibold text-gray-600 text-center leading-tight">{a.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1304,6 +1389,11 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
           </div>
         </div>
       )}
+
+      {/* Class Feed — mobile only (desktop shows in right column) */}
+      <div className="xl:hidden">
+        <ClassFeedColumn classFeed={classFeed} />
+      </div>
     </div>
   );
 }
@@ -1393,30 +1483,53 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
   notifications: Notification[]; announcements: Announcement[];
 }) {
   const pct = progress?.coverage_pct ?? 0;
-  const today = new Date();
   const weekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
-  const todayDow = today.getDay();
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - ((todayDow + 6) % 7));
-  const weekDates = Array.from({ length: 5 }, (_, i) => {
-    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d;
-  });
 
   const [weekSchedule, setWeekSchedule] = useState<Record<string, string[]>>({});
+  const [weekStart, setWeekStart] = useState<string | null>(null);
   const [drawerDay, setDrawerDay] = useState<{ date: string; label: string; topics: string[]; isToday: boolean } | null>(null);
 
   useEffect(() => {
     if (!activeChild?.id || !token) return;
     apiGet<{ week_start: string; days: Record<string, string[]> }>(
       `/api/v1/parent/child/${activeChild.id}/week-schedule`, token
-    ).then(d => setWeekSchedule(d.days ?? {})).catch(() => {});
+    ).then(d => { setWeekSchedule(d.days ?? {}); setWeekStart(d.week_start ?? null); }).catch(() => {});
   }, [activeChild?.id]);
+
+  // Derive week dates from API week_start (time machine aware)
+  const weekDates = (() => {
+    const base = weekStart ?? new Date().toISOString().split('T')[0];
+    return Array.from({ length: 5 }, (_, i) => {
+      const d = new Date(base + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() + i);
+      return d;
+    });
+  })();
+
+  // "Today" = the date the API anchored the week on (time machine aware)
+  // The API uses getToday() to find Monday; the "today" within the week is week_start + offset matching real today
+  // We derive it from week_start + day-of-week offset
+  const todayStr = (() => {
+    if (!weekStart) return new Date().toISOString().split('T')[0];
+    // The API sets week_start to Monday of the time-machine week.
+    // We need to know which day within that week is "today" per the time machine.
+    // The API's getToday() is what anchored the week — we can infer it from the week_start.
+    // Since we don't have it directly, use the real date but map it to the same week.
+    // Actually: the API week_start IS derived from getToday(), so the "today" highlight
+    // should be the date that matches the real calendar day within that week.
+    // Best approach: store it from the API. For now, use real today mapped to the week.
+    const realToday = new Date().toISOString().split('T')[0];
+    // If real today falls within this week, use it; otherwise use week_start (Monday)
+    const weekEnd = (() => { const d = new Date(weekStart + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().split('T')[0]; })();
+    if (realToday >= weekStart && realToday <= weekEnd) return realToday;
+    return weekStart; // fallback to Monday
+  })();
 
   function openDay(d: Date, i: number) {
     const dateStr = d.toISOString().split('T')[0];
     const topics = weekSchedule[dateStr] ?? [];
-    const isToday = d.toDateString() === today.toDateString();
-    const label = `${weekDays[i]} ${d.getDate()} ${d.toLocaleDateString('en-IN', { month: 'short' })}`;
+    const isToday = dateStr === todayStr;
+    const label = `${weekDays[i]} ${d.getUTCDate()} ${d.toLocaleDateString('en-IN', { month: 'short' })}`;
     setDrawerDay({ date: dateStr, label, topics, isToday });
   }
 
@@ -1435,7 +1548,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
           </div>
           <div className="space-y-1">
             {weekDates.map((d, i) => {
-              const isToday = d.toDateString() === today.toDateString();
+              const isToday = d.toISOString().split('T')[0] === todayStr;
               const dateStr = d.toISOString().split('T')[0];
               const topics = weekSchedule[dateStr] ?? [];
               const hasTopics = topics.length > 0;
@@ -1445,7 +1558,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
                     <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
-                      {d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
+                      {d.getUTCDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
                     </p>
                     {hasTopics && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{topics[0]}</p>}
                   </div>
@@ -1552,8 +1665,9 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
 }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
-  const isPast = day.date < today;
+  // Use the day's own date as reference for "today" — the drawer knows if it's today via day.isToday
+  const todayRef = new Date().toISOString().split('T')[0];
+  const isPast = day.date < todayRef;
 
   useEffect(() => {
     if (day.topics.length === 0) return;
@@ -1562,7 +1676,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
     if (cached) {
       try {
         const { ts, text } = JSON.parse(cached);
-        if (ts === today) { setSummary(text); return; }
+        if (ts === todayRef) { setSummary(text); return; }
       } catch {}
     }
     setLoading(true);
@@ -1575,7 +1689,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
     apiGet<{ summary: string }>(`/api/v1/ai/topic-summary?${params}`, token)
       .then(d => {
         setSummary(d.summary);
-        localStorage.setItem(cacheKey, JSON.stringify({ ts: today, text: d.summary }));
+        localStorage.setItem(cacheKey, JSON.stringify({ ts: todayRef, text: d.summary }));
       })
       .catch(() => setSummary(day.topics.join(' · ')))
       .finally(() => setLoading(false));
@@ -1875,129 +1989,159 @@ function AttendanceTab({ data }: { data: AttendanceData | null }) {
 }
 
 // ─── Progress Tab ─────────────────────────────────────────────────────────────
+// ─── Progress Tab — Learning Summary ─────────────────────────────────────────
 function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; activeChild: Child | null; token: string }) {
   const [milestoneData, setMilestoneData] = useState<{ completion_pct: number; achieved: number; total: number; class_level: string } | null>(null);
-  const [hwHistory, setHwHistory] = useState<HomeworkRecord[]>([]);
-  const [hwLoading, setHwLoading] = useState(false);
+  const [completions, setCompletions] = useState<{ date: string; topics: string[]; special_label?: string }[]>([]);
+  const [loadingCompletions, setLoadingCompletions] = useState(false);
 
   useEffect(() => {
     if (!activeChild?.id || !token) return;
     apiGet<any>(`/api/v1/teacher/milestones/${activeChild.id}`, token)
       .then(d => setMilestoneData({ completion_pct: d.completion_pct, achieved: d.achieved, total: d.total, class_level: d.class_level }))
       .catch(() => {});
-    // Load homework history
-    setHwLoading(true);
-    apiGet<HomeworkRecord[]>(`/api/v1/parent/homework/history?student_id=${activeChild.id}`, token)
-      .then(d => setHwHistory(d || []))
-      .catch(() => {})
-      .finally(() => setHwLoading(false));
+    // Load week schedule to show what's been covered
+    setLoadingCompletions(true);
+    apiGet<{ week_start: string; days: Record<string, string[]> }>(
+      `/api/v1/parent/child/${activeChild.id}/week-schedule`, token
+    ).then(d => {
+      const entries = Object.entries(d.days ?? {})
+        .filter(([, topics]) => topics.length > 0)
+        .map(([date, topics]) => ({ date, topics }))
+        .sort((a, b) => b.date.localeCompare(a.date));
+      setCompletions(entries);
+    }).catch(() => {}).finally(() => setLoadingCompletions(false));
   }, [activeChild?.id]);
 
-  if (!data) return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <TrendingUp size={48} className="text-neutral-300 mb-3" />
-      <p className="text-neutral-500 font-medium">No progress data yet</p>
-    </div>
-  );
-  const pct = data.coverage_pct;
+  const pct = data?.coverage_pct ?? 0;
   const strokeColor = pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
   const r = 50; const circ = 2 * Math.PI * r;
 
-  const missedCount = hwHistory.filter(h => h.status !== 'completed').length;
-  const completedCount = hwHistory.filter(h => h.status === 'completed').length;
+  // Collect all unique topics covered
+  const allTopics = completions.flatMap(c => c.topics);
+  const uniqueTopics = [...new Set(allTopics)];
+
+  // Categorise topics by keyword
+  function categorise(topics: string[]) {
+    const cats: Record<string, string[]> = {
+      'English & Language': [], 'Math & Numbers': [], 'Art & Craft': [],
+      'Science & Nature': [], 'Circle Time & GK': [], 'Fine Motor & Writing': [],
+      'Special Days & Events': [], 'Other Activities': [],
+    };
+    for (const t of topics) {
+      const tl = t.toLowerCase();
+      if (/english|letter|phonics|reading|story|language|alphabet/.test(tl)) cats['English & Language'].push(t);
+      else if (/math|number|count|shape|pattern|addition|subtraction/.test(tl)) cats['Math & Numbers'].push(t);
+      else if (/art|craft|draw|paint|colour|collage|clay/.test(tl)) cats['Art & Craft'].push(t);
+      else if (/science|nature|plant|animal|weather|earth|experiment/.test(tl)) cats['Science & Nature'].push(t);
+      else if (/circle|gk|general|knowledge|quiz|question/.test(tl)) cats['Circle Time & GK'].push(t);
+      else if (/motor|writing|pencil|grip|trace|cut|fold|bead/.test(tl)) cats['Fine Motor & Writing'].push(t);
+      else if (/holiday|festival|special|event|celebration|birthday|diwali|christmas|eid|holi/.test(tl)) cats['Special Days & Events'].push(t);
+      else cats['Other Activities'].push(t);
+    }
+    return Object.entries(cats).filter(([, v]) => v.length > 0);
+  }
+
+  const categorised = categorise(uniqueTopics);
+
+  const catIcons: Record<string, string> = {
+    'English & Language': '📖', 'Math & Numbers': '🔢', 'Art & Craft': '🎨',
+    'Science & Nature': '🌿', 'Circle Time & GK': '⭕', 'Fine Motor & Writing': '✏️',
+    'Special Days & Events': '🎉', 'Other Activities': '⭐',
+  };
 
   return (
     <div className="space-y-4">
-      <div className="bg-[#0f2417] rounded-2xl p-6 flex flex-col items-center">
-        <div className="relative w-36 h-36 mb-4">
-          <svg className="w-36 h-36 -rotate-90" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="12" />
-            <circle cx="60" cy="60" r={r} fill="none" stroke={strokeColor} strokeWidth="12"
-              strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)} strokeLinecap="round"
-              style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-3xl font-black text-white">{pct}%</span>
-            <span className="text-xs text-white/50">covered</span>
+      <h2 className="text-lg font-bold text-gray-800">Learning Summary</h2>
+
+      {/* Curriculum coverage ring */}
+      {data && (
+        <div className="bg-[#0f2417] rounded-2xl p-5 flex items-center gap-5">
+          <div className="relative w-24 h-24 flex-shrink-0">
+            <svg className="w-24 h-24 -rotate-90" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="12" />
+              <circle cx="60" cy="60" r={r} fill="none" stroke={strokeColor} strokeWidth="12"
+                strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)} strokeLinecap="round"
+                style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-2xl font-black text-white">{pct}%</span>
+              <span className="text-[10px] text-white/50">covered</span>
+            </div>
           </div>
-        </div>
-        {data.has_curriculum ? (
-          <>
-            <p className="font-bold text-white mb-1">{activeChild?.name.split(' ')[0]}&apos;s Curriculum</p>
-            <p className="text-xs text-white/50">{data.covered} of {data.total_chunks} topics completed</p>
-          </>
-        ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
-      </div>
-      {milestoneData && (
-        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-neutral-800">🏆 Milestones</p>
-            <span className="text-emerald-600 font-bold text-sm">{milestoneData.completion_pct}%</span>
+          <div>
+            <p className="font-bold text-white text-base">{activeChild?.name.split(' ')[0]}&apos;s Curriculum</p>
+            {data.has_curriculum ? (
+              <p className="text-sm text-white/60 mt-0.5">{data.covered} of {data.total_chunks} topics completed this term</p>
+            ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
+            {milestoneData && (
+              <div className="mt-2">
+                <p className="text-xs text-white/50">🏆 {milestoneData.achieved}/{milestoneData.total} milestones · {milestoneData.completion_pct}%</p>
+              </div>
+            )}
           </div>
-          <div className="w-full bg-neutral-100 rounded-full h-2.5 mb-2">
-            <div className="h-2.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${milestoneData.completion_pct}%` }} />
-          </div>
-          <p className="text-xs text-neutral-400">{milestoneData.achieved} of {milestoneData.total} {milestoneData.class_level} milestones achieved</p>
         </div>
       )}
 
-      {/* Homework History */}
-      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-neutral-800">📚 Homework History</p>
-          {hwHistory.length > 0 && (
-            <div className="flex gap-2 text-xs">
-              <span className="text-emerald-600 font-medium">{completedCount} done</span>
-              {missedCount > 0 && <span className="text-red-500 font-medium">{missedCount} missed</span>}
+      {/* Skills & topics by category */}
+      {categorised.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topics Covered This Week</p>
+          {categorised.map(([cat, topics]) => (
+            <div key={cat} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <p className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
+                <span>{catIcons[cat] ?? '📚'}</span> {cat}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {topics.map((t, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">{t}</span>
+                ))}
+              </div>
             </div>
-          )}
+          ))}
         </div>
-        {hwLoading ? (
-          <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-neutral-300" /></div>
-        ) : hwHistory.length === 0 ? (
-          <div className="flex items-center gap-2 text-emerald-600 py-2">
-            <CheckCircle2 size={16} />
-            <p className="text-sm font-medium">No homework records yet</p>
-          </div>
-        ) : (
+      ) : loadingCompletions ? (
+        <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
+          <BookOpen size={36} className="text-gray-200 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">No topics covered this week yet</p>
+        </div>
+      )}
+
+      {/* Day-by-day breakdown */}
+      {completions.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Day-by-Day Breakdown</p>
           <div className="space-y-2">
-            {hwHistory.map((hw, i) => {
-              const rawDate = (hw.homework_date || '').toString().split('T')[0];
-              const dateStr = rawDate
-                ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
-                : '—';
-              const statusConfig = {
-                completed: { label: '✓ Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-                partial: { label: '½ Partial', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
-                not_submitted: { label: '✗ Not submitted', cls: 'bg-red-50 text-red-600 border-red-100' },
-              }[hw.status] || { label: hw.status, cls: 'bg-neutral-50 text-neutral-600 border-neutral-100' };
-              return (
-                <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
-                  <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
-                    <div className="flex items-center gap-2">
-                      <ChevronRight size={14} className="shrink-0 transition-transform group-open:rotate-90" />
-                      <span className="text-xs font-medium">{dateStr}</span>
-                    </div>
-                    <span className="text-xs font-bold">{statusConfig.label}</span>
-                  </summary>
-                  <div className="px-3 pb-3 pt-1 border-t border-current/10">
-                    {hw.homework_text ? (
-                      <p className="text-xs leading-relaxed whitespace-pre-wrap">{hw.homework_text}</p>
-                    ) : (
-                      <p className="text-xs opacity-50 italic">No homework text recorded for this date.</p>
-                    )}
-                    {hw.teacher_note && (
-                      <p className="text-xs mt-2 italic opacity-70 border-t border-current/10 pt-2">
-                        Teacher note: {hw.teacher_note}
-                      </p>
-                    )}
-                  </div>
-                </details>
-              );
-            })}
+            {completions.map(({ date, topics }) => (
+              <div key={date} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
+                <div className="flex-shrink-0 text-center min-w-[48px]">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase">
+                    {new Date(date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short' })}
+                  </p>
+                  <p className="text-sm font-bold text-gray-700">
+                    {new Date(date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1 flex-1">
+                  {topics.map((t, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-50 text-gray-600 border border-gray-100">{t}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Journey link */}
+      {activeChild && (
+        <a href={`/parent/journey?student_id=${activeChild.id}`}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">
+          <BookOpen size={14} /> View Full Child Journey
+        </a>
+      )}
     </div>
   );
 }
@@ -2261,9 +2405,20 @@ function NotificationsTab({ notifications, announcements, onRead }: { notificati
   );
 }
 
-function InsightsTab({ insights, comparisons, activeChild }: { insights: ParentInsights | null; comparisons: ChildComparison[]; activeChild: Child | null }) {
-  const { t } = useTranslation();
-  if (!insights || !activeChild) {
+function InsightsTab({ insights, comparisons, activeChild, token }: { insights: ParentInsights | null; comparisons: ChildComparison[]; activeChild: Child | null; token: string }) {
+  const [observations, setObservations] = useState<Observation[]>([]);
+  const [loadingObs, setLoadingObs] = useState(false);
+
+  useEffect(() => {
+    if (!activeChild?.id || !token) return;
+    setLoadingObs(true);
+    apiGet<Observation[]>(`/api/v1/parent/observations/${activeChild.id}`, token)
+      .then(d => setObservations(d || []))
+      .catch(() => {})
+      .finally(() => setLoadingObs(false));
+  }, [activeChild?.id]);
+
+  if (!activeChild) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-8 h-8 text-neutral-300 animate-spin" />
@@ -2271,164 +2426,95 @@ function InsightsTab({ insights, comparisons, activeChild }: { insights: ParentI
     );
   }
 
-  const getStatusColor = (status: Goal['status']) => {
-    switch (status) {
-      case 'completed': return 'text-green-600 bg-green-50';
-      case 'in_progress': return 'text-blue-600 bg-blue-50';
-      case 'overdue': return 'text-red-600 bg-red-50';
-      default: return 'text-neutral-600 bg-neutral-50';
-    }
-  };
-
-  const getStatusIcon = (status: Goal['status']) => {
-    switch (status) {
-      case 'completed': return <CheckCircle2 size={12} className="text-green-600" />;
-      case 'in_progress': return <RefreshCw size={12} className="text-blue-600" />;
-      case 'overdue': return <AlertCircle size={12} className="text-red-600" />;
-      default: return <Clock size={12} className="text-neutral-400" />;
-    }
-  };
+  // Derive strengths and areas from observation categories
+  const allCategories = observations.flatMap(o => o.categories ?? []);
+  const catCounts: Record<string, number> = {};
+  for (const c of allCategories) catCounts[c] = (catCounts[c] ?? 0) + 1;
+  const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+  const strengths = sortedCats.slice(0, 4).map(([c]) => c);
+  const recentObs = observations.slice(0, 5);
 
   return (
-    <div className="space-y-6">
-      {/* Progress Predictions */}
-      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
-        <div className="flex items-center gap-3 mb-4">
-          <Target className="w-6 h-6 text-emerald-600" />
-          <h2 className="text-xl font-bold text-neutral-800">{t('Progress Predictions')}</h2>
-        </div>
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">Insights</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-emerald-800">{t('Next Week Attendance')}</span>
-              <TrendingUp className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div className="text-2xl font-bold text-emerald-700">{insights.predictions.nextWeekAttendance}%</div>
-            <div className="text-xs text-emerald-600 mt-1">Predicted attendance rate</div>
+      {/* Teacher Observations */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <Sparkles size={15} className="text-emerald-500" /> Teacher Observations
+        </p>
+        {loadingObs ? (
+          <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
+        ) : observations.length === 0 ? (
+          <div className="text-center py-6">
+            <BarChart3 size={32} className="text-gray-200 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">No observations shared yet</p>
+            <p className="text-xs text-gray-300 mt-1">Teachers will share insights about {activeChild.name.split(' ')[0]} here</p>
           </div>
-
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-blue-800">End of Month Progress</span>
-              <BarChart3 className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="text-2xl font-bold text-blue-700">{insights.predictions.endOfMonthProgress}%</div>
-            <div className="text-xs text-blue-600 mt-1">Expected academic progress</div>
-          </div>
-        </div>
-
-        {insights.predictions.areasNeedingAttention.length > 0 && (
-          <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-amber-800 mb-2">Areas Needing Attention</h3>
-                <ul className="text-sm text-amber-700 space-y-1">
-                  {insights.predictions.areasNeedingAttention.map((area, idx) => (
-                    <li key={idx}>• {area}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Goal Setting */}
-      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
-        <div className="flex items-center gap-3 mb-4">
-          <Target className="w-6 h-6 text-purple-600" />
-          <h2 className="text-xl font-bold text-neutral-800">Goal Setting</h2>
-        </div>
-
-        {insights.goals && (
-          <div className="space-y-4">
-            {Object.entries(insights.goals).map(([category, goals]) => (
-              <div key={category}>
-                <h3 className="font-semibold text-neutral-700 mb-3 capitalize flex items-center gap-2">
-                  {category === 'academic' && <BookOpen className="w-4 h-4" />}
-                  {category === 'behavioral' && <User className="w-4 h-4" />}
-                  {category === 'attendance' && <Calendar className="w-4 h-4" />}
-                  {category} Goals
-                </h3>
-                <div className="space-y-3">
-                  {goals.map(goal => (
-                    <div key={goal.id} className="border border-neutral-200 rounded-xl p-4 hover:bg-neutral-50 transition-colors">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-neutral-800">{goal.title}</span>
-                            <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(goal.status)}`}>
-                              {getStatusIcon(goal.status)} {goal.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <p className="text-sm text-neutral-600 mb-2">{goal.description}</p>
-                          <div className="flex items-center gap-4 text-xs text-neutral-500">
-                            <span>Target: {goal.target}</span>
-                            <span>Current: {goal.current}</span>
-                            <span>Due: {new Date(goal.deadline).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-3">
-                        <div className="flex justify-between text-xs text-neutral-600 mb-1">
-                          <span>Progress</span>
-                          <span>{goal.current} / {goal.target}</span>
-                        </div>
-                        <div className="w-full bg-neutral-200 rounded-full h-2">
-                          <div
-                            className="bg-emerald-500 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${Math.min(100, (parseFloat(goal.current) / parseFloat(goal.target.replace('%', ''))) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+        ) : (
+          <div className="space-y-3">
+            {recentObs.map(obs => (
+              <div key={obs.id} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-gray-600">{obs.teacher_name}</p>
+                  <p className="text-[10px] text-gray-400">{obs.obs_date?.split('T')[0] ?? ''}</p>
                 </div>
+                {obs.obs_text && <p className="text-sm text-gray-700 leading-relaxed">{obs.obs_text}</p>}
+                {obs.categories?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {obs.categories.map((c, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">{c}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
+            {observations.length > 5 && (
+              <p className="text-xs text-gray-400 text-center pt-1">+{observations.length - 5} more observations</p>
+            )}
           </div>
         )}
       </div>
 
-      {/* Child Comparison */}
-      <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
-        <div className="flex items-center gap-3 mb-4">
-          <BarChart3 className="w-6 h-6 text-indigo-600" />
-          <h2 className="text-xl font-bold text-neutral-800">Performance Comparison</h2>
+      {/* Strengths from observations */}
+      {strengths.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <Star size={15} className="text-amber-500 fill-amber-400" /> Observed Strengths
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {strengths.map((s, i) => (
+              <span key={i} className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">{s}</span>
+            ))}
+          </div>
         </div>
+      )}
 
-        <div className="space-y-3">
-          {comparisons.map(comp => (
-            <div key={comp.childId} className={`border rounded-xl p-4 ${comp.childId === activeChild.id ? 'border-emerald-300 bg-emerald-50' : 'border-neutral-200'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-neutral-800">{comp.name}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-neutral-600">Rank #{comp.rank}</span>
-                  <span className={`text-xs px-2 py-1 rounded-full ${comp.trend === 'up' ? 'text-green-600 bg-green-50' : comp.trend === 'down' ? 'text-red-600 bg-red-50' : 'text-neutral-600 bg-neutral-50'}`}>
-                    {comp.trend === 'up' ? '↗️' : comp.trend === 'down' ? '↘️' : '→'} {comp.trend}
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-sm">
-                <div>
-                  <div className="text-neutral-500">Attendance</div>
-                  <div className="font-semibold text-neutral-800">{comp.attendance}%</div>
-                </div>
-                <div>
-                  <div className="text-neutral-500">Progress</div>
-                  <div className="font-semibold text-neutral-800">{comp.progress}%</div>
-                </div>
-                <div>
-                  <div className="text-neutral-500">Participation</div>
-                  <div className="font-semibold text-neutral-800">{comp.participation}%</div>
-                </div>
-              </div>
+      {/* Attendance trend from real data */}
+      {insights && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <TrendingUp size={15} className="text-blue-500" /> Attendance Trend
+          </p>
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-100">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              insights.attendanceTrend === 'improving' ? 'bg-emerald-100' : insights.attendanceTrend === 'declining' ? 'bg-red-100' : 'bg-gray-100'
+            }`}>
+              <span className="text-lg">{insights.attendanceTrend === 'improving' ? '📈' : insights.attendanceTrend === 'declining' ? '📉' : '➡️'}</span>
             </div>
-          ))}
+            <div>
+              <p className="text-sm font-semibold text-gray-800 capitalize">{insights.attendanceTrend}</p>
+              <p className="text-xs text-gray-500">Attendance trend this term</p>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Journey link */}
+      <a href={`/parent/journey?student_id=${activeChild.id}`}
+        className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">
+        <BookOpen size={14} /> View Full Child Journey
+      </a>
     </div>
   );
 }
