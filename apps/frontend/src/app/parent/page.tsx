@@ -729,6 +729,8 @@ export default function ParentPage() {
               invoice={invoice}
               onFeesClick={() => setTab('fees')}
               token={token}
+              notifications={notifications}
+              announcements={announcements}
             />
           </aside>
         </div>
@@ -1064,9 +1066,10 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 }
 
 // ─── Right Panel ─────────────────────────────────────────────────────────────
-function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, token }: {
+function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, token, notifications, announcements }: {
   classFeed: any[]; progress: ProgressData | null; activeChild: Child | null;
   invoice: any; onFeesClick: () => void; token: string;
+  notifications: Notification[]; announcements: Announcement[];
 }) {
   const pct = progress?.coverage_pct ?? 0;
   const today = new Date();
@@ -1080,71 +1083,20 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
 
   return (
     <div className="p-4 space-y-4">
-      {/* Class Feed */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-sm font-bold text-gray-800">📸 Class Feed</p>
-            <p className="text-xs text-gray-400">Photos from school</p>
-          </div>
-          <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
-          </span>
-        </div>
-        {classFeed.length === 0 ? (
-          <div className="rounded-2xl bg-gray-50 border border-gray-100 p-6 text-center">
-            <p className="text-2xl mb-2">📷</p>
-            <p className="text-xs text-gray-400">No photos yet</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {classFeed.slice(0, 3).map((post: any) => {
-              const img = post.images?.[0];
-              return (
-                <div key={post.id} className="rounded-2xl overflow-hidden border border-gray-100 bg-white shadow-sm">
-                  {img ? (
-                    <img src={img} alt={post.caption ?? ''} className="w-full object-cover" style={{ height: 140 }} />
-                  ) : (
-                    <div className="w-full flex items-center justify-center bg-emerald-50" style={{ height: 100 }}>
-                      <span className="text-4xl">📷</span>
-                    </div>
-                  )}
-                  <div className="px-3 py-2.5">
-                    {post.caption && <p className="text-xs text-gray-700 line-clamp-2 mb-1.5">{post.caption}</p>}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[11px] font-medium text-gray-500">by {post.poster_name}</p>
-                        <p className="text-[10px] text-gray-400">{new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
-                        <Heart size={12} className="fill-pink-400 text-pink-400" />
-                        <span>{post.like_count ?? 0}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {classFeed.length > 3 && (
-          <button className="w-full mt-2 text-xs text-emerald-600 font-medium text-center hover:text-emerald-700">
-            View All Photos →
-          </button>
-        )}
-      </div>
 
-      {/* Weekly Schedule */}
+      {/* Row 1 — Weekly Schedule */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <p className="text-sm font-bold text-gray-800 mb-3">📅 Weekly Schedule</p>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {weekDates.map((d, i) => {
             const isToday = d.toDateString() === today.toDateString();
             return (
               <div key={i} className={`flex items-center justify-between py-1.5 px-2 rounded-lg ${isToday ? 'bg-emerald-50' : ''}`}>
                 <div>
                   <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
-                  <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>{d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}</p>
+                  <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
+                    {d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
+                  </p>
                 </div>
                 <span className={`w-2 h-2 rounded-full ${isToday ? 'bg-emerald-500' : 'bg-gray-200'}`} />
               </div>
@@ -1153,7 +1105,7 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
         </div>
       </div>
 
-      {/* Progress */}
+      {/* Row 2 — Progress */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <p className="text-sm font-bold text-gray-800 mb-3">📈 Progress</p>
         <div className="flex items-center justify-between mb-1.5">
@@ -1165,7 +1117,100 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
         </div>
       </div>
 
-      {/* Quick Links */}
+      {/* Row 3 — Class Feed */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div>
+            <p className="text-sm font-bold text-gray-800">📸 Class Feed</p>
+            <p className="text-xs text-gray-400">Photos from school</p>
+          </div>
+          <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
+          </span>
+        </div>
+        {classFeed.length === 0 ? (
+          <div className="p-6 text-center">
+            <p className="text-2xl mb-2">📷</p>
+            <p className="text-xs text-gray-400">No photos yet</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {classFeed.slice(0, 4).map((post: any) => {
+              const img = post.images?.[0];
+              return (
+                <div key={post.id} className="p-3">
+                  {img && (
+                    <img
+                      src={img}
+                      alt={post.caption ?? ''}
+                      className="w-full rounded-xl object-cover mb-2"
+                      style={{ height: 130 }}
+                    />
+                  )}
+                  {!img && (
+                    <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2" style={{ height: 80 }}>
+                      <span className="text-3xl">📷</span>
+                    </div>
+                  )}
+                  {post.caption && (
+                    <p className="text-xs text-gray-700 line-clamp-2 mb-1.5 leading-relaxed">{post.caption}</p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] font-medium text-gray-500">by {post.poster_name}</p>
+                      <p className="text-[10px] text-gray-400">
+                        {new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
+                      <Heart size={12} className="fill-pink-400 text-pink-400" />
+                      <span>{post.like_count ?? 0}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {classFeed.length > 4 && (
+          <div className="px-4 py-2.5 border-t border-gray-50">
+            <button className="w-full text-xs text-emerald-600 font-medium text-center hover:text-emerald-700">
+              View All Photos →
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Row 4 — Weekly Updates (announcements / notifications) */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <p className="text-sm font-bold text-gray-800 mb-3">🔔 Weekly Updates</p>
+        {announcements.length === 0 && notifications.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-2">No updates this week</p>
+        ) : (
+          <div className="space-y-2.5">
+            {announcements.slice(0, 2).map(a => (
+              <div key={a.id} className="flex items-start gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-800 truncate">{a.title}</p>
+                  <p className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed">{a.body}</p>
+                </div>
+              </div>
+            ))}
+            {notifications.slice(0, 2).map(n => (
+              <div key={n.id} className="flex items-start gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-800 truncate">{n.section_name}</p>
+                  <p className="text-[11px] text-gray-500">{n.chunks_covered} topics covered · {n.completion_date.split('T')[0]}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Row 5 — Quick Links */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
         <p className="text-sm font-bold text-gray-800 mb-3">🔗 Quick Links</p>
         <div className="space-y-2">
@@ -1189,7 +1234,7 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
         </div>
       </div>
 
-      {/* Fees Due */}
+      {/* Row 6 — Fees Due */}
       {invoice && invoice.net_payable > 0 && (
         <div className="bg-orange-50 rounded-2xl border border-orange-100 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -1198,7 +1243,9 @@ function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, to
           </div>
           <p className="text-2xl font-black text-orange-700 mb-1">₹{invoice.net_payable.toLocaleString('en-IN')}</p>
           {invoice.accounts?.[0]?.due_date && (
-            <p className="text-xs text-orange-600 mb-3">Due on {new Date(invoice.accounts[0].due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+            <p className="text-xs text-orange-600 mb-3">
+              Due on {new Date(invoice.accounts[0].due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
           )}
           <button onClick={onFeesClick}
             className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
