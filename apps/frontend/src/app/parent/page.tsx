@@ -757,7 +757,7 @@ export default function ParentPage() {
           </aside>
 
           {/* ── MAIN CONTENT ── */}
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-hidden flex flex-col">
             {/* Mobile header */}
             <header className="lg:hidden bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
               <div className="flex items-center gap-2">
@@ -783,13 +783,13 @@ export default function ParentPage() {
               </div>
             </header>
 
-            <div className="p-4 lg:p-6 pb-24 lg:pb-8">
+            <div className="p-4 lg:p-5 pb-4 lg:pb-5 h-full overflow-hidden">
               {childLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
                 </div>
               ) : (
-                <>
+                <div className="h-full overflow-y-auto">
                   {tab === 'home' && (
                     <HomeTab
                       feed={activeCache?.feed ?? null}
@@ -818,7 +818,7 @@ export default function ParentPage() {
                   {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
                   {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
                   {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
-                </>
+                </div>
               )}
             </div>
           </main>
@@ -1116,37 +1116,34 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </div>
       </div>
 
-      {/* Today's Feed + This Week */}
+      {/* Today's Feed + This Week + Curriculum Progress + Quick Actions — all in one row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Today's Feed — AI summary + teacher notes */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
             <ClipboardList size={13} className="text-gray-400" /> Today&apos;s Feed
           </p>
 
           {/* AI-generated summary */}
           {feed?.special_label ? (
-            <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
+            <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5">
               <p className="text-sm font-semibold text-amber-800">{feed.special_label}</p>
             </div>
           ) : feed?.topics && feed.topics.length > 0 ? (
-            <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+            <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5">
               {summaryLoading ? (
                 <div className="flex items-center gap-2">
                   <Loader2 size={13} className="animate-spin text-emerald-500" />
                   <p className="text-xs text-emerald-600">Generating summary…</p>
                 </div>
-              ) : aiSummary ? (
-                <p className="text-sm text-emerald-800 leading-relaxed">{aiSummary}</p>
               ) : (
                 <p className="text-sm text-emerald-800 leading-relaxed">
-                  {feed.attendance
+                  {aiSummary || (feed.attendance
                     ? `Today, ${activeChild.name.split(' ')[0]} learned about ${feed.topics.slice(0, 2).join(' and ')}.`
-                    : `Today, ${activeChild.name.split(' ')[0]} will learn about ${feed.topics.slice(0, 2).join(' and ')}.`}
+                    : `Today, ${activeChild.name.split(' ')[0]} will learn about ${feed.topics.slice(0, 2).join(' and ')}.`)}
                 </p>
               )}
-              {/* Topic chips */}
-              <div className="flex flex-wrap gap-1.5 mt-2">
+              <div className="flex flex-wrap gap-1 mt-2">
                 {feed.topics.map((topic, i) => (
                   <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-emerald-700 border border-emerald-200">{topic}</span>
                 ))}
@@ -1158,19 +1155,19 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
           {/* Homework */}
           {feed?.homework && (
-            <div className="border-t border-gray-100 pt-3">
-              <p className="text-xs font-bold text-gray-600 mb-2 flex items-center gap-1.5">
+            <div className="border-t border-gray-100 pt-2.5">
+              <p className="text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1.5">
                 <BookOpen size={12} className="text-gray-400" /> Homework
               </p>
-              <div className="space-y-1.5">
-                {(feed.homework.formatted_text || feed.homework.raw_text).split('\n').filter(Boolean).slice(0, 3).map((line, i) => (
+              <div className="space-y-1">
+                {(feed.homework.formatted_text || feed.homework.raw_text).split('\n').filter(Boolean).slice(0, 2).map((line, i) => (
                   <div key={i} className="flex items-start gap-2">
                     <span className="text-gray-300 text-xs mt-0.5 flex-shrink-0 font-bold">{i + 1}.</span>
-                    <p className="text-sm text-gray-600 leading-relaxed">{line.replace(/^\d+\.\s*/, '')}</p>
+                    <p className="text-xs text-gray-600 leading-relaxed">{line.replace(/^\d+\.\s*/, '')}</p>
                   </div>
                 ))}
               </div>
-              <button onClick={() => onTabChange('assignments')} className="mt-2 text-xs text-emerald-600 font-medium flex items-center gap-1 hover:text-emerald-700">
+              <button onClick={() => onTabChange('assignments')} className="mt-1.5 text-xs text-emerald-600 font-medium flex items-center gap-1 hover:text-emerald-700">
                 View All <ChevronRight size={11} />
               </button>
             </div>
@@ -1178,64 +1175,38 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
           {/* Teacher Notes inline */}
           {feed?.notes && feed.notes.length > 0 && (
-            <div className="border-t border-gray-100 pt-3">
-              <p className="text-xs font-bold text-gray-600 mb-2 flex items-center gap-1.5">
+            <div className="border-t border-gray-100 pt-2.5">
+              <p className="text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1.5">
                 <ClipboardList size={12} className="text-gray-400" /> Teacher Notes
               </p>
-              <div className="space-y-2">
-                {feed.notes.slice(0, 2).map(note => {
-                  const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
-                  return (
-                    <button key={note.id} onClick={() => onNoteClick(note)}
-                      className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2.5 transition-colors border border-gray-100">
-                      {note.note_text && <p className="text-xs text-gray-700 line-clamp-2">{note.note_text}</p>}
-                      {note.file_name && (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <Paperclip size={11} className="text-gray-400" />
-                          <p className="text-xs text-gray-500 truncate flex-1">{note.file_name}</p>
-                          <Download size={11} className="text-emerald-500" />
-                        </div>
-                      )}
-                      <p className={`text-[10px] mt-1 ${dl <= 3 ? 'text-red-500' : 'text-gray-400'}`}>
-                        Expires in {dl} day{dl === 1 ? '' : 's'}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Class Feed preview — 2 photos */}
-          {classFeed.length > 0 && (
-            <div className="border-t border-gray-100 pt-3">
-              <p className="text-xs font-bold text-gray-600 mb-2 flex items-center gap-1.5">
-                <ImageIcon size={12} className="text-gray-400" /> Class Photos
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {classFeed.slice(0, 2).map((post: any) => {
-                  const img = post.images?.[0];
-                  return img ? (
-                    <div key={post.id} className="rounded-xl overflow-hidden border border-gray-100 relative">
-                      <img src={img} alt={post.caption ?? ''} className="w-full object-cover" style={{ height: 80 }} />
-                      <div className="absolute bottom-1 right-1 flex items-center gap-0.5 bg-black/50 rounded-full px-1.5 py-0.5">
-                        <Heart size={9} className="text-pink-300 fill-pink-300" />
-                        <span className="text-[9px] text-white font-bold">{post.like_count ?? 0}</span>
+              {feed.notes.slice(0, 1).map(note => {
+                const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
+                return (
+                  <button key={note.id} onClick={() => onNoteClick(note)}
+                    className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2 transition-colors border border-gray-100">
+                    {note.note_text && <p className="text-xs text-gray-700 line-clamp-1">{note.note_text}</p>}
+                    {note.file_name && (
+                      <div className="flex items-center gap-1.5">
+                        <Paperclip size={11} className="text-gray-400" />
+                        <p className="text-xs text-gray-500 truncate flex-1">{note.file_name}</p>
+                        <Download size={11} className="text-emerald-500" />
                       </div>
-                    </div>
-                  ) : null;
-                })}
-              </div>
+                    )}
+                    <p className={`text-[10px] mt-0.5 ${dl <= 3 ? 'text-red-500' : 'text-gray-400'}`}>Expires in {dl}d</p>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* This Week */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-1.5">
+        {/* This Week + Curriculum Progress + Quick Actions */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+          {/* This Week */}
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
             <CalendarDays size={13} className="text-gray-400" /> This Week
           </p>
-          <div className="flex justify-between mb-3">
+          <div className="flex justify-between">
             {weekDays.map((d, i) => {
               const dateObj = weekDates[i];
               const isToday = dateObj.toDateString() === today.toDateString();
@@ -1243,9 +1214,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
               const rec = attRecords.find(r => r.attend_date.split('T')[0] === dateStr);
               const dotColor = !rec ? 'bg-gray-200' : rec.status === 'present' && !rec.is_late ? 'bg-emerald-500' : rec.status === 'present' ? 'bg-amber-500' : 'bg-red-500';
               return (
-                <div key={i} className="flex flex-col items-center gap-1.5">
+                <div key={i} className="flex flex-col items-center gap-1">
                   <span className="text-[10px] font-semibold text-gray-400">{d}</span>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                     isToday ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-500 bg-gray-50'
                   }`}>
                     {dateObj.getDate()}
@@ -1255,64 +1226,56 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
               );
             })}
           </div>
-          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3 text-center">
-            <p className="text-xs text-gray-400">No events scheduled for today</p>
-          </div>
-          <button onClick={() => onTabChange('calendar')} className="w-full mt-3 text-xs text-emerald-600 font-medium flex items-center justify-center gap-1 hover:text-emerald-700">
-            View Full Calendar <ChevronRight size={12} />
+          <button onClick={() => onTabChange('calendar')} className="w-full text-xs text-emerald-600 font-medium flex items-center justify-center gap-1 hover:text-emerald-700 py-1">
+            View Full Calendar <ChevronRight size={11} />
           </button>
-        </div>
-      </div>
 
-      {/* Curriculum Progress + Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Curriculum Progress */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-1.5">
-            <TrendingUp size={13} className="text-gray-400" /> Curriculum Progress
-          </p>
-          <div className="flex items-center gap-4">
-            <div className="relative flex-shrink-0" style={{ width: 80, height: 80 }}>
-              <svg width="80" height="80" style={{ transform: 'rotate(-90deg)' }}>
-                <circle cx="40" cy="40" r="32" fill="none" stroke="#F3F4F6" strokeWidth="8" />
-                <circle cx="40" cy="40" r="32" fill="none" stroke="#10B981" strokeWidth="8"
-                  strokeDasharray={`${(pct / 100) * 201} 201`} strokeLinecap="round" />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <p className="text-lg font-black text-gray-900 leading-none">{pct.toFixed(1)}%</p>
+          {/* Curriculum Progress */}
+          <div className="border-t border-gray-100 pt-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2 flex items-center gap-1.5">
+              <TrendingUp size={13} className="text-gray-400" /> Curriculum Progress
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="relative flex-shrink-0 w-14 h-14">
+                <svg width="56" height="56" style={{ transform: 'rotate(-90deg)' }}>
+                  <circle cx="28" cy="28" r="22" fill="none" stroke="#F3F4F6" strokeWidth="6" />
+                  <circle cx="28" cy="28" r="22" fill="none" stroke="#10B981" strokeWidth="6"
+                    strokeDasharray={`${(pct / 100) * 138} 138`} strokeLinecap="round" />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <p className="text-xs font-black text-gray-900">{pct.toFixed(0)}%</p>
+                </div>
               </div>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                <span className="font-semibold text-gray-800">{pct.toFixed(1)}%</span> of curriculum covered this term
-              </p>
-              <div className="mt-2 w-full bg-gray-100 rounded-full h-1.5">
-                <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+              <div className="flex-1">
+                <p className="text-sm text-gray-500"><span className="font-semibold text-gray-800">{pct.toFixed(1)}%</span> covered this term</p>
+                <div className="mt-1.5 w-full bg-gray-100 rounded-full h-1.5">
+                  <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4 flex items-center gap-1.5">
-            <Zap size={13} className="text-gray-400" /> Quick Actions
-          </p>
-          <div className="grid grid-cols-4 gap-2">
-            {([
-              { Icon: BarChart3,     label: 'Report Card', action: () => onTabChange('reports'),       bg: 'bg-blue-50',   iconColor: 'text-blue-500' },
-              { Icon: ImageIcon,     label: 'Gallery',     action: () => onTabChange('notifications'), bg: 'bg-purple-50', iconColor: 'text-purple-500' },
-              { Icon: MessageSquare, label: 'Messages',    action: () => onTabChange('messages'),      bg: 'bg-emerald-50',iconColor: 'text-emerald-500' },
-              { Icon: CreditCard,    label: 'Fee Details', action: () => onTabChange('fees'),          bg: 'bg-orange-50', iconColor: 'text-orange-500' },
-            ] as const).map(a => (
-              <button key={a.label} onClick={a.action}
-                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
-                <div className={`w-10 h-10 rounded-xl ${a.bg} flex items-center justify-center`}>
-                  <a.Icon size={18} className={a.iconColor} />
-                </div>
-                <span className="text-[10px] font-semibold text-gray-600 text-center leading-tight">{a.label}</span>
-              </button>
-            ))}
+          {/* Quick Actions */}
+          <div className="border-t border-gray-100 pt-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2 flex items-center gap-1.5">
+              <Zap size={13} className="text-gray-400" /> Quick Actions
+            </p>
+            <div className="grid grid-cols-4 gap-2">
+              {([
+                { Icon: BarChart3,     label: 'Report Card', action: () => onTabChange('reports'),       bg: 'bg-blue-50',    iconColor: 'text-blue-500' },
+                { Icon: ImageIcon,     label: 'Gallery',     action: () => onTabChange('notifications'), bg: 'bg-purple-50',  iconColor: 'text-purple-500' },
+                { Icon: MessageSquare, label: 'Messages',    action: () => onTabChange('messages'),      bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
+                { Icon: CreditCard,    label: 'Fee Details', action: () => onTabChange('fees'),          bg: 'bg-orange-50',  iconColor: 'text-orange-500' },
+              ] as const).map(a => (
+                <button key={a.label} onClick={a.action}
+                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
+                  <div className={`w-9 h-9 rounded-xl ${a.bg} flex items-center justify-center`}>
+                    <a.Icon size={16} className={a.iconColor} />
+                  </div>
+                  <span className="text-[9px] font-semibold text-gray-600 text-center leading-tight">{a.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
