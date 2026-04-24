@@ -101,7 +101,6 @@ import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
 import parentFeesRouter from './routes/parent/fees';
 
-import publicEnquiriesRouter from './routes/public/enquiries';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
 import { connectRedis } from './lib/redis';
@@ -229,9 +228,6 @@ app.get('/health/ai', async (_req, res) => {
 });
 
 // Public routes — no authentication required
-app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
-
-// Public (no auth required)
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
 
 // Auth

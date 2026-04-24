@@ -308,7 +308,7 @@ router.post('/format-session', async (req: Request, res: Response) => {
     let classContext = '';
     try {
       const sections = await getTeacherSections(user_id, school_id);
-      const sec = section_id ? sections.find(s => s.section_id === section_id) : sections[0];
+      const sec: any = section_id ? sections.find(s => s.section_id === section_id) : sections[0];
       if (sec) classContext = `Class: ${sec.class_name} Section ${sec.section_label}`;
     } catch { /* non-critical */ }
 

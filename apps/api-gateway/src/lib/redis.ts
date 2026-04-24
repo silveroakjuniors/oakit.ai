@@ -30,7 +30,7 @@ class UpstashRedis {
         body: JSON.stringify(args),
       });
       if (!res.ok) return null;
-      const data = await res.json();
+      const data: any = await res.json();
       return data.result ?? null;
     } catch {
       return null;

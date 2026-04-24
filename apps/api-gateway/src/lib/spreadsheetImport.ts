@@ -91,6 +91,9 @@ export function sanitizeCell(value: any, maxLen = 500): string {
     .replace(/</g, '&lt;').replace(/>/g, '&gt;')         // prevent HTML injection
     .slice(0, maxLen);
 }
+
+/**
+ * Find a header in a list of candidates using exact then prefix matching.
  * Avoids false positives like 'date' matching inside 'description'.
  */
 export function findHeader(headers: string[], candidates: string[]): string | null {
