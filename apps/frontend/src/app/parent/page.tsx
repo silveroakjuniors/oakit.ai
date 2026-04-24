@@ -6,7 +6,8 @@ import {
   Home, Calendar, TrendingUp, Sparkles, MessageSquare, Bell,
   LogOut, BookOpen, Clock, CheckCircle2, AlertCircle, User,
   ChevronRight, Send, Loader2, RefreshCw, Phone, Shield, Settings,
-  BarChart3, Target, Zap, CalendarDays, Apple, Smartphone
+  BarChart3, Target, Zap, CalendarDays, Apple, Smartphone,
+  ClipboardList, CreditCard, FileBarChart, Star, ArrowRight, Heart, Download
 } from 'lucide-react';
 import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
@@ -184,16 +185,17 @@ interface ChildComparison {
   trend: 'up' | 'down' | 'stable';
 }
 
-type Tab = 'home' | 'attendance' | 'progress' | 'chat' | 'messages' | 'notifications' | 'insights' | 'settings';
+type Tab = 'home' | 'calendar' | 'progress' | 'assignments' | 'messages' | 'notifications' | 'fees' | 'reports' | 'settings' | 'chat' | 'insights';
 
 const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
   { id: 'home',          Icon: Home,           label: 'Home' },
-  { id: 'attendance',    Icon: Calendar,       label: 'Attendance' },
+  { id: 'calendar',      Icon: Calendar,       label: 'Calendar' },
   { id: 'progress',      Icon: TrendingUp,     label: 'Progress' },
-  { id: 'insights',      Icon: BarChart3,      label: 'Insights' },
-  { id: 'chat',          Icon: Sparkles,       label: 'Oakie' },
+  { id: 'assignments',   Icon: ClipboardList,  label: 'Assignments' },
   { id: 'messages',      Icon: MessageSquare,  label: 'Messages' },
   { id: 'notifications', Icon: Bell,           label: 'Updates' },
+  { id: 'fees',          Icon: CreditCard,     label: 'Fees' },
+  { id: 'reports',       Icon: FileBarChart,   label: 'Reports' },
   { id: 'settings',      Icon: Settings,       label: 'Settings' },
 ];
 
@@ -284,6 +286,8 @@ export default function ParentPage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [noteModal, setNoteModal] = useState<NoteItem | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [classFeed, setClassFeed] = useState<any[]>([]);
+  const [invoice, setInvoice] = useState<any | null>(null);
 
   // ─── New Feature State ──────────────────────────────────────────────────────
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
@@ -472,8 +476,17 @@ export default function ParentPage() {
       const att = attRes.status === 'fulfilled' ? attRes.value : null;
       const prog = progRes.status === 'fulfilled' ? (progRes.value.find(p => p.student_id === childId) ?? null) : null;
       setCache(prev => ({ ...prev, [childId]: { feed, attendance: att, progress: prog } }));
+      // Load class feed and invoice in background
+      const child = children.find(c => c.id === childId);
+      if (child?.section_id) {
+        apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
+          .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setClassFeed(posts.slice(0, 8)); })
+          .catch(() => {});
+      }
+      apiGet<any>(`/api/v1/parent/fees/invoice/${childId}`, token)
+        .then(setInvoice).catch(() => {});
     } finally { setChildLoading(false); }
-  }, [cache, token]);
+  }, [cache, token, children]);
 
   async function switchChild(childId: string) { setActiveChildId(childId); await fetchChildData(childId); }
 
@@ -541,140 +554,204 @@ export default function ParentPage() {
   return (
     <TranslationContext.Provider value={translationContextValue}>
       {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
-      <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
 
-        {/* Desktop sidebar */}
-        <aside className="hidden lg:flex fixed left-0 top-0 h-full w-64 flex-col z-40"
-          style={{ background: 'linear-gradient(180deg, #0f2417 0%, #1a3c2e 100%)' }}>
-          <div className="px-6 py-5 border-b border-white/10">
-            <OakitLogo size="sm" variant="light" />
-            <p className="text-white/40 text-xs mt-1">Parent Portal</p>
-          </div>
-          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            {TABS.map(({ id, Icon, label }) => {
-              const badge = id === 'messages' ? unreadMessages : id === 'notifications' ? unreadNotifs : 0;
-              return (
-                <button key={id} onClick={() => setTab(id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150 ${
-                    tab === id ? 'bg-white/15 text-white' : 'text-white/55 hover:bg-white/8 hover:text-white/85'
-                  }`}>
-                  <Icon size={18} className="shrink-0" />
-                  <span className="flex-1 text-left">{label}</span>
-                  {badge > 0 && <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{badge}</span>}
-                  {tab === id && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />}
-                </button>
-              );
-            })}
-          </nav>
-          {/* Child switcher in sidebar */}
-          {children.length > 0 && (
-            <div className="px-3 py-4 border-t border-white/10">
-              <p className="text-white/40 text-xs font-medium mb-2 px-1">YOUR CHILDREN</p>
-              <div className="space-y-1">
-                {children.map(child => (
-                  <button key={child.id} onClick={() => switchChild(child.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${activeChildId === child.id ? 'bg-white/15' : 'hover:bg-white/8'}`}>
-                    <ChildAvatar child={child} size="sm" token={token} onUploaded={(url) => setChildren(prev => prev.map(c => c.id === child.id ? { ...c, photo_url: url } : c))} />
-                    <div className="text-left min-w-0">
-                      <p className="text-white text-xs font-semibold truncate">{child.name.split(' ')[0]}</p>
-                      <p className="text-white/40 text-[10px]">{child.class_name} {child.section_label}</p>
-                    </div>
-                    {activeChildId === child.id && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-auto" />}
-                  </button>
-                ))}
-              </div>
+      {/* ── Full-page wrapper ── */}
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col" style={{ fontFamily: "'Inter',-apple-system,sans-serif" }}>
+
+        {/* ── TOP HEADER BAR (desktop) ── */}
+        <header className="hidden lg:flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100 sticky top-0 z-50" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          {/* Logo + badge */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span className="font-black text-xl text-gray-900">Oakit</span>
+              <span className="font-black text-xl text-amber-500">.ai</span>
             </div>
-          )}
-          <div className="px-3 py-3 border-t border-white/10">
-            <button onClick={() => { clearToken(); router.push('/login'); }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-white/40 hover:text-white/70 hover:bg-white/8 transition-colors text-sm">
-              <LogOut size={16} />
-              <span>Sign out</span>
-            </button>
+            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Parent Portal</span>
           </div>
-        </aside>
+          {/* Right side */}
+          <div className="flex items-center gap-4">
+            <button className="flex items-center gap-1.5 text-amber-500 font-semibold text-sm hover:text-amber-600 transition-colors">
+              <Star size={15} className="fill-amber-400 text-amber-400" /> Premium
+            </button>
+            <button onClick={() => setTab('notifications')} className="relative w-9 h-9 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition-colors">
+              <Bell size={17} className="text-gray-600" />
+              {unreadNotifs > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotifs}</span>}
+            </button>
+            {/* User avatar */}
+            <div className="flex items-center gap-2.5 cursor-pointer group">
+              {activeChild ? (
+                <div className="w-9 h-9 rounded-full bg-emerald-100 overflow-hidden border-2 border-emerald-200 flex items-center justify-center">
+                  {activeChild.photo_url ? (
+                    <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-emerald-700 font-bold text-sm">{activeChild.name[0]}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center"><User size={18} className="text-gray-400" /></div>
+              )}
+              <div className="hidden xl:block text-right">
+                <p className="text-sm font-semibold text-gray-800 leading-tight">{activeChild?.name ?? 'Parent'}</p>
+                <p className="text-xs text-gray-400">Parent</p>
+              </div>
+              <ChevronRight size={14} className="text-gray-400 rotate-90" />
+            </div>
+          </div>
+        </header>
 
-        {/* Main content */}
-        <div className="lg:pl-64 flex flex-col min-h-screen">
-          {/* Mobile header */}
-          <header className="lg:hidden text-white px-4 pt-8 pb-5 relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 60%, var(--brand-primary-light) 100%)' }}>
-            <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-white/5 pointer-events-none" />
-            <img src="/oakie.png" alt="" aria-hidden="true"
-              className="absolute right-3 bottom-0 w-20 h-auto object-contain pointer-events-none"
-              style={{ mixBlendMode: 'multiply', opacity: 0.6 }} />
-            <div className="relative z-10 flex items-center justify-between mb-4">
-              <OakitLogo size="sm" variant="light" />
-              <button onClick={() => { clearToken(); router.push('/login'); }} className="text-white/50 hover:text-white/80 text-xs transition-colors">
-                Sign out
+        {/* ── BODY: sidebar + main + right panel ── */}
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* ── LEFT SIDEBAR ── */}
+          <aside className="hidden lg:flex flex-col w-44 flex-shrink-0 bg-white border-r border-gray-100 overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
+            {/* Nav */}
+            <nav className="flex-1 px-2 py-3 space-y-0.5">
+              {TABS.map(({ id, Icon, label }) => {
+                const badge = id === 'messages' ? unreadMessages : id === 'notifications' ? unreadNotifs : 0;
+                const active = tab === id;
+                return (
+                  <button key={id} onClick={() => setTab(id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
+                      active ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                    }`}>
+                    <Icon size={17} className={active ? 'text-emerald-600' : 'text-gray-400'} />
+                    <span className="flex-1">{label}</span>
+                    {badge > 0 && <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{badge}</span>}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Child card at bottom */}
+            {activeChild && (
+              <div className="px-2 pb-3 pt-2 border-t border-gray-100">
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                    {activeChild.photo_url ? (
+                      <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-emerald-700 font-bold text-xs">{activeChild.name[0]}</span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-gray-800 truncate">{activeChild.name}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{activeChild.class_name} · {activeChild.section_label}</p>
+                  </div>
+                  {children.length > 1 && (
+                    <button onClick={() => { const idx = children.findIndex(c => c.id === activeChildId); switchChild(children[(idx + 1) % children.length].id); }}
+                      className="text-gray-400 hover:text-gray-600 text-xs">↕</button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Sign out */}
+            <div className="px-2 pb-4">
+              <button onClick={() => { clearToken(); router.push('/login'); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-all">
+                <LogOut size={15} />
+                <span>Log out</span>
               </button>
             </div>
-            {/* Mobile child switcher */}
-            {children.length > 0 && (
-              <div className="relative z-10 pr-20">
-                {children.length === 1 ? (
-                  <div className="flex items-center gap-3 bg-white/12 rounded-2xl px-4 py-3 border border-white/10">
-                    <ChildAvatar child={children[0]} size="lg" token={token} onUploaded={(url) => setChildren(prev => prev.map(c => c.id === children[0].id ? { ...c, photo_url: url } : c))} />
-                    <div>
-                      <p className="text-white/55 text-xs">{children[0].class_name} · Section {children[0].section_label}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                    {children.map(child => (
-                      <button key={child.id} onClick={() => switchChild(child.id)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-xl whitespace-nowrap shrink-0 border transition-all ${activeChildId === child.id ? 'bg-white text-neutral-900 border-white shadow-md' : 'bg-white/10 text-white/80 border-white/15'}`}>
-                        <ChildAvatar child={child} size="sm" token={token} onUploaded={(url) => setChildren(prev => prev.map(c => c.id === child.id ? { ...c, photo_url: url } : c))} />
-                        <div className="text-left">
-                          <p className={`text-xs font-semibold ${activeChildId === child.id ? 'text-neutral-900' : 'text-white'}`}>{child.name.split(' ')[0]}</p>
-                          <p className={`text-[10px] ${activeChildId === child.id ? 'text-neutral-500' : 'text-white/50'}`}>{child.class_name}</p>
-                        </div>
-                      </button>
-                    ))}
+          </aside>
+
+          {/* ── MAIN CONTENT ── */}
+          <main className="flex-1 overflow-y-auto">
+            {/* Mobile header */}
+            <header className="lg:hidden bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
+              <div className="flex items-center gap-2">
+                <span className="font-black text-lg text-gray-900">Oakit<span className="text-amber-500">.ai</span></span>
+                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">Parent</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadNotifs > 0 && (
+                  <button onClick={() => setTab('notifications')} className="relative w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center">
+                    <Bell size={16} className="text-gray-600" />
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotifs}</span>
+                  </button>
+                )}
+                {activeChild && (
+                  <div className="w-8 h-8 rounded-full bg-emerald-100 overflow-hidden flex items-center justify-center">
+                    {activeChild.photo_url ? (
+                      <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-emerald-700 font-bold text-sm">{activeChild.name[0]}</span>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </header>
+            </header>
 
-          {/* Tab content */}
-          <main className="flex-1 overflow-y-auto pb-24 lg:pb-8">
-            {childLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-8 h-8 text-neutral-300 animate-spin" />
-              </div>
-            ) : (
-              <div className="p-4 lg:p-6 max-w-5xl mx-auto">
-                {tab === 'home' && <HomeTab feed={activeCache?.feed ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} announcements={announcements} onNoteClick={setNoteModal} onTabChange={setTab} token={token} onChildUpdate={(url) => setChildren(prev => prev.map(c => c.id === activeChildId ? { ...c, photo_url: url } : c))} />}
-                {tab === 'attendance' && <AttendanceTab data={activeCache?.attendance ?? null} />}
-                {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
-                {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
-                {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
-                {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
-                {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
-                {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
-              </div>
-            )}
+            <div className="p-4 lg:p-6 pb-24 lg:pb-8">
+              {childLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {tab === 'home' && (
+                    <HomeTab
+                      feed={activeCache?.feed ?? null}
+                      progress={activeCache?.progress ?? null}
+                      attendance={activeCache?.attendance ?? null}
+                      activeChild={activeChild}
+                      announcements={announcements}
+                      onNoteClick={setNoteModal}
+                      onTabChange={setTab}
+                      token={token}
+                      onChildUpdate={(url) => setChildren(prev => prev.map(c => c.id === activeChildId ? { ...c, photo_url: url } : c))}
+                      unreadMessages={unreadMessages}
+                      unreadNotifs={unreadNotifs}
+                      invoice={invoice}
+                    />
+                  )}
+                  {tab === 'calendar' && <CalendarTab events={calendarEvents} />}
+                  {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
+                  {tab === 'assignments' && <AssignmentsTab activeChild={activeChild} token={token} />}
+                  {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
+                  {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
+                  {tab === 'fees' && <FeesTab invoice={invoice} activeChild={activeChild} token={token} />}
+                  {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} />}
+                  {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
+                  {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
+                  {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} />}
+                </>
+              )}
+            </div>
           </main>
 
-          {/* Mobile bottom nav */}
-          <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-50 flex items-center justify-around px-1"
-            style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))', paddingTop: '8px', boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
-            {TABS.map(({ id, Icon, label }) => {
-              const badge = id === 'messages' ? unreadMessages : id === 'notifications' ? unreadNotifs : 0;
-              const isActive = tab === id;
-              return (
-                <button key={id} onClick={() => setTab(id)}
-                  className={`relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[48px] min-h-[44px] transition-colors ${isActive ? 'text-emerald-600' : 'text-neutral-400'}`}>
-                  <Icon size={20} className={isActive ? 'scale-110 transition-transform' : ''} />
-                  <span className={`text-[9px] font-semibold ${isActive ? 'text-emerald-600' : 'text-neutral-400'}`}>{t(label)}</span>
-                  {badge > 0 && <span className="absolute top-0.5 right-0.5 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{badge}</span>}
-                  {isActive && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-500" />}
-                </button>
-              );
-            })}
-          </nav>
+          {/* ── RIGHT PANEL (desktop only) ── */}
+          <aside className="hidden xl:flex flex-col w-64 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
+            <RightPanel
+              classFeed={classFeed}
+              progress={activeCache?.progress ?? null}
+              activeChild={activeChild}
+              invoice={invoice}
+              onFeesClick={() => setTab('fees')}
+              token={token}
+            />
+          </aside>
         </div>
+
+        {/* ── MOBILE BOTTOM NAV ── */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-50 flex"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -2px 12px rgba(0,0,0,0.06)' }}>
+          {TABS.slice(0, 6).map(({ id, Icon, label }) => {
+            const active = tab === id;
+            const badge = id === 'messages' ? unreadMessages : id === 'notifications' ? unreadNotifs : 0;
+            return (
+              <button key={id} onClick={() => setTab(id)}
+                className="flex-1 flex flex-col items-center py-2 gap-0.5 relative">
+                <span className={`text-lg leading-none ${active ? 'scale-110' : ''} transition-transform`}>
+                  <Icon size={20} className={active ? 'text-emerald-600' : 'text-gray-400'} />
+                </span>
+                <span className={`text-[9px] font-semibold ${active ? 'text-emerald-600' : 'text-gray-400'}`}>{label}</span>
+                {active && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full bg-emerald-500" />}
+                {badge > 0 && <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center">{badge}</span>}
+              </button>
+            );
+          })}
+        </nav>
       </div>
     </TranslationContext.Provider>
   );
@@ -740,179 +817,225 @@ function NoteModal({ note, token, onClose }: { note: NoteItem; token: string; on
   );
 }
 
-// ─── Home Tab — Bento Grid ────────────────────────────────────────────────────
-function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate }: {
-  feed: ChildFeed | null; progress: ProgressData | null; activeChild: Child | null;
+// ─── Home Tab ────────────────────────────────────────────────────────────────
+function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice }: {
+  feed: ChildFeed | null; progress: ProgressData | null; attendance: AttendanceData | null; activeChild: Child | null;
   announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
   token: string; onChildUpdate: (url: string) => void;
+  unreadMessages: number; unreadNotifs: number; invoice: any;
 }) {
   if (!activeChild) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <User size={48} className="text-neutral-300 mb-3" />
-      <p className="text-neutral-500 font-medium">No child selected</p>
+      <User size={48} className="text-gray-300 mb-3" />
+      <p className="text-gray-500 font-medium">No child selected</p>
     </div>
   );
 
   const att = feed?.attendance;
-  const attColor = !att ? 'text-neutral-500' : att.status === 'present' && !att.is_late ? 'text-emerald-700' : att.status === 'present' ? 'text-amber-700' : 'text-red-600';
-  const attBg = !att ? 'bg-neutral-50' : att.status === 'present' && !att.is_late ? 'bg-emerald-50' : att.status === 'present' ? 'bg-amber-50' : 'bg-red-50';
+  const attPct = attendance?.attendance_pct ?? 0;
   const attLabel = !att ? 'Not marked' : att.status === 'present' && att.is_late ? '⏰ Late' : att.status === 'present' ? '✓ Present' : '✗ Absent';
   const pct = progress?.coverage_pct ?? 0;
 
+  // Greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const greetEmoji = hour < 12 ? '☀️' : hour < 17 ? '👋' : '🌙';
+
+  // Week calendar
+  const today = new Date();
+  const weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const todayDow = today.getDay();
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - ((todayDow + 6) % 7));
+  const weekDates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d;
+  });
+  const attRecords = attendance?.records ?? [];
+
   return (
-    <div className="space-y-4">
-      {/* Child profile card — prominent at top */}
-      <div className="bg-gradient-to-r from-[#0f2417] to-[#1e5c3a] rounded-2xl p-5 flex items-center gap-4">
-        {/* Large avatar with upload */}
-        <div className="shrink-0">
-          <ChildAvatar child={activeChild} size="lg" token={token} onUploaded={onChildUpdate} />
+    <div className="space-y-5">
+      {/* Greeting */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">{greeting}, {activeChild.name.split(' ')[0]} {greetEmoji}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Here&apos;s what&apos;s happening with {activeChild.name} today.</p>
+      </div>
+
+      {/* Child profile card */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-full overflow-hidden bg-emerald-100 flex-shrink-0 flex items-center justify-center border-2 border-gray-100">
+          {activeChild.photo_url ? (
+            <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`}
+              alt={activeChild.name} className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-emerald-700 font-bold text-xl">{activeChild.name[0]}</span>
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white font-bold text-lg leading-tight truncate">{activeChild.name}</p>
-          <p className="text-white/60 text-sm mt-0.5">{activeChild.class_name} · Section {activeChild.section_label}</p>
-          <p className="text-white/40 text-xs mt-2">Tap photo to preview or change</p>
-        </div>
-        {/* Today's status badge + translate link */}
-        <div className="shrink-0 flex flex-col items-end gap-1.5">
-          <div className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
-            !att ? 'bg-white/10 text-white/60' :
-            att.status === 'present' && !att.is_late ? 'bg-emerald-500/20 text-emerald-300' :
-            att.status === 'present' ? 'bg-amber-500/20 text-amber-300' :
-            'bg-red-500/20 text-red-300'
-          }`}>
-            {attLabel}
+          <p className="font-bold text-gray-900 text-base">{activeChild.name}</p>
+          <p className="text-sm text-gray-500">{activeChild.class_name} · Section {activeChild.section_label}</p>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-xs text-emerald-600 font-medium">Active</span>
           </div>
-          <button
-            onClick={() => onTabChange('settings')}
-            className="text-[10px] text-white/40 hover:text-white/70 underline underline-offset-2 transition-colors flex items-center gap-0.5"
-          >
-            🌐 Translate
+        </div>
+        <button onClick={() => onTabChange('progress')} className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium hover:text-emerald-700 flex-shrink-0">
+          View Profile <ChevronRight size={14} />
+        </button>
+      </div>
+
+      {/* Stat cards row */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: 'Attendance', value: `${attPct}%`, sub: attPct >= 90 ? 'Excellent' : 'This Month', icon: '📅', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'Progress', value: `${pct.toFixed(1)}%`, sub: 'This Term', icon: '📈', color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: 'Messages', value: String(unreadMessages), sub: 'Unread', icon: '💬', color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: 'Updates', value: String(unreadNotifs), sub: 'New', icon: '🔔', color: 'text-amber-600', bg: 'bg-amber-50' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className={`w-8 h-8 rounded-xl ${s.bg} flex items-center justify-center text-base mb-2`}>{s.icon}</div>
+            <p className="text-2xl font-bold text-gray-900 leading-none">{s.value}</p>
+            <p className="text-xs text-gray-400 mt-1">{s.label}</p>
+            <p className={`text-xs font-medium mt-0.5 ${s.color}`}>{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Today's Feed + This Week */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Today's Feed */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">📋 Today&apos;s Feed</p>
+          {feed?.special_label ? (
+            <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
+              <p className="text-sm font-semibold text-amber-800">{feed.special_label}</p>
+            </div>
+          ) : feed?.topics && feed.topics.length > 0 ? (
+            <>
+              <p className="text-sm text-gray-600 leading-relaxed mb-3">
+                Today, your child learned about {feed.topics.slice(0, 2).join(' and ')}.
+                {feed.topics.length > 2 && ` Also covered: ${feed.topics.slice(2).join(', ')}.`}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {feed.topics.map((topic, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">{topic}</span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 py-4 text-center">No feed data yet for today</p>
+          )}
+
+          {/* Homework section */}
+          {feed?.homework && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs font-bold text-gray-700 mb-2">📝 Homework</p>
+              <div className="space-y-2">
+                {(feed.homework.formatted_text || feed.homework.raw_text).split('\n').filter(Boolean).slice(0, 3).map((line, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="text-gray-400 text-xs mt-0.5 flex-shrink-0">{i + 1}.</span>
+                    <p className="text-sm text-gray-600 leading-relaxed">{line.replace(/^\d+\.\s*/, '')}</p>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => onTabChange('assignments')} className="mt-3 text-xs text-emerald-600 font-medium flex items-center gap-1 hover:text-emerald-700">
+                View All Updates <ChevronRight size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* This Week */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">📅 This Week</p>
+          <div className="flex justify-between mb-3">
+            {weekDays.map((d, i) => {
+              const dateObj = weekDates[i];
+              const isToday = dateObj.toDateString() === today.toDateString();
+              const dateStr = dateObj.toISOString().split('T')[0];
+              const rec = attRecords.find(r => r.attend_date.split('T')[0] === dateStr);
+              const dotColor = !rec ? 'bg-gray-200' : rec.status === 'present' && !rec.is_late ? 'bg-emerald-500' : rec.status === 'present' ? 'bg-amber-500' : 'bg-red-500';
+              return (
+                <div key={i} className="flex flex-col items-center gap-1.5">
+                  <span className="text-[10px] font-semibold text-gray-400">{d}</span>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                    isToday ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-500 bg-gray-50'
+                  }`}>
+                    {dateObj.getDate()}
+                  </div>
+                  <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                </div>
+              );
+            })}
+          </div>
+          <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3 text-center">
+            <p className="text-xs text-gray-400">No events scheduled for today</p>
+          </div>
+          <button onClick={() => onTabChange('calendar')} className="w-full mt-3 text-xs text-emerald-600 font-medium flex items-center justify-center gap-1 hover:text-emerald-700">
+            View Full Calendar <ChevronRight size={12} />
           </button>
         </div>
       </div>
 
-      {/* Bento grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-12 gap-3">
-        {/* Attendance card */}
-        <div className={`${attBg} rounded-2xl p-4 border border-neutral-100 col-span-1 lg:col-span-3`}>
-          <div className="flex items-center gap-2 mb-2">
-            <Calendar size={16} className="text-neutral-400" />
-            <p className="text-xs font-medium text-neutral-500">Attendance</p>
-          </div>
-          <p className={`text-xl font-bold ${attColor}`}>{attLabel}</p>
-          {att?.arrived_at && <p className="text-xs text-neutral-400 mt-1">Arrived {att.arrived_at.slice(0, 5)}</p>}
-          {!att && <p className="text-xs text-neutral-400 mt-1">Not yet marked</p>}
-        </div>
-
-        {/* Progress card */}
-        <div className="bg-[#0f2417] rounded-2xl p-4 col-span-1 lg:col-span-3 relative overflow-hidden">
-          <div className="absolute -right-4 -bottom-4 opacity-10">
-            <TrendingUp size={80} className="text-white" />
-          </div>
-          <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp size={16} className="text-emerald-400" />
-              <p className="text-xs font-medium text-white/60">Progress</p>
+      {/* Curriculum Progress + Quick Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Curriculum Progress */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">📊 Curriculum Progress</p>
+          <div className="flex items-center gap-4">
+            <div className="relative flex-shrink-0" style={{ width: 80, height: 80 }}>
+              <svg width="80" height="80" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="40" cy="40" r="32" fill="none" stroke="#F3F4F6" strokeWidth="8" />
+                <circle cx="40" cy="40" r="32" fill="none" stroke="#10B981" strokeWidth="8"
+                  strokeDasharray={`${(pct / 100) * 201} 201`} strokeLinecap="round" />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <p className="text-lg font-black text-gray-900 leading-none">{pct.toFixed(1)}%</p>
+              </div>
             </div>
-            <p className="text-3xl font-black text-white">{pct}%</p>
-            <p className="text-xs text-white/50 mt-0.5">syllabus covered</p>
-            <div className="w-full bg-white/10 h-1.5 rounded-full mt-2">
-              <div className="bg-emerald-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            <div>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                <span className="font-semibold text-gray-800">{pct.toFixed(1)}%</span> of curriculum covered this term
+              </p>
+              <div className="mt-2 w-full bg-gray-100 rounded-full h-1.5">
+                <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Homework card */}
-        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <BookOpen size={16} className="text-amber-500" />
-              <p className="text-sm font-semibold text-neutral-800">Homework</p>
-            </div>
-            <button onClick={() => onTabChange('progress')}
-              className="text-xs text-primary-600 font-medium hover:underline">History →</button>
-          </div>
-          {feed?.homework ? (
-            <p className="text-sm text-neutral-700 leading-relaxed line-clamp-3 italic border-l-4 border-amber-200 pl-3">
-              "{feed.homework.formatted_text || feed.homework.raw_text}"
-            </p>
-          ) : (
-            <div className="flex items-center gap-2 text-emerald-600">
-              <CheckCircle2 size={16} />
-              <p className="text-sm font-medium">No pending homework — great job!</p>
-            </div>
-          )}
-        </div>
-
-        {/* Today's learning */}
-        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm col-span-2 lg:col-span-8">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles size={16} className="text-primary-600" />
-            <p className="text-sm font-semibold text-neutral-800">Today&apos;s Learning</p>
-          </div>
-          {feed?.special_label ? (
-            <div className="bg-blue-50 rounded-xl px-3 py-2.5"><p className="text-sm text-blue-700 font-medium">{feed.special_label}</p></div>
-          ) : feed?.topics && feed.topics.length > 0 ? (
-            <div className="space-y-2">
-              {feed.topics.map((t, i) => (
-                <div key={i} className="flex items-start gap-2.5">
-                  <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{i + 1}</span>
-                  <p className="text-sm text-neutral-700">{t}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-neutral-400">No topics recorded yet for today</p>
-          )}
-        </div>
-
-        {/* Need help CTA */}
-        <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 col-span-2 lg:col-span-4 flex flex-col justify-between">
-          <div>
-            <p className="font-bold text-emerald-900 text-sm mb-1">Need Help?</p>
-            <p className="text-xs text-emerald-700/80 leading-snug">Ask Oakie AI or message {activeChild.name.split(' ')[0]}&apos;s teacher directly.</p>
-          </div>
-          <div className="flex gap-2 mt-4">
-            <button onClick={() => onTabChange('chat')} className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-700 transition-colors">
-              <Sparkles size={14} /> Oakie
-            </button>
-            <button onClick={() => onTabChange('messages')} className="flex-1 bg-white text-emerald-800 py-2.5 rounded-xl text-xs font-bold border border-emerald-200 flex items-center justify-center gap-1.5 hover:bg-emerald-50 transition-colors">
-              <MessageSquare size={14} /> Teacher
-            </button>
+        {/* Quick Actions */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">⚡ Quick Actions</p>
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { icon: '📊', label: 'Report Card', action: () => onTabChange('reports') },
+              { icon: '🖼️', label: 'Gallery', action: () => onTabChange('notifications') },
+              { icon: '💬', label: 'Messages', action: () => onTabChange('messages') },
+              { icon: '💳', label: 'Fee Details', action: () => onTabChange('fees') },
+            ].map(a => (
+              <button key={a.label} onClick={a.action}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
+                <span className="text-2xl">{a.icon}</span>
+                <span className="text-[10px] font-semibold text-gray-600 text-center leading-tight">{a.label}</span>
+              </button>
+            ))}
           </div>
         </div>
-      </div>
-
-      {/* Child Journey */}
-      <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <BookOpen size={16} className="text-primary-500" />
-            <p className="text-sm font-semibold text-neutral-800">{activeChild.name.split(' ')[0]}'s Journey</p>
-          </div>
-        </div>
-        <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
-          Daily highlights and special moments recorded by {activeChild.name.split(' ')[0]}'s teacher.
-        </p>
-        <a href={`/parent/journey?student_id=${activeChild.id}`}
-          className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-colors">
-          <BookOpen size={14} /> View {activeChild.name.split(' ')[0]}'s Journey
-        </a>
       </div>
 
       {/* Teacher notes */}
       {feed?.notes && feed.notes.length > 0 && (
-        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-          <p className="text-sm font-semibold text-neutral-800 mb-3">📋 Teacher Notes</p>
+        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+          <p className="text-sm font-semibold text-gray-800 mb-3">📋 Teacher Notes</p>
           <div className="space-y-2">
             {feed.notes.map(note => {
               const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
               return (
                 <button key={note.id} onClick={() => onNoteClick(note)}
-                  className="w-full text-left bg-neutral-50 hover:bg-neutral-100 rounded-xl px-3 py-3 transition-colors border border-neutral-100">
-                  {note.note_text && <p className="text-sm text-neutral-700 line-clamp-2 mb-1">{note.note_text}</p>}
-                  {note.file_name && <div className="flex items-center gap-2"><span>📎</span><p className="text-xs font-medium text-neutral-700 truncate flex-1">{note.file_name}</p><span className="text-xs text-primary-600 font-medium">Download ↓</span></div>}
-                  <p className={`text-xs mt-1 ${dl <= 3 ? 'text-red-500 font-medium' : 'text-neutral-400'}`}>{dl <= 0 ? 'Expires today' : `Expires in ${dl} day${dl === 1 ? '' : 's'}`}</p>
+                  className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-3 transition-colors border border-gray-100">
+                  {note.note_text && <p className="text-sm text-gray-700 line-clamp-2 mb-1">{note.note_text}</p>}
+                  {note.file_name && <div className="flex items-center gap-2"><span>📎</span><p className="text-xs font-medium text-gray-700 truncate flex-1">{note.file_name}</p><span className="text-xs text-emerald-600 font-medium">Download ↓</span></div>}
+                  <p className={`text-xs mt-1 ${dl <= 3 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>{dl <= 0 ? 'Expires today' : `Expires in ${dl} day${dl === 1 ? '' : 's'}`}</p>
                 </button>
               );
             })}
@@ -923,17 +1046,340 @@ function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTa
 
       {/* Announcements */}
       {announcements.length > 0 && (
-        <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
-          <p className="text-sm font-semibold text-neutral-800 mb-3">📢 School Announcements</p>
+        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+          <p className="text-sm font-semibold text-gray-800 mb-3">📢 School Announcements</p>
           <div className="space-y-3">
             {announcements.slice(0, 3).map(a => (
-              <div key={a.id} className="border-l-4 border-primary-400 pl-3">
-                <p className="text-sm font-medium text-neutral-800">{a.title}</p>
-                <p className="text-xs text-neutral-600 mt-0.5 line-clamp-2">{a.body}</p>
-                <p className="text-xs text-neutral-400 mt-1">By {a.author_name} · {a.created_at.split('T')[0]}</p>
+              <div key={a.id} className="border-l-4 border-emerald-400 pl-3">
+                <p className="text-sm font-medium text-gray-800">{a.title}</p>
+                <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{a.body}</p>
+                <p className="text-xs text-gray-400 mt-1">By {a.author_name} · {a.created_at.split('T')[0]}</p>
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Right Panel ─────────────────────────────────────────────────────────────
+function RightPanel({ classFeed, progress, activeChild, invoice, onFeesClick, token }: {
+  classFeed: any[]; progress: ProgressData | null; activeChild: Child | null;
+  invoice: any; onFeesClick: () => void; token: string;
+}) {
+  const pct = progress?.coverage_pct ?? 0;
+  const today = new Date();
+  const weekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+  const todayDow = today.getDay(); // 0=Sun
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - ((todayDow + 6) % 7));
+  const weekDates = Array.from({ length: 5 }, (_, i) => {
+    const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d;
+  });
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Class Feed */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-sm font-bold text-gray-800">📸 Class Feed</p>
+            <p className="text-xs text-gray-400">Photos from school</p>
+          </div>
+          <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
+          </span>
+        </div>
+        {classFeed.length === 0 ? (
+          <div className="rounded-2xl bg-gray-50 border border-gray-100 p-6 text-center">
+            <p className="text-2xl mb-2">📷</p>
+            <p className="text-xs text-gray-400">No photos yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {classFeed.slice(0, 3).map((post: any) => {
+              const img = post.images?.[0];
+              return (
+                <div key={post.id} className="rounded-2xl overflow-hidden border border-gray-100 bg-white shadow-sm">
+                  {img ? (
+                    <img src={img} alt={post.caption ?? ''} className="w-full object-cover" style={{ height: 140 }} />
+                  ) : (
+                    <div className="w-full flex items-center justify-center bg-emerald-50" style={{ height: 100 }}>
+                      <span className="text-4xl">📷</span>
+                    </div>
+                  )}
+                  <div className="px-3 py-2.5">
+                    {post.caption && <p className="text-xs text-gray-700 line-clamp-2 mb-1.5">{post.caption}</p>}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[11px] font-medium text-gray-500">by {post.poster_name}</p>
+                        <p className="text-[10px] text-gray-400">{new Date(post.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
+                        <Heart size={12} className="fill-pink-400 text-pink-400" />
+                        <span>{post.like_count ?? 0}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {classFeed.length > 3 && (
+          <button className="w-full mt-2 text-xs text-emerald-600 font-medium text-center hover:text-emerald-700">
+            View All Photos →
+          </button>
+        )}
+      </div>
+
+      {/* Weekly Schedule */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <p className="text-sm font-bold text-gray-800 mb-3">📅 Weekly Schedule</p>
+        <div className="space-y-2">
+          {weekDates.map((d, i) => {
+            const isToday = d.toDateString() === today.toDateString();
+            return (
+              <div key={i} className={`flex items-center justify-between py-1.5 px-2 rounded-lg ${isToday ? 'bg-emerald-50' : ''}`}>
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400">{weekDays[i]}</p>
+                  <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>{d.getDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}</p>
+                </div>
+                <span className={`w-2 h-2 rounded-full ${isToday ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Progress */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <p className="text-sm font-bold text-gray-800 mb-3">📈 Progress</p>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-xs text-gray-500">Curriculum</p>
+          <p className="text-xs font-bold text-emerald-600">{pct.toFixed(1)}%</p>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-1.5">
+          <div className="h-1.5 rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      {/* Quick Links */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <p className="text-sm font-bold text-gray-800 mb-3">🔗 Quick Links</p>
+        <div className="space-y-2">
+          {activeChild && (
+            <a href={`/parent/journey?student_id=${activeChild.id}`}
+              className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
+              <div className="flex items-center gap-2">
+                <BookOpen size={14} className="text-gray-500" />
+                <span className="text-xs font-medium text-gray-700">Child&apos;s Journey</span>
+              </div>
+              <ArrowRight size={12} className="text-gray-400" />
+            </a>
+          )}
+          <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-100 transition-all">
+            <div className="flex items-center gap-2">
+              <Star size={14} className="text-amber-500 fill-amber-400" />
+              <span className="text-xs font-medium text-amber-700">Premium Features</span>
+            </div>
+            <ArrowRight size={12} className="text-amber-400" />
+          </button>
+        </div>
+      </div>
+
+      {/* Fees Due */}
+      {invoice && invoice.net_payable > 0 && (
+        <div className="bg-orange-50 rounded-2xl border border-orange-100 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <CreditCard size={16} className="text-orange-500" />
+            <p className="text-sm font-bold text-orange-800">Fees Due</p>
+          </div>
+          <p className="text-2xl font-black text-orange-700 mb-1">₹{invoice.net_payable.toLocaleString('en-IN')}</p>
+          {invoice.accounts?.[0]?.due_date && (
+            <p className="text-xs text-orange-600 mb-3">Due on {new Date(invoice.accounts[0].due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+          )}
+          <button onClick={onFeesClick}
+            className="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
+            Pay Now <ArrowRight size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Calendar Tab ─────────────────────────────────────────────────────────────
+function CalendarTab({ events }: { events: CalendarEvent[] }) {
+  const today = new Date();
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">Calendar</h2>
+      {events.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 shadow-sm">
+          <Calendar size={40} className="text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500 font-medium">No upcoming events</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {events.map(e => (
+            <div key={e.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
+                  e.type === 'exam' ? 'bg-red-50' : e.type === 'homework' ? 'bg-amber-50' : e.type === 'meeting' ? 'bg-blue-50' : 'bg-emerald-50'
+                }`}>
+                  {e.type === 'exam' ? '📝' : e.type === 'homework' ? '📚' : e.type === 'meeting' ? '👥' : '📅'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-800 text-sm">{e.title}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{e.description}</p>
+                  <p className="text-xs text-gray-400 mt-1">{new Date(e.start).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Assignments Tab ──────────────────────────────────────────────────────────
+function AssignmentsTab({ activeChild, token }: { activeChild: Child | null; token: string }) {
+  const [hwHistory, setHwHistory] = useState<HomeworkRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activeChild?.id || !token) return;
+    setLoading(true);
+    apiGet<HomeworkRecord[]>(`/api/v1/parent/homework/history?student_id=${activeChild.id}`, token)
+      .then(d => setHwHistory(d || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [activeChild?.id]);
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">Assignments</h2>
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+      ) : hwHistory.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 shadow-sm">
+          <ClipboardList size={40} className="text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500 font-medium">No assignments yet</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {hwHistory.map((hw, i) => {
+            const rawDate = (hw.homework_date || '').toString().split('T')[0];
+            const dateStr = rawDate ? new Date(rawDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '—';
+            const statusConfig = {
+              completed: { label: '✓ Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+              partial: { label: '½ Partial', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
+              not_submitted: { label: '✗ Not submitted', cls: 'bg-red-50 text-red-600 border-red-100' },
+            }[hw.status] || { label: hw.status, cls: 'bg-gray-50 text-gray-600 border-gray-100' };
+            return (
+              <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
+                <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
+                  <div className="flex items-center gap-2">
+                    <ChevronRight size={14} className="shrink-0 transition-transform group-open:rotate-90" />
+                    <span className="text-xs font-medium">{dateStr}</span>
+                  </div>
+                  <span className="text-xs font-bold">{statusConfig.label}</span>
+                </summary>
+                <div className="px-3 pb-3 pt-1 border-t border-current/10">
+                  {hw.homework_text ? <p className="text-xs leading-relaxed whitespace-pre-wrap">{hw.homework_text}</p> : <p className="text-xs opacity-50 italic">No homework text recorded.</p>}
+                  {hw.teacher_note && <p className="text-xs mt-2 italic opacity-70 border-t border-current/10 pt-2">Teacher note: {hw.teacher_note}</p>}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Fees Tab ─────────────────────────────────────────────────────────────────
+function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: Child | null; token: string }) {
+  if (!invoice) return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">Fees</h2>
+      <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 shadow-sm">
+        <CreditCard size={40} className="text-gray-300 mx-auto mb-3" />
+        <p className="text-gray-500 font-medium">No fee information available</p>
+      </div>
+    </div>
+  );
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">Fees</h2>
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm text-gray-500">Total Due</p>
+            <p className="text-3xl font-black text-gray-900">₹{invoice.net_payable?.toLocaleString('en-IN') ?? 0}</p>
+          </div>
+          {invoice.credit_balance > 0 && (
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Credit Balance</p>
+              <p className="text-lg font-bold text-emerald-600">₹{invoice.credit_balance.toLocaleString('en-IN')}</p>
+            </div>
+          )}
+        </div>
+        {invoice.accounts?.length > 0 && (
+          <div className="space-y-2">
+            {invoice.accounts.map((acc: any) => (
+              <div key={acc.id} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{acc.fee_head_name}</p>
+                  {acc.due_date && <p className="text-xs text-gray-400">Due {new Date(acc.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>}
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-gray-900">₹{acc.outstanding_balance?.toLocaleString('en-IN')}</p>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{acc.status}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {invoice.net_payable > 0 && (
+          <button className="w-full mt-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
+            Pay Now <ArrowRight size={16} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Reports Tab ──────────────────────────────────────────────────────────────
+function ReportsTab({ attendance, progress, activeChild }: { attendance: AttendanceData | null; progress: ProgressData | null; activeChild: Child | null }) {
+  const attPct = attendance?.attendance_pct ?? 0;
+  const pct = progress?.coverage_pct ?? 0;
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">Reports</h2>
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`${attPct >= 75 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'} border rounded-2xl p-4`}>
+          <p className="text-xs text-gray-500 mb-1">Attendance</p>
+          <p className={`text-3xl font-black ${attPct >= 75 ? 'text-emerald-700' : 'text-red-600'}`}>{attPct}%</p>
+          <p className="text-xs text-gray-400 mt-1">{attendance?.stats.present ?? 0} present · {attendance?.stats.absent ?? 0} absent</p>
+        </div>
+        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+          <p className="text-xs text-gray-500 mb-1">Curriculum</p>
+          <p className="text-3xl font-black text-blue-700">{pct.toFixed(1)}%</p>
+          <p className="text-xs text-gray-400 mt-1">{progress?.covered ?? 0} of {progress?.total_chunks ?? 0} topics</p>
+        </div>
+      </div>
+      {activeChild && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-sm font-semibold text-gray-800 mb-3">📊 Full Report Card</p>
+          <a href={`/parent/journey?student_id=${activeChild.id}`}
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">
+            <BookOpen size={14} /> View Child&apos;s Journey
+          </a>
         </div>
       )}
     </div>
@@ -944,7 +1390,7 @@ function HomeTab({ feed, progress, activeChild, announcements, onNoteClick, onTa
 function AttendanceTab({ data }: { data: AttendanceData | null }) {
   if (!data) return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <Calendar size={48} className="text-neutral-300 mb-3" />
+      <Calendar size={48} className="text-gray-300 mb-3" />
       <p className="text-neutral-500 font-medium">No attendance data yet</p>
     </div>
   );
