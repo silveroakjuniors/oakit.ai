@@ -1508,32 +1508,14 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
           </div>
         </div>
 
-        {/* Quick Links */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <ArrowRight size={15} className="text-gray-500" />
-            <p className="text-sm font-bold text-gray-800">Quick Links</p>
+        {/* Premium Features */}
+        <button className="w-full flex items-center justify-between px-3 py-3 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-100 transition-all shadow-sm">
+          <div className="flex items-center gap-2">
+            <Star size={15} className="text-amber-500 fill-amber-400" />
+            <span className="text-sm font-semibold text-amber-700">Premium Features</span>
           </div>
-          <div className="space-y-2">
-            {activeChild && (
-              <a href={`/parent/journey?student_id=${activeChild.id}`}
-                className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gray-50 hover:bg-emerald-50 border border-gray-100 hover:border-emerald-200 transition-all">
-                <div className="flex items-center gap-2">
-                  <BookOpen size={13} className="text-gray-500" />
-                  <span className="text-xs font-medium text-gray-700">Child&apos;s Journey</span>
-                </div>
-                <ArrowRight size={11} className="text-gray-400" />
-              </a>
-            )}
-            <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-100 transition-all">
-              <div className="flex items-center gap-2">
-                <Star size={13} className="text-amber-500 fill-amber-400" />
-                <span className="text-xs font-medium text-amber-700">Premium Features</span>
-              </div>
-              <ArrowRight size={11} className="text-amber-400" />
-            </button>
-          </div>
-        </div>
+          <ArrowRight size={13} className="text-amber-400" />
+        </button>
 
         {/* Weekly Updates */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
