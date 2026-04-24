@@ -24,7 +24,7 @@ interface Class {
   sections: { id: string; label: string }[];
 }
 
-/* ÔöÇÔöÇ Conversion Wizard ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* ── Conversion Wizard ──────────────────────────────────────────────────────── */
 function ConvertWizard({ enquiry, onClose, onConverted }: {
   enquiry: Enquiry;
   onClose: () => void;
@@ -81,10 +81,10 @@ function ConvertWizard({ enquiry, onClose, onConverted }: {
         <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Convert to Admission</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{enquiry.student_name} ┬À {enquiry.parent_name}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{enquiry.student_name} · {enquiry.parent_name}</p>
           </div>
           {step !== 3 && (
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">Ô£ò</button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
           )}
         </div>
 
@@ -145,7 +145,7 @@ function ConvertWizard({ enquiry, onClose, onConverted }: {
                   disabled={!selectedClassId || !selectedSectionId}
                   className="flex-1"
                 >
-                  Next ÔåÆ
+                  Next →
                 </Button>
               </div>
             </>
@@ -165,7 +165,7 @@ function ConvertWizard({ enquiry, onClose, onConverted }: {
                 <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
                   <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Class Assignment</p>
                   <p className="text-sm font-semibold text-gray-900">
-                    {selectedClass?.name} ┬À Section {selectedClass?.sections.find(s => s.id === selectedSectionId)?.label}
+                    {selectedClass?.name} · Section {selectedClass?.sections.find(s => s.id === selectedSectionId)?.label}
                   </p>
                 </div>
 
@@ -179,7 +179,7 @@ function ConvertWizard({ enquiry, onClose, onConverted }: {
 
               <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 mb-4">
                 <p className="text-xs text-blue-800">
-                  Ôä╣´©Å A student record will be created and a parent login will be set up. The parent can log in using their mobile number as both username and password.
+                  ℹ️ A student record will be created and a parent login will be set up. The parent can log in using their mobile number as both username and password.
                 </p>
               </div>
 
@@ -190,7 +190,7 @@ function ConvertWizard({ enquiry, onClose, onConverted }: {
               )}
 
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => setStep(1)} className="flex-1">ÔåÉ Back</Button>
+                <Button variant="secondary" onClick={() => setStep(1)} className="flex-1">← Back</Button>
                 <Button
                   onClick={handleConvert}
                   loading={loading}
@@ -233,7 +233,7 @@ function ConvertWizard({ enquiry, onClose, onConverted }: {
   );
 }
 
-/* ÔöÇÔöÇ Main Page ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* ── Main Page ─────────────────────────────────────────────────────────────── */
 export default function EnquiriesPage() {
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -342,7 +342,7 @@ export default function EnquiriesPage() {
                         onClick={() => setConvertingEnquiry(enq)}
                         className="bg-emerald-600 hover:bg-emerald-700 text-white"
                       >
-                        ­ƒÄô Convert
+                        🎓 Convert
                       </Button>
                       <Button
                         size="sm"
