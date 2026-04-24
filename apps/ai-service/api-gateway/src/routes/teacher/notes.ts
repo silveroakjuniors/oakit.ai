@@ -290,4 +290,46 @@ router.get('/homework/submissions', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/teacher/notes/format-session
+// Takes a raw speech transcript and formats it into clean class notes using Gemini
+router.post('/format-session', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { raw_transcript, section_id, is_refinement } = req.body;
+
+    if (!raw_transcript?.trim()) {
+      return res.status(400).json({ error: 'raw_transcript is required' });
+    }
+    if (raw_transcript.length > 20000) {
+      return res.status(400).json({ error: 'Transcript too long (max 20,000 characters)' });
+    }
+
+    // Get class context for better formatting
+    let classContext = '';
+    try {
+      const sections = await getTeacherSections(user_id, school_id);
+      const sec = section_id ? sections.find(s => s.section_id === section_id) : sections[0];
+      if (sec) classContext = `Class: ${sec.class_name} Section ${sec.section_label}`;
+    } catch { /* non-critical */ }
+
+    const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+    const aiResp = await axios.post(`${AI_URL}/internal/format-session`, {
+      raw_transcript: raw_transcript.trim(),
+      class_context: classContext,
+      topics_covered: req.body.topics_covered || [],
+      session_date: req.body.session_date || '',
+      is_refinement: Boolean(is_refinement),
+    }, { timeout: 30000 });
+
+    return res.json({ formatted: aiResp.data.formatted });
+  } catch (err: any) {
+    console.error('[notes/format-session]', err?.message);
+    // If AI service fails, return a basic formatted version
+    const raw = req.body.raw_transcript || '';
+    const basic = `📚 Class Session Notes\n${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}\n\n${raw}`;
+    return res.json({ formatted: basic });
+  }
+});
+
 export default router;

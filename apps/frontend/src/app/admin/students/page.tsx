@@ -26,9 +26,30 @@ interface Student {
   class_id: string;
   section_id: string;
   is_active: boolean;
-  // student portal fields (loaded separately)
+  academic_year?: string | null;
   portal_username?: string | null;
   portal_enabled?: boolean;
+}
+
+interface AcademicYear {
+  id: string;
+  label: string;
+  start_date: string;
+  end_date: string;
+  is_current: boolean;
+}
+
+interface StudentHistory {
+  id: string;
+  academic_year: string;
+  class_name: string;
+  section_label: string;
+  outcome: 'promoted' | 'repeated' | 'terminated' | 'transferred' | 'active';
+  attendance_pct: number | null;
+  topics_covered: number | null;
+  total_topics: number | null;
+  promoted_to_class_name: string | null;
+  promoted_to_section_label: string | null;
 }
 
 interface Class { id: string; name: string; sections: { id: string; label: string }[] }
@@ -509,6 +530,367 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
   );
 }
 
+// --- Change Class Modal ---------------------------------------------------
+function ChangeClassModal({ student, classes, token, onClose, onSaved }: {
+  student: Student; classes: Class[]; token: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [classId, setClassId] = useState(student.class_id);
+  const [sectionId, setSectionId] = useState(student.section_id);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const selectedClass = classes.find(c => c.id === classId);
+
+  async function submit() {
+    if (!classId || !sectionId) { setError('Class and section are required'); return; }
+    setSaving(true); setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/${student.id}/change-class`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ class_id: classId, section_id: sectionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      onSaved(); onClose();
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">Change Class — {student.name}</h2>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-3">
+          <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            ⚠️ This changes the student's current class. Use this after promotion if you need to correct the class assignment.
+          </p>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-gray-600">Class</label>
+            <select value={classId} onChange={e => { setClassId(e.target.value); setSectionId(''); }}
+              className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40">
+              <option value="">Select class</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          {selectedClass && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">Section</label>
+              <select value={sectionId} onChange={e => setSectionId(e.target.value)}
+                className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40">
+                <option value="">Select section</option>
+                {selectedClass.sections.map(s => <option key={s.id} value={s.id}>Section {s.label}</option>)}
+              </select>
+            </div>
+          )}
+          {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+          <div className="flex gap-2 pt-1 pb-2">
+            <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button onClick={submit} loading={saving} className="flex-1">Save</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Student History Modal ------------------------------------------------
+function StudentHistoryModal({ student, token, onClose }: {
+  student: Student; token: string; onClose: () => void;
+}) {
+  const [history, setHistory] = useState<StudentHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/admin/students/${student.id}/history`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => r.json()).then(setHistory).catch(() => {}).finally(() => setLoading(false));
+  }, [student.id]);
+
+  const outcomeColors: Record<string, string> = {
+    promoted: 'bg-emerald-100 text-emerald-700',
+    repeated: 'bg-amber-100 text-amber-700',
+    terminated: 'bg-red-100 text-red-600',
+    transferred: 'bg-blue-100 text-blue-700',
+    active: 'bg-gray-100 text-gray-600',
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[85vh]">
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">📚 History — {student.name}</h2>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+        <div className="px-5 py-4">
+          {loading && <p className="text-sm text-gray-400 text-center py-8">Loading…</p>}
+          {!loading && history.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-2xl mb-2">📭</p>
+              <p className="text-sm text-gray-400">No history yet. History is recorded when students are promoted or terminated.</p>
+            </div>
+          )}
+          <div className="flex flex-col gap-3">
+            {history.map(h => (
+              <div key={h.id} className="border border-gray-100 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-gray-800">{h.academic_year}</p>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${outcomeColors[h.outcome] || 'bg-gray-100 text-gray-600'}`}>
+                    {h.outcome}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600">{h.class_name} · Section {h.section_label}</p>
+                {h.promoted_to_class_name && (
+                  <p className="text-xs text-emerald-600 mt-1">
+                    → Promoted to {h.promoted_to_class_name} · Section {h.promoted_to_section_label}
+                  </p>
+                )}
+                <div className="flex gap-4 mt-2">
+                  {h.attendance_pct !== null && (
+                    <p className="text-xs text-gray-400">Attendance: <span className="font-semibold text-gray-700">{h.attendance_pct}%</span></p>
+                  )}
+                  {h.topics_covered !== null && h.total_topics !== null && (
+                    <p className="text-xs text-gray-400">Topics: <span className="font-semibold text-gray-700">{h.topics_covered}/{h.total_topics}</span></p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="pt-4 pb-2">
+            <Button variant="secondary" onClick={onClose} className="w-full">Close</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Bulk Promote Modal ---------------------------------------------------
+function BulkPromoteModal({ students, classes, token, onClose, onDone }: {
+  students: Student[]; classes: Class[]; token: string; onClose: () => void; onDone: () => void;
+}) {
+  // Current academic year (auto-detect from current year)
+  const currentYear = new Date().getFullYear();
+  const defaultFrom = `${currentYear - 1}-${String(currentYear).slice(-2)}`;
+  const defaultTo   = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
+
+  const [fromYear, setFromYear] = useState(defaultFrom);
+  const [toYear, setToYear]     = useState(defaultTo);
+  // Per-student target class/section + outcome
+  const [assignments, setAssignments] = useState<Record<string, {
+    to_class_id: string; to_section_id: string; outcome: 'promoted' | 'repeated';
+  }>>(() => {
+    const init: Record<string, { to_class_id: string; to_section_id: string; outcome: 'promoted' | 'repeated' }> = {};
+    students.forEach(s => { init[s.id] = { to_class_id: '', to_section_id: '', outcome: 'promoted' }; });
+    return init;
+  });
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ promoted: number; skipped: number } | null>(null);
+  const [error, setError] = useState('');
+
+  function setAssignment(studentId: string, field: string, value: string) {
+    setAssignments(prev => ({
+      ...prev,
+      [studentId]: {
+        ...prev[studentId],
+        [field]: value,
+        ...(field === 'to_class_id' ? { to_section_id: '' } : {}),
+      },
+    }));
+  }
+
+  async function submit() {
+    const promotions = students.map(s => ({
+      student_id: s.id,
+      to_class_id: assignments[s.id]?.to_class_id,
+      to_section_id: assignments[s.id]?.to_section_id,
+      outcome: assignments[s.id]?.outcome || 'promoted',
+    })).filter(p => p.to_class_id && p.to_section_id);
+
+    if (promotions.length === 0) { setError('Please assign a target class and section for at least one student'); return; }
+    if (!fromYear || !toYear) { setError('Academic years are required'); return; }
+
+    setSaving(true); setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/bulk-promote`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promotions, from_academic_year: fromYear, to_academic_year: toYear }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResult({ promoted: data.promoted, skipped: data.skipped });
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSaving(false); }
+  }
+
+  if (result) {
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+        <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl p-6 text-center">
+          <p className="text-3xl mb-3">🎓</p>
+          <p className="text-base font-semibold text-gray-900 mb-1">{result.promoted} student(s) promoted</p>
+          {result.skipped > 0 && <p className="text-sm text-amber-600 mb-3">{result.skipped} skipped (no target assigned)</p>}
+          <Button onClick={() => { onDone(); onClose(); }} className="w-full">Done</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">🎓 Bulk Promote ({students.length} students)</h2>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-4">
+          {/* Academic years */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">From Year</label>
+              <input value={fromYear} onChange={e => setFromYear(e.target.value)} placeholder="2024-25"
+                className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">To Year</label>
+              <input value={toYear} onChange={e => setToYear(e.target.value)} placeholder="2025-26"
+                className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40" />
+            </div>
+          </div>
+
+          {/* Per-student assignments */}
+          <div className="flex flex-col gap-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Assign Target Class</p>
+            {students.map(s => {
+              const a = assignments[s.id];
+              const targetClass = classes.find(c => c.id === a?.to_class_id);
+              return (
+                <div key={s.id} className="border border-gray-100 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-800">{s.name}</p>
+                    <span className="text-xs text-gray-400">{s.class_name} {s.section_label}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <select value={a?.to_class_id || ''} onChange={e => setAssignment(s.id, 'to_class_id', e.target.value)}
+                      className="col-span-1 px-2 py-2 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none">
+                      <option value="">Class</option>
+                      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <select value={a?.to_section_id || ''} onChange={e => setAssignment(s.id, 'to_section_id', e.target.value)}
+                      disabled={!targetClass}
+                      className="col-span-1 px-2 py-2 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none disabled:opacity-50">
+                      <option value="">Section</option>
+                      {targetClass?.sections.map(sec => <option key={sec.id} value={sec.id}>Sec {sec.label}</option>)}
+                    </select>
+                    <select value={a?.outcome || 'promoted'} onChange={e => setAssignment(s.id, 'outcome', e.target.value)}
+                      className="col-span-1 px-2 py-2 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none">
+                      <option value="promoted">Promoted</option>
+                      <option value="repeated">Repeated</option>
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+          <div className="flex gap-2 pb-2">
+            <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button onClick={submit} loading={saving} className="flex-1">Promote</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Bulk Terminate Modal -------------------------------------------------
+function BulkTerminateModal({ students, token, onClose, onDone }: {
+  students: Student[]; token: string; onClose: () => void; onDone: () => void;
+}) {
+  const currentYear = new Date().getFullYear();
+  const defaultYear = `${currentYear - 1}-${String(currentYear).slice(-2)}`;
+  const [academicYear, setAcademicYear] = useState(defaultYear);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ terminated: number; parents_deactivated: number } | null>(null);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    if (!confirm(`Terminate ${students.length} student(s)? Their parent accounts will also be deactivated if they have no other active children.`)) return;
+    setSaving(true); setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/bulk-terminate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_ids: students.map(s => s.id), academic_year: academicYear || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResult({ terminated: data.terminated, parents_deactivated: data.parents_deactivated });
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSaving(false); }
+  }
+
+  if (result) {
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+        <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl p-6 text-center">
+          <p className="text-3xl mb-3">✅</p>
+          <p className="text-base font-semibold text-gray-900 mb-1">{result.terminated} student(s) terminated</p>
+          <p className="text-sm text-gray-500 mb-4">{result.parents_deactivated} parent account(s) deactivated</p>
+          <Button onClick={() => { onDone(); onClose(); }} className="w-full">Done</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-900">🚫 Bulk Terminate ({students.length})</h2>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+            <p className="text-xs font-semibold text-red-700 mb-1">This will:</p>
+            <ul className="text-xs text-red-600 space-y-0.5 list-disc pl-4">
+              <li>Soft-terminate all {students.length} selected students</li>
+              <li>Deactivate parent accounts with no other active children</li>
+              <li>Remove student portal access</li>
+              <li>All data is preserved (soft delete)</li>
+            </ul>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-gray-600">Academic Year (for history record)</label>
+            <input value={academicYear} onChange={e => setAcademicYear(e.target.value)} placeholder="2024-25"
+              className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40" />
+          </div>
+
+          <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+            {students.map(s => (
+              <div key={s.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-700">{s.name}</p>
+                <span className="text-xs text-gray-400">{s.class_name} {s.section_label}</span>
+              </div>
+            ))}
+          </div>
+
+          {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+          <div className="flex gap-2 pb-2">
+            <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button onClick={submit} loading={saving} className="flex-1" style={{ background: '#DC2626' }}>Terminate All</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Main Page ------------------------------------------------------------
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -525,9 +907,15 @@ export default function StudentsPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const token = getToken() || '';
 
+  // Selection for bulk actions
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showBulkPromote, setShowBulkPromote] = useState(false);
+  const [showBulkTerminate, setShowBulkTerminate] = useState(false);
+  const [changingClassStudent, setChangingClassStudent] = useState<Student | null>(null);
+  const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
+
   // Portal state
   const [portalEnabledClasses, setPortalEnabledClasses] = useState<Set<string>>(new Set());
-  // Map: student_id -> { username, has_account }
   const [accountMap, setAccountMap] = useState<Record<string, { username: string | null; has_account: boolean }>>({});
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [newCred, setNewCred] = useState<{ studentId: string; username: string; password: string } | null>(null);
@@ -627,6 +1015,20 @@ export default function StudentsPage() {
   );
   const active = filtered.filter(s => s.is_active);
   const inactive = filtered.filter(s => !s.is_active);
+  const selectedStudents = active.filter(s => selected.has(s.id));
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    if (selected.size === active.length) setSelected(new Set());
+    else setSelected(new Set(active.map(s => s.id)));
+  }
 
   return (
     <div className="p-4 sm:p-6 max-w-2xl mx-auto">
@@ -641,10 +1043,38 @@ export default function StudentsPage() {
         </div>
       </div>
 
+      {/* Bulk action bar — shown when students are selected */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2 mb-3 px-3 py-2.5 bg-primary-50 border border-primary-200 rounded-xl">
+          <span className="text-xs font-semibold text-primary-700 flex-1">{selected.size} selected</span>
+          <button onClick={() => setShowBulkPromote(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+            🎓 Promote
+          </button>
+          <button onClick={() => setShowBulkTerminate(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">
+            🚫 Terminate
+          </button>
+          <button onClick={() => setSelected(new Set())}
+            className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5">
+            ✕ Clear
+          </button>
+        </div>
+      )}
+
       {/* Search + Filters */}
       <div className="flex flex-col gap-2 mb-4">
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search by name..."
-          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40" />
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 cursor-pointer" title="Select all active students">
+            <input type="checkbox"
+              checked={active.length > 0 && selected.size === active.length}
+              onChange={selectAll}
+              className="rounded border-gray-300 text-primary focus:ring-primary" />
+            <span className="text-xs text-gray-500">All</span>
+          </label>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search by name..."
+            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40" />
+        </div>
         <div className="flex gap-2 flex-wrap">
           <select className="flex-1 min-w-[120px] px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none"
             value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterSection(''); }}>
@@ -673,8 +1103,13 @@ export default function StudentsPage() {
           const isThisNewCred = newCred?.studentId === student.id;
 
           return (
-            <div key={student.id} className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${!student.is_active ? 'border-red-100 opacity-70' : 'border-gray-100'}`}>
+            <div key={student.id} className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${!student.is_active ? 'border-red-100 opacity-70' : selected.has(student.id) ? 'border-primary-300 ring-1 ring-primary-200' : 'border-gray-100'}`}>
               <div className="flex items-start gap-3 p-4">
+                {/* Selection checkbox — only for active students */}
+                {student.is_active && (
+                  <input type="checkbox" checked={selected.has(student.id)} onChange={() => toggleSelect(student.id)}
+                    className="mt-1 rounded border-gray-300 text-primary focus:ring-primary flex-shrink-0" />
+                )}
                 <StudentAvatar
                   student={student}
                   uploading={uploadingPhoto === student.id}
@@ -753,6 +1188,16 @@ export default function StudentsPage() {
                     className="text-xs text-gray-500 font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] hover:bg-gray-100 min-w-[28px]">
                     ✏️ Edit
                   </button>
+                  {student.is_active && (
+                    <button onClick={() => setChangingClassStudent(student)}
+                      className="text-xs text-blue-600 font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] hover:bg-blue-50">
+                      🏫 Class
+                    </button>
+                  )}
+                  <button onClick={() => setHistoryStudent(student)}
+                    className="text-xs text-purple-600 font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] hover:bg-purple-50">
+                    📚 History
+                  </button>
                   <button onClick={() => setExpandedStudent(expandedStudent === student.id ? null : student.id)}
                     className={`text-xs font-medium px-2.5 py-1.5 rounded-lg min-h-[28px] transition-colors ${expandedStudent === student.id ? 'bg-primary-600 text-white' : 'bg-primary-50 text-primary-700'}`}>
                     {expandedStudent === student.id ? '👨‍👩‍👧 Parents ▲' : '👨‍👩‍👧 Parents ▼'}
@@ -787,6 +1232,30 @@ export default function StudentsPage() {
       {showAdd && <AddStudentModal classes={classes} token={token} onClose={() => setShowAdd(false)} onAdded={load} />}
       {showImport && <ImportModal token={token} onClose={() => setShowImport(false)} onImported={load} />}
       {editingStudent && <EditStudentModal student={editingStudent} token={token} onClose={() => setEditingStudent(null)} onSaved={load} />}
+      {changingClassStudent && (
+        <ChangeClassModal
+          student={changingClassStudent} classes={classes} token={token}
+          onClose={() => setChangingClassStudent(null)}
+          onSaved={() => { setChangingClassStudent(null); load(); }}
+        />
+      )}
+      {historyStudent && (
+        <StudentHistoryModal student={historyStudent} token={token} onClose={() => setHistoryStudent(null)} />
+      )}
+      {showBulkPromote && selectedStudents.length > 0 && (
+        <BulkPromoteModal
+          students={selectedStudents} classes={classes} token={token}
+          onClose={() => setShowBulkPromote(false)}
+          onDone={() => { setSelected(new Set()); load(); }}
+        />
+      )}
+      {showBulkTerminate && selectedStudents.length > 0 && (
+        <BulkTerminateModal
+          students={selectedStudents} token={token}
+          onClose={() => setShowBulkTerminate(false)}
+          onDone={() => { setSelected(new Set()); load(); }}
+        />
+      )}
     </div>
   );
 }

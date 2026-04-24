@@ -1,23 +1,24 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
+  darkMode: 'class',
   content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
   theme: {
     extend: {
       colors: {
-        // Primary — uses CSS variable so brand color changes apply everywhere
+        // Primary — deep forest green
         primary: {
           DEFAULT: 'var(--brand-primary)',
-          50:  '#F0F7F4',
-          100: '#D6EDE4',
-          200: '#AEDBC9',
-          300: '#7DC3A8',
-          400: '#4FA585',
-          500: '#2E7D5E',
-          600: 'var(--brand-primary)',  // main
-          700: 'var(--brand-primary-dark)',
-          800: '#0F261B',
-          900: '#091810',
+          50:  '#E8F3EF',
+          100: '#D1E8DF',
+          200: '#A3D1BF',
+          300: '#75BA9F',
+          400: '#47A37F',
+          500: '#2A9470',
+          600: 'var(--brand-primary)',  // #1F7A5A
+          700: 'var(--brand-primary-dark)',  // #166A4D
+          800: '#0F4A35',
+          900: '#082E20',
         },
         // Accent — warm amber
         accent: {
@@ -33,22 +34,22 @@ const config: Config = {
           800: '#714504',
           900: '#4A2D02',
         },
-        // Neutrals — warm gray (Apple-like)
+        // Neutrals — zinc (clean, not warm)
         neutral: {
           0:   '#FFFFFF',
-          50:  '#FAFAF9',
-          100: '#F5F4F2',
-          200: '#ECEAE7',
-          300: '#DDD9D4',
-          400: '#C4BEB7',
-          500: '#9E9690',
-          600: '#736D67',
-          700: '#524E4A',
-          800: '#332F2C',
-          900: '#1C1917',
+          50:  '#FAFAFA',
+          100: '#F4F4F5',
+          200: '#E4E4E7',
+          300: '#D4D4D8',
+          400: '#A1A1AA',
+          500: '#71717A',
+          600: '#52525B',
+          700: '#3F3F46',
+          800: '#27272A',
+          900: '#18181B',
         },
         surface: '#FFFFFF',
-        bg: '#F7F6F4',
+        bg: '#FAFAFA',
       },
       fontFamily: {
         sans: [
@@ -78,9 +79,6 @@ const config: Config = {
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-hero': 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-light) 50%, var(--brand-primary) 100%)',
-        'gradient-card': 'linear-gradient(145deg, #FFFFFF 0%, #F7F6F4 100%)',
-        'gradient-amber': 'linear-gradient(135deg, #E8960C 0%, #F5B01A 100%)',
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',

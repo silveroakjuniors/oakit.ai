@@ -50,6 +50,36 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/teacher/observations?section_id= — list all obs for a section (for report readiness map)
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { section_id } = req.query as Record<string, string>;
+
+    const sections = await getTeacherSections(user_id, school_id);
+    const sectionIds = sections.map(s => s.section_id);
+
+    // If section_id provided, verify access; otherwise use all teacher sections
+    const targetSections = section_id
+      ? (sectionIds.includes(section_id) ? [section_id] : [])
+      : sectionIds;
+
+    if (targetSections.length === 0) return res.json([]);
+
+    const result = await pool.query(
+      `SELECT so.student_id, so.categories
+       FROM student_observations so
+       JOIN students st ON st.id = so.student_id
+       WHERE st.section_id = ANY($1::uuid[]) AND so.school_id = $2`,
+      [targetSections, school_id]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/v1/teacher/observations/:studentId
 router.get('/:studentId', async (req: Request, res: Response) => {
   try {

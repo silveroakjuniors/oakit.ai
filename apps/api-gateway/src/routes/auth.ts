@@ -52,6 +52,25 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         const token = signToken({ user_id: sa.id, school_id: null, role: 'super_admin', permissions: [] } as SuperAdminJwtPayload);
         return res.json({ token, role: 'super_admin' });
       }
+
+      // Franchise admin login — school_id IS NULL, role = 'franchise_admin'
+      const faResult = await pool.query(
+        `SELECT id, password_hash, is_active, franchise_id FROM users
+         WHERE (email = $1 OR mobile = $1) AND school_id IS NULL AND role = 'franchise_admin'`,
+        [identifier]
+      );
+      if (faResult.rows.length > 0) {
+        const fa = faResult.rows[0];
+        if (!fa.is_active || !fa.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
+        const valid = await bcrypt.compare(password, fa.password_hash);
+        if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+        const token = signToken({
+          user_id: fa.id, school_id: null, role: 'franchise_admin',
+          franchise_id: fa.franchise_id, permissions: [],
+        } as any);
+        return res.json({ token, role: 'franchise_admin', franchise_id: fa.franchise_id });
+      }
+
       if (!school_code) {
         return res.status(400).json({ error: 'Missing required fields' });
       }

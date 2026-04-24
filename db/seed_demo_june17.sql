@@ -79,10 +79,10 @@ DECLARE
   d      DATE;
   day_num   INT := 0;
   all_ids   UUID[];
-  n_subj    INT;
-  s1        UUID;
-  s2        UUID;
-  circle_id UUID;
+  n_chunks  INT;
+  i1        INT;
+  i2        INT;
+  i3        INT;
 BEGIN
   SELECT id INTO cid    FROM classes  WHERE school_id=sid AND name='UKG';
   SELECT id INTO sec_id FROM sections WHERE class_id=cid AND label='A';
@@ -96,19 +96,19 @@ BEGIN
     RAISE NOTICE 'Not enough chunks'; RETURN;
   END IF;
 
-  circle_id := all_ids[1];                        -- chunk_index 0 = Circle Time
-  n_subj    := array_length(all_ids,1) - 1;       -- remaining subject chunks
+  n_chunks := array_length(all_ids, 1);
 
   FOR d IN SELECT generate_series('2026-06-02'::date,'2026-06-17'::date,'1 day'::interval)::date LOOP
     IF EXTRACT(DOW FROM d) IN (0,6) THEN CONTINUE; END IF;
+
+    -- 3 consecutive non-overlapping chunks per day, rotating through all chunks
+    i1 := (day_num * 3) % n_chunks + 1;
+    i2 := (day_num * 3 + 1) % n_chunks + 1;
+    i3 := (day_num * 3 + 2) % n_chunks + 1;
     day_num := day_num + 1;
 
-    -- Pick 2 subject chunks rotating through indices 2..n
-    s1 := all_ids[ ((day_num - 1) % n_subj) + 2 ];
-    s2 := all_ids[ (day_num       % n_subj) + 2 ];
-
     INSERT INTO day_plans (school_id,section_id,teacher_id,plan_date,chunk_ids,status)
-    VALUES (sid,sec_id,tid,d, ARRAY[circle_id,s1,s2], 'scheduled')
+    VALUES (sid, sec_id, tid, d, ARRAY[all_ids[i1], all_ids[i2], all_ids[i3]], 'scheduled')
     ON CONFLICT (section_id,plan_date) DO UPDATE SET chunk_ids=EXCLUDED.chunk_ids;
   END LOOP;
 END $$;

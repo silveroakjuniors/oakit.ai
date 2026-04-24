@@ -1,5 +1,5 @@
 'use client';
-import { FileText, Sparkles } from 'lucide-react';
+import { FileText, Play, Sparkles } from 'lucide-react';
 
 interface OakieMessageProps {
   text: string;
@@ -8,7 +8,7 @@ interface OakieMessageProps {
   isSettling?: boolean;
   settlingDay?: number;
   settlingTotal?: number;
-  children?: React.ReactNode; // for inline checkboxes / action buttons
+  children?: React.ReactNode;
 }
 
 /**
@@ -72,8 +72,25 @@ export function OakieMessage({
  * Handles: emoji headings, bullet points, numbered lists,
  * key-value labels, bold text, break markers, warning banners.
  */
-export function OakieMessageText({ text }: { text: string }) {
+export function OakieMessageText({ text, onVideoHelp }: { text: string; onVideoHelp?: (topic: string) => void }) {
   const lines = text.split('\n');
+
+  // Pre-scan: build a map of heading index → topic line that follows it
+  // so Video button can pass a richer search query
+  const topicAfterHeading: Record<number, string> = {};
+  for (let idx = 0; idx < lines.length; idx++) {
+    const t = lines[idx].trim();
+    const emojiMatch = t.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)\s*(.+)/u);
+    if (emojiMatch) {
+      // Look ahead for a "Topic:" line within the next 4 lines
+      for (let j = idx + 1; j < Math.min(idx + 5, lines.length); j++) {
+        const next = lines[j].trim();
+        const topicMatch = next.match(/^Topic:\s*(.+)/i);
+        if (topicMatch) { topicAfterHeading[idx] = topicMatch[1].trim(); break; }
+      }
+    }
+  }
+
   return (
     <div className="flex flex-col gap-1 text-sm leading-relaxed">
       {lines.map((line, i) => {
@@ -89,10 +106,26 @@ export function OakieMessageText({ text }: { text: string }) {
         if (isHeading) {
           const emoji = emojiHeadingMatch[1];
           const label = emojiHeadingMatch[2].trim();
+          // Don't show Video button on non-subject headings
+          const isNonSubject = /planner|week\s*\d|day\s*\d|section\s+[a-z]|objective|offline\s+support|teacher\s+note|resources?:|materials?:|tip:|note:/i.test(label);
+          // Build a richer search query: "SubjectName TopicName"
+          const subTopic = topicAfterHeading[i];
+          const videoQuery = subTopic ? `${label} ${subTopic}` : label;
           return (
             <div key={i} className="flex items-center gap-2 mt-3 first:mt-0 rounded-xl px-3 py-2.5 bg-primary-50/60 border border-primary-100">
               <span className="text-base shrink-0">{emoji}</span>
-              <span className="font-semibold text-primary-700 text-sm">{label}</span>
+              <span className="font-semibold text-primary-700 text-sm flex-1">{label}</span>
+              {onVideoHelp && !isNonSubject && (
+                <button
+                  type="button"
+                  onClick={() => onVideoHelp(videoQuery)}
+                  title="Play video for this topic"
+                  className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  <Play className="w-3 h-3 fill-red-500" />
+                  Video
+                </button>
+              )}
             </div>
           );
         }
@@ -153,6 +186,24 @@ export function OakieMessageText({ text }: { text: string }) {
         }
 
         if (trimmed.startsWith('---')) return <hr key={i} className="border-neutral-100 my-1" />;
+
+        // Render lines containing URLs (YouTube links etc.) as clickable
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        if (urlRegex.test(trimmed)) {
+          const urlParts = trimmed.split(/(https?:\/\/[^\s]+)/g);
+          return (
+            <p key={i} className="text-xs text-neutral-700 break-all">
+              {urlParts.map((part, j) =>
+                part.match(/^https?:\/\//) ? (
+                  <a key={j} href={part} target="_blank" rel="noopener noreferrer"
+                    className="text-primary-600 underline break-all">
+                    {part.includes('youtube.com') ? '▶ Open YouTube Search' : part}
+                  </a>
+                ) : <span key={j}>{part}</span>
+              )}
+            </p>
+          );
+        }
 
         const parts = trimmed.split(/(\*\*[^*]+\*\*)/g);
         if (parts.some(p => p.startsWith('**'))) {

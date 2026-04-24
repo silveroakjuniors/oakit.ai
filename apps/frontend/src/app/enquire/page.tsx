@@ -7,18 +7,40 @@ const SCHOOL_CODE = 'sojs';
 const SCHOOL_WEBSITE = 'https://silveroakjuniors.in';
 const SCHOOL_PHONE = '8884151721';
 const SCHOOL_INSTAGRAM = 'https://www.instagram.com/silveroakjuniors_seegehalli';
+
 const CLASS_OPTIONS = ['Play Group', 'Nursery', 'LKG', 'UKG'];
 
-interface ExistingEnquiry {
-  student_name: string;
-  class_of_interest: string;
-  submitted_on: string;
+interface SchoolInfo {
+  name: string;
+  tagline?: string;
+  primary_color?: string;
 }
 
+const STEPS = [
+  {
+    icon: '📞',
+    title: "We'll call you",
+    desc: 'Our admissions team will reach out within 1-2 business days.',
+  },
+  {
+    icon: '🏫',
+    title: 'School visit',
+    desc: 'Come see our AI-powered classrooms and meet our teachers.',
+  },
+  {
+    icon: '📱',
+    title: 'Parent portal access',
+    desc: 'Get real-time updates, learning insights and more — right on your phone.',
+  },
+];
+
+/* ── Splash / Welcome Modal ─────────────────────────────────────────────── */
 function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm px-0 sm:px-4">
       <div className="w-full sm:max-w-sm bg-white rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl">
+
+        {/* Hero band */}
         <div className="relative h-52 bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 flex flex-col items-center justify-end pb-6 px-6">
           <div className="absolute top-0 right-0 w-40 h-40 rounded-full bg-white/10 -translate-y-10 translate-x-10" />
           <div className="absolute bottom-0 left-0 w-28 h-28 rounded-full bg-white/10 translate-y-10 -translate-x-8" />
@@ -26,6 +48,8 @@ function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
             <img src="/school-logo.png" alt="Silver Oak Juniors" className="w-full h-full object-contain" />
           </div>
         </div>
+
+        {/* Content */}
         <div className="px-6 pt-5 pb-6">
           <div className="flex justify-center mb-3">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -33,9 +57,11 @@ function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
               Now Smarter with AI
             </span>
           </div>
+
           <h1 className="text-center text-xl font-bold text-gray-900 leading-snug mb-4">
             A Trusted School. Now Smarter with AI.
           </h1>
+
           <div className="flex justify-center gap-4 mb-4">
             <div className="text-center">
               <p className="text-lg font-bold text-gray-900">10+</p>
@@ -52,7 +78,9 @@ function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
               <p className="text-xs text-gray-500 leading-tight">Powered<br />Learning</p>
             </div>
           </div>
+
           <p className="text-center text-xs text-gray-400 mb-4">📍 Seegahalli, Bangalore</p>
+
           <div className="bg-emerald-50 rounded-2xl px-4 py-3 mb-5 space-y-2">
             <p className="text-xs font-semibold text-emerald-800 mb-2">Enhanced with Oakit.ai</p>
             {['Live updates from classroom', 'Better learning insights', 'Strong parent-school connection'].map(f => (
@@ -66,12 +94,14 @@ function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
               </div>
             ))}
           </div>
+
           <button
             onClick={onContinue}
             className="w-full py-3.5 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-green-500 shadow-lg shadow-emerald-200 hover:from-emerald-700 hover:to-green-600 transition-all active:scale-[0.98]"
           >
             👉 Experience the Future of Early Learning
           </button>
+
           <p className="text-center text-xs text-gray-400 mt-3">Takes less than 2 minutes to enquire</p>
         </div>
       </div>
@@ -79,7 +109,9 @@ function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
   );
 }
 
+/* ── Main Page ──────────────────────────────────────────────────────────── */
 export default function EnquiryPage() {
+  const [, setSchoolInfo] = useState<SchoolInfo | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [form, setForm] = useState({
     student_name: '',
@@ -93,9 +125,12 @@ export default function EnquiryPage() {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Duplicate detection state
-  const [duplicateEnquiries, setDuplicateEnquiries] = useState<ExistingEnquiry[] | null>(null);
-  const [showDuplicatePrompt, setShowDuplicatePrompt] = useState(false);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/public/enquiries/school-info?school_code=${SCHOOL_CODE}`)
+      .then(r => r.json())
+      .then(data => { if (data.name) setSchoolInfo(data); })
+      .catch(() => setSchoolInfo({ name: 'Silver Oak Juniors', tagline: 'Rooted Fearlessly' }));
+  }, []);
 
   function validate() {
     const errs: Record<string, string> = {};
@@ -110,27 +145,22 @@ export default function EnquiryPage() {
     return errs;
   }
 
-  async function submitEnquiry(forceCreate = false) {
-    setLoading(true);
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setError('');
+    const errs = validate();
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+    setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/v1/public/enquiries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, school_code: SCHOOL_CODE, force_create: forceCreate }),
+        body: JSON.stringify({ ...form, school_code: SCHOOL_CODE }),
       });
       const data = await res.json();
-
-      if (res.status === 409 && data.error === 'duplicate') {
-        // Duplicate found — show prompt
-        setDuplicateEnquiries(data.existing_enquiries);
-        setShowDuplicatePrompt(true);
-        return;
-      }
-
       if (!res.ok) throw new Error(data.error || 'Submission failed');
       setSubmitted(true);
-      setShowDuplicatePrompt(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
@@ -138,95 +168,17 @@ export default function EnquiryPage() {
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const errs = validate();
-    setFieldErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-    await submitEnquiry(false);
-  }
-
-  function handleAddAnotherChild() {
-    setShowDuplicatePrompt(false);
-    submitEnquiry(true);
-  }
-
   function resetForm() {
     setSubmitted(false);
     setForm({ student_name: '', child_age: '', parent_name: '', contact_number: '', class_of_interest: '' });
     setFieldErrors({});
-    setDuplicateEnquiries(null);
-    setShowDuplicatePrompt(false);
     setShowSplash(false);
   }
 
-  const inputClass = (field: string) =>
-    `w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-colors ${
-      fieldErrors[field]
-        ? 'border-red-300 focus:ring-red-100 bg-red-50'
-        : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400 bg-white'
-    }`;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-green-50">
-      {showSplash && <WelcomeSplash onContinue={() => setShowSplash(false)} />}
 
-      {/* Duplicate prompt modal */}
-      {showDuplicatePrompt && duplicateEnquiries && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
-            <div className="bg-amber-50 px-5 pt-5 pb-4 border-b border-amber-100">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                  <span className="text-xl">⚠️</span>
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900">Enquiry Already Exists</h3>
-                  <p className="text-xs text-gray-500">This phone number has an open enquiry</p>
-                </div>
-              </div>
-            </div>
-            <div className="px-5 py-4">
-              <p className="text-sm text-gray-600 mb-3">
-                We found {duplicateEnquiries.length} existing {duplicateEnquiries.length === 1 ? 'enquiry' : 'enquiries'} for <strong>{form.contact_number}</strong>:
-              </p>
-              <div className="space-y-2 mb-4">
-                {duplicateEnquiries.map((enq, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                      <span className="text-sm font-bold text-emerald-700">{enq.student_name[0]}</span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{enq.student_name}</p>
-                      <p className="text-xs text-gray-500">
-                        {enq.class_of_interest || 'Class not specified'} · {new Date(enq.submitted_on).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-sm text-gray-600 mb-4">
-                Are you enquiring for a <strong>different child</strong> with the same number?
-              </p>
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={handleAddAnotherChild}
-                  disabled={loading}
-                  className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-green-500 disabled:opacity-60 transition-all"
-                >
-                  {loading ? 'Submitting...' : 'Yes, Add Another Child'}
-                </button>
-                <button
-                  onClick={() => setShowDuplicatePrompt(false)}
-                  className="w-full py-3 rounded-xl font-medium text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  No, Go Back
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {showSplash && <WelcomeSplash onContinue={() => setShowSplash(false)} />}
 
       {/* Header */}
       <header className="w-full px-4 py-3 flex items-center justify-between border-b border-emerald-100 bg-white">
@@ -239,23 +191,31 @@ export default function EnquiryPage() {
             <p className="text-xs text-emerald-600 font-medium">Rooted Fearlessly</p>
           </div>
         </div>
-        <a href={SCHOOL_WEBSITE} target="_blank" rel="noopener noreferrer"
-          className="text-xs font-semibold px-3 py-1.5 rounded-full border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors shrink-0">
+        <a
+          href={SCHOOL_WEBSITE}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-semibold px-3 py-1.5 rounded-full border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors shrink-0"
+        >
           Website ↗
         </a>
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-6">
         {submitted ? (
+          /* ── Success ── */
           <div className="py-6">
+            {/* Hero card */}
             <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-500 to-green-400 px-6 pt-8 pb-10 mb-5 text-center shadow-xl shadow-emerald-100">
               <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-white/10 -translate-y-8 translate-x-8" />
               <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full bg-white/10 translate-y-8 -translate-x-6" />
+
               <div className="relative z-10 w-16 h-16 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center mx-auto mb-4">
                 <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
+
               <p className="relative z-10 text-white/80 text-xs font-semibold uppercase tracking-widest mb-2">Enquiry Received</p>
               <h2 className="relative z-10 text-2xl font-extrabold text-white leading-tight mb-2">
                 Welcome to the Future<br />of Early Learning! 🌟
@@ -265,14 +225,11 @@ export default function EnquiryPage() {
               </p>
             </div>
 
+            {/* What happens next */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">What happens next</p>
               <div className="space-y-3">
-                {[
-                  { icon: '📞', title: "We'll call you", desc: 'Our admissions team will reach out within 1-2 business days.' },
-                  { icon: '🏫', title: 'School visit', desc: 'Come see our AI-powered classrooms and meet our teachers.' },
-                  { icon: '📱', title: 'Parent portal access', desc: 'Get real-time updates, learning insights and more — right on your phone.' },
-                ].map(step => (
+                {STEPS.map(step => (
                   <div key={step.title} className="flex items-start gap-3">
                     <span className="text-xl mt-0.5">{step.icon}</span>
                     <div>
@@ -284,17 +241,26 @@ export default function EnquiryPage() {
               </div>
             </div>
 
+            {/* Contact + Social */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-5">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Get in touch</p>
               <div className="flex flex-col gap-2">
-                <a href={`tel:${SCHOOL_PHONE}`} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 transition-colors">
+                <a
+                  href={`tel:${SCHOOL_PHONE}`}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 transition-colors"
+                >
                   <span className="text-lg">📞</span>
                   <div>
                     <p className="text-xs text-gray-500">Call us directly</p>
                     <p className="text-sm font-bold text-emerald-700">{SCHOOL_PHONE}</p>
                   </div>
                 </a>
-                <a href={SCHOOL_INSTAGRAM} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-pink-50 border border-pink-100 hover:bg-pink-100 transition-colors">
+                <a
+                  href={SCHOOL_INSTAGRAM}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-pink-50 border border-pink-100 hover:bg-pink-100 transition-colors"
+                >
                   <span className="text-lg">📸</span>
                   <div>
                     <p className="text-xs text-gray-500">Follow us on Instagram</p>
@@ -304,6 +270,7 @@ export default function EnquiryPage() {
               </div>
             </div>
 
+            {/* Tagline */}
             <div className="flex justify-center mb-5">
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -312,17 +279,24 @@ export default function EnquiryPage() {
             </div>
 
             <div className="flex flex-col gap-3">
-              <a href={SCHOOL_WEBSITE} target="_blank" rel="noopener noreferrer"
-                className="w-full py-3.5 rounded-2xl font-bold text-sm text-white text-center bg-gradient-to-r from-emerald-600 to-green-500 shadow-lg shadow-emerald-100 transition-all active:scale-[0.98]">
+              <a
+                href={SCHOOL_WEBSITE}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 rounded-2xl font-bold text-sm text-white text-center bg-gradient-to-r from-emerald-600 to-green-500 shadow-lg shadow-emerald-100 transition-all active:scale-[0.98]"
+              >
                 Explore Silver Oak Juniors ↗
               </a>
-              <button onClick={resetForm}
-                className="w-full py-3 rounded-2xl font-medium text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
+              <button
+                onClick={resetForm}
+                className="w-full py-3 rounded-2xl font-medium text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+              >
                 Submit Another Enquiry
               </button>
             </div>
           </div>
         ) : (
+          /* ── Form ── */
           <>
             <div className="text-center mb-6">
               <h1 className="text-xl font-bold text-gray-900 mb-1">Admissions Enquiry</h1>
@@ -330,28 +304,42 @@ export default function EnquiryPage() {
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
+
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">{"Child's Name"} <span className="text-red-400">*</span></label>
-                <input type="text" autoComplete="off" placeholder="Enter your child's full name"
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  {"Child's Name"} <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  placeholder="Enter your child's full name"
                   value={form.student_name}
                   onChange={e => { setForm(p => ({ ...p, student_name: e.target.value })); setFieldErrors(p => ({ ...p, student_name: '' })); }}
-                  className={inputClass('student_name')} />
+                  className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-colors ${fieldErrors.student_name ? 'border-red-300 focus:ring-red-100 bg-red-50' : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400 bg-white'}`}
+                />
                 {fieldErrors.student_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.student_name}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">{"Child's Age"}</label>
-                <input type="text" placeholder="e.g. 4 years"
+                <input
+                  type="text"
+                  placeholder="e.g. 4 years"
                   value={form.child_age}
                   onChange={e => setForm(p => ({ ...p, child_age: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-400 bg-white transition-colors" />
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-400 bg-white transition-colors"
+                />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Class Enquiring For <span className="text-red-400">*</span></label>
-                <select value={form.class_of_interest}
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Class Enquiring For <span className="text-red-400">*</span>
+                </label>
+                <select
+                  value={form.class_of_interest}
                   onChange={e => { setForm(p => ({ ...p, class_of_interest: e.target.value })); setFieldErrors(p => ({ ...p, class_of_interest: '' })); }}
-                  className={`${inputClass('class_of_interest')} appearance-none`}>
+                  className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-colors appearance-none bg-white ${fieldErrors.class_of_interest ? 'border-red-300 focus:ring-red-100' : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'}`}
+                >
                   <option value="">Select a class...</option>
                   {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -364,20 +352,33 @@ export default function EnquiryPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Parent / Guardian Name <span className="text-red-400">*</span></label>
-                <input type="text" autoComplete="name" placeholder="Your full name"
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Parent / Guardian Name <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  placeholder="Your full name"
                   value={form.parent_name}
                   onChange={e => { setForm(p => ({ ...p, parent_name: e.target.value })); setFieldErrors(p => ({ ...p, parent_name: '' })); }}
-                  className={inputClass('parent_name')} />
+                  className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-colors ${fieldErrors.parent_name ? 'border-red-300 focus:ring-red-100 bg-red-50' : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400 bg-white'}`}
+                />
                 {fieldErrors.parent_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.parent_name}</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Contact Number <span className="text-red-400">*</span></label>
-                <input type="tel" autoComplete="tel" placeholder="10-digit mobile number" maxLength={10}
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Contact Number <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  placeholder="10-digit mobile number"
+                  maxLength={10}
                   value={form.contact_number}
                   onChange={e => { const val = e.target.value.replace(/\D/g, '').slice(0, 10); setForm(p => ({ ...p, contact_number: val })); setFieldErrors(p => ({ ...p, contact_number: '' })); }}
-                  className={inputClass('contact_number')} />
+                  className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-colors ${fieldErrors.contact_number ? 'border-red-300 focus:ring-red-100 bg-red-50' : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400 bg-white'}`}
+                />
                 {fieldErrors.contact_number && <p className="text-xs text-red-500 mt-1">{fieldErrors.contact_number}</p>}
               </div>
 
@@ -387,8 +388,11 @@ export default function EnquiryPage() {
                 </div>
               )}
 
-              <button type="submit" disabled={loading}
-                className="w-full py-4 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-green-500 shadow-lg shadow-emerald-100 hover:shadow-emerald-200 transition-all disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98] mt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-4 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-green-500 shadow-lg shadow-emerald-100 hover:shadow-emerald-200 transition-all disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.98] mt-2"
+              >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -400,6 +404,7 @@ export default function EnquiryPage() {
                 ) : 'Submit Enquiry →'}
               </button>
 
+              {/* Contact strip at bottom of form */}
               <div className="flex items-center justify-center gap-4 pt-1 pb-2">
                 <a href={`tel:${SCHOOL_PHONE}`} className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium hover:underline">
                   <span>📞</span> {SCHOOL_PHONE}

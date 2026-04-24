@@ -23,19 +23,19 @@ export default function OakitLogo({
     setTagline(saved);
   }, []);
 
-  const textColor = variant === 'dark' ? 'text-[#0f2417]' : 'text-white';
-  const subColor  = variant === 'dark' ? 'text-slate-400' : 'text-white/60';
+  const textColor = variant === 'dark' ? 'text-green-900' : 'text-white';
+  const subColor  = variant === 'dark' ? 'text-green-600/70' : 'text-white/60';
   const dotColor  = '#E8960C';
 
   return (
     <div className={`flex items-center gap-3 ${className} animate-in fade-in duration-500`}>
       <div className={`${iconSizeMap[size]} relative flex items-center justify-center rounded-xl overflow-hidden`}>
-        <div className="absolute inset-0 bg-[#0f2417] rotate-45 scale-75 rounded-lg" />
+        <div className="absolute inset-0 bg-green-600 rotate-45 scale-75 rounded-lg" />
         <div className="relative z-10 font-black text-white text-[50%] flex items-center justify-center">
           <span className="mb-0.5">O</span>
           <div className="w-1 h-1 rounded-full ml-0.5" style={{ backgroundColor: dotColor }} />
         </div>
-        {variant === 'light' && <div className="absolute inset-0 bg-emerald-400/20 blur-lg -z-10" />}
+        {variant === 'light' && <div className="absolute inset-0 bg-green-300/30 blur-lg -z-10" />}
       </div>
       <div className="flex flex-col justify-center">
         <h1 className={`font-black tracking-tighter leading-none ${sizeMap[size]} ${textColor}`}>

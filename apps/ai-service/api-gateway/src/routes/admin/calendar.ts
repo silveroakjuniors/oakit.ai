@@ -9,9 +9,32 @@ import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middle
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin'));
 
-const AI = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
+const AI = () => {
+  const url = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+  // OWASP A10: SSRF protection — only allow http/https to known hosts
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('Invalid AI_SERVICE_URL protocol');
+    }
+  } catch {
+    return 'http://localhost:8000';
+  }
+  return url;
+};
 
-const upload = multer({ dest: '/tmp/oakit-uploads/' });
+const upload = multer({
+  dest: '/tmp/oakit-uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (['.xlsx', '.xls', '.csv'].includes(ext)) cb(null, true);
+    else cb(new Error('Only .xlsx, .xls or .csv files are allowed'));
+  },
+});
+
+// Ensure upload tmp dir exists
+try { fs.mkdirSync('/tmp/oakit-uploads/', { recursive: true }); } catch { /* already exists */ }
 
 /**
  * When a holiday or special day is added for a date that already has day plans,
@@ -62,17 +85,17 @@ async function _carryForwardDate(pool: any, school_id: string, date: string): Pr
 
 // GET /api/v1/admin/calendar/plan-summary
 // Returns pre-generation summary: chunk count vs available days, fit, and recommendation.
-// Query params: class_id (required), academic_year (required), month (optional), plan_year (optional)
+// Query params: class_id (required), section_id (required), academic_year (required), month (optional), plan_year (optional)
 router.get('/plan-summary', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { class_id, academic_year, month, plan_year } = req.query as Record<string, string | undefined>;
+    const { class_id, section_id, academic_year, month, plan_year } = req.query as Record<string, string | undefined>;
 
     if (!class_id || !academic_year) {
       return res.status(400).json({ error: 'class_id and academic_year are required' });
     }
 
-    // 1. Get school calendar for this school + academic_year
+    // 1. Get school calendar
     const calRow = await pool.query(
       `SELECT start_date, end_date, working_days FROM school_calendar
        WHERE school_id = $1 AND academic_year = $2`,
@@ -84,7 +107,7 @@ router.get('/plan-summary', async (req: Request, res: Response) => {
     const { start_date, end_date, working_days } = calRow.rows[0];
     const wdSet = new Set<number>(working_days as number[]);
 
-    // 2. Get holidays for the academic year
+    // 2. Get holidays
     const holidayRows = await pool.query(
       `SELECT holiday_date FROM holidays WHERE school_id = $1 AND academic_year = $2`,
       [school_id, academic_year]
@@ -93,57 +116,79 @@ router.get('/plan-summary', async (req: Request, res: Response) => {
       holidayRows.rows.map((r: any) => new Date(r.holiday_date).toISOString().split('T')[0])
     );
 
-    // 3. Get special days for the academic year, grouped by duration_type
+    // 3. Get special days
     const specialRows = await pool.query(
       `SELECT day_date, day_type, duration_type FROM special_days
        WHERE school_id = $1 AND academic_year = $2`,
       [school_id, academic_year]
     );
 
-    // Build special day maps
     const fullDaySpecialSet = new Set<string>();
     const halfDaySpecialSet = new Set<string>();
-    // breakdown: { [day_type]: { full_day: number, half_day: number } }
     const specialDayBreakdown: Record<string, { full_day: number; half_day: number }> = {};
 
     for (const r of specialRows.rows) {
       const iso = new Date(r.day_date).toISOString().split('T')[0];
       const durationType: string = r.duration_type || 'full_day';
       const dayType: string = r.day_type;
-
-      if (durationType === 'half_day') {
-        halfDaySpecialSet.add(iso);
-      } else {
-        fullDaySpecialSet.add(iso);
-      }
-
-      if (!specialDayBreakdown[dayType]) {
-        specialDayBreakdown[dayType] = { full_day: 0, half_day: 0 };
-      }
-      if (durationType === 'half_day') {
-        specialDayBreakdown[dayType].half_day++;
-      } else {
-        specialDayBreakdown[dayType].full_day++;
-      }
+      if (durationType === 'half_day') halfDaySpecialSet.add(iso);
+      else fullDaySpecialSet.add(iso);
+      if (!specialDayBreakdown[dayType]) specialDayBreakdown[dayType] = { full_day: 0, half_day: 0 };
+      if (durationType === 'half_day') specialDayBreakdown[dayType].half_day++;
+      else specialDayBreakdown[dayType].full_day++;
     }
 
-    // 4. Get curriculum chunk count for the class
+    // 4. Total curriculum chunks for the class
     const chunkRow = await pool.query(
       `SELECT COUNT(*)::int as total_chunks FROM curriculum_chunks WHERE class_id = $1`,
       [class_id]
     );
     const totalChunks: number = chunkRow.rows[0]?.total_chunks ?? 0;
 
-    // Handle zero-chunks edge case
     if (totalChunks === 0) {
       return res.json({
         total_chunks: 0,
+        chunks_already_assigned: 0,
+        chunks_remaining: 0,
         fit: 'under',
         recommendation: 'No curriculum uploaded for this class.',
       });
     }
 
-    // 5. Compute working days in the range (respecting optional month filter)
+    // 5. Count chunks already assigned in plans BEFORE this month (only in monthly mode)
+    let chunksAlreadyAssigned = 0;
+    let lastAssignedDate: string | null = null;
+
+    if (month && plan_year && section_id) {
+      const m = parseInt(month, 10);
+      const y = parseInt(plan_year, 10);
+      const monthStart = new Date(y, m - 1, 1).toISOString().split('T')[0];
+
+      // Count distinct chunks assigned in plans before this month
+      const assignedRow = await pool.query(
+        `SELECT COUNT(DISTINCT unnested_chunk) as assigned_count
+         FROM day_plans dp,
+              LATERAL unnest(dp.chunk_ids) AS unnested_chunk
+         WHERE dp.section_id = $1
+           AND dp.school_id = $2
+           AND dp.plan_date < $3
+           AND dp.chunk_ids != '{}'`,
+        [section_id, school_id, monthStart]
+      );
+      chunksAlreadyAssigned = parseInt(assignedRow.rows[0]?.assigned_count ?? '0', 10);
+
+      // Find the last assigned date before this month
+      const lastDateRow = await pool.query(
+        `SELECT MAX(plan_date)::text as last_date FROM day_plans
+         WHERE section_id = $1 AND school_id = $2 AND plan_date < $3 AND chunk_ids != '{}'`,
+        [section_id, school_id, monthStart]
+      );
+      lastAssignedDate = lastDateRow.rows[0]?.last_date ?? null;
+    }
+
+    const chunksRemaining = Math.max(0, totalChunks - chunksAlreadyAssigned);
+
+    // 6. Compute working days in the target range (month or full year)
     let rangeStart = new Date(start_date);
     let rangeEnd = new Date(end_date);
 
@@ -151,59 +196,81 @@ router.get('/plan-summary', async (req: Request, res: Response) => {
       const m = parseInt(month, 10);
       const y = parseInt(plan_year, 10);
       const monthStart = new Date(y, m - 1, 1);
-      const monthEnd = new Date(y, m, 0); // last day of month
+      const monthEnd = new Date(y, m, 0);
       if (monthStart > rangeStart) rangeStart = monthStart;
       if (monthEnd < rangeEnd) rangeEnd = monthEnd;
     }
 
+    // Count working days in this month's range
     let workingDaysCount = 0;
     let fullDaySpecialCount = 0;
     let halfDaySpecialCount = 0;
+    let holidayCountInRange = 0;
 
     for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
-      const dow = d.getDay() === 0 ? 7 : d.getDay(); // 1=Mon..7=Sun
+      const dow = d.getDay() === 0 ? 7 : d.getDay();
       const iso = d.toISOString().split('T')[0];
-
-      if (!wdSet.has(dow) || holidaySet.has(iso)) continue;
-
+      if (!wdSet.has(dow)) continue; // weekend
+      if (holidaySet.has(iso)) { holidayCountInRange++; continue; }
       workingDaysCount++;
-
-      if (fullDaySpecialSet.has(iso)) {
-        fullDaySpecialCount++;
-      } else if (halfDaySpecialSet.has(iso)) {
-        halfDaySpecialCount++;
-      }
+      if (fullDaySpecialSet.has(iso)) fullDaySpecialCount++;
+      else if (halfDaySpecialSet.has(iso)) halfDaySpecialCount++;
     }
 
-    // 6. Compute net_curriculum_days
-    // net = working_days - full_day_specials + 0.5 * half_day_specials
-    // (full-day specials consume a working day but give 0 curriculum days;
-    //  half-day specials consume a working day but give 0.5 curriculum days)
     const netCurriculumDays = workingDaysCount - fullDaySpecialCount + 0.5 * halfDaySpecialCount;
 
-    // 7. Compute fit
-    let fit: 'exact' | 'under' | 'over';
-    if (totalChunks === netCurriculumDays) {
-      fit = 'exact';
-    } else if (totalChunks < netCurriculumDays) {
-      fit = 'under';
-    } else {
-      fit = 'over';
+    // 7. Compute how many chunks will be assigned THIS month
+    // chunks_per_day is based on full-year curriculum days (same as planner_service)
+    let fullYearCurriculumDays = 0;
+    for (let d = new Date(start_date); d <= new Date(end_date); d.setDate(d.getDate() + 1)) {
+      const dow = d.getDay() === 0 ? 7 : d.getDay();
+      const iso = d.toISOString().split('T')[0];
+      if (!wdSet.has(dow) || holidaySet.has(iso)) continue;
+      if (!fullDaySpecialSet.has(iso)) fullYearCurriculumDays++;
+      else if (halfDaySpecialSet.has(iso)) fullYearCurriculumDays += 0.5;
     }
 
-    // 8. Generate recommendation
+    const chunksPerDay = fullYearCurriculumDays > 0
+      ? Math.ceil(totalChunks / fullYearCurriculumDays)
+      : 1;
+    const chunksThisMonth = Math.min(
+      Math.round(netCurriculumDays * chunksPerDay),
+      chunksRemaining
+    );
+    const chunksAfterThisMonth = Math.max(0, chunksRemaining - chunksThisMonth);
+
+    // 8. Estimate how many more months needed to finish remaining chunks
+    const avgChunksPerMonth = netCurriculumDays > 0 ? chunksThisMonth : 0;
+    const monthsToFinish = avgChunksPerMonth > 0
+      ? Math.ceil(chunksAfterThisMonth / avgChunksPerMonth)
+      : null;
+
+    // 9. Compute fit
+    let fit: 'exact' | 'under' | 'over';
+    if (totalChunks === Math.round(fullYearCurriculumDays)) fit = 'exact';
+    else if (totalChunks < fullYearCurriculumDays) fit = 'under';
+    else fit = 'over';
+
+    // 10. Recommendation
     let recommendation: string;
     if (fit === 'exact') {
       recommendation = 'Curriculum fits exactly — every available day will receive one chunk.';
     } else if (fit === 'under') {
       recommendation = 'Curriculum is shorter than available days. Chunks will cycle. Consider adding more curriculum content.';
     } else {
-      recommendation = 'Curriculum is longer than available days. Not all content will be covered. Consider adding more special days or extending the calendar.';
+      recommendation = 'Curriculum is longer than available days. Not all content will be covered this year.';
     }
 
     return res.json({
       total_chunks: totalChunks,
+      chunks_already_assigned: chunksAlreadyAssigned,
+      chunks_remaining: chunksRemaining,
+      chunks_this_month: chunksThisMonth,
+      chunks_after_this_month: chunksAfterThisMonth,
+      months_to_finish: monthsToFinish,
+      last_assigned_date: lastAssignedDate,
       total_working_days: workingDaysCount,
+      holiday_count: holidayCountInRange,
       net_curriculum_days: netCurriculumDays,
       special_day_breakdown: specialDayBreakdown,
       fit,
@@ -1202,50 +1269,70 @@ router.delete('/:year/holidays/:id', async (req: Request, res: Response) => {
 
 // POST /api/v1/admin/calendar/:year/holidays/import
 router.post('/:year/holidays/import', upload.single('file'), async (req: Request, res: Response) => {
+  const file = req.file;
   try {
     const { school_id } = req.user!;
     const { year } = req.params;
-    const file = req.file;
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
-    // Forward to AI service for parsing
-    const FormData = require('form-data');
-    const form = new FormData();
-    form.append('file', fs.createReadStream(file.path), { filename: file.originalname || 'holidays.xlsx' });
+    const { parseSpreadsheet, findHeader, parseDate, sanitizeCell } = require('../../lib/spreadsheetImport');
+    const content = require('fs').readFileSync(file.path);
+    const { rows, headers, error: parseError } = parseSpreadsheet(content);
 
-    let parseResult: { valid_rows: any[]; invalid_rows: any[] };
-    try {
-      const aiResp = await axios.post(`${AI()}/internal/import-holidays`, form, {
-        headers: form.getHeaders(),
-        timeout: 30000,
-      });
-      parseResult = aiResp.data;
-    } finally {
-      fs.unlink(file.path, () => {});
-    }
+    if (parseError) return res.status(400).json({ error: parseError });
 
-    // Bulk insert valid rows
+    const dateCol  = findHeader(headers, ['date']);
+    const nameCol  = findHeader(headers, ['description', 'event_name', 'event name', 'event', 'name', 'holiday name', 'holiday']);
+    const typeCol  = findHeader(headers, ['type', 'day type', 'category']);
+
+    if (!dateCol) return res.status(400).json({ error: `Missing 'date' column. Found: ${headers.join(', ')}` });
+    if (!nameCol) return res.status(400).json({ error: `Missing 'description' column. Found: ${headers.join(', ')}` });
+
+    const skipped: any[] = [];
     let created = 0;
-    for (const row of parseResult.valid_rows) {
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const eventName = sanitizeCell(row[nameCol], 255);
+      const rowType   = sanitizeCell(row[typeCol ?? ''] || '', 50).toLowerCase();
+      const rawDate   = sanitizeCell(row[dateCol] || '', 20);
+
+      if (!eventName) { skipped.push({ row: i + 2, reason: 'Missing event name' }); continue; }
+      if (['working day', 'working', 'school day'].includes(rowType)) {
+        skipped.push({ row: i + 2, reason: `Skipped: type '${rowType}' is not a holiday` }); continue;
+      }
+
+      const parsedDate = parseDate(rawDate);
+      if (!parsedDate) { skipped.push({ row: i + 2, reason: `Invalid date '${rawDate}' — use DD-MM-YYYY` }); continue; }
+
+      // Skip weekends — no point adding Saturday/Sunday as holidays
+      const dow = new Date(parsedDate).getDay(); // 0=Sun, 6=Sat
+      if (dow === 0 || dow === 6) {
+        skipped.push({ row: i + 2, reason: `Skipped: ${parsedDate} is a weekend` }); continue;
+      }
+
       try {
-        await pool.query(
+        const result = await pool.query(
           `INSERT INTO holidays (school_id, academic_year, holiday_date, event_name)
            VALUES ($1, $2, $3, $4)
-           ON CONFLICT (school_id, academic_year, holiday_date) DO NOTHING`,
-          [school_id, year, row.date, row.event_name]
+           ON CONFLICT (school_id, academic_year, holiday_date) DO NOTHING
+           RETURNING id`,
+          [school_id, year, parsedDate, eventName]
         );
-        created++;
-      } catch { /* skip duplicates */ }
+        if (result.rowCount && result.rowCount > 0) created++;
+        else skipped.push({ row: i + 2, reason: `Duplicate: ${parsedDate} already exists` });
+      } catch (e: any) {
+        console.error('[holiday-import] row', i + 2, 'date:', parsedDate, 'name:', eventName, 'year:', year, 'err:', e?.message);
+        skipped.push({ row: i + 2, reason: `DB insert failed: ${e?.message || e}` });
+      }
     }
 
-    return res.json({
-      created,
-      skipped: parseResult.invalid_rows,
-    });
+    return res.json({ created, skipped });
   } catch (err: unknown) {
-    console.error(err);
-    const msg = axios.isAxiosError(err) ? err.response?.data?.detail || err.message : 'Internal server error';
-    return res.status(500).json({ error: msg });
+    console.error('[holiday-import]', err);
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Import failed' });
+  } finally {
+    if (file) fs.unlink(file.path, () => {});
   }
 });
 

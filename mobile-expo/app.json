@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "SOJ Mobile",
+    "slug": "soj-mobile",
+    "version": "0.1.0",
+    "platforms": ["ios", "android"],
+    "sdkVersion": "48.0.0",
+    "updates": { "fallbackToCacheTimeout": 0 },
+    "assetBundlePatterns": ["**/*"],
+    "android": { "package": "com.silveroak.sojmobile" }
+  }
+}

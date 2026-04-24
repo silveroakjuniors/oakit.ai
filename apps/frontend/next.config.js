@@ -1,21 +1,8 @@
 /** @type {import('next').NextConfig} */
-const isDev = process.env.NODE_ENV === 'development';
-
-let withPWA = (config) => config;
-
-try {
-  const nextPWA = require('next-pwa');
-
-  withPWA = nextPWA({
-    dest: 'public',
-    disable: true, // 🔥 FORCE DISABLE (fixes your build)
-  });
-} catch (e) {
-  console.warn('next-pwa not installed, skipping PWA setup');
-}
-
 const nextConfig = {
   reactStrictMode: true,
+  // PWA is handled via manifest.json + meta tags in layout.tsx
+  // No next-pwa dependency needed for basic "Add to Home Screen" support
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = nextConfig;

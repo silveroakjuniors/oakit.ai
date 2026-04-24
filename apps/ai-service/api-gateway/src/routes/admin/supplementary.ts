@@ -165,6 +165,55 @@ router.put('/pools/:pool_id/activities/reorder', async (req: Request, res: Respo
   }
 });
 
+// GET /pools/:pool_id/summary — per-activity assignment count + rotation cursor (Req 9.6)
+router.get('/pools/:pool_id/summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+
+    // Verify pool belongs to school
+    const poolRow = await pool.query(
+      'SELECT id, name FROM activity_pools WHERE id = $1 AND school_id = $2',
+      [req.params.pool_id, school_id]
+    );
+    if (!poolRow.rows.length) return res.status(404).json({ error: 'Pool not found' });
+
+    // Per-activity assignment count (current academic year)
+    const activityCounts = await pool.query(
+      `SELECT a.id, a.title, a.position,
+              COUNT(sp.id)::int AS times_assigned,
+              COUNT(sp.id) FILTER (WHERE sp.status = 'completed')::int AS times_completed,
+              COUNT(sp.id) FILTER (WHERE sp.status = 'skipped')::int AS times_skipped
+       FROM activities a
+       LEFT JOIN supplementary_plans sp ON sp.activity_id = a.id
+         AND sp.created_at >= date_trunc('year', now())
+       WHERE a.activity_pool_id = $1
+       GROUP BY a.id, a.title, a.position
+       ORDER BY a.position, a.created_at`,
+      [req.params.pool_id]
+    );
+
+    // Rotation cursors per section
+    const cursors = await pool.query(
+      `SELECT src.section_id, src.next_position,
+              sec.label AS section_label, c.name AS class_name
+       FROM supplementary_rotation_cursors src
+       JOIN pool_assignments pa ON pa.id = src.pool_assignment_id
+       JOIN sections sec ON sec.id = src.section_id
+       JOIN classes c ON c.id = sec.class_id
+       WHERE pa.activity_pool_id = $1 AND pa.school_id = $2`,
+      [req.params.pool_id, school_id]
+    );
+
+    return res.json({
+      pool: poolRow.rows[0],
+      activities: activityCounts.rows,
+      rotation_cursors: cursors.rows,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── Pool Assignments ────────────────────────────────────────────────────────
 
 // GET /assignments — list all assignments for school

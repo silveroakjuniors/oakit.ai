@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiDelete } from '@/lib/api';
 import {
   CoverageRow,
   DashStats,
@@ -64,7 +64,8 @@ export async function activateTimeMachine(date: string, ttl_hours: number, token
   return apiPost<TimeMachine>('/api/v1/admin/time-machine', { date, ttl_hours }, token);
 }
 export async function deactivateTimeMachine(token: string) {
-  return apiPost<TimeMachine>('/api/v1/admin/time-machine/deactivate', {}, token);
+  await apiDelete('/api/v1/admin/time-machine', token);
+  return { active: false, mock_date: null, expires_at: null, ttl_seconds: 0 } as TimeMachine;
 }
 
 export interface TodaySectionRow {
