@@ -620,7 +620,7 @@ export default function ParentPage() {
                 {(() => { const h = new Date().getHours(); return h < 12 ? 'Good Morning,' : h < 17 ? 'Good Afternoon,' : 'Good Evening,'; })()}
               </span>
               <span className="text-sm font-semibold text-gray-800">
-                {parentProfile?.name?.trim() ? parentProfile.name.split(' ')[0] : 'Parent'}
+                {parentProfile?.name?.trim() ? parentProfile.name.split(' ')[0] : (activeChild?.father_name?.split(' ')[0] ?? activeChild?.mother_name?.split(' ')[0] ?? 'Parent')}
               </span>
             </div>
           </div>
@@ -646,7 +646,7 @@ export default function ParentPage() {
                 </div>
                 <div className="hidden xl:block text-left">
                   <p className="text-sm font-semibold text-gray-800 leading-tight">
-                    {parentProfile?.name?.trim() || 'Parent'}
+                    {parentProfile?.name?.trim() || activeChild?.father_name || activeChild?.mother_name || 'Parent'}
                   </p>
                   <p className="text-xs text-gray-400">Parent</p>
                 </div>
@@ -667,7 +667,7 @@ export default function ParentPage() {
                       </div>
                       <div>
                         <p className="font-bold text-gray-900 text-sm leading-tight">
-                          {parentProfile?.name ?? 'Parent'}
+                          {parentProfile?.name?.trim() || activeChild?.father_name || activeChild?.mother_name || 'Parent'}
                         </p>
                         <p className="text-xs text-emerald-600 font-medium mt-0.5">Parent Account</p>
                       </div>
@@ -1996,34 +1996,52 @@ function AttendanceTab({ data }: { data: AttendanceData | null }) {
 // ─── Progress Tab — Learning Summary ─────────────────────────────────────────
 function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; activeChild: Child | null; token: string }) {
   const [milestoneData, setMilestoneData] = useState<{ completion_pct: number; achieved: number; total: number; class_level: string } | null>(null);
-  const [completions, setCompletions] = useState<{ date: string; topics: string[]; special_label?: string }[]>([]);
-  const [loadingCompletions, setLoadingCompletions] = useState(false);
+  const [termData, setTermData] = useState<{
+    student_name: string; class_name: string;
+    total_curriculum_chunks: number; covered_chunks: number;
+    chunks: { id: string; topic_label: string; snippet: string }[];
+    settling_notes: { date: string; note: string }[];
+    completion_days: number;
+  } | null>(null);
+  const [termLoading, setTermLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   useEffect(() => {
     if (!activeChild?.id || !token) return;
     apiGet<any>(`/api/v1/teacher/milestones/${activeChild.id}`, token)
       .then(d => setMilestoneData({ completion_pct: d.completion_pct, achieved: d.achieved, total: d.total, class_level: d.class_level }))
       .catch(() => {});
-    // Load week schedule to show what's been covered
-    setLoadingCompletions(true);
-    apiGet<{ week_start: string; days: Record<string, string[]> }>(
-      `/api/v1/parent/child/${activeChild.id}/week-schedule`, token
-    ).then(d => {
-      const entries = Object.entries(d.days ?? {})
-        .filter(([, topics]) => topics.length > 0)
-        .map(([date, topics]) => ({ date, topics }))
-        .sort((a, b) => b.date.localeCompare(a.date));
-      setCompletions(entries);
-    }).catch(() => {}).finally(() => setLoadingCompletions(false));
+    setTermLoading(true);
+    apiGet<any>(`/api/v1/parent/child/${activeChild.id}/term-summary`, token)
+      .then(d => {
+        setTermData(d);
+        // Generate AI summary of all covered topics
+        if (d.chunks?.length > 0) {
+          const cacheKey = `term-summary:${activeChild.id}:${d.covered_chunks}`;
+          const cached = localStorage.getItem(cacheKey);
+          if (cached) { setAiSummary(cached); return; }
+          setSummaryLoading(true);
+          const topics = d.chunks.slice(0, 30).map((c: any) => c.topic_label).filter(Boolean);
+          const chunks = d.chunks.slice(0, 15).map((c: any) => ({ topic: c.topic_label, snippet: c.snippet }));
+          apiPost<{ summary: string }>('/api/v1/ai/topic-summary', {
+            topics, chunks,
+            class_name: activeChild.class_name ?? 'Nursery',
+            child_name: activeChild.name.split(' ')[0],
+            completed: true,
+          }, token)
+            .then(r => { if (r.summary) { setAiSummary(r.summary); localStorage.setItem(cacheKey, r.summary); } })
+            .catch(() => {})
+            .finally(() => setSummaryLoading(false));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setTermLoading(false));
   }, [activeChild?.id]);
 
   const pct = data?.coverage_pct ?? 0;
   const strokeColor = pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
   const r = 50; const circ = 2 * Math.PI * r;
-
-  // Collect all unique topics covered
-  const allTopics = completions.flatMap(c => c.topics);
-  const uniqueTopics = [...new Set(allTopics)];
 
   // Categorise topics by keyword
   function categorise(topics: string[]) {
@@ -2040,19 +2058,28 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
       else if (/science|nature|plant|animal|weather|earth|experiment/.test(tl)) cats['Science & Nature'].push(t);
       else if (/circle|gk|general|knowledge|quiz|question/.test(tl)) cats['Circle Time & GK'].push(t);
       else if (/motor|writing|pencil|grip|trace|cut|fold|bead/.test(tl)) cats['Fine Motor & Writing'].push(t);
-      else if (/holiday|festival|special|event|celebration|birthday|diwali|christmas|eid|holi/.test(tl)) cats['Special Days & Events'].push(t);
+      else if (/holiday|festival|special|event|celebration|birthday|diwali|christmas|eid|holi|settling/.test(tl)) cats['Special Days & Events'].push(t);
       else cats['Other Activities'].push(t);
     }
     return Object.entries(cats).filter(([, v]) => v.length > 0);
   }
-
-  const categorised = categorise(uniqueTopics);
 
   const catIcons: Record<string, string> = {
     'English & Language': '📖', 'Math & Numbers': '🔢', 'Art & Craft': '🎨',
     'Science & Nature': '🌿', 'Circle Time & GK': '⭕', 'Fine Motor & Writing': '✏️',
     'Special Days & Events': '🎉', 'Other Activities': '⭐',
   };
+
+  // Clean raw "Week X Day Y" labels
+  function cleanLabel(label: string) {
+    const cleaned = label.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim().replace(/^[-–:,.\s]+|[-–:,.\s]+$/g, '');
+    return cleaned || label;
+  }
+
+  const allTopics = (termData?.chunks ?? []).map(c => c.topic_label).filter(Boolean);
+  const cleanedTopics = allTopics.map(cleanLabel);
+  const uniqueTopics = [...new Set(cleanedTopics)];
+  const categorised = categorise(uniqueTopics);
 
   return (
     <div className="space-y-4">
@@ -2079,22 +2106,57 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
               <p className="text-sm text-white/60 mt-0.5">{data.covered} of {data.total_chunks} topics completed this term</p>
             ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
             {milestoneData && (
-              <div className="mt-2">
-                <p className="text-xs text-white/50">🏆 {milestoneData.achieved}/{milestoneData.total} milestones · {milestoneData.completion_pct}%</p>
-              </div>
+              <p className="text-xs text-white/50 mt-1">🏆 {milestoneData.achieved}/{milestoneData.total} milestones · {milestoneData.completion_pct}%</p>
+            )}
+            {termData && (
+              <p className="text-xs text-white/40 mt-0.5">📅 {termData.completion_days} school days completed</p>
             )}
           </div>
         </div>
       )}
 
+      {/* AI summary of everything learned */}
+      {(aiSummary || summaryLoading) && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+            <Sparkles size={12} className="text-emerald-500" /> What {activeChild?.name.split(' ')[0]} Has Learned So Far
+          </p>
+          {summaryLoading ? (
+            <div className="flex items-center gap-2 py-2">
+              <Loader2 size={14} className="animate-spin text-emerald-500" />
+              <p className="text-xs text-gray-400">Generating summary…</p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-700 leading-relaxed">{aiSummary}</p>
+          )}
+        </div>
+      )}
+
+      {/* Settling period notes */}
+      {termData?.settling_notes && termData.settling_notes.length > 0 && (
+        <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
+          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">🌱 Settling Period</p>
+          <div className="space-y-2">
+            {termData.settling_notes.map((n, i) => (
+              <div key={i} className="text-sm text-amber-800 leading-relaxed">
+                <span className="text-[10px] text-amber-500 font-semibold">{n.date} · </span>{n.note}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Skills & topics by category */}
-      {categorised.length > 0 ? (
+      {termLoading ? (
+        <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
+      ) : categorised.length > 0 ? (
         <div className="space-y-3">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topics Covered This Week</p>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topics Covered This Term</p>
           {categorised.map(([cat, topics]) => (
             <div key={cat} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
               <p className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
                 <span>{catIcons[cat] ?? '📚'}</span> {cat}
+                <span className="ml-auto text-[10px] font-semibold text-gray-400">{topics.length} topic{topics.length > 1 ? 's' : ''}</span>
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {topics.map((t, i) => (
@@ -2104,38 +2166,10 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
             </div>
           ))}
         </div>
-      ) : loadingCompletions ? (
-        <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
           <BookOpen size={36} className="text-gray-200 mx-auto mb-2" />
-          <p className="text-sm text-gray-400">No topics covered this week yet</p>
-        </div>
-      )}
-
-      {/* Day-by-day breakdown */}
-      {completions.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Day-by-Day Breakdown</p>
-          <div className="space-y-2">
-            {completions.map(({ date, topics }) => (
-              <div key={date} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
-                <div className="flex-shrink-0 text-center min-w-[48px]">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">
-                    {new Date(date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short' })}
-                  </p>
-                  <p className="text-sm font-bold text-gray-700">
-                    {new Date(date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-1 flex-1">
-                  {topics.map((t, i) => (
-                    <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-50 text-gray-600 border border-gray-100">{t}</span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="text-sm text-gray-400">No topics covered yet this term</p>
         </div>
       )}
 
@@ -2412,14 +2446,50 @@ function NotificationsTab({ notifications, announcements, onRead }: { notificati
 function InsightsTab({ insights, comparisons, activeChild, token }: { insights: ParentInsights | null; comparisons: ChildComparison[]; activeChild: Child | null; token: string }) {
   const [observations, setObservations] = useState<Observation[]>([]);
   const [loadingObs, setLoadingObs] = useState(false);
+  const [aiInsights, setAiInsights] = useState<string | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [attendance, setAttendance] = useState<AttendanceData | null>(null);
+  const [progress, setProgress] = useState<ProgressData | null>(null);
 
   useEffect(() => {
     if (!activeChild?.id || !token) return;
     setLoadingObs(true);
-    apiGet<Observation[]>(`/api/v1/parent/observations/${activeChild.id}`, token)
-      .then(d => setObservations(d || []))
-      .catch(() => {})
-      .finally(() => setLoadingObs(false));
+    Promise.allSettled([
+      apiGet<Observation[]>(`/api/v1/parent/observations/${activeChild.id}`, token),
+      apiGet<AttendanceData>(`/api/v1/parent/child/${activeChild.id}/attendance`, token),
+      apiGet<ProgressData[]>('/api/v1/parent/progress', token),
+    ]).then(([obsRes, attRes, progRes]) => {
+      const obs = obsRes.status === 'fulfilled' ? obsRes.value || [] : [];
+      setObservations(obs);
+      if (attRes.status === 'fulfilled') setAttendance(attRes.value);
+      if (progRes.status === 'fulfilled') {
+        const p = progRes.value.find((x: any) => x.student_id === activeChild.id);
+        if (p) setProgress(p);
+      }
+
+      // Generate AI insights from observations + progress
+      if (obs.length > 0 || attRes.status === 'fulfilled') {
+        const cacheKey = `ai-insights:${activeChild.id}:${obs.length}`;
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) { setAiInsights(cached); return; }
+
+        setInsightsLoading(true);
+        const obsText = obs.slice(0, 5).map((o: Observation) => `${o.teacher_name}: ${o.obs_text} [${(o.categories ?? []).join(', ')}]`).join('\n');
+        const attData = attRes.status === 'fulfilled' ? attRes.value : null;
+        const progData = progRes.status === 'fulfilled' ? progRes.value.find((x: any) => x.student_id === activeChild.id) : null;
+
+        apiPost<{ summary: string }>('/api/v1/ai/topic-summary', {
+          topics: [`Attendance: ${attData?.attendance_pct ?? 0}%`, `Curriculum: ${progData?.coverage_pct ?? 0}% covered`, ...obs.slice(0, 3).map((o: Observation) => o.obs_text?.slice(0, 80) ?? '')].filter(Boolean),
+          chunks: obs.slice(0, 5).map((o: Observation) => ({ topic: o.teacher_name, snippet: o.obs_text?.slice(0, 200) ?? '' })),
+          class_name: activeChild.class_name ?? 'Nursery',
+          child_name: activeChild.name.split(' ')[0],
+          completed: true,
+        }, token)
+          .then(r => { if (r.summary) { setAiInsights(r.summary); localStorage.setItem(cacheKey, r.summary); } })
+          .catch(() => {})
+          .finally(() => setInsightsLoading(false));
+      }
+    }).finally(() => setLoadingObs(false));
   }, [activeChild?.id]);
 
   if (!activeChild) {
@@ -2437,10 +2507,57 @@ function InsightsTab({ insights, comparisons, activeChild, token }: { insights: 
   const sortedCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
   const strengths = sortedCats.slice(0, 4).map(([c]) => c);
   const recentObs = observations.slice(0, 5);
+  const attPct = attendance?.attendance_pct ?? 0;
+  const pct = progress?.coverage_pct ?? 0;
+
+  // Goals for parent + teacher based on observations
+  const parentGoals = [
+    attPct < 90 ? `Help ${activeChild.name.split(' ')[0]} maintain regular attendance — aim for 90%+` : null,
+    pct < 50 ? `Review covered topics at home to reinforce learning` : null,
+    observations.some(o => (o.categories ?? []).some(c => /motor|writing|pencil|grip/.test(c.toLowerCase()))) ? `Practice pencil grip and fine motor activities at home (5 min daily)` : null,
+    observations.some(o => (o.categories ?? []).some(c => /focus|attention|concentration/.test(c.toLowerCase()))) ? `Create a quiet reading/activity time at home to build focus` : null,
+    `Discuss what ${activeChild.name.split(' ')[0]} learned today — ask open-ended questions`,
+    `Read together for 10 minutes daily to build language skills`,
+  ].filter(Boolean).slice(0, 4) as string[];
+
+  const teacherGoals = [
+    observations.some(o => (o.categories ?? []).some(c => /creative|art|craft/.test(c.toLowerCase()))) ? `Channel creativity through structured art and storytelling activities` : null,
+    pct > 0 ? `Continue building on ${pct.toFixed(0)}% curriculum coverage with hands-on activities` : null,
+    `Share weekly observations with parents to align home and school support`,
+    `Provide differentiated activities based on ${activeChild.name.split(' ')[0]}'s learning pace`,
+  ].filter(Boolean).slice(0, 3) as string[];
 
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gray-800">Insights</h2>
+
+      {/* AI-generated overview */}
+      {(aiInsights || insightsLoading) && (
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-4">
+          <p className="text-xs font-bold text-emerald-700 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+            <Sparkles size={12} /> AI Overview
+          </p>
+          {insightsLoading ? (
+            <div className="flex items-center gap-2"><Loader2 size={14} className="animate-spin text-emerald-500" /><p className="text-xs text-emerald-600">Generating insights…</p></div>
+          ) : (
+            <p className="text-sm text-emerald-800 leading-relaxed">{aiInsights}</p>
+          )}
+        </div>
+      )}
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className={`rounded-2xl p-4 border ${attPct >= 90 ? 'bg-emerald-50 border-emerald-100' : attPct >= 75 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'}`}>
+          <p className="text-xs font-semibold text-gray-500 mb-1">Attendance</p>
+          <p className={`text-3xl font-black ${attPct >= 90 ? 'text-emerald-700' : attPct >= 75 ? 'text-amber-700' : 'text-red-600'}`}>{attPct}%</p>
+          <p className="text-xs text-gray-400 mt-0.5">{attendance?.stats.present ?? 0} present · {attendance?.stats.absent ?? 0} absent</p>
+        </div>
+        <div className="rounded-2xl p-4 bg-blue-50 border border-blue-100">
+          <p className="text-xs font-semibold text-gray-500 mb-1">Curriculum</p>
+          <p className="text-3xl font-black text-blue-700">{pct.toFixed(0)}%</p>
+          <p className="text-xs text-gray-400 mt-0.5">{progress?.covered ?? 0} of {progress?.total_chunks ?? 0} topics</p>
+        </div>
+      </div>
 
       {/* Teacher Observations */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -2450,10 +2567,9 @@ function InsightsTab({ insights, comparisons, activeChild, token }: { insights: 
         {loadingObs ? (
           <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
         ) : observations.length === 0 ? (
-          <div className="text-center py-6">
-            <BarChart3 size={32} className="text-gray-200 mx-auto mb-2" />
+          <div className="text-center py-4">
+            <BarChart3 size={28} className="text-gray-200 mx-auto mb-2" />
             <p className="text-sm text-gray-400">No observations shared yet</p>
-            <p className="text-xs text-gray-300 mt-1">Teachers will share insights about {activeChild.name.split(' ')[0]} here</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -2473,14 +2589,12 @@ function InsightsTab({ insights, comparisons, activeChild, token }: { insights: 
                 )}
               </div>
             ))}
-            {observations.length > 5 && (
-              <p className="text-xs text-gray-400 text-center pt-1">+{observations.length - 5} more observations</p>
-            )}
+            {observations.length > 5 && <p className="text-xs text-gray-400 text-center">+{observations.length - 5} more</p>}
           </div>
         )}
       </div>
 
-      {/* Strengths from observations */}
+      {/* Strengths */}
       {strengths.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
@@ -2494,22 +2608,60 @@ function InsightsTab({ insights, comparisons, activeChild, token }: { insights: 
         </div>
       )}
 
-      {/* Attendance trend from real data */}
-      {insights && (
+      {/* Goals for parents */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <Target size={15} className="text-purple-500" /> How You Can Help at Home
+        </p>
+        <div className="space-y-2">
+          {parentGoals.map((g, i) => (
+            <div key={i} className="flex items-start gap-2.5 py-2 border-b border-gray-50 last:border-0">
+              <span className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-bold text-purple-600">{i + 1}</span>
+              <p className="text-sm text-gray-700 leading-snug">{g}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Goals for teachers */}
+      {teacherGoals.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-            <TrendingUp size={15} className="text-blue-500" /> Attendance Trend
+            <BookOpen size={15} className="text-blue-500" /> Teacher Focus Areas
           </p>
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-100">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-              insights.attendanceTrend === 'improving' ? 'bg-emerald-100' : insights.attendanceTrend === 'declining' ? 'bg-red-100' : 'bg-gray-100'
-            }`}>
-              <span className="text-lg">{insights.attendanceTrend === 'improving' ? '📈' : insights.attendanceTrend === 'declining' ? '📉' : '➡️'}</span>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-800 capitalize">{insights.attendanceTrend}</p>
-              <p className="text-xs text-gray-500">Attendance trend this term</p>
-            </div>
+          <div className="space-y-2">
+            {teacherGoals.map((g, i) => (
+              <div key={i} className="flex items-start gap-2.5 py-2 border-b border-gray-50 last:border-0">
+                <CheckCircle2 size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-gray-700 leading-snug">{g}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Class comparison */}
+      {comparisons.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <BarChart3 size={15} className="text-indigo-500" /> Class Comparison
+          </p>
+          <div className="space-y-3">
+            {comparisons.map(comp => (
+              <div key={comp.childId} className={`rounded-xl p-3 border ${comp.childId === activeChild.id ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-100'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-sm font-semibold ${comp.childId === activeChild.id ? 'text-emerald-800' : 'text-gray-700'}`}>{comp.name}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${comp.trend === 'up' ? 'bg-emerald-100 text-emerald-700' : comp.trend === 'down' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                    {comp.trend === 'up' ? '↑' : comp.trend === 'down' ? '↓' : '→'} {comp.trend}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div><p className="text-gray-400">Attendance</p><p className="font-bold text-gray-800">{comp.attendance}%</p></div>
+                  <div><p className="text-gray-400">Progress</p><p className="font-bold text-gray-800">{comp.progress}%</p></div>
+                  <div><p className="text-gray-400">Participation</p><p className="font-bold text-gray-800">{comp.participation}%</p></div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
