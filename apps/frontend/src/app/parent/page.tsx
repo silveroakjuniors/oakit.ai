@@ -1489,15 +1489,16 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
   const pct = progress?.coverage_pct ?? 0;
   const weekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
 
-  const [weekSchedule, setWeekSchedule] = useState<Record<string, string[]>>({});
+  const [weekSchedule, setWeekSchedule] = useState<Record<string, { topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean }>>({});
   const [weekStart, setWeekStart] = useState<string | null>(null);
-  const [drawerDay, setDrawerDay] = useState<{ date: string; label: string; topics: string[]; isToday: boolean } | null>(null);
+  const [todayFromApi, setTodayFromApi] = useState<string | null>(null);
+  const [drawerDay, setDrawerDay] = useState<{ date: string; label: string; topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean; isToday: boolean } | null>(null);
 
   useEffect(() => {
     if (!activeChild?.id || !token) return;
-    apiGet<{ week_start: string; days: Record<string, string[]> }>(
+    apiGet<{ week_start: string; today: string; days: Record<string, { topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean }> }>(
       `/api/v1/parent/child/${activeChild.id}/week-schedule`, token
-    ).then(d => { setWeekSchedule(d.days ?? {}); setWeekStart(d.week_start ?? null); }).catch(() => {});
+    ).then(d => { setWeekSchedule(d.days ?? {}); setWeekStart(d.week_start ?? null); setTodayFromApi(d.today ?? null); }).catch(() => {});
   }, [activeChild?.id]);
 
   // Derive week dates from API week_start (time machine aware)
@@ -1510,31 +1511,18 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
     });
   })();
 
-  // "Today" = the date the API anchored the week on (time machine aware)
-  // The API uses getToday() to find Monday; the "today" within the week is week_start + offset matching real today
-  // We derive it from week_start + day-of-week offset
-  const todayStr = (() => {
-    if (!weekStart) return new Date().toISOString().split('T')[0];
-    // The API sets week_start to Monday of the time-machine week.
-    // We need to know which day within that week is "today" per the time machine.
-    // The API's getToday() is what anchored the week — we can infer it from the week_start.
-    // Since we don't have it directly, use the real date but map it to the same week.
-    // Actually: the API week_start IS derived from getToday(), so the "today" highlight
-    // should be the date that matches the real calendar day within that week.
-    // Best approach: store it from the API. For now, use real today mapped to the week.
-    const realToday = new Date().toISOString().split('T')[0];
-    // If real today falls within this week, use it; otherwise use week_start (Monday)
-    const weekEnd = (() => { const d = new Date(weekStart + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().split('T')[0]; })();
-    if (realToday >= weekStart && realToday <= weekEnd) return realToday;
-    return weekStart; // fallback to Monday
-  })();
+  // "Today" = from API (time machine aware)
+  const todayStr = todayFromApi ?? weekStart ?? new Date().toISOString().split('T')[0];
 
   function openDay(d: Date, i: number) {
     const dateStr = d.toISOString().split('T')[0];
-    const topics = weekSchedule[dateStr] ?? [];
+    const dayData = weekSchedule[dateStr];
+    const topics = dayData?.topics ?? [];
+    const chunks = dayData?.chunks ?? [];
+    const completed = dayData?.completed ?? false;
     const isToday = dateStr === todayStr;
     const label = `${weekDays[i]} ${d.getUTCDate()} ${d.toLocaleDateString('en-IN', { month: 'short' })}`;
-    setDrawerDay({ date: dateStr, label, topics, isToday });
+    setDrawerDay({ date: dateStr, label, topics, chunks, completed, isToday });
   }
 
   return (
@@ -1554,7 +1542,9 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
             {weekDates.map((d, i) => {
               const isToday = d.toISOString().split('T')[0] === todayStr;
               const dateStr = d.toISOString().split('T')[0];
-              const topics = weekSchedule[dateStr] ?? [];
+              const dayData = weekSchedule[dateStr];
+              const topics = dayData?.topics ?? [];
+              const completed = dayData?.completed ?? false;
               const hasTopics = topics.length > 0;
               return (
                 <button key={i} onClick={() => openDay(d, i)}
@@ -1564,11 +1554,15 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
                     <p className={`text-sm font-semibold ${isToday ? 'text-emerald-700' : 'text-gray-700'}`}>
                       {d.getUTCDate()} {d.toLocaleDateString('en-IN', { month: 'short' })}
                     </p>
-                    {hasTopics && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{topics[0]}</p>}
+                    {hasTopics && (
+                      <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                        {completed ? '✓ ' : ''}{topics[0]}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0 ml-1">
                     {hasTopics && (
-                      <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${completed ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-amber-600 bg-amber-50 border-amber-100'}`}>
                         {topics.length}
                       </span>
                     )}
