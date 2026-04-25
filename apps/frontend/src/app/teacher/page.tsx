@@ -236,7 +236,11 @@ export default function TeacherPlanner() {
     loadAll();
   }, []);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages]);
 
   async function loadAll() {
     const effectiveToday = await loadContext();
@@ -424,15 +428,18 @@ export default function TeacherPlanner() {
         const allChunkIds = plan?.chunks?.map((c: any) => c.id) || [];
         const coveredIds: string[] = res.covered_chunk_ids || [];
         const allCovered = allChunkIds.length > 0 && allChunkIds.every((id: string) => coveredIds.includes(id));
-        if ((allCovered || res.already_completed) && !res.already_completed && allChunkIds.length > 0) {
-          try {
-            await apiPost('/api/v1/teacher/completion', {
-              covered_chunk_ids: allChunkIds,
-              completion_date: res.plan_date || today,
-              ...(sectionId ? { section_id: sectionId } : {}),
-            }, token);
-            try { await apiPost('/api/v1/ai/reset-limit', {}, token); } catch { /* ignore */ }
-          } catch { /* ignore */ }
+        if (allCovered || res.already_completed) {
+          // Persist to DB only if not already saved
+          if (!res.already_completed && allChunkIds.length > 0) {
+            try {
+              await apiPost('/api/v1/teacher/completion', {
+                covered_chunk_ids: allChunkIds,
+                completion_date: res.plan_date || today,
+                ...(sectionId ? { section_id: sectionId } : {}),
+              }, token);
+              try { await apiPost('/api/v1/ai/reset-limit', {}, token); } catch { /* ignore */ }
+            } catch { /* ignore */ }
+          }
           const allSubjectKeys: string[] = [];
           (plan?.chunks || []).forEach((chunk: any) => {
             const subjects = extractSubjects([chunk]);
@@ -795,6 +802,20 @@ export default function TeacherPlanner() {
               );
             })()}
 
+            {/* Photo tip */}
+            {!todayCompleted && plan?.chunks?.length > 0 && (
+              <button onClick={() => router.push('/teacher/feed')}
+                className="flex items-center gap-3 px-3 py-3 rounded-2xl border border-pink-100 bg-pink-50/60 hover:bg-pink-100 hover:border-pink-200 transition-colors text-left w-full">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shrink-0">
+                  <Play className="w-4 h-4 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-pink-800">Capture today's moments</p>
+                  <p className="text-[10px] text-pink-600 mt-0.5">Take a photo during activities and share it to the class feed — parents love seeing their child in action!</p>
+                </div>
+              </button>
+            )}
+
             {/* Quick help chips */}
             <div className="flex flex-col gap-1.5">
               {[
@@ -1062,8 +1083,9 @@ export default function TeacherPlanner() {
         )}
 
         {/* Oakie chat — normal chat, no toggle */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3" style={{ paddingBottom: '8px', background: 'linear-gradient(160deg, #f8fffe 0%, #f0fdf8 50%, #f8fffe 100%)' }}>
-            <div className="flex-1" />
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3"
+          style={{ paddingBottom: '8px', background: 'linear-gradient(160deg, #f8fffe 0%, #f0fdf8 50%, #f8fffe 100%)', overflowAnchor: 'none' }}>
+            <div className="flex-1 min-h-4" />
             {messages.map((msg, i) => (
             <motion.div key={i}
               initial={{ opacity: 0, y: 8 }}
@@ -1116,7 +1138,7 @@ export default function TeacherPlanner() {
                           msg.chunk_ids && msg.chunk_ids.length > 0 &&
                           msg.completion_date && msg.completion_date <= today;
 
-                        if (!isCompletable) return <AiMessageText text={msg.text} onVideoHelp={handleVideoHelp} />;
+                        if (!isCompletable) return <AiMessageText text={msg.text} onVideoHelp={msg.chunk_ids?.length ? handleVideoHelp : undefined} />;
 
                         const subjectMap: SubjectCheckbox[] = [];
                         const seen = new Set<string>();
