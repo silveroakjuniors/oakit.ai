@@ -331,54 +331,89 @@ router.get('/progress-report', async (req: Request, res: Response) => {
 
     const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-    // Build structured obs context for AI
-    const structuredObs = Object.entries(obsByCategory).map(([cat, texts]) =>
-      `${cat.replace(/_/g, ' ')}: ${texts.slice(0, 2).join('; ')}`
-    ).join('\n');
+    // Map Report Readiness category names (from DB) to report section labels
+    const CAT_LABEL: Record<string, string> = {
+      'academic progress': 'Cognitive Skills & Academic Progress',
+      'language': 'Language & Communication',
+      'social skills': 'Social Interaction',
+      'behavior': 'Emotional Development & Behaviour',
+      'motor skills': 'Motor Skills (Gross & Fine)',
+      'other': 'Creativity & Expression',
+    };
 
-    const aiPrompt = `Generate a warm, meaningful school progress report for ${student.name}.
+    // Build per-category observation blocks with actual teacher text
+    const categoryBlocks = Object.entries(obsByCategory).map(([cat, texts]) => {
+      const label = CAT_LABEL[cat.replace(/_/g, ' ')] || cat.replace(/_/g, ' ');
+      return `[${label}]\n${texts.slice(0, 3).map(t => `  - ${t}`).join('\n')}`;
+    }).join('\n\n');
 
-SCHOOL: ${student.school_name}
-STUDENT: ${student.name}${age ? ` (${age} old)` : ''} | CLASS: ${student.class_name} ${student.section_label}
+    // All daily journal entries (daily + weekly + highlights)
+    const allJournalEntries = journeyRow.rows
+      .map((r: any) => `[${r.entry_type?.toUpperCase()}] ${r.beautified_text?.slice(0, 200)}`)
+      .filter(Boolean)
+      .join('\n');
+
+    // What was actually learned — subject by subject with specific activities
+    const detailedLearning = coveredSubjects.map(subj => {
+      const acts = [...(learningMap[subj] || new Set())].slice(0, 3);
+      return `${subj}:\n${acts.map(a => `  - ${a}`).join('\n')}`;
+    }).join('\n\n');
+
+    const aiPrompt = `You are writing a formal, warm, descriptive school progress report card for parents.
+
+STUDENT: ${student.name}${age ? ` (${age} old)` : ''}
+SCHOOL: ${student.school_name} | CLASS: ${student.class_name} ${student.section_label}
 TEACHER: ${student.teacher_name || 'Class Teacher'} | PERIOD: ${fromDate} to ${toDate}
-ATTENDANCE: ${att.present}/${att.total} days (${att_pct}%)${att.absent > 0 ? ` — ${att.absent} day${att.absent > 1 ? 's' : ''} absent` : ' — perfect!'}
-SUBJECTS COVERED: ${coveredSubjects.join(', ') || 'General activities'}
-${missedSubjects.length > 0 ? `MISSED WHEN ABSENT: ${missedSubjects.join(', ')}` : ''}
-HIGHLIGHTS: ${highlights.slice(0, 2).join(' | ') || 'Regular participation'}
-${structuredObs ? `TEACHER OBSERVATIONS:\n${structuredObs}` : `TEACHER NOTES: ${obsText || 'Positive progress'}`}
+ATTENDANCE: ${att.present}/${att.total} days (${att_pct}%)${att.absent > 0 ? ` — ${att.absent} absence${att.absent > 1 ? 's' : ''}` : ' — perfect attendance'}
+MILESTONES: ${mil.achieved} of ${mil.total} achieved
 
-Write a warm school progress report. Flowing sentences only — NO bullet points, NO bold, NO asterisks. 2-3 sentences per section. Use ${student.name}'s name throughout.
+━━━ WHAT WAS TAUGHT THIS PERIOD ━━━
+${detailedLearning || learningCompact || 'General classroom activities'}
 
-## 🧠 Learning & Development
-Cognitive Skills: [Math, GK — what ${student.name} explored]
-Language & Communication: [English Speaking, English — specific activities]
-Social Interaction: [Circle Time, group work]
-Emotional Development: [Confidence, empathy, growth]
+━━━ TEACHER JOURNAL ENTRIES (daily observations & highlights) ━━━
+${allJournalEntries || 'No journal entries recorded'}
+
+━━━ TEACHER REPORT READINESS OBSERVATIONS (structured by category) ━━━
+${categoryBlocks || obsText || 'No structured observations recorded'}
+${missedSubjects.length > 0 ? `\n━━━ TOPICS MISSED DUE TO ABSENCE ━━━\n${missedSubjects.join(', ')}` : ''}
+
+━━━ INSTRUCTIONS ━━━
+Write a complete, descriptive, personalised report card using ALL the teacher inputs above.
+- Use ${student.name}'s name throughout. Write in flowing paragraphs — NO bullet points, NO asterisks, NO bold markdown.
+- Each section must be 3-5 sentences. Reference specific activities, subjects, and teacher observations.
+- The report must feel personal and specific — not generic. Use the actual content from journal entries and observations.
+- Format exactly as shown below with the ## headers:
+
+## 🧠 Cognitive & Academic Development
+[Write 3-5 sentences about what ${student.name} learned in Math, GK, English, and other academic subjects. Reference specific topics from the learning summary above. Describe how ${student.name} engaged with the material.]
+
+## 🗣️ Language & Communication
+[Write 3-5 sentences about ${student.name}'s language development — speaking, listening, vocabulary, storytelling. Use the Language & Communication observation if available.]
+
+## 🤝 Social & Emotional Development
+[Write 3-5 sentences covering Social Interaction, Emotional Development, and Behaviour. Reference Circle Time, group work, friendships, confidence. Use teacher observations.]
 
 ## 💪 Physical Development
-Gross Motor Skills: [Movement, coordination]
-Fine Motor Skills: [Writing, art, pencil grip]
+[Write 3-5 sentences about Gross Motor and Fine Motor skills — movement, coordination, pencil grip, art, writing activities.]
 
-## 📊 Observations & Insights
-Key Strengths: [3 specific strengths from highlights and observations]
-Growth Areas: [2 areas framed positively]
-Behavioral Observations: [From teacher notes]
+## 🎨 Creativity & Expression
+[Write 3-5 sentences about Art, Music, Rhymes, imaginative play, storytelling. Reference specific creative activities from the learning summary.]
 
-## 🏫 Engagement & Experience
-Classroom Participation: [How actively ${student.name} engages]
-Peer Interaction: [Social behaviour]
-Creativity & Expression: [Art, stories, imagination]
+## 🌟 Special Moments & Highlights
+[Write 3-5 sentences drawing directly from the teacher's journal highlights and daily entries. Quote or paraphrase specific moments the teacher recorded. This should feel like a personal story of ${student.name}'s journey.]
 
-${missedSubjects.length > 0 ? `## 📅 Absence Impact\n[Warm note: ${att.absent} day${att.absent > 1 ? 's' : ''} absent, missed ${missedSubjects.join(', ')}, reassurance + one home suggestion]` : ''}
+## 🏫 Classroom Engagement
+[Write 3-5 sentences about Classroom Participation, Peer Interaction, and overall engagement. How does ${student.name} show up in class each day?]
 
-## 📝 Teacher Remarks
-[Personal 2-3 sentence note, reference a specific moment, warm sign-off]
+${missedSubjects.length > 0 ? `## 📅 Absence Note\n[Warm, reassuring 2-3 sentences about the ${att.absent} absence${att.absent > 1 ? 's' : ''}, what was missed (${missedSubjects.join(', ')}), and a practical home suggestion.]\n` : ''}
+## 📝 Teacher's Personal Remarks
+[Write a warm, personal 3-4 sentence closing note from the teacher. Reference a specific memorable moment or quality. End with an encouraging, forward-looking sign-off.]
 
-## 💡 Parent Support Recommendations
-[3 practical home suggestions tied to subjects covered]
+## 💡 Recommendations for Home
+[Write 3-4 sentences with specific, practical suggestions for parents tied to the subjects covered and areas for growth. Make them actionable and encouraging.]
 
-## 🚀 Readiness for Next Level
-[2-3 sentences: honest, encouraging assessment of ${student.name}'s readiness based on milestones, subjects covered, and overall engagement. What is ${student.name} ready for? What should be focused on before moving up?]`;
+## 🚀 Readiness Assessment
+[Write 3-4 sentences giving an honest, encouraging assessment of ${student.name}'s readiness for the next stage. Reference milestones (${mil.achieved}/${mil.total} achieved), attendance (${att_pct}%), and specific strengths and areas to focus on.]`;
 
     let aiReport = '';
     let aiError = '';
@@ -398,40 +433,41 @@ ${missedSubjects.length > 0 ? `## 📅 Absence Impact\n[Warm note: ${att.absent}
       const mathSubjects = coveredSubjects.filter(s => /math|number/i.test(s));
       const artSubjects  = coveredSubjects.filter(s => /art|writing|craft/i.test(s));
       const gkSubjects   = coveredSubjects.filter(s => /gk|general|science/i.test(s));
+      const firstHighlight = highlights[0] || '';
+      const firstObs = obsRow.rows[0]?.obs_text || '';
 
       aiReport = [
-        `## 🧠 Learning & Development`,
-        `Cognitive Skills: ${student.name} engaged with ${mathSubjects[0] || 'numeracy'} and ${gkSubjects[0] || 'general knowledge'} activities, showing curiosity and enthusiasm.`,
-        `Language & Communication: ${student.name} participated in ${engSubjects.join(' and ') || 'English and speaking'} sessions, building vocabulary and confidence.`,
-        `Social Interaction: ${student.name} participates actively in Circle Time and group activities, showing positive engagement with peers.`,
-        `Emotional Development: ${student.name} demonstrates confidence and positive emotional engagement in the classroom.`,
+        `## 🧠 Cognitive & Academic Development`,
+        `${student.name} has been actively engaged in ${mathSubjects[0] || 'numeracy'} and ${gkSubjects[0] || 'general knowledge'} activities this period. ${firstObs ? firstObs.slice(0, 150) + '.' : `${student.name} shows curiosity and enthusiasm across all academic areas.`} The subjects covered — ${coveredSubjects.slice(0, 4).join(', ')} — have provided a rich foundation for continued learning.`,
+        ``,
+        `## 🗣️ Language & Communication`,
+        `${student.name} has participated in ${engSubjects.join(' and ') || 'English and speaking'} sessions throughout this period. ${obsByCategory['language']?.[0] || `${student.name} is building vocabulary and communication skills steadily.`} Regular participation in group discussions and storytelling activities has supported ${student.name}'s growing confidence in expressing ideas.`,
+        ``,
+        `## 🤝 Social & Emotional Development`,
+        `${student.name} participates actively in Circle Time and group activities, showing positive engagement with peers. ${obsByCategory['social_skills']?.[0] || obsByCategory['behavior']?.[0] || `${student.name} demonstrates confidence and positive emotional engagement in the classroom.`} The teacher has observed consistent effort and a warm, cooperative attitude throughout this period.`,
         ``,
         `## 💪 Physical Development`,
-        `Gross Motor Skills: ${student.name} participates in physical activities and movement exercises during the school day.`,
-        `Fine Motor Skills: ${artSubjects.length > 0 ? `${student.name} has been developing fine motor skills through ${artSubjects.join(' and ')}.` : `${student.name} has been developing fine motor skills through writing and art activities.`}`,
+        `${student.name} participates in physical activities and movement exercises during the school day. ${obsByCategory['motor_skills']?.[0] || `${student.name} has been developing fine motor skills through ${artSubjects.join(' and ') || 'writing and art activities'}.`} Continued engagement with hands-on activities supports both gross and fine motor development.`,
         ``,
-        `## 📊 Observations & Insights`,
-        `Key Strengths: ${student.name} shows enthusiasm for learning and participates actively. ${highlights.length > 0 ? highlights[0].slice(0, 100) : `${student.name} brings positive energy to the classroom.`}`,
-        `Growth Areas: Continued practice with ${coveredSubjects.slice(-2).join(' and ') || 'all subjects'} will help ${student.name} build further confidence.`,
-        `Behavioral Observations: ${student.name} demonstrates positive behaviour and a willingness to learn.`,
+        `## 🎨 Creativity & Expression`,
+        `${student.name} expresses creativity through art, music, and imaginative play. ${artSubjects.length > 0 ? `Activities in ${artSubjects.join(' and ')} have given ${student.name} opportunities to explore and create.` : `${student.name} brings imagination and enthusiasm to creative activities.`} ${obsByCategory['other']?.[0] || `${student.name}'s creative expression continues to grow with each new activity.`}`,
         ``,
-        `## 🏫 Engagement & Experience`,
-        `Classroom Participation: ${student.name} engages actively with classroom activities and responds well to teacher guidance.`,
-        `Peer Interaction: ${student.name} interacts positively with classmates during group activities and Circle Time.`,
-        `Creativity & Expression: ${student.name} expresses creativity through art and storytelling activities.`,
+        `## 🌟 Special Moments & Highlights`,
+        firstHighlight ? `${firstHighlight} ${highlights[1] || ''} These moments reflect ${student.name}'s growing confidence and love of learning.` : `${student.name} has shown consistent effort and positive engagement throughout this period. The teacher has noted several moments of initiative and enthusiasm that stand out as highlights of this term.`,
         ``,
-        missedSubjects.length > 0 ? `## 📅 Absence Impact\n${student.name} was absent for ${att.absent} day${att.absent > 1 ? 's' : ''} and missed ${missedSubjects.join(', ')}. The school has worked to help ${student.name} catch up. We recommend reviewing these topics at home.\n` : '',
-        `## 📝 Teacher Remarks`,
-        `${student.name} has had a productive and positive period. We are proud of the progress made across ${coveredSubjects.length} areas of learning. We look forward to continued growth and achievement.`,
+        `## 🏫 Classroom Engagement`,
+        `${student.name} engages actively with classroom activities and responds well to teacher guidance. ${obsByCategory['academic_progress']?.[0] || `${student.name} participates in discussions and group work with enthusiasm.`} The overall engagement across ${coveredSubjects.length} subject areas reflects a strong commitment to learning.`,
         ``,
-        `## 💡 Parent Support Recommendations`,
-        `1. ${coveredSubjects[0] ? `Talk with ${student.name} about ${coveredSubjects[0]} — ask what was learned in class.` : `Talk with ${student.name} about school each day.`}`,
-        `2. ${coveredSubjects[1] ? `Practise ${coveredSubjects[1]} through everyday activities and play.` : `Encourage reading and storytelling together.`}`,
-        `3. Celebrate every small achievement to build ${student.name}'s confidence.`,
+        missedSubjects.length > 0 ? `## 📅 Absence Note\n${student.name} was absent for ${att.absent} day${att.absent > 1 ? 's' : ''} during this period, during which ${missedSubjects.join(', ')} were covered in class. We encourage reviewing these topics at home — even a brief conversation about what was missed can make a big difference. ${student.name} has shown great resilience in catching up.\n` : '',
+        `## 📝 Teacher's Personal Remarks`,
+        `${student.name} has had a productive and meaningful period at school. ${firstHighlight ? `One moment that stands out is: ${firstHighlight.slice(0, 120)}` : `${student.name} consistently brings a positive attitude and genuine curiosity to the classroom.`} We are proud of the progress made and look forward to seeing ${student.name} continue to grow and flourish.`,
         ``,
-        `## 🚀 Readiness for Next Level`,
-        `${student.name} has covered ${coveredSubjects.length} subject areas with ${att_pct}% attendance. With ${mil.achieved} of ${mil.total} milestones achieved, ${student.name} is ${mil.achieved >= mil.total * 0.7 ? 'well on track and showing strong readiness for the next level' : 'making steady progress — continued focus on ' + (coveredSubjects.slice(0, 2).join(' and ') || 'core subjects') + ' will build the foundation needed for the next stage'}.`,
-      ].filter(Boolean).join('\n');
+        `## 💡 Recommendations for Home`,
+        `To support ${student.name}'s learning at home, we suggest spending a few minutes each day talking about what was covered in ${coveredSubjects[0] || 'school'}. ${coveredSubjects[1] ? `Practising ${coveredSubjects[1]} through everyday activities and play will reinforce classroom learning.` : `Reading together and encouraging storytelling will strengthen language skills.`} Most importantly, celebrate every small achievement — ${student.name}'s confidence grows with every word of encouragement.`,
+        ``,
+        `## 🚀 Readiness Assessment`,
+        `${student.name} has covered ${coveredSubjects.length} subject areas with ${att_pct}% attendance this period. With ${mil.achieved} of ${mil.total} milestones achieved, ${student.name} is ${mil.achieved >= mil.total * 0.7 ? 'well on track and showing strong readiness for the next stage of learning' : 'making steady progress — continued focus on ' + (coveredSubjects.slice(0, 2).join(' and ') || 'core subjects') + ' will build the strong foundation needed for the next level'}. We look forward to supporting ${student.name}'s continued journey.`,
+      ].filter(s => s !== false && s !== undefined).join('\n');
     }
 
     const reportData = {

@@ -37,6 +37,7 @@ import teacherMessagesRouter from './routes/teacher/messages';
 import teacherResourcesRouter from './routes/teacher/resources';
 import teacherSuggestionsRouter from './routes/teacher/suggestions';
 import teacherVideosRouter from './routes/teacher/videos';
+import teacherHrRouter from './routes/teacher/hr';
 import principalDashboardRouter from './routes/principal/dashboard';
 import principalAttendanceRouter from './routes/principal/attendance';
 import principalTeachersRouter from './routes/principal/teachers';
@@ -46,6 +47,7 @@ import principalFlagsRouter from './routes/principal/flags';
 import principalContextRouter from './routes/principal/context';
 import principalObservationsRouter from './routes/principal/observations';
 import principalEngagementRouter from './routes/principal/engagement';
+import principalHrRouter from './routes/principal/hr';
 import superAdminSchoolsRouter from './routes/super-admin/schools';
 import superAdminStatsRouter from './routes/super-admin/stats';
 import superAdminImpersonateRouter from './routes/super-admin/impersonate';
@@ -104,6 +106,7 @@ import financialInsightsRouter from './routes/financial/insights';
 import parentFeesRouter from './routes/parent/fees';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
+import staffHrRouter from './routes/staff/hr';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
 import { connectRedis } from './lib/redis';
@@ -236,6 +239,9 @@ app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
 // Shared (any authenticated role)
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
 
+// Staff HR (leave, offer letters, payslips)
+app.use('/api/v1/staff/hr', staffHrRouter);
+
 // Auth
 app.use('/api/v1/auth', authRateLimit, authRouter);
 
@@ -276,6 +282,7 @@ app.use('/api/v1/teacher/messages', teacherMessagesRouter);
 app.use('/api/v1/teacher/resources', teacherResourcesRouter);
 app.use('/api/v1/teacher/suggestions', teacherSuggestionsRouter);
 app.use('/api/v1/teacher/videos', teacherVideosRouter);
+app.use('/api/v1/teacher/hr', teacherHrRouter);
 app.use('/api/v1/teacher/announcements', teacherAnnouncementsRouter);
 
 // Principal
@@ -290,6 +297,7 @@ app.use('/api/v1/principal/flags', principalFlagsRouter);
 app.use('/api/v1/principal/context', principalContextRouter);
 app.use('/api/v1/principal/observations', principalObservationsRouter);
 app.use('/api/v1/principal/teachers/engagement', principalEngagementRouter);
+app.use('/api/v1/principal/hr', principalHrRouter);
 
 // Super Admin
 app.use('/api/v1/super-admin/schools', superAdminSchoolsRouter);

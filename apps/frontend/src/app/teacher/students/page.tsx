@@ -3,14 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
-import { getToken, clearToken } from '@/lib/auth';
+import { getToken, signOut } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
-import { X, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
+import { X, Loader2, Sparkles, CheckCircle2, Plus, Pencil, Trash2, Wand2 } from 'lucide-react';
 
 interface Student { id: string; name: string; class_name: string; section_label: string; photo_url?: string; }
 interface Section { section_id: string; section_label: string; class_name: string; role: string; }
 interface Observation { id: string; obs_text: string | null; categories: string[]; share_with_parent: boolean; obs_date: string; created_at: string; teacher_name: string; }
-interface Milestone { id: string; domain: string; description: string; position: number; is_custom: boolean; achieved_at: string | null; achieved_by: string | null; }
+interface Milestone {
+  id: string; domain: string; description: string; position: number;
+  is_custom: boolean; term: string | null;
+  achieved_at: string | null; achieved_by: string | null; achievement_comment: string | null;
+}
 interface MilestoneData { class_level: string; milestones: Milestone[]; total: number; achieved: number; completion_pct: number; }
 
 const CATEGORY_CONFIG = [
@@ -26,111 +30,82 @@ const CATEGORY_CONFIG = [
   { id: 'Other',                    label: 'Other',                    icon: '📌', color: 'text-neutral-700', bg: 'bg-neutral-50', border: 'border-neutral-200' },
 ] as const;
 
-type CategoryConfig = typeof CATEGORY_CONFIG[number];
-
 const DOMAIN_ICONS: Record<string, string> = { Cognitive: '🧠', Social: '🤝', Motor: '🏃', Language: '🗣️', Other: '📌' };
+const DOMAINS = ['Cognitive', 'Language', 'Social', 'Motor', 'Other'];
+const TERMS = ['Term 1', 'Term 2', 'Term 3', 'Annual'];
 
-const AI_PROMPTS: Record<string, string[]> = {
-  'Cognitive Skills':         ['Shows strong problem-solving ability', 'Needs support with memory and recall', 'Excellent pattern recognition', 'Struggles with abstract concepts'],
-  'Language & Communication': ['Communicates clearly and confidently', 'Vocabulary is expanding well', 'Needs encouragement to speak up', 'Excellent listening skills'],
-  'Social Interaction':       ['Works well in group activities', 'Needs support sharing with peers', 'Shows leadership qualities', 'Prefers to work independently'],
-  'Motor Skills':             ['Fine motor skills are developing well', 'Needs support with pencil grip', 'Excellent coordination and balance', 'Struggles with cutting and pasting'],
-  'Emotional Development':    ['Manages emotions well', 'Gets frustrated easily, needs calming strategies', 'Shows empathy towards classmates', 'Separation anxiety observed'],
-  'Creative Expression':      ['Shows great imagination in art', 'Loves storytelling and role play', 'Excellent musical sense', 'Needs encouragement to try new activities'],
-  'Academic Progress':        ['Performing above grade level', 'Needs additional support in reading', 'Excellent number sense', 'Making steady progress'],
-  'Behavior':                 ['Follows classroom rules consistently', 'Needs reminders about classroom expectations', 'Positive attitude and enthusiasm', 'Disruptive during group time'],
-  'Physical Health':          ['Active and energetic', 'Tires easily, may need rest breaks', 'Good appetite and hydration habits', 'Needs support with self-care routines'],
-  'Other':                    ['General positive progress noted', 'Parent meeting recommended', 'Requires follow-up next week', 'Showing improvement overall'],
-};
-
-function ObservationModal({ student, category, token, onClose, onSaved }: {
-  student: Student; category: CategoryConfig; token: string; onClose: () => void; onSaved: () => void;
+// ── Milestone Achievement Modal ───────────────────────────────────────────────
+function MilestoneAchieveModal({ milestone, student, token, onClose, onSaved }: {
+  milestone: Milestone; student: Student; token: string; onClose: () => void; onSaved: () => void;
 }) {
-  const [obsText, setObsText] = useState('');
-  const [obsShare, setObsShare] = useState(false);
+  const [comment, setComment] = useState(milestone.achievement_comment || '');
   const [saving, setSaving] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   const [error, setError] = useState('');
-  const suggestions = AI_PROMPTS[category.id] || AI_PROMPTS['Other'];
+
+  async function askOakie() {
+    if (!comment.trim()) return;
+    setAiLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/ai/query`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: `Rewrite this milestone achievement note as a warm, professional 1-2 sentence observation for a school report: "${comment}"` }),
+      });
+      const data = await res.json();
+      const refined = data.response || data.result || data.answer || data.text || '';
+      if (refined) setComment(refined);
+    } catch { /* silent */ }
+    finally { setAiLoading(false); }
+  }
 
   async function save() {
-    if (!obsText.trim()) { setError('Please write an observation note.'); return; }
     setSaving(true); setError('');
     try {
-      await apiPost('/api/v1/teacher/observations', {
-        student_id: student.id, obs_text: obsText.trim(),
-        categories: [category.id], share_with_parent: obsShare,
-      }, token);
+      await fetch(`${API_BASE}/api/v1/teacher/milestones/${student.id}/${milestone.id}/achieve`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ achievement_comment: comment.trim() || null }),
+      });
       onSaved(); onClose();
-    } catch (e: any) { setError(e.message || 'Failed to save'); }
+    } catch (e: any) { setError(e.message || 'Failed'); }
     finally { setSaving(false); }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full lg:w-[480px] bg-white rounded-t-3xl lg:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className={`flex items-center justify-between px-5 py-4 ${category.bg} border-b ${category.border}`}>
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{category.icon}</span>
-            <div>
-              <p className="text-sm font-bold text-neutral-800">{category.label}</p>
-              <p className="text-xs text-neutral-500">{student.name}</p>
-            </div>
+        <div className="flex items-center justify-between px-5 py-4 bg-emerald-50 border-b border-emerald-100">
+          <div>
+            <p className="text-sm font-bold text-neutral-800">Mark as Achieved</p>
+            <p className="text-xs text-neutral-500">{milestone.description}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500 transition-colors">
-            <X size={16} />
-          </button>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500"><X size={16} /></button>
         </div>
-
         <div className="px-5 py-4 space-y-4">
           <div>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Sparkles size={13} className="text-primary-500" />
-              <p className="text-xs font-semibold text-neutral-600">Oakie suggestions — tap to use</p>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-semibold text-neutral-600">How did {student.name.split(' ')[0]} achieve this? <span className="text-neutral-400 font-normal">(optional)</span></p>
+              <button onClick={askOakie} disabled={aiLoading || !comment.trim()}
+                className="flex items-center gap-1 text-xs px-2.5 py-1 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg font-medium transition-colors disabled:opacity-40">
+                {aiLoading ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                Ask Oakie
+              </button>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map((s, i) => (
-                <button key={i} onClick={() => setObsText(s)}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition-all text-left ${
-                    obsText === s ? `${category.bg} ${category.border} ${category.color} font-semibold` : 'border-neutral-200 text-neutral-600 hover:border-primary-300 hover:bg-primary-50'
-                  }`}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold text-neutral-600 mb-1.5">Your observation</p>
-            <textarea value={obsText} onChange={e => setObsText(e.target.value.slice(0, 500))}
-              placeholder={`Write your observation about ${student.name.split(' ')[0]}...`}
+            <textarea value={comment} onChange={e => setComment(e.target.value.slice(0, 400))}
+              placeholder={`e.g. ${student.name.split(' ')[0]} demonstrated this during circle time by...`}
               rows={4} autoFocus
-              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400 resize-none" />
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-xs text-neutral-400">{obsText.length}/500</span>
-              {obsText.length > 0 && <button onClick={() => setObsText('')} className="text-xs text-neutral-400 hover:text-neutral-600">Clear</button>}
-            </div>
+              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none" />
+            <p className="text-xs text-neutral-400 mt-1">{comment.length}/400</p>
           </div>
-
-          <div className="flex items-center justify-between px-3 py-2.5 bg-neutral-50 rounded-xl border border-neutral-100">
-            <div>
-              <p className="text-xs font-semibold text-neutral-700">Share with parent</p>
-              <p className="text-[10px] text-neutral-400">Parent will see this in their portal</p>
-            </div>
-            <button onClick={() => setObsShare(v => !v)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${obsShare ? 'bg-primary-600' : 'bg-neutral-200'}`}>
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${obsShare ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
-          </div>
-
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
         </div>
-
         <div className="px-5 pb-5 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50 transition-colors">Cancel</button>
-          <button onClick={save} disabled={saving || !obsText.trim()}
-            className="flex-1 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50">Cancel</button>
+          <button onClick={save} disabled={saving}
+            className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center justify-center gap-2">
             {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-            {saving ? 'Saving…' : 'Save Observation'}
+            {saving ? 'Saving…' : 'Mark Achieved'}
           </button>
         </div>
       </div>
@@ -138,6 +113,98 @@ function ObservationModal({ student, category, token, onClose, onSaved }: {
   );
 }
 
+// ── Add/Edit Custom Milestone Modal ───────────────────────────────────────────
+function MilestoneFormModal({ classLevel, existing, token, onClose, onSaved }: {
+  classLevel: string; existing?: Milestone; token: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [description, setDescription] = useState(existing?.description || '');
+  const [domain, setDomain] = useState(existing?.domain || 'Cognitive');
+  const [term, setTerm] = useState(existing?.term || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    if (!description.trim()) { setError('Description is required'); return; }
+    setSaving(true); setError('');
+    try {
+      if (existing) {
+        await fetch(`${API_BASE}/api/v1/teacher/milestones/custom/${existing.id}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: description.trim(), term: term || null }),
+        });
+      } else {
+        await fetch(`${API_BASE}/api/v1/teacher/milestones/custom`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ class_level: classLevel, domain, description: description.trim(), term: term || null }),
+        });
+      }
+      onSaved(); onClose();
+    } catch (e: any) { setError(e.message || 'Failed'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative w-full lg:w-[480px] bg-white rounded-t-3xl lg:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 bg-indigo-50 border-b border-indigo-100">
+          <p className="text-sm font-bold text-neutral-800">{existing ? 'Edit Milestone' : 'Add Custom Milestone'}</p>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500"><X size={16} /></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          {!existing && (
+            <div>
+              <label className="text-xs font-semibold text-neutral-600 mb-1.5 block">Domain</label>
+              <div className="flex flex-wrap gap-2">
+                {DOMAINS.map(d => (
+                  <button key={d} onClick={() => setDomain(d)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${domain === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-neutral-200 text-neutral-600 hover:border-indigo-300'}`}>
+                    {DOMAIN_ICONS[d]} {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-neutral-600 mb-1.5 block">Milestone Description</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value.slice(0, 200))}
+              placeholder="e.g. Can write their full name independently"
+              rows={3} autoFocus
+              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 resize-none" />
+            <p className="text-xs text-neutral-400 mt-1">{description.length}/200</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-neutral-600 mb-1.5 block">Term <span className="text-neutral-400 font-normal">(optional)</span></label>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setTerm('')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${!term ? 'bg-neutral-800 text-white border-neutral-800' : 'bg-white border-neutral-200 text-neutral-600'}`}>
+                All Terms
+              </button>
+              {TERMS.map(t => (
+                <button key={t} onClick={() => setTerm(t)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${term === t ? 'bg-neutral-800 text-white border-neutral-800' : 'bg-white border-neutral-200 text-neutral-600 hover:border-neutral-400'}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+        </div>
+        <div className="px-5 pb-5 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50">Cancel</button>
+          <button onClick={save} disabled={saving || !description.trim()}
+            className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center justify-center gap-2">
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Milestone'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TeacherStudentsPage() {
   const router = useRouter();
   const token = getToken() || '';
@@ -146,10 +213,16 @@ export default function TeacherStudentsPage() {
   const [activeSection, setActiveSection] = useState('');
   const [activeStudent, setActiveStudent] = useState<Student | null>(null);
   const [studentTab, setStudentTab] = useState<'observations' | 'milestones'>('observations');
+
+  // Observations (read-only summary)
   const [observations, setObservations] = useState<Observation[]>([]);
+
+  // Milestones
   const [milestoneData, setMilestoneData] = useState<MilestoneData | null>(null);
-  const [togglingMilestone, setTogglingMilestone] = useState<string | null>(null);
-  const [modalCategory, setModalCategory] = useState<CategoryConfig | null>(null);
+  const [achieveModal, setAchieveModal] = useState<Milestone | null>(null);
+  const [formModal, setFormModal] = useState<{ existing?: Milestone } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [unachieving, setUnachieving] = useState<string | null>(null);
 
   useEffect(() => { if (!token) { router.push('/login'); return; } loadSections(); }, []);
 
@@ -179,35 +252,35 @@ export default function TeacherStudentsPage() {
     try { setMilestoneData(await apiGet<MilestoneData>(`/api/v1/teacher/milestones/${studentId}`, token)); } catch {}
   }
 
-  async function toggleMilestone(milestoneId: string, achieved: boolean) {
+  async function unachieveMilestone(milestoneId: string) {
     if (!activeStudent) return;
-    setTogglingMilestone(milestoneId);
+    setUnachieving(milestoneId);
     try {
-      if (achieved) {
-        await fetch(`${API_BASE}/api/v1/teacher/milestones/${activeStudent.id}/${milestoneId}/achieve`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      } else {
-        await apiPost(`/api/v1/teacher/milestones/${activeStudent.id}/${milestoneId}/achieve`, {}, token);
-      }
+      await fetch(`${API_BASE}/api/v1/teacher/milestones/${activeStudent.id}/${milestoneId}/achieve`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      });
       await loadMilestones(activeStudent.id);
     } catch {}
-    finally { setTogglingMilestone(null); }
+    finally { setUnachieving(null); }
   }
 
-  async function toggleObsShare(obsId: string, current: boolean) {
+  async function deleteCustomMilestone(milestoneId: string) {
+    if (!confirm('Delete this custom milestone?')) return;
+    setDeletingId(milestoneId);
     try {
-      await fetch(`${API_BASE}/api/v1/teacher/observations/${obsId}`, {
-        method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ share_with_parent: !current }),
+      await fetch(`${API_BASE}/api/v1/teacher/milestones/custom/${milestoneId}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
       });
-      await loadObservations(activeStudent!.id);
+      if (activeStudent) await loadMilestones(activeStudent.id);
     } catch {}
+    finally { setDeletingId(null); }
   }
 
+  // Observation summary: count per category
   const obsByCategory = observations.reduce((acc: Record<string, number>, obs) => {
     obs.categories.forEach(c => { acc[c] = (acc[c] || 0) + 1; });
     return acc;
   }, {});
-
   const coveredCategories = Object.keys(obsByCategory).length;
 
   const groupedMilestones = milestoneData?.milestones.reduce((acc: Record<string, Milestone[]>, m) => {
@@ -218,9 +291,16 @@ export default function TeacherStudentsPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col">
-      {modalCategory && activeStudent && (
-        <ObservationModal student={activeStudent} category={modalCategory} token={token}
-          onClose={() => setModalCategory(null)} onSaved={() => loadObservations(activeStudent.id)} />
+      {/* Modals */}
+      {achieveModal && activeStudent && (
+        <MilestoneAchieveModal milestone={achieveModal} student={activeStudent} token={token}
+          onClose={() => setAchieveModal(null)}
+          onSaved={() => { loadMilestones(activeStudent.id); }} />
+      )}
+      {formModal !== null && milestoneData && (
+        <MilestoneFormModal classLevel={milestoneData.class_level} existing={formModal.existing} token={token}
+          onClose={() => setFormModal(null)}
+          onSaved={() => { if (activeStudent) loadMilestones(activeStudent.id); }} />
       )}
 
       <header className="text-white px-4 py-3 flex items-center justify-between shrink-0"
@@ -230,9 +310,10 @@ export default function TeacherStudentsPage() {
           <OakitLogo size="xs" variant="light" />
           <span className="text-sm text-white/80 font-medium">{activeStudent ? activeStudent.name : 'Students'}</span>
         </div>
-        <button onClick={() => { clearToken(); router.push('/login'); }} className="text-white/50 text-xs">Sign out</button>
+        <button onClick={() => signOut().then(() => router.push('/login'))} className="text-white/50 text-xs">Sign out</button>
       </header>
 
+      {/* Student list */}
       {!activeStudent ? (
         <div className="p-4 max-w-2xl mx-auto w-full">
           {sections.length > 1 && (
@@ -269,6 +350,7 @@ export default function TeacherStudentsPage() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full">
+          {/* Tab bar */}
           <div className="flex bg-white border-b border-neutral-200 px-4">
             {(['observations', 'milestones'] as const).map(t => (
               <button key={t} onClick={() => setStudentTab(t)}
@@ -279,9 +361,10 @@ export default function TeacherStudentsPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-8">
+
+            {/* ── OBSERVATIONS TAB (read-only summary) ── */}
             {studentTab === 'observations' && (
               <>
-                {/* Summary */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-sm font-bold text-neutral-800">{activeStudent.name}</p>
@@ -290,39 +373,35 @@ export default function TeacherStudentsPage() {
                       coveredCategories < CATEGORY_CONFIG.length / 2 ? 'bg-amber-100 text-amber-700' :
                       'bg-emerald-100 text-emerald-700'
                     }`}>
-                      {coveredCategories}/{CATEGORY_CONFIG.length} categories covered
+                      {coveredCategories}/{CATEGORY_CONFIG.length} categories
                     </span>
                   </div>
-                  <p className="text-xs text-neutral-400">Tap any category below to add an observation</p>
+                  <p className="text-xs text-neutral-400">Observation summary — add observations from the Child Journey page</p>
                 </div>
 
-                {/* Category grid */}
+                {/* Read-only category grid */}
                 <div className="grid grid-cols-2 gap-2">
                   {CATEGORY_CONFIG.map(cat => {
                     const count = obsByCategory[cat.id] || 0;
                     return (
-                      <button key={cat.id} onClick={() => setModalCategory(cat)}
-                        className={`flex items-center gap-2.5 px-3 py-3 rounded-2xl border-2 text-left transition-all hover:shadow-sm active:scale-95 ${
-                          count > 0 ? `${cat.bg} ${cat.border}` : 'bg-white border-neutral-200 hover:border-neutral-300'
-                        }`}>
+                      <div key={cat.id}
+                        className={`flex items-center gap-2.5 px-3 py-3 rounded-2xl border-2 ${count > 0 ? `${cat.bg} ${cat.border}` : 'bg-white border-neutral-100'}`}>
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-base ${count > 0 ? cat.bg : 'bg-neutral-100'}`}>
                           {cat.icon}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className={`text-xs font-semibold leading-tight ${count > 0 ? cat.color : 'text-neutral-700'}`}>{cat.label}</p>
-                          {count > 0 && <p className={`text-[10px] font-medium mt-0.5 ${cat.color} opacity-70`}>{count} note{count > 1 ? 's' : ''}</p>}
+                          <p className={`text-xs font-semibold leading-tight ${count > 0 ? cat.color : 'text-neutral-500'}`}>{cat.label}</p>
+                          <p className={`text-[10px] mt-0.5 ${count > 0 ? `${cat.color} opacity-70` : 'text-neutral-400'}`}>
+                            {count > 0 ? `${count} note${count > 1 ? 's' : ''}` : 'No notes yet'}
+                          </p>
                         </div>
-                        {count === 0 ? (
-                          <div className="w-5 h-5 rounded-full border-2 border-neutral-200 shrink-0" />
-                        ) : (
-                          <CheckCircle2 size={16} className={`${cat.color} shrink-0`} />
-                        )}
-                      </button>
+                        {count > 0 && <CheckCircle2 size={15} className={`${cat.color} shrink-0`} />}
+                      </div>
                     );
                   })}
                 </div>
 
-                {/* History */}
+                {/* Observation history */}
                 {observations.length > 0 && (
                   <div className="flex flex-col gap-3">
                     <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">All Observations ({observations.length})</p>
@@ -344,30 +423,26 @@ export default function TeacherStudentsPage() {
                               {obs.obs_text && <p className="text-sm text-neutral-700 leading-relaxed">{obs.obs_text}</p>}
                             </div>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-neutral-400">{obs.obs_date} · {obs.teacher_name}</p>
-                            <button onClick={() => toggleObsShare(obs.id, obs.share_with_parent)}
-                              className={`text-xs px-2.5 py-1 rounded-lg transition-colors font-medium ${obs.share_with_parent ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-neutral-50 text-neutral-500 border border-neutral-200'}`}>
-                              {obs.share_with_parent ? '👁 Shared' : 'Share'}
-                            </button>
-                          </div>
+                          <p className="text-xs text-neutral-400">{obs.obs_date} · {obs.teacher_name} {obs.share_with_parent ? '· 👁 Shared with parent' : ''}</p>
                         </div>
                       );
                     })}
                   </div>
                 )}
                 {observations.length === 0 && (
-                  <div className="text-center py-6">
+                  <div className="text-center py-6 bg-white rounded-2xl border border-neutral-100">
                     <p className="text-2xl mb-2">📝</p>
                     <p className="text-sm text-neutral-500 font-medium">No observations yet</p>
-                    <p className="text-xs text-neutral-400 mt-1">Tap any category above to add your first observation</p>
+                    <p className="text-xs text-neutral-400 mt-1">Add observations from the Child Journey page</p>
                   </div>
                 )}
               </>
             )}
 
+            {/* ── MILESTONES TAB ── */}
             {studentTab === 'milestones' && milestoneData && (
               <>
+                {/* Progress header */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-semibold text-neutral-700">{milestoneData.class_level} Milestones</p>
@@ -378,24 +453,66 @@ export default function TeacherStudentsPage() {
                   </div>
                   <p className="text-xs text-neutral-400 mt-1.5">{milestoneData.achieved} of {milestoneData.total} achieved</p>
                 </div>
+
+                {/* Add custom milestone button */}
+                <button onClick={() => setFormModal({})}
+                  className="flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-indigo-200 rounded-2xl text-sm font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors">
+                  <Plus size={16} /> Add Custom Milestone
+                </button>
+
+                {/* Milestones grouped by domain */}
                 {Object.entries(groupedMilestones).map(([domain, items]) => (
                   <div key={domain} className="bg-white rounded-2xl shadow-sm border border-neutral-100 overflow-hidden">
                     <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-100">
                       <p className="text-sm font-semibold text-neutral-700">{DOMAIN_ICONS[domain] ?? '📌'} {domain}</p>
                     </div>
-                    {items.map(m => (
-                      <button key={m.id} onClick={() => toggleMilestone(m.id, !!m.achieved_at)} disabled={togglingMilestone === m.id}
-                        className={`w-full flex items-center gap-3 px-4 py-3 border-b border-neutral-50 last:border-0 text-left transition-colors ${m.achieved_at ? 'bg-green-50/50' : 'hover:bg-neutral-50'}`}>
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${m.achieved_at ? 'bg-green-500 border-green-500' : 'border-neutral-300'}`}>
-                          {m.achieved_at && <span className="text-white text-xs">✓</span>}
-                          {togglingMilestone === m.id && <span className="text-neutral-400 text-xs">⏳</span>}
+                    {items.map(m => {
+                      const isAchieved = !!m.achieved_at;
+                      const isUnachieving = unachieving === m.id;
+                      const isDeleting = deletingId === m.id;
+                      return (
+                        <div key={m.id} className={`flex items-start gap-3 px-4 py-3 border-b border-neutral-50 last:border-0 transition-colors ${isAchieved ? 'bg-emerald-50/40' : ''}`}>
+                          {/* Checkbox */}
+                          <button
+                            onClick={() => isAchieved ? unachieveMilestone(m.id) : setAchieveModal(m)}
+                            disabled={isUnachieving}
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${isAchieved ? 'bg-emerald-500 border-emerald-500' : 'border-neutral-300 hover:border-emerald-400'}`}>
+                            {isUnachieving ? <Loader2 size={12} className="animate-spin text-neutral-400" /> :
+                              isAchieved ? <span className="text-white text-xs">✓</span> : null}
+                          </button>
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm ${isAchieved ? 'text-emerald-700' : 'text-neutral-700'}`}>{m.description}</p>
+                            {m.term && <span className="text-[10px] text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded-full mt-0.5 inline-block">{m.term}</span>}
+                            {isAchieved && (
+                              <div className="mt-1">
+                                <p className="text-xs text-emerald-600">✓ Achieved {m.achieved_at} by {m.achieved_by || 'teacher'}</p>
+                                {m.achievement_comment && (
+                                  <p className="text-xs text-neutral-500 mt-0.5 italic">"{m.achievement_comment}"</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions for custom milestones */}
+                          {m.is_custom && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!isAchieved && (
+                                <button onClick={() => setFormModal({ existing: m })}
+                                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-indigo-100 flex items-center justify-center text-neutral-400 hover:text-indigo-600 transition-colors">
+                                  <Pencil size={12} />
+                                </button>
+                              )}
+                              <button onClick={() => deleteCustomMilestone(m.id)} disabled={isDeleting}
+                                className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-red-100 flex items-center justify-center text-neutral-400 hover:text-red-500 transition-colors">
+                                {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${m.achieved_at ? 'text-green-700' : 'text-neutral-700'}`}>{m.description}</p>
-                          {m.achieved_at && <p className="text-xs text-green-500 mt-0.5">Achieved {m.achieved_at}</p>}
-                        </div>
-                      </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 ))}
               </>

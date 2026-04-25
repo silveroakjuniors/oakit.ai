@@ -467,7 +467,7 @@ ${missedSubjects.length > 0 ? `## 📅 Absence Note\n[Warm, reassuring 2-3 sente
         ``,
         `## 🚀 Readiness Assessment`,
         `${student.name} has covered ${coveredSubjects.length} subject areas with ${att_pct}% attendance this period. With ${mil.achieved} of ${mil.total} milestones achieved, ${student.name} is ${mil.achieved >= mil.total * 0.7 ? 'well on track and showing strong readiness for the next stage of learning' : 'making steady progress — continued focus on ' + (coveredSubjects.slice(0, 2).join(' and ') || 'core subjects') + ' will build the strong foundation needed for the next level'}. We look forward to supporting ${student.name}'s continued journey.`,
-      ].filter(s => s !== false && s !== undefined).join('\n');
+      ].filter(Boolean).join('\n');
     }
 
     const reportData = {

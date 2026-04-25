@@ -76,6 +76,7 @@ import textbookPlannerRouter from './routes/admin/textbookPlanner';
 import adminEnquiriesRouter from './routes/admin/enquiries';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
 import teacherQuizRouter from './routes/teacher/quiz';
+import teacherReportCardRouter from './routes/teacher/reportCard';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
@@ -102,6 +103,7 @@ import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
 import parentFeesRouter from './routes/parent/fees';
 
+import sharedTodayContextRouter from './routes/shared/todayContext';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
 import { connectRedis } from './lib/redis';
@@ -231,6 +233,9 @@ app.get('/health/ai', async (_req, res) => {
 // Public routes — no authentication required
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
 
+// Shared (any authenticated role)
+app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
+
 // Auth
 app.use('/api/v1/auth', authRateLimit, authRouter);
 
@@ -350,9 +355,10 @@ app.use('/api/v1/admin/quizzes', adminQuizzesRouter);
 app.use('/api/v1/admin/smart-alerts', adminSmartAlertsRouter);
 app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 
-// Teacher — Student Credentials & Quiz
+// Teacher — Student Credentials, Quiz & Report Card
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
+app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
 
 // Student Portal
 app.use('/api/v1/student', studentFeedRouter);

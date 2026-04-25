@@ -54,8 +54,8 @@ router.get('/children', async (req: Request, res: Response) => {
               sec.id as section_id, s.class_id
        FROM parent_student_links psl
        JOIN students s ON s.id = psl.student_id
-       JOIN classes c ON c.id = s.class_id
-       JOIN sections sec ON sec.id = s.section_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       LEFT JOIN sections sec ON sec.id = s.section_id
        WHERE psl.parent_id = $1 AND s.school_id = $2 AND s.is_active = true
        ORDER BY c.name, s.name`,
       [user_id, school_id]
@@ -601,6 +601,34 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
   }
 });
 
+// GET /api/v1/parent/child/:student_id/report-card?from=&to=
+// Parent generates a full report card for their own child
+router.get('/child/:student_id/report-card', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { student_id } = req.params;
+    const { from, to } = req.query as Record<string, string>;
+
+    // Verify parent owns this student
+    const link = await pool.query(
+      `SELECT 1 FROM parent_student_links psl JOIN students s ON s.id = psl.student_id
+       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3`,
+      [user_id, student_id, school_id]
+    );
+    if (link.rows.length === 0) return res.status(403).json({ error: 'Access denied' });
+
+    const fromDate = from || new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+    const toDate = to || new Date().toISOString().split('T')[0];
+
+    const { generateProgressReport } = await import('./admin/reportHelper');
+    const result = await generateProgressReport(student_id, school_id, fromDate, toDate, 'progress', user_id);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[parent report-card]', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
 // GET /api/v1/parent/child/:student_id/attendance — attendance history for a child
 router.get('/child/:student_id/attendance', async (req: Request, res: Response) => {
   try {
@@ -933,17 +961,25 @@ router.get('/profile', async (req: Request, res: Response) => {
   try {
     const { user_id } = req.user!;
     const result = await pool.query(
-      `SELECT id, name, mobile, mobile_updated_at
-       FROM parent_users WHERE id = $1`,
+      `SELECT id, name, mobile FROM parent_users WHERE id = $1`,
       [user_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
     const p = result.rows[0];
+    // Check if mobile_updated_at column exists (added in migration 067)
+    let mobile_can_update = true;
+    try {
+      const upd = await pool.query(
+        `SELECT mobile_updated_at FROM parent_users WHERE id = $1`,
+        [user_id]
+      );
+      mobile_can_update = !upd.rows[0]?.mobile_updated_at;
+    } catch { /* column not yet migrated — allow update */ }
     return res.json({
       id: p.id,
       name: p.name,
       mobile: p.mobile,
-      mobile_can_update: !p.mobile_updated_at, // once-only: can only update if never updated before
+      mobile_can_update,
     });
   } catch (err) {
     console.error('[parent profile GET]', err);
@@ -964,7 +1000,7 @@ router.put('/profile', async (req: Request, res: Response) => {
 
     // Fetch current profile
     const current = await pool.query(
-      `SELECT id, name, mobile, mobile_updated_at FROM parent_users WHERE id = $1`,
+      `SELECT id, name, mobile FROM parent_users WHERE id = $1`,
       [user_id]
     );
     if (current.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
@@ -976,12 +1012,19 @@ router.put('/profile', async (req: Request, res: Response) => {
       if (!/^\d{10}$/.test(cleaned)) {
         return res.status(400).json({ error: 'Mobile must be a valid 10-digit number' });
       }
-      if (profile.mobile_updated_at) {
-        return res.status(403).json({
-          error: 'Mobile number has already been updated once and cannot be changed again. Contact the school admin if you need help.',
-          mobile_locked: true,
-        });
-      }
+      // Check once-only lock (column may not exist yet)
+      try {
+        const lockCheck = await pool.query(
+          `SELECT mobile_updated_at FROM parent_users WHERE id = $1`, [user_id]
+        );
+        if (lockCheck.rows[0]?.mobile_updated_at) {
+          return res.status(403).json({
+            error: 'Mobile number has already been updated once and cannot be changed again. Contact the school admin if you need help.',
+            mobile_locked: true,
+          });
+        }
+      } catch { /* column not yet migrated — allow update */ }
+
       if (cleaned === profile.mobile) {
         return res.status(400).json({ error: 'New mobile number is the same as the current one' });
       }
@@ -998,19 +1041,23 @@ router.put('/profile', async (req: Request, res: Response) => {
       // Update mobile + name (if provided)
       const bcrypt = require('bcryptjs');
       const newHash = await bcrypt.hash(cleaned, 12);
-      await pool.query(
-        `UPDATE parent_users
-         SET mobile = $1,
-             password_hash = $2,
-             mobile_updated_at = now(),
-             mobile_updated_by = 'parent',
-             ${name ? "name = $4," : ''}
-             force_password_reset = false
-         WHERE id = ${name ? '$5' : '$3'}`,
-        name
-          ? [cleaned, newHash, name.trim(), user_id]
-          : [cleaned, newHash, user_id]
-      );
+      try {
+        await pool.query(
+          `UPDATE parent_users
+           SET mobile = $1, password_hash = $2,
+               mobile_updated_at = now(), mobile_updated_by = 'parent',
+               ${name ? "name = $4," : ''}
+               force_password_reset = false
+           WHERE id = ${name ? '$5' : '$3'}`,
+          name ? [cleaned, newHash, name.trim(), user_id] : [cleaned, newHash, user_id]
+        );
+      } catch {
+        // Fallback if columns don't exist yet
+        await pool.query(
+          `UPDATE parent_users SET mobile = $1, password_hash = $2 ${name ? ', name = $4' : ''}, force_password_reset = false WHERE id = ${name ? '$5' : '$3'}`,
+          name ? [cleaned, newHash, name.trim(), user_id] : [cleaned, newHash, user_id]
+        );
+      }
 
       return res.json({
         success: true,

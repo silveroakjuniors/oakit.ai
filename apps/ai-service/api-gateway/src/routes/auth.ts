@@ -4,10 +4,17 @@ import { pool } from '../lib/db';
 import { signToken, verifyToken, SuperAdminJwtPayload } from '../lib/jwt';
 import { jwtVerify } from '../middleware/auth';
 import { loginThrottle } from '../middleware/rateLimit';
+import { redis } from '../lib/redis';
 
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
+const SESSION_TTL = 8 * 60 * 60; // 8 hours — matches JWT expiry
+
+// Helper: register session in Redis (single-session enforcement)
+async function registerSession(userId: string, sid: string) {
+  try { await redis.set(`session:${userId}`, sid, { EX: SESSION_TTL }); } catch { /* non-critical */ }
+}
 const RESET_TOKEN_EXPIRES = 15 * 60; // 15 minutes in seconds
 
 // GET /api/v1/auth/school-info?code=sojs — public endpoint to get school name
@@ -50,6 +57,8 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         const valid = await bcrypt.compare(password, sa.password_hash);
         if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
         const token = signToken({ user_id: sa.id, school_id: null, role: 'super_admin', permissions: [] } as SuperAdminJwtPayload);
+        const { verifyToken: vt } = await import('../lib/jwt');
+        const p = vt(token); await registerSession(sa.id, p.sid!);
         return res.json({ token, role: 'super_admin' });
       }
 
@@ -68,6 +77,8 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
           user_id: fa.id, school_id: null, role: 'franchise_admin',
           franchise_id: fa.franchise_id, permissions: [],
         } as any);
+        const { verifyToken: vt2 } = await import('../lib/jwt');
+        const p2 = vt2(token); await registerSession(fa.id, p2.sid!);
         return res.json({ token, role: 'franchise_admin', franchise_id: fa.franchise_id });
       }
 
@@ -113,6 +124,8 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         permissions: user.permissions || [],
         force_password_reset: user.force_password_reset,
       } as any);
+      const { verifyToken: vt3 } = await import('../lib/jwt');
+      const p3 = vt3(token); await registerSession(user.id, p3.sid!);
 
       // Attendance prompt for teachers
       let attendance_prompt = false;
@@ -166,6 +179,8 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
       permissions: [],
       force_password_reset: parent.force_password_reset,
     } as any);
+    const { verifyToken: vt4 } = await import('../lib/jwt');
+    const p4 = vt4(parentToken); await registerSession(parent.id, p4.sid!);
     return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset });
 
   } catch (err) {
@@ -241,8 +256,17 @@ router.post('/student-login', loginThrottle, async (req: Request, res: Response)
 });
 
 // POST /api/v1/auth/logout
-router.post('/logout', async (_req: Request, res: Response) => {
+router.post('/logout', jwtVerify, async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.user!;
+    await redis.del(`session:${user_id}`);
+  } catch { /* non-critical */ }
   return res.json({ message: 'Logged out' });
+});
+
+// GET /api/v1/auth/session-check — lightweight endpoint to verify session is still active
+router.get('/session-check', jwtVerify, (_req: Request, res: Response) => {
+  return res.json({ ok: true });
 });
 
 // POST /api/v1/auth/change-password

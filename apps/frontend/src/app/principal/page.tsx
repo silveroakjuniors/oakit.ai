@@ -27,7 +27,7 @@ import { apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken, getRoleRedirect } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Users, CheckCircle2, XCircle, AlertTriangle, BarChart2, BookOpen, ClipboardList, TrendingUp, DollarSign, Gift, Flame, Send, Sparkles, LogOut, FileText, Calendar } from 'lucide-react';
 
 // -- Types ----------------------------------------------------
 interface SectionSummary {
@@ -133,7 +133,7 @@ export default function PrincipalDashboard() {
     apiGet<PrincipalContext>('/api/v1/principal/context', token)
       .then(data => {
         setCtx(data);
-        setMessages([{ role: 'assistant', text: `${data.greeting}\n\n?? ${data.thought_for_day}` }]);
+        setMessages([{ role: 'assistant', text: `${data.greeting}\n\n${data.thought_for_day}` }]);
       })
       .catch(() => setMessages([{ role: 'assistant', text: 'Hello! Ask me about your school.' }]))
       .finally(() => setLoading(false));
@@ -221,13 +221,13 @@ export default function PrincipalDashboard() {
           {ctx && (
             <div className="grid grid-cols-3 gap-2 stagger">
               {[
-                { label: 'Students', value: ctx.summary.total_students, sub: `${totalSections} sections`, emoji: '👥', glow: 'rgba(255,255,255,0.1)' },
-                { label: 'Present', value: ctx.summary.total_present, sub: `${ctx.summary.total_students > 0 ? Math.round((ctx.summary.total_present/ctx.summary.total_students)*100) : 0}% today`, emoji: '✅', glow: 'rgba(74,222,128,0.2)' },
-                { label: 'Absent', value: ctx.summary.total_absent, sub: 'today', emoji: '❌', glow: 'rgba(248,113,113,0.2)' },
+                { label: 'Students', value: ctx.summary.total_students, sub: `${totalSections} sections`, Icon: Users, glow: 'rgba(255,255,255,0.1)' },
+                { label: 'Present', value: ctx.summary.total_present, sub: `${ctx.summary.total_students > 0 ? Math.round((ctx.summary.total_present/ctx.summary.total_students)*100) : 0}% today`, Icon: CheckCircle2, glow: 'rgba(74,222,128,0.2)' },
+                { label: 'Absent', value: ctx.summary.total_absent, sub: 'today', Icon: XCircle, glow: 'rgba(248,113,113,0.2)' },
               ].map((s, i) => (
                 <div key={i} className="rounded-2xl p-3 border border-white/10 slide-in-up"
                   style={{ background: `radial-gradient(circle at top right, ${s.glow}, rgba(255,255,255,0.06))`, backdropFilter: 'blur(8px)' }}>
-                  <p className="text-xl">{s.emoji}</p>
+                  <s.Icon className="w-4 h-4 text-white/60" />
                   <p className="text-white font-black text-2xl leading-none mt-1 number-shimmer">
                     <AnimatedNumber value={s.value} />
                   </p>
@@ -251,7 +251,7 @@ export default function PrincipalDashboard() {
             {/* Safety alerts */}
             {safetyAlerts.length > 0 && (
               <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 flex items-start gap-3">
-                <span className="text-xl shrink-0">🚨</span>
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-bold text-red-800">{safetyAlerts.length} Content Alert{safetyAlerts.length > 1 ? 's' : ''}</p>
                   <p className="text-xs text-red-600 mt-0.5">Review in Admin → Audit Log</p>
@@ -280,12 +280,12 @@ export default function PrincipalDashboard() {
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { emoji: '🎓', label: 'Students', value: ctx.summary.total_students },
-                      { emoji: '👩‍🏫', label: 'Teachers', value: ctx.sections.filter(s => s.class_teacher_name).length },
-                      { emoji: '🏫', label: 'Classes', value: Object.keys(byClass).length },
+                      { Icon: Users,       label: 'Students', value: ctx.summary.total_students },
+                      { Icon: BookOpen,    label: 'Teachers', value: ctx.sections.filter(s => s.class_teacher_name).length },
+                      { Icon: ClipboardList, label: 'Classes', value: Object.keys(byClass).length },
                     ].map((s, i) => (
                       <div key={i} className="bg-neutral-50 rounded-2xl p-3 text-center border border-neutral-100">
-                        <p className="text-xl">{s.emoji}</p>
+                        <s.Icon className="w-5 h-5 text-neutral-400 mx-auto" />
                         <p className="text-xl font-black text-neutral-800 leading-none mt-1">{s.value}</p>
                         <p className="text-[10px] text-neutral-400 mt-0.5">{s.label}</p>
                       </div>
@@ -299,12 +299,12 @@ export default function PrincipalDashboard() {
             {ctx && (
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: 'Attendance', value: `${ctx.summary.attendance_submitted}/${totalSections}`, done: ctx.summary.attendance_submitted === totalSections, emoji: '📋' },
-                  { label: 'Plans Done', value: `${ctx.summary.plans_completed ?? 0}/${totalSections}`, done: (ctx.summary.plans_completed ?? 0) === totalSections, emoji: '📚' },
-                  { label: 'Homework', value: `${ctx.summary.homework_sent ?? 0}/${totalSections}`, done: (ctx.summary.homework_sent ?? 0) === totalSections, emoji: '✏️' },
+                  { label: 'Attendance', value: `${ctx.summary.attendance_submitted}/${totalSections}`, done: ctx.summary.attendance_submitted === totalSections, Icon: ClipboardList },
+                  { label: 'Plans Done', value: `${ctx.summary.plans_completed ?? 0}/${totalSections}`, done: (ctx.summary.plans_completed ?? 0) === totalSections, Icon: BookOpen },
+                  { label: 'Homework', value: `${ctx.summary.homework_sent ?? 0}/${totalSections}`, done: (ctx.summary.homework_sent ?? 0) === totalSections, Icon: Send },
                 ].map((s, i) => (
                   <div key={i} className={`rounded-2xl p-3 border text-center ${s.done ? 'bg-emerald-50 border-emerald-100' : 'bg-white border-neutral-100'}`}>
-                    <p className="text-lg">{s.emoji}</p>
+                    <s.Icon className={`w-4 h-4 mx-auto ${s.done ? 'text-emerald-500' : 'text-neutral-300'}`} />
                     <p className={`text-base font-black leading-none mt-1 ${s.done ? 'text-emerald-700' : 'text-neutral-800'}`}>{s.value}</p>
                     <p className="text-[10px] text-neutral-400 mt-0.5">{s.label}</p>
                   </div>
@@ -313,17 +313,18 @@ export default function PrincipalDashboard() {
             )}
 
             {/* Quick nav */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-2">
               {[
-                { href: '/principal/attendance', label: 'Attendance', icon: '📋', color: 'from-indigo-500 to-indigo-600' },
-                { href: '/principal/teachers',   label: 'Teachers',   icon: '👩‍🏫', color: 'from-emerald-500 to-emerald-600' },
-                { href: '/principal/coverage',   label: 'Coverage',   icon: '📊', color: 'from-amber-500 to-amber-600' },
-                { href: '/principal/overview',   label: 'Reports',    icon: '📈', color: 'from-purple-500 to-purple-600' },
-              ].map(({ href, label, icon, color }) => (
+                { href: '/principal/attendance', label: 'Attendance', Icon: ClipboardList, color: 'from-indigo-500 to-indigo-600' },
+                { href: '/principal/teachers',   label: 'Teachers',   Icon: Users,         color: 'from-emerald-500 to-emerald-600' },
+                { href: '/principal/coverage',   label: 'Coverage',   Icon: BarChart2,     color: 'from-amber-500 to-amber-600' },
+                { href: '/principal/overview',   label: 'Reports',    Icon: TrendingUp,    color: 'from-purple-500 to-purple-600' },
+                { href: '/principal/hr',         label: 'Staff HR',   Icon: FileText,      color: 'from-teal-500 to-cyan-600' },
+              ].map(({ href, label, Icon, color }) => (
                 <Link key={href} href={href}
                   className="bg-white border border-neutral-100 rounded-2xl p-3 flex flex-col items-center gap-1.5 hover:shadow-md hover:-translate-y-0.5 transition-all text-center shadow-sm">
                   <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center`}>
-                    <span className="text-base">{icon}</span>
+                    <Icon className="w-4 h-4 text-white" />
                   </div>
                   <span className="text-[10px] font-semibold text-neutral-600">{label}</span>
                 </Link>
@@ -336,7 +337,7 @@ export default function PrincipalDashboard() {
               className="bg-white border border-neutral-100 rounded-2xl shadow-sm px-4 py-3 flex items-center gap-3 hover:shadow-md hover:-translate-y-0.5 transition-all"
             >
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
-                <span className="text-xl">💰</span>
+                <DollarSign className="w-5 h-5 text-white" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-neutral-800">Finance Module</p>
@@ -348,7 +349,7 @@ export default function PrincipalDashboard() {
             {/* -- Birthdays � collapsible -- */}
             {birthdays.length > 0 && (
               <Collapsible
-                title={todayBirthdays.length > 0 ? ` Birthdays Today (${todayBirthdays.length})` : `?? Upcoming Birthdays`}
+                title={todayBirthdays.length > 0 ? `Birthdays Today (${todayBirthdays.length})` : `Upcoming Birthdays`}
                 subtitle={todayBirthdays.length > 0 ? 'Tap to send wishes' : `${upcomingBirthdays.length} in next 7 days`}
                 defaultOpen={todayBirthdays.length > 0}
                 accent={todayBirthdays.length > 0 ? 'border-pink-200' : 'border-neutral-100'}
@@ -357,14 +358,14 @@ export default function PrincipalDashboard() {
                   {birthdays.map(kid => (
                     <div key={kid.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl ${kid.days_until === 0 ? 'bg-pink-50 border border-pink-100' : 'bg-neutral-50'}`}>
                       <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center text-xs font-bold text-pink-700 shrink-0">
-                        {kid.name?.[0] ?? '⏳'}
+                        {kid.name?.[0] ?? '?'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-neutral-800 truncate">{kid.name}</p>
-                        <p className="text-[10px] text-neutral-400">{kid.class_name} � {kid.section_label}</p>
+                        <p className="text-[10px] text-neutral-400">{kid.class_name} · {kid.section_label}</p>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${kid.days_until === 0 ? 'bg-pink-500 text-white' : 'bg-amber-100 text-amber-700'}`}>
-                        {kid.days_until === 0 ? '🎂 Today' : `in ${kid.days_until}d`}
+                        {kid.days_until === 0 ? 'Today' : `in ${kid.days_until}d`}
                       </span>
                     </div>
                   ))}
@@ -389,7 +390,7 @@ export default function PrincipalDashboard() {
                             finally { setFormattingBirthday(false); }
                           }} disabled={formattingBirthday || !birthdayMsg.trim()}
                             className="px-3 py-2 bg-pink-500 text-white rounded-xl text-xs font-bold hover:bg-pink-600 disabled:opacity-50 shrink-0">
-                            {formattingBirthday ? '�' : '⏳'}
+                            {formattingBirthday ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> : <Sparkles size={12} />}
                           </button>
                         </div>
                       ) : (
@@ -409,7 +410,7 @@ export default function PrincipalDashboard() {
                               finally { setSendingBirthday(false); }
                             }} disabled={sendingBirthday}
                               className="flex-1 py-2 bg-pink-500 text-white rounded-xl text-xs font-bold hover:bg-pink-600 disabled:opacity-50">
-                              {sendingBirthday ? '�' : '?? Send'}
+                              {sendingBirthday ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" /> : <><Send size={12} className="inline mr-1" />Send</>}
                             </button>
                             <button onClick={() => setFormattedBirthdayMsg('')}
                               className="px-3 py-2 border border-neutral-200 rounded-xl text-xs text-neutral-600">Edit</button>
@@ -544,7 +545,7 @@ export default function PrincipalDashboard() {
             ) : (
               <Collapsible
                 title=" Classes & Sections"
-                subtitle={`${Object.keys(byClass).length} classes � ${(ctx?.sections || []).length} sections � ${ctx?.summary.total_students ?? 0} students`}
+                subtitle={`${Object.keys(byClass).length} classes · ${(ctx?.sections || []).length} sections · ${ctx?.summary.total_students ?? 0} students`}
                 defaultOpen={false}
               >
                 <div className="divide-y divide-neutral-50">
@@ -588,7 +589,7 @@ export default function PrincipalDashboard() {
                                     <div className="min-w-0">
                                       <span className="text-xs font-semibold text-neutral-700">Section {sec.section_label}</span>
                                       <span className="text-[10px] text-neutral-400 ml-2">
-                                        {sec.class_teacher_name ? `????? ${sec.class_teacher_name}` : ' No teacher'}
+                                        {sec.class_teacher_name ? sec.class_teacher_name : 'No teacher'}
                                       </span>
                                     </div>
                                   </div>
@@ -668,7 +669,7 @@ export default function PrincipalDashboard() {
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {msg.role === 'assistant' && (
                   <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center shrink-0 mr-2 mt-0.5 self-start">
-                    <span className="text-xs">🌳</span>
+                    <Sparkles className="w-3 h-3 text-primary-500" />
                   </div>
                 )}
                 <div className={`max-w-[85%] px-3 py-2.5 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
@@ -681,7 +682,7 @@ export default function PrincipalDashboard() {
             {aiLoading && (
               <div className="flex justify-start">
                 <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center shrink-0 mr-2">
-                  <span className="text-xs">🌳</span>
+                  <Sparkles className="w-3 h-3 text-primary-500" />
                 </div>
                 <div className="bg-neutral-100 px-3 py-2.5 rounded-2xl rounded-bl-sm flex gap-1 items-center">
                   {[0,150,300].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce inline-block" style={{ animationDelay: `${d}ms` }} />)}

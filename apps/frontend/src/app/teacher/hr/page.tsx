@@ -1,0 +1,332 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { apiGet, apiPost, API_BASE } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+import {
+  ChevronLeft, FileText, Wallet, CalendarDays, CheckCircle2,
+  Clock, XCircle, Plus, Download, AlertCircle, Loader2
+} from 'lucide-react';
+
+interface Payslip {
+  id: string; year: number; month: number; gross_salary: number; net_salary: number;
+  present_days: number; absent_days: number; leave_days: number;
+  deduction_amount: number; status: string; payment_date: string | null;
+  payslip_url: string | null; payslip_status: string;
+}
+interface OfferLetter {
+  id: string; role: string; start_date: string; gross_salary: number;
+  components: { name: string; amount: number }[];
+  employment_terms: string | null; pdf_url: string | null;
+  status: 'pending' | 'signed' | 'declined'; signed_at: string | null; created_at: string;
+}
+interface LeaveRequest {
+  id: string; leave_type: string; from_date: string; to_date: string; days: number;
+  reason: string | null; status: 'pending' | 'approved' | 'rejected';
+  review_note: string | null; reviewed_at: string | null; created_at: string;
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const LEAVE_TYPES = ['sick', 'casual', 'earned', 'unpaid', 'other'];
+
+export default function TeacherHRPage() {
+  const router = useRouter();
+  const token = getToken() || '';
+  const [tab, setTab] = useState<'payslips' | 'offer' | 'leave'>('payslips');
+  const [payslips, setPayslips] = useState<Payslip[]>([]);
+  const [offers, setOffers] = useState<OfferLetter[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [signing, setSigning] = useState<string | null>(null);
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ leave_type: 'sick', from_date: '', to_date: '', reason: '' });
+  const [submittingLeave, setSubmittingLeave] = useState(false);
+  const [leaveMsg, setLeaveMsg] = useState('');
+
+  useEffect(() => {
+    if (!token) { router.push('/login'); return; }
+    Promise.all([
+      apiGet<Payslip[]>('/api/v1/staff/hr/my-payslips', token).then(setPayslips).catch(() => {}),
+      apiGet<OfferLetter[]>('/api/v1/staff/hr/my-offer-letters', token).then(setOffers).catch(() => {}),
+      apiGet<LeaveRequest[]>('/api/v1/staff/hr/my-leaves', token).then(setLeaves).catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, []);
+
+  async function signOffer(id: string) {
+    setSigning(id);
+    try {
+      const updated = await apiPost<OfferLetter>(`/api/v1/staff/hr/offer-letters/${id}/sign`, {}, token);
+      setOffers(prev => prev.map(o => o.id === id ? updated : o));
+    } catch { /* ignore */ } finally { setSigning(null); }
+  }
+
+  async function declineOffer(id: string) {
+    setSigning(id + '_decline');
+    try {
+      const updated = await apiPost<OfferLetter>(`/api/v1/staff/hr/offer-letters/${id}/decline`, {}, token);
+      setOffers(prev => prev.map(o => o.id === id ? updated : o));
+    } catch { /* ignore */ } finally { setSigning(null); }
+  }
+
+  async function submitLeave() {
+    if (!leaveForm.from_date || !leaveForm.to_date) return;
+    setSubmittingLeave(true); setLeaveMsg('');
+    try {
+      const newLeave = await apiPost<LeaveRequest>('/api/v1/staff/hr/my-leaves', leaveForm, token);
+      setLeaves(prev => [newLeave, ...prev]);
+      setLeaveMsg('Leave application submitted successfully.');
+      setShowLeaveForm(false);
+      setLeaveForm({ leave_type: 'sick', from_date: '', to_date: '', reason: '' });
+    } catch (e: any) { setLeaveMsg(e.message || 'Failed to submit'); }
+    finally { setSubmittingLeave(false); }
+  }
+
+  const statusBadge = (status: string) => {
+    if (status === 'approved' || status === 'signed') return 'bg-emerald-100 text-emerald-700';
+    if (status === 'rejected' || status === 'declined') return 'bg-red-100 text-red-600';
+    return 'bg-amber-100 text-amber-700';
+  };
+
+  return (
+    <div className="min-h-screen bg-neutral-50 flex flex-col">
+      <header className="text-white px-4 py-3 flex items-center gap-3 shrink-0"
+        style={{ background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%)' }}>
+        <button onClick={() => router.back()} className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <div>
+          <p className="text-sm font-bold">My HR</p>
+          <p className="text-xs text-white/70">Salary · Leave · Offer Letter</p>
+        </div>
+      </header>
+
+      {/* Tabs */}
+      <div className="flex bg-white border-b border-neutral-100 px-4 pt-3 gap-1">
+        {([
+          { id: 'payslips', label: 'Salary Slips', Icon: Wallet },
+          { id: 'offer',    label: 'Offer Letter', Icon: FileText },
+          { id: 'leave',    label: 'Leave',         Icon: CalendarDays },
+        ] as const).map(({ id, label, Icon }) => (
+          <button key={id} onClick={() => setTab(id)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-t-xl text-xs font-semibold border-b-2 transition-all ${
+              tab === id ? 'border-primary-600 text-primary-700 bg-primary-50' : 'border-transparent text-neutral-400 hover:text-neutral-600'
+            }`}>
+            <Icon className="w-3.5 h-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 p-4 space-y-3 max-w-lg mx-auto w-full">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-6 h-6 animate-spin text-neutral-300" />
+          </div>
+        ) : (
+          <>
+            {/* ── Salary Slips ── */}
+            {tab === 'payslips' && (
+              payslips.length === 0 ? (
+                <div className="text-center py-16">
+                  <Wallet className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
+                  <p className="text-sm text-neutral-400">No salary slips released yet</p>
+                  <p className="text-xs text-neutral-300 mt-1">Your payslips will appear here once released by admin</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {payslips.map(p => (
+                    <div key={p.id} className="bg-white rounded-2xl border border-neutral-100 p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="text-sm font-bold text-neutral-800">{MONTHS[p.month - 1]} {p.year}</p>
+                          <p className="text-xs text-neutral-400">{p.present_days} present · {p.absent_days} absent · {p.leave_days} leave</p>
+                        </div>
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusBadge(p.status)}`}>
+                          {p.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="bg-neutral-50 rounded-xl p-2.5">
+                          <p className="text-[10px] text-neutral-400">Gross</p>
+                          <p className="text-sm font-bold text-neutral-800">₹{p.gross_salary.toLocaleString('en-IN')}</p>
+                        </div>
+                        <div className="bg-emerald-50 rounded-xl p-2.5">
+                          <p className="text-[10px] text-neutral-400">Net Pay</p>
+                          <p className="text-sm font-bold text-emerald-700">₹{p.net_salary.toLocaleString('en-IN')}</p>
+                        </div>
+                      </div>
+                      {p.payslip_url && (
+                        <a href={p.payslip_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 w-full py-2 border border-neutral-200 rounded-xl text-xs font-semibold text-neutral-600 hover:bg-neutral-50 transition-colors">
+                          <Download className="w-3.5 h-3.5" /> Download Payslip
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* ── Offer Letters ── */}
+            {tab === 'offer' && (
+              offers.length === 0 ? (
+                <div className="text-center py-16">
+                  <FileText className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
+                  <p className="text-sm text-neutral-400">No offer letters yet</p>
+                  <p className="text-xs text-neutral-300 mt-1">Offer letters from your school will appear here</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {offers.map(o => (
+                    <div key={o.id} className="bg-white rounded-2xl border border-neutral-100 p-4 shadow-sm">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="text-sm font-bold text-neutral-800">{o.role}</p>
+                          <p className="text-xs text-neutral-400">
+                            From {new Date(o.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </p>
+                        </div>
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusBadge(o.status)}`}>
+                          {o.status}
+                        </span>
+                      </div>
+
+                      <div className="bg-neutral-50 rounded-xl p-3 mb-3">
+                        <p className="text-xs text-neutral-500 mb-1">Gross Salary</p>
+                        <p className="text-lg font-black text-neutral-800">₹{o.gross_salary.toLocaleString('en-IN')}<span className="text-xs font-normal text-neutral-400">/month</span></p>
+                        {o.components?.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {o.components.map((c, i) => (
+                              <div key={i} className="flex justify-between text-xs text-neutral-500">
+                                <span>{c.name}</span>
+                                <span>₹{c.amount.toLocaleString('en-IN')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {o.employment_terms && (
+                        <p className="text-xs text-neutral-500 mb-3 leading-relaxed">{o.employment_terms}</p>
+                      )}
+
+                      <div className="flex gap-2">
+                        {o.pdf_url && (
+                          <a href={o.pdf_url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-2 border border-neutral-200 rounded-xl text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors">
+                            <Download className="w-3.5 h-3.5" /> View PDF
+                          </a>
+                        )}
+                        {o.status === 'pending' && (
+                          <>
+                            <button onClick={() => signOffer(o.id)} disabled={signing === o.id}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-colors disabled:opacity-50">
+                              {signing === o.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                              Accept & Sign
+                            </button>
+                            <button onClick={() => declineOffer(o.id)} disabled={signing === o.id + '_decline'}
+                              className="px-3 py-2 border border-red-200 text-red-600 rounded-xl text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-50">
+                              Decline
+                            </button>
+                          </>
+                        )}
+                        {o.status === 'signed' && (
+                          <p className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Signed on {new Date(o.signed_at!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* ── Leave ── */}
+            {tab === 'leave' && (
+              <>
+                <button onClick={() => setShowLeaveForm(v => !v)}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl text-sm font-bold transition-colors">
+                  <Plus className="w-4 h-4" /> Apply for Leave
+                </button>
+
+                {showLeaveForm && (
+                  <div className="bg-white rounded-2xl border border-neutral-100 p-4 shadow-sm space-y-3">
+                    <p className="text-sm font-bold text-neutral-800">New Leave Application</p>
+                    <div>
+                      <label className="text-xs font-medium text-neutral-600 mb-1 block">Leave Type</label>
+                      <select value={leaveForm.leave_type} onChange={e => setLeaveForm(f => ({ ...f, leave_type: e.target.value }))}
+                        className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30">
+                        {LEAVE_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-neutral-600 mb-1 block">From</label>
+                        <input type="date" value={leaveForm.from_date} onChange={e => setLeaveForm(f => ({ ...f, from_date: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-neutral-600 mb-1 block">To</label>
+                        <input type="date" value={leaveForm.to_date} min={leaveForm.from_date}
+                          onChange={e => setLeaveForm(f => ({ ...f, to_date: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-neutral-600 mb-1 block">Reason (optional)</label>
+                      <textarea value={leaveForm.reason} onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
+                        rows={2} placeholder="Brief reason for leave…"
+                        className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
+                    </div>
+                    {leaveMsg && <p className={`text-xs font-medium ${leaveMsg.includes('success') ? 'text-emerald-600' : 'text-red-500'}`}>{leaveMsg}</p>}
+                    <button onClick={submitLeave} disabled={submittingLeave || !leaveForm.from_date || !leaveForm.to_date}
+                      className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                      {submittingLeave ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Submit Application
+                    </button>
+                  </div>
+                )}
+
+                {leaveMsg && !showLeaveForm && (
+                  <p className="text-xs text-emerald-600 font-medium text-center">{leaveMsg}</p>
+                )}
+
+                {leaves.length === 0 ? (
+                  <div className="text-center py-10">
+                    <CalendarDays className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
+                    <p className="text-sm text-neutral-400">No leave applications yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {leaves.map(l => (
+                      <div key={l.id} className="bg-white rounded-2xl border border-neutral-100 p-4 shadow-sm">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-neutral-800 capitalize">{l.leave_type} Leave</p>
+                            <p className="text-xs text-neutral-500 mt-0.5">
+                              {new Date(l.from_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} –{' '}
+                              {new Date(l.to_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {' '}· {l.days} day{l.days !== 1 ? 's' : ''}
+                            </p>
+                            {l.reason && <p className="text-xs text-neutral-400 mt-1">{l.reason}</p>}
+                            {l.review_note && (
+                              <p className="text-xs text-neutral-500 mt-1 italic">Note: {l.review_note}</p>
+                            )}
+                          </div>
+                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusBadge(l.status)}`}>
+                            {l.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

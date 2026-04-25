@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -8,7 +8,8 @@ import {
   ChevronRight, Send, Loader2, RefreshCw, Phone, Shield, Settings,
   BarChart3, Target, Zap, CalendarDays, Apple, Smartphone,
   ClipboardList, CreditCard, FileBarChart, Star, ArrowRight, Heart, Download,
-  X, Paperclip, Sun, Hand, Moon, Camera, Image as ImageIcon, Globe
+  X, Paperclip, Sun, Hand, Moon, Camera, Image as ImageIcon, Globe,
+  Umbrella, Pencil, Activity, Megaphone, PartyPopper, FileText, GraduationCap
 } from 'lucide-react';
 import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken, signOut } from '@/lib/auth';
@@ -287,6 +288,7 @@ function ChildAvatar({ child, size = 'md', token, onUploaded }: {
 export default function ParentPage() {
   const router = useRouter();
   const token = getToken() || '';
+  useSessionManager(); // idle timeout, cross-tab sync, session replacement detection
   const [tab, setTab] = useState<Tab>('home');
   const [children, setChildren] = useState<Child[]>([]);
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
@@ -501,39 +503,23 @@ export default function ParentPage() {
   }
 
   const fetchChildData = useCallback(async (childId: string, childList?: Child[]) => {
-    if (cache[childId]?.feed) {
-      // Data cached � still refresh class feed for this child
-      const resolvedChildren = childList ?? children;
-      const child = resolvedChildren.find(c => c.id === childId);
-      if (child?.section_id) {
-        apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
-          .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setClassFeed(posts.slice(0, 8)); })
-          .catch(() => {});
-      }
-      return;
-    }
+    const resolvedChildren = childList ?? children;
+    const child = resolvedChildren.find(c => c.id === childId);
+    const skipFeed = !!cache[childId]?.feed;
+
     setChildLoading(true);
     try {
-      const [feedRes, attRes, progRes] = await Promise.allSettled([
-        apiGet<ChildFeed>(`/api/v1/parent/child/${childId}/feed`, token),
-        apiGet<AttendanceData>(`/api/v1/parent/child/${childId}/attendance`, token),
-        apiGet<ProgressData[]>('/api/v1/parent/progress', token),
+      const [feed, att, progList] = await Promise.all([
+        skipFeed
+          ? Promise.resolve(cache[childId]?.feed ?? null)
+          : apiGet<ChildFeed>(`/api/v1/parent/child/${childId}/feed`, token).catch(() => null),
+        apiGet<AttendanceData>(`/api/v1/parent/child/${childId}/attendance`, token).catch(() => null),
+        apiGet<ProgressData[]>('/api/v1/parent/progress', token).catch(() => [] as ProgressData[]),
       ]);
-      const feed = feedRes.status === 'fulfilled' ? feedRes.value : null;
-      const att = attRes.status === 'fulfilled' ? attRes.value : null;
-      const prog = progRes.status === 'fulfilled' ? (progRes.value.find(p => p.student_id === childId) ?? null) : null;
-      setCache(prev => ({ ...prev, [childId]: { feed, attendance: att, progress: prog } }));
-      // Capture instagram handle and translation flag from feed response
-      if (feed && (feed as any).instagram_handle) {
-        setSchoolInstagram((feed as any).instagram_handle);
-      }
-      if (feed && typeof (feed as any).translation_enabled === 'boolean') {
-        setSchoolTranslationEnabled((feed as any).translation_enabled);
-      }
-      // Load class feed and invoice in background
-      // Use passed childList (from init) or fall back to state
-      const resolvedChildren = childList ?? children;
-      const child = resolvedChildren.find(c => c.id === childId);
+      const prog = Array.isArray(progList) ? (progList.find((p: any) => p.student_id === childId) ?? null) : null;
+      setCache(prev => ({ ...prev, [childId]: { feed: (feed ?? prev[childId]?.feed ?? null) as ChildFeed | null, attendance: att, progress: prog } }));
+      if (feed && (feed as any).instagram_handle) setSchoolInstagram((feed as any).instagram_handle);
+      if (feed && typeof (feed as any).translation_enabled === 'boolean') setSchoolTranslationEnabled((feed as any).translation_enabled);
       if (child?.section_id) {
         apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
           .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setClassFeed(posts.slice(0, 8)); })
@@ -2181,15 +2167,21 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
               <div key={`${e.type}-${e.id}`}
                 className={`rounded-2xl p-4 border ${cfg.bg} ${cfg.border}`}>
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 bg-white border border-white/80 shadow-sm">
-                    {cfg.icon}
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-white border border-white/80 shadow-sm">
+                    {cfg.icon === 'holiday'      && <Umbrella className="w-5 h-5 text-red-500" />}
+                    {cfg.icon === 'settling'     && <Clock className="w-5 h-5 text-amber-500" />}
+                    {cfg.icon === 'half_day'     && <Sun className="w-5 h-5 text-yellow-500" />}
+                    {cfg.icon === 'exam'         && <Pencil className="w-5 h-5 text-purple-500" />}
+                    {cfg.icon === 'activity'     && <Activity className="w-5 h-5 text-blue-500" />}
+                    {cfg.icon === 'announcement' && <Megaphone className="w-5 h-5 text-emerald-500" />}
+                    {cfg.icon === 'event'        && <PartyPopper className="w-5 h-5 text-gray-400" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-0.5">
                       <p className="font-semibold text-gray-800 text-sm">{e.title}</p>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.labelCls}`}>{cfg.label}</span>
                       {isCompleted && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">? Done</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Done</span>
                       )}
                     </div>
                     {e.subtitle && <p className="text-xs text-gray-500 line-clamp-2">{e.subtitle}</p>}
@@ -2424,7 +2416,6 @@ function ReportsTab({ attendance, progress, activeChild, token }: { attendance: 
       {activeChild && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-base">??</span>
             <p className="text-sm font-bold text-gray-800">Full Report Card</p>
           </div>
           <p className="text-xs text-gray-500 mb-4">Complete descriptive report based on all teacher observations, journal entries, and curriculum covered.</p>
@@ -2592,8 +2583,8 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
   }
 
   const catIcons: Record<string, string> = {
-    'English & Language': '??', 'Math & Numbers': '??', 'Art & Craft': '??',
-    'Science & Nature': '??', 'Circle Time & GK': '?', 'Fine Motor & Writing': '??',
+    'English & Language': 'EN', 'Math & Numbers': 'MA', 'Art & Craft': 'AR',
+    'Science & Nature': 'SC', 'Circle Time & GK': 'GK', 'Fine Motor & Writing': 'FM',
     'Special Days & Events': '??', 'Other Activities': '?',
   };
 
@@ -2719,7 +2710,7 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
           {categorised.map(([cat, topics]) => (
             <div key={cat} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
               <p className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
-                <span>{catIcons[cat] ?? '??'}</span> {cat}
+                <span>{catIcons[cat] ?? ''}</span> {cat}
                 <span className="ml-auto text-[10px] font-semibold text-gray-400">{topics.length} topic{topics.length > 1 ? 's' : ''}</span>
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -2998,7 +2989,7 @@ function NotificationsTab({ notifications, announcements, onRead }: { notificati
         </div>
       )}
       <div>
-        <h2 className="text-lg font-bold text-neutral-800 mb-3">?? Updates</h2>
+        <h2 className="text-lg font-bold text-neutral-800 mb-3">Updates</h2>
         {notifications.length === 0 ? (
           <div className="bg-white rounded-2xl p-10 text-center border border-neutral-100 shadow-sm">
             <Bell size={40} className="text-neutral-300 mx-auto mb-3" />
@@ -3279,7 +3270,31 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
   token: string;
 }) {
   const { t } = useTranslation();
-  const [activeSection, setActiveSection] = useState<'emergency' | 'notifications' | 'calendar' | 'translation'>('emergency');
+  const [activeSection, setActiveSection] = useState<'profile' | 'emergency' | 'notifications' | 'calendar' | 'translation'>('profile');
+
+  // ── Profile edit state ──
+  const [profileName, setProfileName] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState('');
+  const [currentMobile, setCurrentMobile] = useState('');
+
+  useEffect(() => {
+    apiGet<{ name: string; mobile: string; mobile_can_update?: boolean }>('/api/v1/parent/profile', token)
+      .then(p => { setProfileName(p.name || ''); setCurrentMobile(p.mobile || ''); })
+      .catch(() => {});
+  }, [token]);
+
+  async function saveProfile() {
+    if (!profileName.trim()) return;
+    setProfileSaving(true); setProfileMsg('');
+    try {
+      await apiPut('/api/v1/parent/profile', { name: profileName.trim() }, token);
+      setProfileMsg('✓ Name updated successfully');
+    } catch (e: any) {
+      setProfileMsg(e.message || 'Failed to update');
+    } finally { setProfileSaving(false); }
+  }
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newRelation, setNewRelation] = useState('');
@@ -3315,6 +3330,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
       <div className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm">
         <div className="flex flex-wrap gap-2">
           {[
+            { id: 'profile', label: 'My Profile', icon: User },
             { id: 'emergency', label: t('Emergency Contacts'), icon: Shield },
             { id: 'notifications', label: t('Notifications'), icon: Bell },
             { id: 'calendar', label: t('Calendar Integration'), icon: CalendarDays },
@@ -3333,6 +3349,46 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
           ))}
         </div>
       </div>
+
+      {/* Profile Section */}
+      {activeSection === 'profile' && (
+        <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <User className="w-6 h-6 text-emerald-600" />
+            <h2 className="text-xl font-bold text-neutral-800">My Profile</h2>
+          </div>
+          <div className="space-y-4 max-w-sm">
+            <div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Mobile Number</label>
+              <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-500">
+                +91 {currentMobile.slice(0,5)} {currentMobile.slice(5)} <span className="text-xs text-gray-400 ml-1">(login credential — contact admin to change)</span>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Display Name</label>
+              <input
+                type="text"
+                value={profileName}
+                onChange={e => setProfileName(e.target.value)}
+                placeholder="Your name"
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30 bg-white"
+              />
+            </div>
+            {profileMsg && (
+              <p className={`text-xs font-medium px-3 py-2 rounded-xl ${profileMsg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                {profileMsg}
+              </p>
+            )}
+            <button
+              onClick={saveProfile}
+              disabled={profileSaving || !profileName.trim()}
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors disabled:opacity-50"
+            >
+              {profileSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Emergency Contacts Section */}
       {activeSection === 'emergency' && (
@@ -3627,4 +3683,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
     </div>
   );
 }
+
+
+
 
