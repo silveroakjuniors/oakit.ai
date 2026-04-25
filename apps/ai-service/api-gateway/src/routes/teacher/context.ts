@@ -109,7 +109,25 @@ router.get('/', async (req: Request, res: Response) => {
       class_name = classRow.rows[0]?.name || '';
     }
 
-    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name });
+    // Check report readiness reminder — if any student in section has 0 observations
+    let readiness_reminder = false;
+    let readiness_miss_count = 0;
+    if (section_id) {
+      try {
+        // Count students with no observations at all
+        const obsCheck = await pool.query(
+          `SELECT COUNT(DISTINCT s.id)::int AS students_without_obs
+           FROM students s
+           LEFT JOIN student_observations so ON so.student_id = s.id AND so.school_id = $2
+           WHERE s.section_id = $1 AND s.is_active = true AND so.id IS NULL`,
+          [section_id, school_id]
+        );
+        readiness_miss_count = obsCheck.rows[0]?.students_without_obs ?? 0;
+        readiness_reminder = readiness_miss_count > 0;
+      } catch { /* non-critical */ }
+    }
+
+    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }

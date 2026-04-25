@@ -1774,7 +1774,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
           )}
           {/* Fee pending nudge */}
           {invoice && invoice.net_payable > 0 ? (
-            <button onClick={() => onTabChange('fees')}
+            <button onClick={() => onFeesClick()}
               className="mt-3 w-full flex items-center justify-between px-3 py-2.5 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 transition-colors">
               <div className="flex items-center gap-2">
                 <CreditCard size={13} className="text-orange-500 shrink-0" />
@@ -1783,7 +1783,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
               <ArrowRight size={12} className="text-orange-400" />
             </button>
           ) : invoice === null ? (
-            <button onClick={() => onTabChange('fees')}
+            <button onClick={() => onFeesClick()}
               className="mt-3 w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl hover:bg-gray-100 transition-colors">
               <div className="flex items-center gap-2">
                 <CreditCard size={13} className="text-gray-400 shrink-0" />
@@ -2054,8 +2054,8 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">School Calendar</h2>
-        {data?.academic_year && (
-          <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-full">{data.academic_year}</span>
+        {(data as any)?.academic_year && (
+          <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-full">{(data as any).academic_year}</span>
         )}
       </div>
 

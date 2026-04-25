@@ -477,233 +477,131 @@ export default function ChildJourneyPage() {
               <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Type of entry</label>
               <div className="flex gap-2">
                 {(['daily', 'weekly', 'highlight'] as const).map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setEntryType(t)}
+                  <button key={t} onClick={() => setEntryType(t)}
                     className={`flex-1 py-2 rounded-xl text-xs font-medium border transition-all ${
-                      entryType === t
-                        ? 'bg-primary-600 text-white border-primary-600'
-                        : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
-                    }`}
-                  >
+                      entryType === t ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
+                    }`}>
                     {t === 'daily' ? '📅 Daily' : t === 'weekly' ? '📆 Weekly' : '⭐ Highlight'}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* ── Bulk student selector ── */}
+            {/* ── Per-student inline entries ── */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
-                  <Users size={13} /> Select students
+                <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <Users size={13} /> Individual notes
                 </label>
-                {selectedStudents.size > 0 && (
-                  <button
-                    onClick={() => setSelectedStudents(new Set())}
-                    className="text-xs text-neutral-400 hover:text-neutral-600"
-                  >
-                    Clear all
-                  </button>
-                )}
+                <span className="text-[10px] text-neutral-400">100 chars max · Ask Oakie to format</span>
               </div>
-              <div className="flex flex-col gap-1.5 bg-white border border-neutral-200 rounded-xl overflow-hidden">
-                {students.map((s, i) => (
-                  <label
-                    key={s.id}
-                    className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-neutral-50 transition-colors ${
-                      i < students.length - 1 ? 'border-b border-neutral-100' : ''
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedStudents.has(s.id)}
-                      onChange={() => toggleStudentSelection(s.id)}
-                      className="w-4 h-4 rounded accent-primary-600"
-                    />
-                    <span className="text-sm text-neutral-800">{s.name}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs text-neutral-400 mt-1">
-                {selectedStudents.size === 0
-                  ? 'Select one or more students to add notes'
-                  : `${selectedStudents.size} student${selectedStudents.size > 1 ? 's' : ''} selected`}
-              </p>
-            </div>
-
-            {/* ── BULK MODE: per-student textareas ── */}
-            {isBulkMode && (
-              <>
-                <div className="flex flex-col gap-3">
-                  {Array.from(selectedStudents).map(studentId => {
-                    const student = students.find(s => s.id === studentId);
-                    if (!student) return null;
-                    return (
-                      <div key={studentId} className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                        <div className="px-3 py-2 bg-neutral-50 border-b border-neutral-100 flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center text-xs font-bold text-primary-700">
-                            {student.name[0]}
-                          </div>
-                          <span className="text-sm font-semibold text-neutral-800">{student.name}</span>
-                          {bulkFormatted[studentId] && (
-                            <span className="ml-auto text-[10px] bg-primary-50 text-primary-600 border border-primary-200 px-2 py-0.5 rounded-full font-medium">
-                              Formatted by Oakie ✨
-                            </span>
-                          )}
-                        </div>
-                        <div className="p-3">
-                          <textarea
-                            value={bulkTexts[studentId] || ''}
-                            onChange={e => {
-                              setBulkTexts(prev => ({ ...prev, [studentId]: e.target.value }));
-                              if (bulkFormatted[studentId]) setBulkFormatted(prev => ({ ...prev, [studentId]: false }));
-                            }}
-                            rows={3}
-                            placeholder={`Notes for ${student.name.split(' ')[0]}…`}
-                            className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white"
-                          />
-                          <div className="flex items-center justify-between mt-2">
-                            <span className="text-xs text-neutral-400">{(bulkTexts[studentId] || '').length} chars</span>
-                            <button
-                              onClick={() => formatBulkWithOakie(studentId)}
-                              disabled={bulkFormatting[studentId] || !(bulkTexts[studentId] || '').trim()}
-                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg font-medium transition-colors disabled:opacity-40"
-                            >
-                              {bulkFormatting[studentId]
-                                ? <Loader2 size={12} className="animate-spin" />
-                                : <Wand2 size={12} />}
-                              Ask Oakie
-                            </button>
-                          </div>
-                        </div>
+              <div className="flex flex-col gap-2">
+                {students.map(student => (
+                  <div key={student.id} className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-neutral-50 border-b border-neutral-100">
+                      <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center text-xs font-bold text-primary-700 shrink-0">
+                        {student.name[0]}
                       </div>
-                    );
-                  })}
-                </div>
-
-                {bulkMsg && (
-                  <p className={`text-sm px-3 py-2 rounded-xl ${bulkMsg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-                    {bulkMsg}
-                  </p>
-                )}
-
-                <button
-                  onClick={saveBulk}
-                  disabled={savingBulk || !Array.from(selectedStudents).some(id => (bulkTexts[id] || '').trim())}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
-                >
-                  {savingBulk
-                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-                    : <><CheckCircle2 className="w-4 h-4" />Save All</>}
-                </button>
-              </>
-            )}
-
-            {/* ── SINGLE MODE: fallback when no students selected ── */}
-            {!isBulkMode && (
-              <>
-                {/* Single student selector */}
-                <div>
-                  <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Or pick a single student</label>
-                  <select
-                    value={selectedStudent}
-                    onChange={e => setSelectedStudent(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30"
-                  >
-                    <option value="">Select a student…</option>
-                    {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-
-                {/* Missing categories nudge */}
-                {selectedStudent && missingForSelected.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-xs font-semibold text-amber-800 mb-1">
-                          {missingForSelected.length} observation{missingForSelected.length > 1 ? 's' : ''} needed for {selectedStudentName}'s term report
-                        </p>
-                        <p className="text-xs text-amber-700 mb-2">
-                          Switch to "Report Readiness" tab to add structured observations for:{' '}
-                          {missingForSelected.slice(0, 3).map(k => REPORT_CATEGORIES.find(c => c.key === k)?.label).join(', ')}
-                          {missingForSelected.length > 3 ? ` +${missingForSelected.length - 3} more` : ''}
-                        </p>
-                        <button
-                          onClick={() => setActiveTab('readiness')}
-                          className="text-xs text-amber-700 font-semibold underline underline-offset-2"
-                        >
-                          Add observations →
-                        </button>
+                      <span className="text-sm font-semibold text-neutral-800 flex-1 truncate">{student.name}</span>
+                      {bulkFormatted[student.id] && (
+                        <span className="text-[10px] bg-primary-50 text-primary-600 border border-primary-200 px-2 py-0.5 rounded-full font-medium shrink-0">
+                          ✨ Formatted
+                        </span>
+                      )}
+                      <button
+                        onClick={() => formatBulkWithOakie(student.id)}
+                        disabled={bulkFormatting[student.id] || !(bulkTexts[student.id] || '').trim()}
+                        className="flex items-center gap-1 text-[11px] px-2.5 py-1 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg font-medium transition-colors disabled:opacity-40 shrink-0"
+                      >
+                        {bulkFormatting[student.id] ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                        Ask Oakie
+                      </button>
+                    </div>
+                    <div className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={bulkTexts[student.id] || ''}
+                        onChange={e => {
+                          const val = e.target.value.slice(0, 100);
+                          setBulkTexts(prev => ({ ...prev, [student.id]: val }));
+                          if (bulkFormatted[student.id]) setBulkFormatted(prev => ({ ...prev, [student.id]: false }));
+                        }}
+                        maxLength={100}
+                        placeholder={`Note for ${student.name.split(' ')[0]}…`}
+                        className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white"
+                      />
+                      <div className="flex justify-end mt-1">
+                        <span className={`text-[10px] ${(bulkTexts[student.id] || '').length >= 90 ? 'text-amber-500' : 'text-neutral-300'}`}>
+                          {(bulkTexts[student.id] || '').length}/100
+                        </span>
                       </div>
                     </div>
                   </div>
-                )}
+                ))}
+              </div>
 
-                {/* Text input with Oakie button */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-medium text-neutral-600">Your notes</label>
-                    {mainFormatted && (
-                      <span className="text-[10px] bg-primary-50 text-primary-600 border border-primary-200 px-2 py-0.5 rounded-full font-medium">
-                        Formatted by Oakie ✨
-                      </span>
-                    )}
-                  </div>
-                  <textarea
-                    value={rawText}
-                    onChange={e => { setRawText(e.target.value); if (mainFormatted) setMainFormatted(false); }}
-                    rows={4}
-                    placeholder={`e.g. "${examples[0]}"`}
-                    className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white"
-                  />
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-neutral-400">{rawText.length} chars</span>
-                    <button
-                      onClick={formatMainWithOakie}
-                      disabled={formattingMain || !rawText.trim()}
-                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg font-medium transition-colors disabled:opacity-40"
-                    >
-                      {formattingMain ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-                      Ask Oakie to format
-                    </button>
-                  </div>
-                </div>
+              {bulkMsg && (
+                <p className={`text-sm px-3 py-2 rounded-xl mt-2 ${bulkMsg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                  {bulkMsg}
+                </p>
+              )}
 
-                {/* Examples */}
-                <div className="bg-neutral-50 border border-neutral-100 rounded-xl p-3">
-                  <p className="text-xs font-medium text-neutral-500 mb-2">💡 Examples:</p>
-                  <div className="flex flex-col gap-1.5">
-                    {examples.map((ex, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setRawText(ex)}
-                        className="text-left text-xs text-neutral-600 px-2.5 py-2 bg-white rounded-lg border border-neutral-100 hover:border-primary-200 hover:text-primary-700 transition-colors"
-                      >
-                        "{ex}"
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <button
+                onClick={saveBulk}
+                disabled={savingBulk || !students.some(s => (bulkTexts[s.id] || '').trim())}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 mt-3"
+              >
+                {savingBulk
+                  ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
+                  : <><CheckCircle2 className="w-4 h-4" />Save All Entries</>}
+              </button>
+            </div>
 
-                {msg && (
-                  <p className={`text-sm px-3 py-2 rounded-xl ${msg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-                    {msg}
-                  </p>
-                )}
-
+            {/* ── Generic class note ── */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-neutral-800">📢 Generic class note</p>
+                <span className="text-[10px] text-neutral-400">Sent to all {students.length} students</span>
+              </div>
+              <p className="text-xs text-neutral-500 mb-3">Write one note that applies to the whole class — it will be saved for each student individually.</p>
+              <div className="flex gap-2 items-start">
+                <input
+                  type="text"
+                  value={classNoteText}
+                  onChange={e => setClassNoteText(e.target.value.slice(0, 100))}
+                  maxLength={100}
+                  placeholder="e.g. Great participation in circle time today!"
+                  className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white"
+                />
                 <button
-                  onClick={save}
-                  disabled={saving || !selectedStudent || !rawText.trim()}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                  onClick={formatClassNoteWithOakie}
+                  disabled={classNoteFormatting || !classNoteText.trim()}
+                  className="flex items-center gap-1 text-xs px-3 py-2.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl font-medium transition-colors disabled:opacity-40 shrink-0"
                 >
-                  {saving
-                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-                    : <><Send className="w-4 h-4" />Save Entry</>}
+                  {classNoteFormatting ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                  Oakie
                 </button>
-              </>
-            )}
+              </div>
+              <div className="flex justify-end mt-1 mb-3">
+                <span className={`text-[10px] ${classNoteText.length >= 90 ? 'text-amber-500' : 'text-neutral-300'}`}>
+                  {classNoteText.length}/100
+                </span>
+              </div>
+              {classNoteMsg && (
+                <p className={`text-xs font-medium mb-2 ${classNoteMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {classNoteMsg}
+                </p>
+              )}
+              <button
+                onClick={saveClassNote}
+                disabled={savingClassNote || !classNoteText.trim() || students.length === 0}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-neutral-800 hover:bg-neutral-900 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+              >
+                {savingClassNote
+                  ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
+                  : <><Send className="w-4 h-4" />Send to All Students</>}
+              </button>
+            </div>
 
             {/* Recent entries */}
             {recentEntries.length > 0 && (

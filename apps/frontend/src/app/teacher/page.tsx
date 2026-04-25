@@ -1426,14 +1426,9 @@ export default function TeacherPlanner() {
         {/* Animated background blob */}
         <div className="absolute -top-8 right-1/3 w-32 h-32 rounded-full pointer-events-none opacity-20"
           style={{ background: 'radial-gradient(circle, #86efac, transparent)', animation: 'pulse 5s ease-in-out infinite' }} />
-        {/* Oakie mascot in header */}
-        <div className="absolute right-32 bottom-0 pointer-events-none hidden sm:block">
-          <img src="/oakie.png" alt="" aria-hidden="true" className="w-12 h-auto object-contain opacity-80" />
-        </div>
         <div className="relative flex items-center gap-3">
-          <OakitLogo size="xs" variant="light" />
           {greeting && (
-            <span className="text-sm text-white/90 font-medium truncate max-w-[160px] lg:max-w-xs animate-fade-in">
+            <span className="text-sm text-white/90 font-medium truncate max-w-[200px] lg:max-w-xs animate-fade-in">
               {greeting}
             </span>
           )}
