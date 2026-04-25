@@ -68,13 +68,37 @@ router.post('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, subdomain, status, plan_type, billing_status, plan_updated_at, contact, created_at
-       FROM schools WHERE id = $1`,
+      `SELECT s.id, s.name, s.subdomain, s.status, s.plan_type, s.billing_status, s.plan_updated_at, s.contact, s.created_at,
+              COALESCE(ss.translation_enabled, true) as translation_enabled
+       FROM schools s
+       LEFT JOIN school_settings ss ON ss.school_id = s.id
+       WHERE s.id = $1`,
       [req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'School not found' });
     return res.json(result.rows[0]);
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /:id/features — toggle feature flags (translation_enabled, etc.)
+router.patch('/:id/features', async (req: Request, res: Response) => {
+  try {
+    const { translation_enabled } = req.body;
+    if (typeof translation_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'translation_enabled must be a boolean' });
+    }
+    await pool.query(
+      `INSERT INTO school_settings (school_id, translation_enabled, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (school_id) DO UPDATE
+       SET translation_enabled = EXCLUDED.translation_enabled, updated_at = now()`,
+      [req.params.id, translation_enabled]
+    );
+    return res.json({ ok: true, translation_enabled });
+  } catch (err) {
+    console.error('[super-admin] PATCH features', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

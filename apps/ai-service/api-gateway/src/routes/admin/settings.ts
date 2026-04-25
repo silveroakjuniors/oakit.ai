@@ -41,7 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Get settings
     const settingsRow = await pool.query(
-      `SELECT notes_expiry_days, ai_plan_mode, voice_enabled, instagram_handle FROM school_settings WHERE school_id = $1`,
+      `SELECT notes_expiry_days, ai_plan_mode, voice_enabled, instagram_handle, translation_enabled FROM school_settings WHERE school_id = $1`,
       [school_id]
     );
     if (settingsRow.rows.length === 0) {
@@ -64,6 +64,7 @@ router.get('/', async (req: Request, res: Response) => {
       primary_color: school.primary_color ?? '#1A3C2E',
       tagline: school.tagline ?? '',
       instagram_handle: settingsRow.rows[0]?.instagram_handle ?? '',
+      translation_enabled: settingsRow.rows[0]?.translation_enabled ?? true,
     });
   } catch (err) {
     console.error('[settings GET]', err);
@@ -156,7 +157,8 @@ router.put('/', async (req: Request, res: Response) => {
               COALESCE(ss.notes_expiry_days, 14) as notes_expiry_days,
               COALESCE(ss.ai_plan_mode, 'standard') as ai_plan_mode,
               COALESCE(ss.voice_enabled, false) as voice_enabled,
-              ss.instagram_handle
+              ss.instagram_handle,
+              COALESCE(ss.translation_enabled, true) as translation_enabled
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
        WHERE s.id = $1`,
@@ -176,6 +178,7 @@ router.put('/', async (req: Request, res: Response) => {
       primary_color: r.primary_color ?? '#1A3C2E',
       tagline: r.tagline ?? '',
       instagram_handle: r.instagram_handle ?? '',
+      translation_enabled: r.translation_enabled ?? true,
     });
   } catch (err) {
     console.error(err);
