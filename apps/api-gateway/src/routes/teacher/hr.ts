@@ -2,14 +2,21 @@
  * Teacher HR routes — staff can view their own payslips, offer letters, and manage leave.
  * GET  /api/v1/teacher/hr/payslips          — own released payslips
  * GET  /api/v1/teacher/hr/offer-letters     — own offer letters
- * POST /api/v1/teacher/hr/offer-letters/:id/sign   — sign an offer letter
+ * POST /api/v1/teacher/hr/offer-letters/:id/sign    — sign an offer letter
+ * POST /api/v1/teacher/hr/offer-letters/:id/decline — decline an offer letter
  * GET  /api/v1/teacher/hr/leave             — own leave requests
  * POST /api/v1/teacher/hr/leave             — apply for leave
  * DELETE /api/v1/teacher/hr/leave/:id       — cancel a pending request
+ * POST /api/v1/teacher/hr/resignations      — submit resignation
+ * GET  /api/v1/teacher/hr/resignations      — own resignation records
  */
 import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope } from '../../middleware/auth';
+import { generateOfferLetterPDFWithBranding, BrandingContext } from '../../lib/pdfService';
+import { calcNoticePeriodDays } from '../../lib/noticePeriod';
+import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 router.use(jwtVerify, schoolScope);

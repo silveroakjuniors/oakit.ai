@@ -35,11 +35,11 @@ export default function InlineMicButton({ onTranscript, disabled, className = ''
     return (
       <div className={`flex flex-col items-center gap-0.5 ${className}`}>
         <div
-          title="Voice input is only supported on Chrome and Safari browsers"
+          title="Voice input works on: Chrome (Android/Desktop), Safari (iPhone/iPad/Mac)"
           className="w-7 h-7 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center cursor-not-allowed">
           <MicOff size={13} className="text-neutral-400" />
         </div>
-        <span className="text-[9px] text-neutral-300 text-center leading-tight max-w-[40px]">Chrome only</span>
+        <span className="text-[9px] text-neutral-300 text-center leading-tight max-w-[44px]">Not supported</span>
       </div>
     );
   }
@@ -119,7 +119,7 @@ export default function InlineMicButton({ onTranscript, disabled, className = ''
     <div className={`flex flex-col items-center gap-0.5 ${className}`}>
       {state === 'idle' && (
         <button type="button" onClick={start} disabled={disabled}
-          title="Tap to speak — Chrome and Safari supported"
+          title="Tap to speak — Chrome (Android/Desktop) and Safari (iPhone/iPad) supported"
           className="w-7 h-7 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center hover:bg-emerald-100 hover:border-emerald-400 transition-all active:scale-95 disabled:opacity-40">
           <Mic size={13} className="text-emerald-600" />
         </button>
