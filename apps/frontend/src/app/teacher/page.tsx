@@ -292,7 +292,7 @@ export default function TeacherPlanner() {
       if (data.readiness_reminder) { setReadinessReminder(true); setReadinessMissCount(data.readiness_miss_count || 0); }
       const effectiveToday = data.today || new Date().toISOString().split('T')[0];
       setToday(effectiveToday);
-      setMessages([{ role: 'assistant', text: `?? ${data.thought_for_day}` }]);
+      setMessages([{ role: 'assistant', text: data.thought_for_day }]);
       return effectiveToday;
     } catch {
       setMessages([{ role: 'assistant', text: "Hi! Ask me about today's plan or any classroom situation." }]);
@@ -1210,7 +1210,8 @@ export default function TeacherPlanner() {
         </div>
 
         {/* Chat input — always shown */}
-        <div className="border-t border-neutral-100 bg-white px-3 pt-2" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))', boxShadow: '0 -1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="border-t border-neutral-100 bg-white px-3 pt-2 shrink-0"
+          style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))', boxShadow: '0 -1px 3px rgba(0,0,0,0.04)' }}>
           {limitReached && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-2 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
@@ -1444,7 +1445,7 @@ export default function TeacherPlanner() {
       {/* Desktop: two-column layout | Tablet/Mobile: tab-based */}
       <div className="flex-1 min-h-0 overflow-hidden flex">
 
-        {/* -- Desktop sidebar -- */}
+        {/* -- Desktop sidebar (lg+) -- */}
         <div className="hidden lg:flex flex-col w-80 xl:w-96 border-r border-neutral-100 bg-white overflow-y-auto shrink-0"
           style={{ boxShadow: '2px 0 8px rgba(0,0,0,0.04)' }}>
           <div className="flex border-b border-neutral-100 shrink-0 px-3 pt-3 gap-1">
@@ -1461,16 +1462,16 @@ export default function TeacherPlanner() {
             ))}
           </div>
           <div className="flex-1 overflow-y-auto">
-            {activeTab !== 'chat' ? (
-              activeTab === 'plan' ? planTabContent : helpTabContent
-            ) : planTabContent}
+            {activeTab === 'plan' ? planTabContent : helpTabContent}
           </div>
         </div>
 
         {/* -- Main content area -- */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Tablet top tabs */}
-          <div className="hidden md:flex lg:hidden border-b border-neutral-100 bg-white shrink-0 px-3 pt-2 gap-1" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+
+          {/* Tablet top tabs (md only) */}
+          <div className="hidden md:flex lg:hidden border-b border-neutral-100 bg-white shrink-0 px-3 pt-2 gap-1"
+            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             {([
               { id: 'plan', label: 'Plan', Icon: CalendarDays },
               { id: 'chat', label: 'Oakie', Icon: MessageCircle },
@@ -1488,15 +1489,22 @@ export default function TeacherPlanner() {
             ))}
           </div>
 
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="hidden lg:flex flex-col flex-1 overflow-hidden">{chatTabContent}</div>
-            <div className="flex-1 min-h-0 overflow-y-auto lg:hidden">
-              {activeTab === 'plan' && planTabContent}
-              {activeTab === 'help' && helpTabContent}
-            </div>
-            <div className={`flex-1 min-h-0 flex flex-col overflow-hidden lg:hidden ${activeTab === 'chat' ? 'flex' : 'hidden'}`}>
-              {chatTabContent}
-            </div>
+          {/* Content panels — flex column fills remaining height */}
+          {/* Desktop: always show chat */}
+          <div className="hidden lg:flex flex-col flex-1 min-h-0 overflow-hidden">
+            {chatTabContent}
+          </div>
+
+          {/* Mobile + Tablet: active tab */}
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden lg:hidden">
+            {activeTab === 'chat' ? (
+              chatTabContent
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                {activeTab === 'plan' && planTabContent}
+                {activeTab === 'help' && helpTabContent}
+              </div>
+            )}
           </div>
         </div>
       </div>

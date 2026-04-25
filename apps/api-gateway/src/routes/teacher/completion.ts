@@ -179,19 +179,28 @@ router.get('/pending', async (req: Request, res: Response) => {
     const today = await getToday(school_id);
 
     const sections = await getTeacherSections(user_id, school_id);
+    if (sections.length === 0) return res.json([]); // no section — return empty, not error
+
     const resolved = await resolveSection(sections, req.query.section_id as string | undefined);
-    if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
+    if ('error' in resolved) {
+      // No section or multi-section without specifier — return empty pending list
+      if (resolved.status === 404 || resolved.status === 400) return res.json([]);
+      return res.status(resolved.status).json({ error: resolved.error });
+    }
     const { section_id } = resolved;
 
-    // Get all past day plans
+    // Get all past day plans that have chunk_ids
     const plans = await pool.query(
       `SELECT dp.id, dp.plan_date, dp.chunk_ids
        FROM day_plans dp
-       WHERE dp.section_id = $1 AND dp.plan_date < $2
+       WHERE dp.section_id = $1 AND dp.plan_date < $2::date
          AND dp.status NOT IN ('holiday', 'weekend')
+         AND dp.chunk_ids IS NOT NULL AND dp.chunk_ids != '{}'
        ORDER BY dp.plan_date ASC`,
       [section_id, today]
     );
+
+    if (plans.rows.length === 0) return res.json([]);
 
     // Get all completed chunk IDs for this section, plus dates that have a completion record
     const completions = await pool.query(
@@ -199,9 +208,8 @@ router.get('/pending', async (req: Request, res: Response) => {
       [section_id]
     );
     const coveredIds = new Set<string>(
-      completions.rows.flatMap((r: any) => r.covered_chunk_ids || [])
+      completions.rows.flatMap((r: any) => Array.isArray(r.covered_chunk_ids) ? r.covered_chunk_ids : [])
     );
-    // Dates that have ANY completion record (including settling days with empty chunk_ids)
     const completedDates = new Set<string>(
       completions.rows.map((r: any) => (r.completion_date || '').split('T')[0])
     );
@@ -209,24 +217,24 @@ router.get('/pending', async (req: Request, res: Response) => {
     const pending = [];
     for (const plan of plans.rows) {
       const planDate = (plan.plan_date || '').split('T')[0];
-      // Skip if this date has a completion record (teacher marked it done)
       if (completedDates.has(planDate)) continue;
 
-      const uncovered = (plan.chunk_ids || []).filter((id: string) => !coveredIds.has(id));
+      const chunkIds: string[] = Array.isArray(plan.chunk_ids) ? plan.chunk_ids : [];
+      const uncovered = chunkIds.filter((id: string) => !coveredIds.has(id));
       if (uncovered.length === 0) continue;
 
       const chunks = await pool.query(
         'SELECT id, topic_label, content FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
         [uncovered]
       );
-      pending.push({
-        plan_date: planDate,
-        chunks: chunks.rows,
-      });
+      if (chunks.rows.length > 0) {
+        pending.push({ plan_date: planDate, chunks: chunks.rows });
+      }
     }
 
     return res.json(pending);
   } catch (err) {
+    console.error('[completion/pending]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

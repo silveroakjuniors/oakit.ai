@@ -460,11 +460,13 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
     if (studentRow.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     const { section_id, name: student_name, class_name } = studentRow.rows[0];
 
-    // Get current academic year — fallback to most recent if time machine is active
+    const termToday = await getToday(school_id);
+
+    // Get current academic year — use time-machine-aware today, fallback to most recent
     let calRow = await pool.query(
       `SELECT start_date, end_date FROM school_calendar
-       WHERE school_id = $1 AND now()::date BETWEEN start_date AND end_date LIMIT 1`,
-      [school_id]
+       WHERE school_id = $1 AND $2::date BETWEEN start_date AND end_date LIMIT 1`,
+      [school_id, termToday]
     );
     if (calRow.rows.length === 0) {
       calRow = await pool.query(
@@ -1126,13 +1128,13 @@ router.get('/calendar', async (req: Request, res: Response) => {
     // Get school's "today" — respects time machine
     const todayStr = await getToday(school_id);
 
-    // Get academic year — try current date first, then fall back to most recent calendar
+    // Get academic year — use time-machine-aware today, fall back to most recent calendar
     let calRow = await pool.query(
       `SELECT academic_year, start_date::text, end_date::text
        FROM school_calendar
-       WHERE school_id = $1 AND now()::date BETWEEN start_date AND end_date
+       WHERE school_id = $1 AND $2::date BETWEEN start_date AND end_date
        LIMIT 1`,
-      [school_id]
+      [school_id, todayStr]
     );
     // Fallback: use the most recently started calendar year (handles time machine)
     if (calRow.rows.length === 0) {
