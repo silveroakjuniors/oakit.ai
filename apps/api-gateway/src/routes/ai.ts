@@ -942,5 +942,30 @@ router.post('/term-summary', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/ai/format-observation
+// Formats a raw teacher observation into a warm, professional note using the child's name.
+// Bypasses the off-topic guard — this is always school-relevant.
+router.post('/format-observation', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { text, student_name, category, class_name } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+
+    const aiResp = await axios.post(`${AI()}/internal/format-observation`, {
+      text: text.trim(),
+      student_name: student_name || 'the student',
+      category: category || '',
+      class_name: class_name || '',
+    }, { timeout: 15000 });
+
+    const formatted = aiResp.data.formatted || text;
+    return res.json({ formatted });
+  } catch (err) {
+    console.error('[ai.format-observation]', err);
+    // Graceful fallback — return original text
+    return res.json({ formatted: req.body.text });
+  }
+});
+
 export default router;
 

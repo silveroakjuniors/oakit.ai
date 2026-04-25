@@ -782,6 +782,45 @@ Under 150 words."""
     return {"formatted_text": formatted}
 
 
+# --- Observation formatter ---
+
+class FormatObservationRequest(BaseModel):
+    text: str
+    student_name: str = "the student"
+    category: str = ""
+    class_name: str = ""
+
+@app.post("/internal/format-observation")
+async def format_observation(req: FormatObservationRequest):
+    """Format a raw teacher observation into a warm, professional report-ready note."""
+    from query_pipeline import _call_llm
+
+    first_name = req.student_name.split()[0] if req.student_name else "the student"
+    category_hint = f" for the '{req.category}' category" if req.category else ""
+
+    system = (
+        f"You are helping a teacher write a professional child observation note{category_hint}.\n"
+        "Output plain text only — no markdown, no bullet symbols, no headers.\n"
+        f"Always refer to the child by their first name: {first_name}.\n"
+        "Write 2-3 warm, specific, professional sentences suitable for a school report.\n"
+        "Expand on the observation with concrete, positive language. Do not invent facts."
+    )
+    prompt = f"""Teacher's raw observation about {first_name}:
+\"{req.text}\"
+
+Rewrite this as a polished 2-3 sentence observation note for a school report.
+Use {first_name}'s name naturally. Be warm, specific, and professional."""
+
+    try:
+        formatted, _ = await _call_llm(prompt, system)
+        if not formatted:
+            formatted = req.text
+    except Exception:
+        formatted = req.text
+
+    return {"formatted": formatted}
+
+
 # --- Activity suggestions ---
 
 class SuggestActivityRequest(BaseModel):

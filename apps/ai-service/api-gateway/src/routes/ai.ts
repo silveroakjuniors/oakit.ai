@@ -587,10 +587,11 @@ router.post('/parent-query', async (req: Request, res: Response) => {
 
     // Get the student's section_id to pass as teacher context
     // The AI service uses teacher_id to find section — for parents we pass the section's class teacher instead
-    let section_teacher_id = user_id; // fallback
+    let section_teacher_id: string | null = null;
+    let section_id_for_ai: string | null = null;
     if (student_id) {
       const teacherRow = await pool.query(
-        `SELECT COALESCE(sec.class_teacher_id, ts.teacher_id) as teacher_id
+        `SELECT COALESCE(sec.class_teacher_id, ts.teacher_id) as teacher_id, sec.id as section_id
          FROM students s
          JOIN sections sec ON sec.id = s.section_id
          LEFT JOIN teacher_sections ts ON ts.section_id = s.section_id
@@ -598,9 +599,15 @@ router.post('/parent-query', async (req: Request, res: Response) => {
          LIMIT 1`,
         [student_id]
       );
-      if (teacherRow.rows.length > 0 && teacherRow.rows[0].teacher_id) {
-        section_teacher_id = teacherRow.rows[0].teacher_id;
+      if (teacherRow.rows.length > 0) {
+        section_teacher_id = teacherRow.rows[0].teacher_id || null;
+        section_id_for_ai = teacherRow.rows[0].section_id || null;
       }
+    }
+
+    // If no teacher found, we can't answer curriculum questions — return a helpful message
+    if (!section_teacher_id) {
+      return res.json({ response: `I don't have enough information about your child's class yet. Please check back once the teacher has been assigned to the section.` });
     }
 
     try {

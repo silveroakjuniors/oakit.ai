@@ -20,12 +20,23 @@ export async function jwtVerify(req: Request, res: Response, next: NextFunction)
   const token = authHeader.slice(7);
   try {
     const payload = verifyToken(token);
+
+    // Check revoked impersonation tokens
     if (payload.jti) {
       const revoked = await redis.sIsMember('impersonation:revoked', payload.jti);
       if (revoked) {
         return res.status(401).json({ error: 'Token has been revoked' });
       }
     }
+
+    // Single-session enforcement: check if this session is still the active one
+    if (payload.sid && payload.user_id) {
+      const activeSession = await redis.get(`session:${payload.user_id}`);
+      if (activeSession && activeSession !== payload.sid) {
+        return res.status(401).json({ error: 'Session expired — logged in from another device', code: 'SESSION_REPLACED' });
+      }
+    }
+
     req.user = payload;
     return next();
   } catch {

@@ -108,13 +108,14 @@ export default function ChildJourneyPage() {
   const [obsText, setObsText] = useState('');
   const [savingObs, setSavingObs] = useState(false);
   const [obsMsg, setObsMsg] = useState('');
-
+  const [obsFormatting, setObsFormatting] = useState(false);
   // ── Observation modal state ──
   const [modalOpen, setModalOpen] = useState(false);
   const [modalStudent, setModalStudent] = useState<Student | null>(null);
   const [modalCategory, setModalCategory] = useState<typeof REPORT_CATEGORIES[0] | null>(null);
   const [modalText, setModalText] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
+  const [modalFormatting, setModalFormatting] = useState(false);
   const [modalError, setModalError] = useState('');
 
   useEffect(() => {
@@ -154,14 +155,14 @@ export default function ChildJourneyPage() {
     } catch { /* ignore */ }
   }
 
-  /** Ask Oakie to reformat a raw text. Returns the formatted string or throws. */
-  async function askOakieFormat(text: string): Promise<string> {
-    const res = await apiPost<{ response?: string; result?: string; answer?: string; text?: string }>(
-      '/api/v1/ai/query',
-      { text: 'Please reformat this teacher observation into a warm, professional 2-3 sentence note: ' + text },
+  /** Ask Oakie to reformat a raw observation. Passes student name + category for context. */
+  async function askOakieFormat(text: string, studentName?: string, category?: string): Promise<string> {
+    const res = await apiPost<{ formatted?: string }>(
+      '/api/v1/ai/format-observation',
+      { text, student_name: studentName, category, class_name: '' },
       token,
     );
-    return res.response || res.result || res.answer || res.text || text;
+    return res.formatted || text;
   }
 
   /** Format the single-student textarea with Oakie */
@@ -180,9 +181,10 @@ export default function ChildJourneyPage() {
   async function formatBulkWithOakie(studentId: string) {
     const text = bulkTexts[studentId] || '';
     if (!text.trim()) return;
+    const studentName = students.find(s => s.id === studentId)?.name || '';
     setBulkFormatting(prev => ({ ...prev, [studentId]: true }));
     try {
-      const formatted = await askOakieFormat(text);
+      const formatted = await askOakieFormat(text, studentName);
       setBulkTexts(prev => ({ ...prev, [studentId]: formatted }));
       setBulkFormatted(prev => ({ ...prev, [studentId]: true }));
     } catch { /* silently fail */ }
@@ -237,7 +239,7 @@ export default function ChildJourneyPage() {
     setClassNoteFormatting(true);
     try {
       const formatted = await askOakieFormat(classNoteText);
-      setClassNoteText(formatted.slice(0, 100));
+      setClassNoteText(formatted);
     } catch { /* silently fail */ }
     finally { setClassNoteFormatting(false); }
   }
@@ -389,17 +391,35 @@ export default function ChildJourneyPage() {
 
               {/* Text input */}
               <div>
-                <p className="text-xs font-semibold text-neutral-600 mb-1.5">Your observation</p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold text-neutral-600">Your observation</p>
+                  <button
+                    onClick={async () => {
+                      if (!modalText.trim()) return;
+                      setModalFormatting(true);
+                      try {
+                        const formatted = await askOakieFormat(modalText, modalStudent.name, modalCategory.label);
+                        setModalText(formatted);
+                      } catch { /* silently fail */ }
+                      finally { setModalFormatting(false); }
+                    }}
+                    disabled={modalFormatting || !modalText.trim()}
+                    className="flex items-center gap-1 text-[11px] px-2.5 py-1 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg font-medium transition-colors disabled:opacity-40"
+                  >
+                    {modalFormatting ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                    Ask Oakie
+                  </button>
+                </div>
                 <textarea
                   value={modalText}
-                  onChange={e => setModalText(e.target.value.slice(0, 500))}
+                  onChange={e => setModalText(e.target.value)}
                   placeholder={`Describe what you observed about ${modalStudent.name.split(' ')[0]}…`}
                   rows={4}
                   autoFocus
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400 resize-none"
                 />
                 <div className="flex items-center justify-between mt-1">
-                  <span className="text-xs text-neutral-400">{modalText.length}/500</span>
+                  <span className="text-xs text-neutral-400">{modalText.length} chars</span>
                   {modalText.length > 0 && (
                     <button onClick={() => setModalText('')} className="text-xs text-neutral-400 hover:text-neutral-600">Clear</button>
                   )}
@@ -493,7 +513,7 @@ export default function ChildJourneyPage() {
                 <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
                   <Users size={13} /> Individual notes
                 </label>
-                <span className="text-[10px] text-neutral-400">100 chars max · Ask Oakie to format</span>
+                <span className="text-[10px] text-neutral-400">Ask Oakie to format</span>
               </div>
               <div className="flex flex-col gap-2">
                 {students.map(student => (
@@ -518,23 +538,16 @@ export default function ChildJourneyPage() {
                       </button>
                     </div>
                     <div className="px-3 py-2">
-                      <input
-                        type="text"
+                      <textarea
                         value={bulkTexts[student.id] || ''}
+                        rows={2}
                         onChange={e => {
-                          const val = e.target.value.slice(0, 100);
-                          setBulkTexts(prev => ({ ...prev, [student.id]: val }));
+                          setBulkTexts(prev => ({ ...prev, [student.id]: e.target.value }));
                           if (bulkFormatted[student.id]) setBulkFormatted(prev => ({ ...prev, [student.id]: false }));
                         }}
-                        maxLength={100}
                         placeholder={`Note for ${student.name.split(' ')[0]}…`}
-                        className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white"
+                        className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white resize-none"
                       />
-                      <div className="flex justify-end mt-1">
-                        <span className={`text-[10px] ${(bulkTexts[student.id] || '').length >= 90 ? 'text-amber-500' : 'text-neutral-300'}`}>
-                          {(bulkTexts[student.id] || '').length}/100
-                        </span>
-                      </div>
                     </div>
                   </div>
                 ))}
@@ -565,13 +578,12 @@ export default function ChildJourneyPage() {
               </div>
               <p className="text-xs text-neutral-500 mb-3">Write one note that applies to the whole class — it will be saved for each student individually.</p>
               <div className="flex gap-2 items-start">
-                <input
-                  type="text"
+                <textarea
                   value={classNoteText}
-                  onChange={e => setClassNoteText(e.target.value.slice(0, 100))}
-                  maxLength={100}
+                  onChange={e => setClassNoteText(e.target.value)}
+                  rows={3}
                   placeholder="e.g. Great participation in circle time today!"
-                  className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white"
+                  className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white resize-none"
                 />
                 <button
                   onClick={formatClassNoteWithOakie}
@@ -583,9 +595,7 @@ export default function ChildJourneyPage() {
                 </button>
               </div>
               <div className="flex justify-end mt-1 mb-3">
-                <span className={`text-[10px] ${classNoteText.length >= 90 ? 'text-amber-500' : 'text-neutral-300'}`}>
-                  {classNoteText.length}/100
-                </span>
+                <span className="text-[10px] text-neutral-300">{classNoteText.length} chars</span>
               </div>
               {classNoteMsg && (
                 <p className={`text-xs font-medium mb-2 ${classNoteMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -752,7 +762,25 @@ export default function ChildJourneyPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-neutral-600 mb-1 block">Observation</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-neutral-600">Observation</label>
+                    <button
+                      onClick={async () => {
+                        if (!obsText.trim()) return;
+                        setObsFormatting(true);
+                        try {
+                          const formatted = await askOakieFormat(obsText, selectedStudentName, obsCategory);
+                          setObsText(formatted);
+                        } catch { /* silently fail */ }
+                        finally { setObsFormatting(false); }
+                      }}
+                      disabled={obsFormatting || !obsText.trim()}
+                      className="flex items-center gap-1 text-[11px] px-2.5 py-1 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg font-medium transition-colors disabled:opacity-40"
+                    >
+                      {obsFormatting ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                      Ask Oakie
+                    </button>
+                  </div>
                   <textarea
                     value={obsText}
                     onChange={e => setObsText(e.target.value)}

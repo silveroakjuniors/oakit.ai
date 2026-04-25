@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [aiStatus, setAiStatus] = useState<'checking' | 'up' | 'down'>('checking');
+  const [sessionMsg, setSessionMsg] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -35,6 +36,11 @@ export default function LoginPage() {
     if (superAdmin) { setSchoolCodeState('platform'); setMounted(true); return; }
     const saved = getSchoolCode();
     if (saved) { setSchoolCodeState(saved); fetchSchoolName(saved); }
+    // Show reason message if redirected from session manager
+    const reason = params.get('reason');
+    if (reason === 'idle') setSessionMsg('You were signed out due to 15 minutes of inactivity.');
+    else if (reason === 'replaced') setSessionMsg('Your session was ended because you signed in from another device.');
+    else if (reason === 'expired') setSessionMsg('Your session has expired. Please sign in again.');
     setMounted(true);
   }, []);
 
@@ -270,6 +276,13 @@ export default function LoginPage() {
                   </button>
                 </div>
               </div>
+
+              {sessionMsg && (
+                <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                  <AlertCircle size={15} className="text-amber-500 shrink-0" />
+                  <p className="text-xs text-amber-700 font-medium">{sessionMsg}</p>
+                </div>
+              )}
 
               {error && (
                 <div className="flex items-center gap-2.5 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">

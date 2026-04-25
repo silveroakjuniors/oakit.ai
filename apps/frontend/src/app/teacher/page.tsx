@@ -9,18 +9,20 @@ import { TopicsChecklist } from '@/UIComponents/teacher/TopicsChecklist';
 import HomeworkModal from '@/components/HomeworkModal';
 import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
+import { useSessionManager } from '@/hooks/useSessionManager';
 import ThemeToggle from '@/components/ThemeToggle';
 import VoiceMicButton from '@/components/VoiceMicButton';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
 import SessionRecorder from '@/components/SessionRecorder';
 import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
-import { getToken, clearToken } from '@/lib/auth';
+import { getToken, clearToken, signOut } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
   ChevronDown, ChevronUp, Send, Paperclip, BookOpen, Sparkles,
-  LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X, ClipboardList
+  LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X, ClipboardList,
+  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet
 } from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
@@ -153,18 +155,13 @@ function extractSubjects(chunks: Chunk[]): string[] {
 }
 
 function getHelpButtons(subjects: string[]) {
-  const iconMap: Record<string, string> = {
-    'english speaking': '???', 'english': '??', 'math': '??', 'mathematics': '??',
-    'gk': '??', 'general knowledge': '??', 'writing': '??', 'art': '??',
-    'circle time': '?', 'morning meet': '?', 'regional language': '???',
-    'additional activities': '??', 'science': '??', 'evs': '??',
-  };
-  return subjects.map(s => ({ label: s, icon: iconMap[s.toLowerCase()] || '??', question: `how do I conduct ${s.toLowerCase()} today` }));
+  return subjects.map(s => ({ label: s, question: `how do I conduct ${s.toLowerCase()} today` }));
 }
 
 export default function TeacherPlanner() {
   const router = useRouter();
   const token = getToken() || '';
+  useSessionManager();
   const [today, setToday] = useState(new Date().toISOString().split('T')[0]);
   const [plan, setPlan] = useState<DayPlan | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -678,7 +675,7 @@ export default function TeacherPlanner() {
                     <CheckCircle2 className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-white">Today's plan complete! 🎉</p>
+                    <p className="text-sm font-bold text-white">Today's plan complete!</p>
                     <p className="text-xs text-primary-200">Parents have been notified.</p>
                   </div>
                 </div>
@@ -687,52 +684,40 @@ export default function TeacherPlanner() {
                     onClick={() => router.push('/teacher/homework')}
                     className="flex-1 py-2.5 text-xs bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition-colors border border-white/20 backdrop-blur-sm"
                   >
-                    📝 Homework & Notes
+                    <PenLine className="w-3 h-3 inline mr-1" />Homework & Notes
                   </button>
                   <button
                     onClick={() => router.push('/teacher/journey')}
                     className="flex-1 py-2.5 text-xs bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition-colors border border-white/15 backdrop-blur-sm"
                   >
-                    📖 Child Journey
+                    <BookOpen className="w-3 h-3 inline mr-1" />Child Journey
                   </button>
                 </div>
               </div>
             </GlassCard>
             {tomorrowPlan && (
               <Card padding="sm" className="border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/80">
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-2">
                   <div className="w-7 h-7 rounded-xl bg-blue-100 flex items-center justify-center">
                     <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
                   </div>
-                  <p className="text-sm font-semibold text-blue-900">Prepare for tomorrow</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-blue-900">Prepare for tomorrow</p>
+                    <p className="text-xs text-blue-500 font-medium">
+                      {new Date(tomorrowPlan.plan_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}
+                    </p>
+                  </div>
                 </div>
-                {tomorrowPlan.chunks?.length > 0 ? (
-                  <>
-                    {tomorrowPlan.chunks.slice(0, 4).map((c: any, i: number) => {
-                      // Strip generic "Week X Day Y" labels — show content-derived subject or a clean fallback
-                      const rawLabel = c.topic_label || '';
-                      const isGeneric = /week\s*\d|day\s*\d/i.test(rawLabel);
-                      const subjectMatch = isGeneric && c.content
-                        ? c.content.match(/^(English Speaking|English|Math(?:ematics)?|GK|General Knowledge|Writing|Art|Music|PE|Science|EVS|Hindi|Circle Time|Morning Meet|Regional Language)/im)
-                        : null;
-                      const displayLabel = subjectMatch ? subjectMatch[1] : (isGeneric ? `Topic ${i + 1}` : rawLabel);
-                      return (
-                        <div key={i} className="flex items-center gap-2 mb-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                          <p className="text-xs text-blue-800">{displayLabel}</p>
-                        </div>
-                      );
-                    })}
-                    {tomorrowPlan.chunks.length > 4 && <p className="text-xs text-blue-500 ml-3.5">+{tomorrowPlan.chunks.length - 4} more topics</p>}
-                  </>
-                ) : (
-                  <p className="text-xs text-blue-700">
-                    {tomorrowPlan.status === 'settling' ? `🌱 ${tomorrowPlan.special_label || 'Settling Day'}` :
-                     tomorrowPlan.status === 'revision' ? `📝 Revision Day` :
-                     tomorrowPlan.status === 'exam' ? `📋 Exam Day` :
-                     `📅 ${tomorrowPlan.special_label || tomorrowPlan.status}`}
-                  </p>
-                )}
+                <p className="text-xs text-blue-700 font-medium">
+                  {tomorrowPlan.status === 'holiday'   ? tomorrowPlan.special_label || 'Holiday' :
+                   tomorrowPlan.status === 'settling'  ? tomorrowPlan.special_label || 'Settling Day' :
+                   tomorrowPlan.status === 'revision'  ? tomorrowPlan.special_label || 'Revision Day' :
+                   tomorrowPlan.status === 'exam'      ? tomorrowPlan.special_label || 'Exam Day' :
+                   tomorrowPlan.status === 'event'     ? tomorrowPlan.special_label || 'Special Event' :
+                   tomorrowPlan.chunks?.length > 0     ? `${tomorrowPlan.chunks.length} topic${tomorrowPlan.chunks.length > 1 ? 's' : ''} planned` :
+                   tomorrowPlan.special_label          ? tomorrowPlan.special_label :
+                   'Regular school day'}
+                </p>
                 <button onClick={() => askSuggested("what is my plan for tomorrow")}
                   className="mt-3 flex items-center gap-1.5 text-xs text-blue-700 font-semibold hover:text-blue-900 transition-colors">
                   <Sparkles className="w-3 h-3" /> Ask Oakie about tomorrow
@@ -823,9 +808,9 @@ export default function TeacherPlanner() {
             {/* Quick help chips */}
             <div className="flex flex-col gap-1.5">
               {[
-                { q: "a child is crying what do I do", label: "😢 Child is upset" },
-                { q: "children are not listening", label: "😤 Not listening" },
-                { q: "am I on track with the curriculum", label: "📊 My progress" },
+                { q: "a child is crying what do I do", label: "Child is upset" },
+                { q: "children are not listening", label: "Not listening" },
+                { q: "am I on track with the curriculum", label: "My progress" },
               ].map((item, i) => (
                 <button key={i} onClick={() => { setActiveTab('chat'); askSuggested(item.q); }}
                   className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-primary-100 bg-primary-50/60 text-sm text-primary-700 hover:bg-primary-100 hover:border-primary-200 text-left transition-colors font-medium">
@@ -838,23 +823,23 @@ export default function TeacherPlanner() {
           <>
             <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
               <p className="text-sm font-semibold text-blue-900 mb-3">
-                {plan.status === 'settling' ? `🌱 ${plan.special_label || 'Settling Day'}` :
-                 plan.status === 'revision' ? `📝 ${plan.special_label || 'Revision Day'}` :
-                 plan.status === 'exam' ? `📋 ${plan.special_label || 'Exam Day'}` :
-                 plan.status === 'event' ? `🎉 ${plan.special_label || 'Special Event'}` :
-                 plan.status === 'holiday' ? `🏖️ ${plan.special_label || 'Holiday'}` :
-                 `📅 ${plan.special_label || plan.status}`}
+                {plan.status === 'settling' ? plan.special_label || 'Settling Day' :
+                 plan.status === 'revision' ? plan.special_label || 'Revision Day' :
+                 plan.status === 'exam'     ? plan.special_label || 'Exam Day' :
+                 plan.status === 'event'    ? plan.special_label || 'Special Event' :
+                 plan.status === 'holiday'  ? plan.special_label || 'Holiday' :
+                 plan.special_label || plan.status}
               </p>
               <div className="flex flex-col gap-1.5">
                 {[
                   { q: "how do I prepare children for today", label: "How to prepare?" },
                   { q: "what activities should I do today", label: "Activity ideas" },
-                  { q: "a child is crying what do I do", label: "😢 Child is upset" },
-                  { q: "children are not listening", label: "😤 Not listening" },
+                  { q: "a child is crying what do I do", label: "Child is upset" },
+                  { q: "children are not listening", label: "Not listening" },
                 ].map((item, i) => (
                   <button key={i} onClick={() => askSuggested(item.q)}
                     className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-blue-200 bg-white text-sm text-blue-700 hover:bg-blue-50 transition-colors text-left font-medium">
-                    ✨ {item.label}
+                    <ArrowRight className="w-3 h-3 shrink-0" /> {item.label}
                   </button>
                 ))}
               </div>
@@ -878,6 +863,7 @@ export default function TeacherPlanner() {
             { label: 'Report Cards', sub: 'Generate for students', icon: ClipboardList, gradient: 'from-purple-500 to-indigo-600', hover: 'hover:border-purple-200 hover:bg-purple-50/40', path: '/teacher/reports' },
             { label: 'Class Feed', sub: 'Post photos', icon: Play, gradient: 'from-pink-500 to-rose-600', hover: 'hover:border-pink-200 hover:bg-pink-50/40', path: '/teacher/feed' },
             { label: 'Students', sub: 'Profiles & milestones', icon: Users, gradient: 'from-violet-500 to-purple-600', hover: 'hover:border-violet-200 hover:bg-violet-50/40', path: '/teacher/students' },
+            { label: 'My HR', sub: 'Salary · Leave · Offer letter', icon: Wallet, gradient: 'from-teal-500 to-cyan-600', hover: 'hover:border-teal-200 hover:bg-teal-50/40', path: '/teacher/hr' },
           ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
             <button key={path} onClick={() => router.push(path)}
               className={`flex items-center gap-3 p-3.5 bg-white border border-neutral-100 rounded-2xl transition-all shadow-sm group ${hover}`}>
@@ -1033,7 +1019,7 @@ export default function TeacherPlanner() {
 
               {/* Disclaimer */}
               <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
-                <span className="text-base shrink-0">⚠️</span>
+                <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-amber-800 leading-snug">
                   Videos are auto-suggested from YouTube and may not always match your exact curriculum. Use your judgement before playing in class. For more options, search YouTube directly or ask Oakie for detailed help.
                 </p>
@@ -1078,7 +1064,7 @@ export default function TeacherPlanner() {
                   onClick={() => { setVideoModalOpen(false); setActiveTab('chat'); }}
                   className="w-full text-center py-2 rounded-xl bg-primary-50 border border-primary-100 text-xs text-primary-700 font-medium hover:bg-primary-100 transition-colors"
                 >
-                  ✨ Ask Oakie for detailed help instead
+                  Ask Oakie for detailed help instead
                 </button>
               </div>
             </div>
@@ -1237,13 +1223,13 @@ export default function TeacherPlanner() {
               {getHelpButtons(extractSubjects(plan.chunks)).map((btn, i) => (
                 <button key={i} type="button" onClick={() => setInput(`How do I conduct ${btn.label} today?`)}
                   className="flex items-center gap-1 px-3 py-2 rounded-full border border-primary-200 bg-primary-50 text-xs text-primary-700 whitespace-nowrap shrink-0 active:bg-primary-100 min-h-[36px] font-medium hover:border-primary-300 transition-colors">
-                  {btn.icon} {btn.label}
+                  <BookOpen className="w-3 h-3 shrink-0" /> {btn.label}
                 </button>
               ))}
-              {[{ icon: '😢', label: 'Child crying' }, { icon: '😤', label: 'Not listening' }].map((c, i) => (
+              {[{ label: 'Child crying' }, { label: 'Not listening' }].map((c, i) => (
                 <button key={i} type="button" onClick={() => setInput(`What do I do if a child is ${c.label.toLowerCase()}?`)}
                   className="flex items-center gap-1 px-3 py-2 rounded-full border border-neutral-200 bg-white text-xs text-neutral-600 whitespace-nowrap shrink-0 active:bg-neutral-50 min-h-[36px] hover:border-neutral-300 transition-colors">
-                  {c.icon} {c.label}
+                  <Heart className="w-3 h-3 shrink-0 text-neutral-400" /> {c.label}
                 </button>
               ))}
             </div>
@@ -1305,17 +1291,19 @@ export default function TeacherPlanner() {
           </div>
           <div className="bg-white p-4 flex flex-col gap-3">
             {[
-              { icon: '🌅', title: 'Oakie plans your day on login', desc: 'Every morning, Oakie automatically loads your day\'s plan from the curriculum.' },
-              { icon: '📄', title: 'Raw Plan button', desc: 'Tap "Raw Plan" in the chat header to see today\'s topics and download as PDF.' },
-              { icon: '💬', title: 'Ask Oakie anything', desc: 'Type any question about your class — how to teach a subject, handle a situation, or get activity ideas.' },
-              { icon: '✅', title: 'Mark topics done in Plan tab', desc: 'Tick off topics as you complete them. Parents are notified automatically.' },
-              { icon: '🔄', title: 'Oakie carries topics forward', desc: "Unticked topics automatically move to tomorrow's plan. You'll see them in Pending." },
-              { icon: '📥', title: 'Download any response as PDF', desc: 'Every Oakie response has a PDF button. Tap it to download.' },
-              { icon: '📝', title: 'Homework & Notes', desc: 'Tap "Homework & Notes" to send homework, track completion, and send class notes to parents.' },
-              { icon: '🔥', title: 'Teaching Consistency', desc: 'Your streak badge shows how many consecutive days you\'ve submitted completion.' },
+              { Icon: Sparkles,    title: 'Oakie plans your day on login',    desc: "Every morning, Oakie automatically loads your day's plan from the curriculum." },
+              { Icon: FileText,    title: 'Raw Plan button',                  desc: 'Tap "Raw Plan" in the chat header to see today\'s topics and download as PDF.' },
+              { Icon: MessageCircle, title: 'Ask Oakie anything',             desc: 'Type any question about your class — how to teach a subject, handle a situation, or get activity ideas.' },
+              { Icon: CheckCircle2, title: 'Mark topics done in Plan tab',    desc: 'Tick off topics as you complete them. Parents are notified automatically.' },
+              { Icon: RefreshCw,   title: 'Oakie carries topics forward',     desc: "Unticked topics automatically move to tomorrow's plan. You'll see them in Pending." },
+              { Icon: Download,    title: 'Download any response as PDF',     desc: 'Every Oakie response has a PDF button. Tap it to download.' },
+              { Icon: PenLine,     title: 'Homework & Notes',                 desc: 'Tap "Homework & Notes" to send homework, track completion, and send class notes to parents.' },
+              { Icon: Flame,       title: 'Teaching Consistency',             desc: "Your streak badge shows how many consecutive days you've submitted completion." },
             ].map((item, i) => (
               <div key={i} className="flex gap-3 py-2 border-b border-neutral-50 last:border-0">
-                <span className="text-lg shrink-0 mt-0.5">{item.icon}</span>
+                <div className="w-7 h-7 rounded-lg bg-primary-50 flex items-center justify-center shrink-0 mt-0.5">
+                  <item.Icon className="w-3.5 h-3.5 text-primary-500" />
+                </div>
                 <div>
                   <p className="text-sm font-semibold text-neutral-800">{item.title}</p>
                   <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{item.desc}</p>
@@ -1333,10 +1321,10 @@ export default function TeacherPlanner() {
           </div>
           <div className="flex flex-col gap-3">
             {[
-              { category: '📅 Your plan', questions: ['What is my plan for today?', 'What topics are pending?', 'Am I on track with the curriculum?', 'What is my plan for tomorrow?'] },
-              { category: '🏫 Classroom situations', questions: ['A child is crying, what do I do?', 'Children are not listening', 'What if a child finishes early?', 'How do I handle a shy child?'] },
-              { category: '📚 Teaching help', questions: ['How do I conduct Circle Time today?', 'How do I teach Math today?', 'What questions should I ask during English?', 'Give me a story for story time'] },
-              { category: '📊 Progress', questions: ['Am I on track with the curriculum?', 'What did I cover last week?', 'What topics are still pending?'] },
+              { category: 'Your plan',          questions: ['What is my plan for today?', 'What topics are pending?', 'Am I on track with the curriculum?', 'What is my plan for tomorrow?'] },
+              { category: 'Classroom situations', questions: ['A child is crying, what do I do?', 'Children are not listening', 'What if a child finishes early?', 'How do I handle a shy child?'] },
+              { category: 'Teaching help',       questions: ['How do I conduct Circle Time today?', 'How do I teach Math today?', 'What questions should I ask during English?', 'Give me a story for story time'] },
+              { category: 'Progress',            questions: ['Am I on track with the curriculum?', 'What did I cover last week?', 'What topics are still pending?'] },
             ].map((section, i) => (
               <div key={i}>
                 <p className="text-xs font-semibold text-neutral-500 mb-1.5">{section.category}</p>
@@ -1378,7 +1366,7 @@ export default function TeacherPlanner() {
         </div>
 
         <div className="text-center py-2">
-          <button onClick={() => { clearToken(); router.push('/login'); }}
+          <button onClick={() => { signOut().then(() => router.push('/login')); }}
             className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-600 mx-auto transition-colors">
             <LogOut className="w-3.5 h-3.5" /> Sign out
           </button>
@@ -1410,7 +1398,7 @@ export default function TeacherPlanner() {
                 onClick={() => setShowStreakInfo(s => !s)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-300/50 hover:bg-amber-400/20 transition-colors active:scale-95"
                 style={{ background: 'rgba(255,150,0,0.2)', boxShadow: '0 0 12px rgba(255,150,0,0.25)' }}>
-                <span style={{ animation: 'wiggle 0.5s ease-in-out infinite', display: 'inline-block' }}>🔥</span>
+                <Flame className="w-3.5 h-3.5 text-amber-300" />
                 <span className="text-xs font-black text-amber-200">{streak.current_streak}</span>
                 <span className="text-[10px] text-amber-300/80 hidden sm:block">day streak</span>
               </button>
@@ -1443,7 +1431,7 @@ export default function TeacherPlanner() {
           )}
           <span className="text-xs text-white/70 hidden sm:block font-medium">{dateLabel}</span>
           <button
-            onClick={() => { clearToken(); router.push('/login'); }}
+            onClick={() => { signOut().then(() => router.push('/login')); }}
             className="hidden lg:flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors ml-1 px-2 py-1 rounded-lg hover:bg-white/15"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -1547,3 +1535,4 @@ export default function TeacherPlanner() {
     </div>
   );
 }
+

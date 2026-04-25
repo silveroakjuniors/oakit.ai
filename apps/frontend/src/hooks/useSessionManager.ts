@@ -2,10 +2,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getToken, signOut } from '@/lib/auth';
-import { API_BASE } from '@/lib/api';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const HEARTBEAT_MS = 60 * 1000; // check session every 60s
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 export function useSessionManager() {
   const router = useRouter();

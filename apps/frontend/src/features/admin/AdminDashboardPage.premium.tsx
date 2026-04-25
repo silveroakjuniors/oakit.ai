@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSessionManager } from '@/hooks/useSessionManager';
 import Link from 'next/link';
 import { EmptyState } from '@/components/ui';
 import {
@@ -13,7 +14,7 @@ import {
   CoverageRow, DashStats, DrillDown, EngagementData, SetupStatus,
   SmartAlertsData, SafetyAlert, TimeMachine, TodaySnap, TrendRow,
 } from '@/features/admin/types';
-import { getToken } from '@/lib/auth';
+import { getToken, signOut } from '@/lib/auth';
 import { apiGet, apiPost } from '@/lib/api';
 import { ChevronDown, X, Send, TrendingUp, Users, BookOpen, CheckSquare, AlertTriangle, Brain, Cake, Megaphone, Clock, Zap } from 'lucide-react';
 import StatDrillModal from '@/features/admin/components/StatDrillModal';
@@ -109,6 +110,7 @@ function StatCard({ label, value, sub, icon, accentColor, progress, onClick }: {
 /* ÔöÇÔöÇÔöÇ Main component ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 export default function AdminDashboardPage() {
   const token = getToken() || '';
+  useSessionManager();
   const [stats, setStats] = useState<DashStats | null>(null);
   const [coverage, setCoverage] = useState<CoverageRow[]>([]);
   const [trend, setTrend] = useState<TrendRow[]>([]);

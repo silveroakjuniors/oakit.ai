@@ -1,7 +1,5 @@
 'use client';
 
-import { API_BASE } from './api';
-
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('oakit_token');
@@ -62,17 +60,17 @@ export function getRoleRedirect(role: string): string {
 // Proper sign-out: calls logout API, clears local state, broadcasts to other tabs
 export async function signOut(): Promise<void> {
   const token = getToken();
-  // Call logout API to invalidate session on server
+  const base = (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_URL__) ||
+    process.env.NEXT_PUBLIC_API_URL || '';
   if (token) {
     try {
-      await fetch(`${API_BASE}/api/v1/auth/logout`, {
+      await fetch(`${base}/api/v1/auth/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
-    } catch { /* ignore network errors — still clear locally */ }
+    } catch { /* ignore — still clear locally */ }
   }
   clearToken();
-  // Broadcast logout to all other tabs
   try {
     const bc = new BroadcastChannel('oakit_session');
     bc.postMessage({ type: 'LOGOUT' });

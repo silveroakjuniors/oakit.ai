@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
@@ -13,6 +14,7 @@ export interface JwtPayload {
   franchise_id?: string | null; // set for franchise_admin users
   force_password_reset?: boolean;
   jti?: string;
+  sid?: string; // session id — used for single-session enforcement
 }
 
 export interface SuperAdminJwtPayload extends Omit<JwtPayload, 'school_id'> {
@@ -20,7 +22,8 @@ export interface SuperAdminJwtPayload extends Omit<JwtPayload, 'school_id'> {
 }
 
 export function signToken(payload: JwtPayload | SuperAdminJwtPayload, expiresIn?: string): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn ?? JWT_EXPIRES_IN } as jwt.SignOptions);
+  const withSid = { ...payload, sid: payload.sid || uuidv4() };
+  return jwt.sign(withSid, JWT_SECRET, { expiresIn: expiresIn ?? JWT_EXPIRES_IN } as jwt.SignOptions);
 }
 
 export function signRefreshToken(user_id: string): string {
