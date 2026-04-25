@@ -176,6 +176,8 @@ export default function TeacherPlanner() {
   const [submittingCompletion, setSubmittingCompletion] = useState(false);
   const [completionMsg, setCompletionMsg] = useState('');
   const [attendancePrompt, setAttendancePrompt] = useState(false);
+  const [readinessReminder, setReadinessReminder] = useState(false);
+  const [readinessMissCount, setReadinessMissCount] = useState(0);
   const [greeting, setGreeting] = useState('');
   const [todayCompleted, setTodayCompleted] = useState(false);
   const [tomorrowPlan, setTomorrowPlan] = useState<DayPlan | null>(null);
@@ -290,6 +292,7 @@ export default function TeacherPlanner() {
       setTodayCompleted(data.today_completed || false);
       todayCompletedRef.current = data.today_completed || false;
       setTomorrowPlan(data.tomorrow_plan || null);
+      if (data.readiness_reminder) { setReadinessReminder(true); setReadinessMissCount(data.readiness_miss_count || 0); }
       const effectiveToday = data.today || new Date().toISOString().split('T')[0];
       setToday(effectiveToday);
       setMessages([{ role: 'assistant', text: `?? ${data.thought_for_day}` }]);
@@ -645,44 +648,81 @@ export default function TeacherPlanner() {
   // -- Plan Tab ----------------------------------------------------------
   const planTabContent = (
       <div className="p-4 flex flex-col gap-3" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-        {/* Attendance */}
+        {/* Attendance alert */}
         {attendancePrompt && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-amber-800">⚠️ Attendance not marked</p>
-            <Button size="sm" onClick={() => router.push('/teacher/attendance')}>Mark</Button>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                <span className="text-base">📋</span>
+              </div>
+              <p className="text-sm font-semibold text-amber-900">Attendance not marked yet</p>
+            </div>
+            <Button size="sm" onClick={() => router.push('/teacher/attendance')} className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-0 shadow-sm">Mark</Button>
+          </div>
+        )}
+
+        {/* Report readiness reminder */}
+        {readinessReminder && (
+          <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-red-50 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
+                <span className="text-base">📋</span>
+              </div>
+              <p className="text-sm font-semibold text-orange-900">
+                {readinessMissCount} student{readinessMissCount > 1 ? 's' : ''} missing term report observations
+              </p>
+            </div>
+            <Button size="sm" onClick={() => router.push('/teacher/journey')} className="shrink-0 bg-orange-500 hover:bg-orange-600 text-white border-0 shadow-sm">Add</Button>
           </div>
         )}
 
         {/* Today completed */}
         {todayCompleted ? (
           <>
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-green-800 mb-1">✅ Today's plan is done!</p>
-              <p className="text-xs text-green-700 mb-3">Great work. Parents have been notified.</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => router.push('/teacher/homework')}
-                  className="flex-1 py-2 text-xs bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 transition-colors shadow-sm"
-                >
-                  📝 Send Homework & Notes
-                </button>
-                <button
-                  onClick={() => router.push('/teacher/journey')}
-                  className="flex-1 py-2 text-xs border border-green-300 text-green-700 rounded-lg font-medium hover:bg-green-100 transition-colors"
-                >
-                  📖 Child Journey
-                </button>
+            <div className="rounded-2xl overflow-hidden shadow-sm border border-primary-200">
+              <div className="bg-gradient-to-br from-primary-600 to-primary-700 px-4 py-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center">
+                    <span className="text-xl">✅</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">Today's plan is complete!</p>
+                    <p className="text-xs text-primary-200">Parents have been notified.</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => router.push('/teacher/homework')}
+                    className="flex-1 py-2.5 text-xs bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition-colors border border-white/20"
+                  >
+                    📝 Homework & Notes
+                  </button>
+                  <button
+                    onClick={() => router.push('/teacher/journey')}
+                    className="flex-1 py-2.5 text-xs bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition-colors border border-white/15"
+                  >
+                    📖 Child Journey
+                  </button>
+                </div>
               </div>
             </div>
             {tomorrowPlan && (
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <p className="text-sm font-semibold text-blue-800 mb-2">📅 Prepare for tomorrow</p>
+              <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-7 h-7 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <span className="text-sm">📅</span>
+                  </div>
+                  <p className="text-sm font-semibold text-blue-900">Prepare for tomorrow</p>
+                </div>
                 {tomorrowPlan.chunks?.length > 0 ? (
                   <>
                     {tomorrowPlan.chunks.slice(0, 4).map((c: any, i: number) => (
-                      <p key={i} className="text-xs text-blue-700 mb-1">• {c.topic_label || `Topic ${i + 1}`}</p>
+                      <div key={i} className="flex items-center gap-2 mb-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                        <p className="text-xs text-blue-800">{c.topic_label || `Topic ${i + 1}`}</p>
+                      </div>
                     ))}
-                    {tomorrowPlan.chunks.length > 4 && <p className="text-xs text-blue-500">+{tomorrowPlan.chunks.length - 4} more</p>}
+                    {tomorrowPlan.chunks.length > 4 && <p className="text-xs text-blue-500 ml-3.5">+{tomorrowPlan.chunks.length - 4} more topics</p>}
                   </>
                 ) : (
                   <p className="text-xs text-blue-700">
@@ -693,8 +733,8 @@ export default function TeacherPlanner() {
                   </p>
                 )}
                 <button onClick={() => askSuggested("what is my plan for tomorrow")}
-                  className="mt-2 text-xs text-blue-700 font-medium flex items-center gap-1">
-                  ✨ Ask Oakie about tomorrow
+                  className="mt-3 flex items-center gap-1.5 text-xs text-blue-700 font-semibold hover:text-blue-900 transition-colors">
+                  <Sparkles className="w-3 h-3" /> Ask Oakie about tomorrow
                 </button>
               </div>
             )}
@@ -702,24 +742,24 @@ export default function TeacherPlanner() {
         ) : plan?.chunks?.length ? (
           <>
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-1.5">
-                  <CalendarDays className="w-4 h-4 text-green-500" />
-                  Today's Plan
-                </h2>
-                {plan.status === 'carried_forward' && <span className="text-[10px] text-amber-600 font-medium">Topics carried forward</span>}
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-primary-600" />
+                <h2 className="text-sm font-semibold text-neutral-800">Today's Plan</h2>
+                {plan.status === 'carried_forward' && (
+                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">Carried forward</span>
+                )}
               </div>
             </div>
 
-            {/* Admin note if present */}
+            {/* Admin note */}
             {plan.admin_note && (
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
+              <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl border border-blue-200 bg-blue-50">
                 <FileText className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700">{plan.admin_note}</p>
+                <p className="text-xs text-blue-700 leading-relaxed">{plan.admin_note}</p>
               </div>
             )}
 
-            {/* Today's Topics ? UIComponents TopicsChecklist */}
+            {/* Topics checklist */}
             {(() => {
               const activities: { chunkId: string; label: string; subjectKey: string }[] = [];
               plan.chunks.forEach((chunk: any) => {
@@ -740,7 +780,7 @@ export default function TeacherPlanner() {
                 setSubmittingCompletion(true);
                 apiPost('/api/v1/teacher/completion', { covered_chunk_ids: coveredChunkIds, ...(sectionId ? { section_id: sectionId } : {}) }, token)
                   .then(() => {
-                    setCompletionMsg(allChecked ? '? All done! Parents notified.' : `? ${checkedCount} done. ${uncheckedCount} topic${uncheckedCount > 1 ? 's' : ''} carried forward.`);
+                    setCompletionMsg(allChecked ? '✓ All done! Parents notified.' : `✓ ${checkedCount} done. ${uncheckedCount} topic${uncheckedCount > 1 ? 's' : ''} carried forward.`);
                     setSelectedChunks([]);
                     if (allChecked) {
                       setTodayCompleted(true); todayCompletedRef.current = true;
@@ -787,7 +827,7 @@ export default function TeacherPlanner() {
                 { q: "am I on track with the curriculum", label: "📊 My progress" },
               ].map((item, i) => (
                 <button key={i} onClick={() => { setActiveTab('chat'); askSuggested(item.q); }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-sm text-green-700 active:bg-green-100 text-left hover:border-green-300 transition-colors">
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-primary-100 bg-primary-50/60 text-sm text-primary-700 hover:bg-primary-100 hover:border-primary-200 text-left transition-colors font-medium">
                   {item.label}
                 </button>
               ))}
@@ -795,270 +835,107 @@ export default function TeacherPlanner() {
           </>
         ) : plan?.status && !['no_plan', 'scheduled', 'carried_forward'].includes(plan.status) ? (
           <>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-blue-800 mb-3">
-                {plan.status === 'settling' ? ` ${plan.special_label || 'Settling Day'}` :
-                 plan.status === 'revision' ? ` ${plan.special_label || 'Revision Day'}` :
-                 plan.status === 'exam' ? ` ${plan.special_label || 'Exam Day'}` :
-                 plan.status === 'event' ? ` ${plan.special_label || 'Special Event'}` :
-                 plan.status === 'holiday' ? ` ${plan.special_label || 'Holiday'}` :
-                 ` ${plan.special_label || plan.status}`}
+            <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
+              <p className="text-sm font-semibold text-blue-900 mb-3">
+                {plan.status === 'settling' ? `🌱 ${plan.special_label || 'Settling Day'}` :
+                 plan.status === 'revision' ? `📝 ${plan.special_label || 'Revision Day'}` :
+                 plan.status === 'exam' ? `📋 ${plan.special_label || 'Exam Day'}` :
+                 plan.status === 'event' ? `🎉 ${plan.special_label || 'Special Event'}` :
+                 plan.status === 'holiday' ? `🏖️ ${plan.special_label || 'Holiday'}` :
+                 `📅 ${plan.special_label || plan.status}`}
               </p>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 {[
                   { q: "how do I prepare children for today", label: "How to prepare?" },
                   { q: "what activities should I do today", label: "Activity ideas" },
-                  { q: "a child is crying what do I do", label: " Child is upset" },
-                  { q: "children are not listening", label: " Not listening" },
+                  { q: "a child is crying what do I do", label: "😢 Child is upset" },
+                  { q: "children are not listening", label: "😤 Not listening" },
                 ].map((item, i) => (
                   <button key={i} onClick={() => askSuggested(item.q)}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-blue-200 bg-white text-sm text-blue-700 active:bg-blue-50 transition-colors text-left">
-                    ? {item.label}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-blue-200 bg-white text-sm text-blue-700 hover:bg-blue-50 transition-colors text-left font-medium">
+                    ✨ {item.label}
                   </button>
                 ))}
               </div>
             </div>
           </>
         ) : (
-          <p className="text-sm text-gray-400 text-center py-8">No plan for today</p>
-        )}
-
-        {/* Homework & Notes — dedicated page link */}
-        <button
-          onClick={() => router.push('/teacher/homework')}
-          className="w-full flex items-center justify-between px-4 py-3 bg-white border border-green-100 rounded-2xl hover:bg-green-50 transition-colors shadow-sm"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center">
-              <BookOpen className="w-4 h-4 text-green-600" />
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-neutral-100 flex items-center justify-center mb-3">
+              <CalendarDays className="w-7 h-7 text-neutral-300" />
             </div>
-            <div className="text-left">
-              <p className="text-sm font-semibold text-neutral-800">Homework & Notes</p>
-              <p className="text-xs text-neutral-400">Send homework, track completion, class notes</p>
-            </div>
-          </div>
-          <ArrowRight className="w-4 h-4 text-green-400" />
-        </button>
-
-        {false && (
-          <div>
-
-              {/* Completion notice ? shown if today's activities not yet marked done */}
-              {!todayCompleted && plan?.chunks?.length && showCompletionNotice && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                  <p className="text-xs font-semibold text-amber-800 mb-1">?? Activities not yet marked as done</p>
-                  <p className="text-xs text-amber-700 mb-3">Please mark today's activities as completed before sending homework or notes to parents. Partial completion is also fine.</p>
-                  <div className="flex gap-2">
-                <button onClick={() => setShowCompletionNotice(false)}
-                  className="flex-1 py-2 text-xs border border-amber-300 rounded-lg text-amber-700 hover:bg-amber-100">
-                  I'll complete later
-                </button>
-                <button onClick={() => { setShowHomeworkPanel(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  className="flex-1 py-2 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium">
-                  Mark activities first
-                </button>
-                  </div>
-                </div>
-              )}
-              {/* Homework */}
-              <div>
-                <p className="text-xs font-semibold text-gray-700 mb-1.5"> Today's Homework</p>
-                <p className="text-xs text-gray-400 mb-2">Type the homework ? Oakie will format it nicely for parents.</p>
-                {existingHomework?.formatted_text && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-2">
-                <p className="text-xs font-medium text-emerald-700 mb-1"> Sent to parents:</p>
-                <p className="text-xs text-emerald-600 whitespace-pre-wrap">{existingHomework?.formatted_text}</p>
-                  </div>
-                )}
-                <textarea
-                  value={homeworkText}
-                  onChange={e => setHomeworkText(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. Practice writing A-E, count objects at home up to 10, bring a leaf tomorrow"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/40 resize-none bg-white"
-                />
-                {homeworkMsg && <p className={`text-xs mt-1 ${homeworkMsg.startsWith('') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
-                <Button size="sm" className="w-full mt-2" loading={savingHomework} disabled={!homeworkText.trim()}
-                  onClick={async () => {
-                setSavingHomework(true); setHomeworkMsg('');
-                try {
-                  const res = await apiPost<any>('/api/v1/teacher/notes/homework', {
-                    raw_text: homeworkText, ...(sectionId ? { section_id: sectionId } : {}),
-                  }, token);
-                  setExistingHomework(res);
-                  setHomeworkMsg(' Homework sent to parents');
-                  // Load students for tracking if not loaded
-                  if (students.length === 0) await loadStudents();
-                  await loadHwSubmissions();
-                } catch (e: unknown) { setHomeworkMsg(e instanceof Error ? e.message : 'Failed'); }
-                finally { setSavingHomework(false); }
-                  }}>
-                  Send Homework to Parents
-                </Button>
-              </div>
-
-              {/* Homework Completion Tracking */}
-              {existingHomework && students.length > 0 && (
-                <div className="border-t border-gray-200 pt-4">
-                  <p className="text-xs font-semibold text-gray-700 mb-1"> Homework Completion Tracking</p>
-                  <p className="text-xs text-gray-400 mb-3">Mark each student's homework status. Parents can see this in their portal.</p>
-                  <div className="flex flex-col gap-1.5">
-                {students.map(student => {
-                  const status = hwSubmissions[student.id] || 'not_submitted';
-                  return (
-                    <div key={student.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3 py-2.5">
-                      <span className="text-sm text-gray-700 truncate flex-1 mr-2">{student.name}</span>
-                      <div className="flex gap-1 shrink-0">
-                        {(['completed', 'partial', 'not_submitted'] as const).map(s => (
-                          <button key={s} onClick={() => setHwSubmissions(prev => ({ ...prev, [student.id]: s }))}
-                        className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                          status === s
-                            ? s === 'completed' ? 'bg-emerald-500 text-white'
-                              : s === 'partial' ? 'bg-amber-500 text-white'
-                              : 'bg-red-400 text-white'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                        }`}>
-                        {s === 'completed' ? '?' : s === 'partial' ? '~' : '?'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> Done</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Partial</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> Not submitted</span>
-                  </div>
-                  {hwSubmissionsMsg && <p className={`text-xs mt-2 ${hwSubmissionsMsg.startsWith('') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
-                  <Button size="sm" className="w-full mt-3" loading={savingHwSubmissions}
-                disabled={Object.keys(hwSubmissions).length === 0}
-                onClick={async () => {
-                  setSavingHwSubmissions(true); setHwSubmissionsMsg('');
-                  try {
-                    const submissions = Object.entries(hwSubmissions).map(([student_id, status]) => ({ student_id, status }));
-                    await apiPost('/api/v1/teacher/notes/homework/submissions', {
-                      submissions, ...(sectionId ? { section_id: sectionId } : {}),
-                    }, token);
-                    setHwSubmissionsMsg(' Homework status saved');
-                  } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
-                  finally { setSavingHwSubmissions(false); }
-                }}>
-                Save Homework Status
-                  </Button>
-                </div>
-              )}
-
-              {/* Notes */}
-              <div className="border-t border-gray-200 pt-4">
-                <p className="text-xs font-semibold text-gray-700 mb-1.5"> Class Notes</p>
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
-                  <p className="text-xs text-amber-700"> Notes are deleted after <strong>14 days</strong>. Please keep a local copy ? parents will be notified to download before expiry.</p>
-                </div>
-                <textarea
-                  value={noteText}
-                  onChange={e => setNoteText(e.target.value)}
-                  rows={2}
-                  placeholder="Type a note for parents..."
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/40 resize-none bg-white mb-2"
-                />
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-xl bg-white text-xs text-gray-600 cursor-pointer hover:bg-gray-50 flex-1">
-                <span> {noteFile ? (noteFile as File).name : 'Attach PDF or Word file'}</span>
-                <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
-                  onChange={e => setNoteFile(e.target.files?.[0] || null)} />
-                  </label>
-                  {noteFile && <button onClick={() => setNoteFile(null)} className="text-xs text-red-400 hover:text-red-600">?</button>}
-                </div>
-                {noteMsg && <p className={`text-xs mb-2 ${noteMsg.startsWith('?') ? 'text-emerald-600' : 'text-red-500'}`}>{noteMsg}</p>}
-                <Button size="sm" className="w-full" loading={savingNote} disabled={!noteText.trim() && !noteFile}
-                  onClick={async () => {
-                setSavingNote(true); setNoteMsg('');
-                try {
-                  if (noteFile) {
-                    const fd = new FormData();
-                    fd.append('file', noteFile);
-                    if (sectionId) fd.append('section_id', sectionId);
-                    const res = await fetch(`${API_BASE}/api/v1/teacher/notes/upload`, {
-                      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
-                    });
-                    if (!res.ok) throw new Error((await res.json()).error);
-                  } else {
-                    await apiPost('/api/v1/teacher/notes', { note_text: noteText, ...(sectionId ? { section_id: sectionId } : {}) }, token);
-                  }
-                  setNoteMsg(' Note sent to parents (expires in 14 days)');
-                  setNoteText(''); setNoteFile(null);
-                  loadHomeworkAndNotes();
-                } catch (e: unknown) { setNoteMsg(e instanceof Error ? e.message : 'Failed'); }
-                finally { setSavingNote(false); }
-                  }}>
-                  Send Note to Parents
-                </Button>
-
-                {/* Existing notes */}
-                {notes.length > 0 && (
-                  <div className="mt-3 flex flex-col gap-1.5">
-                <p className="text-xs font-medium text-gray-500">Sent notes:</p>
-                {notes.map(n => {
-                  const expiresIn = Math.ceil((new Date(n.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-                  return (
-                    <div key={n.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="text-xs text-gray-700 truncate">{n.file_name || (n.note_text?.slice(0, 50) + (n.note_text && n.note_text.length > 50 ? '...' : ''))}</p>
-                        <p className={`text-2xs ${expiresIn <= 3 ? 'text-red-500' : 'text-gray-400'}`}>Expires in {expiresIn} day{expiresIn !== 1 ? 's' : ''}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-                  </div>
-                )}
-              </div>
+            <p className="text-sm font-medium text-neutral-500">No plan for today</p>
+            <p className="text-xs text-neutral-400 mt-1">Ask Oakie in the chat tab</p>
           </div>
         )}
 
-        {/* Child Journey quick link */}
-        <button
-          onClick={() => router.push('/teacher/journey')}
-          className="w-full flex items-center justify-between px-4 py-3 bg-white border border-green-100 rounded-2xl hover:bg-green-50 transition-colors shadow-sm"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center">
-              <BookOpen className="w-4 h-4 text-green-600" />
+        {/* Quick action cards */}
+        <div className="grid grid-cols-2 gap-2.5 mt-1">
+          <button
+            onClick={() => router.push('/teacher/homework')}
+            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-primary-200 hover:bg-primary-50/30 transition-all shadow-sm group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-sm">
+              <BookOpen className="w-4 h-4 text-white" />
             </div>
             <div className="text-left">
-              <p className="text-sm font-semibold text-neutral-800">Child Journey</p>
-              <p className="text-xs text-neutral-400">Record daily highlights for students</p>
+              <p className="text-xs font-semibold text-neutral-800 group-hover:text-primary-700 transition-colors">Homework & Notes</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Send to parents</p>
             </div>
-          </div>
-          <ArrowRight className="w-4 h-4 text-green-400" />
-        </button>
+          </button>
 
-        {/* Class Feed quick link */}
-        <button
-          onClick={() => router.push('/teacher/feed')}
-          className="w-full flex items-center justify-between px-4 py-3 bg-white border border-green-100 rounded-2xl hover:bg-green-50 transition-colors shadow-sm"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center">
-              <Play className="w-4 h-4 text-green-600" />
+          <button
+            onClick={() => router.push('/teacher/journey')}
+            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-emerald-200 hover:bg-emerald-50/30 transition-all shadow-sm group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-sm">
+              <BookOpen className="w-4 h-4 text-white" />
             </div>
             <div className="text-left">
-              <p className="text-sm font-semibold text-neutral-800">📸 Class Feed</p>
-              <p className="text-xs text-neutral-400">Post photos · parents see & like them</p>
+              <p className="text-xs font-semibold text-neutral-800 group-hover:text-emerald-700 transition-colors">Child Journey</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Daily highlights</p>
             </div>
-          </div>
-          <ArrowRight className="w-4 h-4 text-green-400" />
-        </button>
+          </button>
+
+          <button
+            onClick={() => router.push('/teacher/feed')}
+            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-pink-200 hover:bg-pink-50/30 transition-all shadow-sm group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-sm">
+              <Play className="w-4 h-4 text-white" />
+            </div>
+            <div className="text-left">
+              <p className="text-xs font-semibold text-neutral-800 group-hover:text-pink-700 transition-colors">Class Feed</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Post photos</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => router.push('/teacher/students')}
+            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-violet-200 hover:bg-violet-50/30 transition-all shadow-sm group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-sm">
+              <Users className="w-4 h-4 text-white" />
+            </div>
+            <div className="text-left">
+              <p className="text-xs font-semibold text-neutral-800 group-hover:text-violet-700 transition-colors">Students</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Profiles & milestones</p>
+            </div>
+          </button>
+        </div>
 
         {/* Pending work */}
         {pendingWork.length > 0 && (
-          <div className="mt-2">
-            <h2 className="text-sm font-semibold text-gray-800 mb-2"> Pending from previous days</h2>
+          <div className="mt-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-4 h-4 text-amber-500" />
+              <h2 className="text-sm font-semibold text-neutral-800">Pending from previous days</h2>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{pendingWork.reduce((s, d) => s + d.chunks.length, 0)}</span>
+            </div>
             <PendingWorkList items={pendingWork} selectedChunks={selectedChunks} onToggleChunk={toggleChunk} />
             {selectedChunks.length > 0 && (
               <div className="mt-2">
-                {completionMsg && <p className="text-xs text-green-600 mb-2">{completionMsg}</p>}
+                {completionMsg && <p className="text-xs text-primary-600 mb-2 font-medium">{completionMsg}</p>}
                 <Button size="sm" onClick={submitCompletion} loading={submittingCompletion} className="w-full">
                   Mark {selectedChunks.length} as Covered
                 </Button>
@@ -1073,8 +950,13 @@ export default function TeacherPlanner() {
   const chatTabContent = (
       <>
         {/* Header bar with export buttons */}
-        <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-white border-b border-green-100 gap-2">
-          <span className="text-xs font-semibold text-green-800 truncate">{dateLabel}</span>
+        <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-white border-b border-neutral-100 gap-2" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-primary-100 flex items-center justify-center">
+              <Sparkles className="w-3.5 h-3.5 text-primary-600" />
+            </div>
+            <span className="text-xs font-semibold text-neutral-700">{dateLabel}</span>
+          </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {/* Session Recorder */}
             <button
@@ -1234,7 +1116,7 @@ export default function TeacherPlanner() {
         )}
 
         {/* Oakie chat — normal chat, no toggle */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3" style={{ paddingBottom: '8px', background: 'linear-gradient(160deg, #f0fdf4 0%, #dcfce7 50%, #f0fdf4 100%)' }}>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3" style={{ paddingBottom: '8px', background: 'linear-gradient(160deg, #f8fffe 0%, #f0fdf8 50%, #f8fffe 100%)' }}>
             <div className="flex-1" />
             {messages.map((msg, i) => (
             <motion.div key={i}
@@ -1372,7 +1254,7 @@ export default function TeacherPlanner() {
         </div>
 
         {/* Chat input — always shown */}
-        <div className="border-t border-green-100 bg-white px-3 pt-2" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+        <div className="border-t border-neutral-100 bg-white px-3 pt-2" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))', boxShadow: '0 -1px 3px rgba(0,0,0,0.04)' }}>
           {limitReached && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mb-2 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
@@ -1384,7 +1266,7 @@ export default function TeacherPlanner() {
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
               {getHelpButtons(extractSubjects(plan.chunks)).map((btn, i) => (
                 <button key={i} type="button" onClick={() => setInput(`How do I conduct ${btn.label} today?`)}
-                  className="flex items-center gap-1 px-3 py-2 rounded-full border border-green-200 bg-green-50 text-xs text-green-700 whitespace-nowrap shrink-0 active:bg-green-100 min-h-[36px] font-medium hover:border-green-400 transition-colors">
+                  className="flex items-center gap-1 px-3 py-2 rounded-full border border-primary-200 bg-primary-50 text-xs text-primary-700 whitespace-nowrap shrink-0 active:bg-primary-100 min-h-[36px] font-medium hover:border-primary-300 transition-colors">
                   {btn.icon} {btn.label}
                 </button>
               ))}
@@ -1407,8 +1289,8 @@ export default function TeacherPlanner() {
             )}
             <div className="flex-1 relative">
               <input
-                className="w-full px-4 py-3 rounded-2xl border border-green-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-300/40 focus:border-green-400 disabled:bg-gray-50 disabled:text-gray-400 bg-green-50/50"
-                placeholder={limitReached ? "Mark activities first so Oakie can help more…" : "Ask Oakie…"}
+                className="w-full px-4 py-3 rounded-2xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300/40 focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-400 bg-neutral-50/50 transition-colors"
+                placeholder={limitReached ? "Mark activities first so Oakie can help more…" : "Ask Oakie anything…"}
                 value={input}
                 onChange={e => {
                   if (e.target.value.length <= 200) setInput(e.target.value);
@@ -1417,14 +1299,14 @@ export default function TeacherPlanner() {
                 maxLength={200}
               />
               {input.length > 150 && (
-                <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-2xs ${input.length >= 200 ? 'text-red-400' : 'text-gray-400'}`}>
+                <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-2xs ${input.length >= 200 ? 'text-red-400' : 'text-neutral-400'}`}>
                   {200 - input.length}
                 </span>
               )}
             </div>
             <motion.button type="submit" disabled={limitReached || aiLoading || !input.trim()}
               whileTap={{ scale: 0.92 }}
-              className="w-11 h-11 rounded-full bg-green-500 text-white flex items-center justify-center shrink-0 disabled:opacity-40 transition-all shadow-md shadow-green-500/30 hover:bg-green-600">
+              className="w-11 h-11 rounded-full bg-primary-600 text-white flex items-center justify-center shrink-0 disabled:opacity-40 transition-all shadow-md shadow-primary-600/25 hover:bg-primary-700">
               {aiLoading ? (
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
@@ -1441,29 +1323,32 @@ export default function TeacherPlanner() {
       <div className="p-4 flex flex-col gap-4" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
         {/* How Oakie works */}
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-green-600" />
+        <div className="rounded-2xl overflow-hidden border border-primary-200 shadow-sm">
+          <div className="bg-gradient-to-br from-primary-600 to-primary-800 px-4 py-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
             </div>
-            <p className="text-sm font-semibold text-green-800">How Oakie works</p>
+            <div>
+              <p className="text-sm font-bold text-white">How Oakie works</p>
+              <p className="text-xs text-primary-200">Your AI teaching assistant</p>
+            </div>
           </div>
-          <div className="flex flex-col gap-3">
+          <div className="bg-white p-4 flex flex-col gap-3">
             {[
-              { icon: '??', title: 'Oakie plans your day on login', desc: 'Every morning when you log in, Oakie automatically loads your day\'s plan from the curriculum.' },
-              { icon: '??', title: 'Raw Plan button', desc: 'Tap "Raw Plan" in the chat header to see today\'s topics from the curriculum database and download as PDF.' },
-              { icon: '', title: 'Ask Oakie anything', desc: 'Type any question about your class � how to teach a subject, handle a situation, or get activity ideas.' },
-              { icon: '', title: 'Mark topics done in Plan tab', desc: 'Go to the Plan tab (left panel) to tick off topics as you complete them. Parents are notified automatically.' },
-              { icon: '', title: 'Oakie carries topics forward', desc: "Unticked topics automatically move to tomorrow's plan. You'll see them in Pending." },
-              { icon: '', title: 'Download any response as PDF', desc: 'Every Oakie response has a PDF button in the top-right corner of the message. Tap it to download.' },
-              { icon: '', title: 'Homework & Notes', desc: 'Tap "Homework & Notes" in the Plan tab to open the dedicated page � send homework, track each student\'s completion, and send class notes to parents.' },
-              { icon: '??', title: 'Teaching Consistency', desc: 'Your consistency badge in the header shows how many consecutive days you\'ve submitted completion.' },
+              { icon: '🌅', title: 'Oakie plans your day on login', desc: 'Every morning, Oakie automatically loads your day\'s plan from the curriculum.' },
+              { icon: '📄', title: 'Raw Plan button', desc: 'Tap "Raw Plan" in the chat header to see today\'s topics and download as PDF.' },
+              { icon: '💬', title: 'Ask Oakie anything', desc: 'Type any question about your class — how to teach a subject, handle a situation, or get activity ideas.' },
+              { icon: '✅', title: 'Mark topics done in Plan tab', desc: 'Tick off topics as you complete them. Parents are notified automatically.' },
+              { icon: '🔄', title: 'Oakie carries topics forward', desc: "Unticked topics automatically move to tomorrow's plan. You'll see them in Pending." },
+              { icon: '📥', title: 'Download any response as PDF', desc: 'Every Oakie response has a PDF button. Tap it to download.' },
+              { icon: '📝', title: 'Homework & Notes', desc: 'Tap "Homework & Notes" to send homework, track completion, and send class notes to parents.' },
+              { icon: '🔥', title: 'Teaching Consistency', desc: 'Your streak badge shows how many consecutive days you\'ve submitted completion.' },
             ].map((item, i) => (
-              <div key={i} className="flex gap-3">
-                <span className="text-xl shrink-0">{item.icon}</span>
+              <div key={i} className="flex gap-3 py-2 border-b border-neutral-50 last:border-0">
+                <span className="text-lg shrink-0 mt-0.5">{item.icon}</span>
                 <div>
                   <p className="text-sm font-semibold text-neutral-800">{item.title}</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">{item.desc}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{item.desc}</p>
                 </div>
               </div>
             ))}
@@ -1471,8 +1356,11 @@ export default function TeacherPlanner() {
         </div>
 
         {/* Ask Oakie examples */}
-        <div className="bg-white border border-green-100 rounded-2xl p-4 shadow-sm">
-          <p className="text-sm font-semibold text-neutral-800 mb-3">✨ Try asking Oakie</p>
+        <div className="bg-white border border-neutral-200 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-primary-500" />
+            <p className="text-sm font-semibold text-neutral-800">Try asking Oakie</p>
+          </div>
           <div className="flex flex-col gap-3">
             {[
               { category: '📅 Your plan', questions: ['What is my plan for today?', 'What topics are pending?', 'Am I on track with the curriculum?', 'What is my plan for tomorrow?'] },
@@ -1485,8 +1373,8 @@ export default function TeacherPlanner() {
                 <div className="flex flex-col gap-1">
                   {section.questions.map((q, j) => (
                     <button key={j} onClick={() => { setActiveTab('chat'); askSuggested(q); }}
-                      className="text-left text-xs text-green-700 px-3 py-2 rounded-lg bg-green-50 border border-green-100 hover:bg-green-100 transition-colors flex items-center gap-1.5">
-                      <ArrowRight className="w-3 h-3 shrink-0" /> {q}
+                      className="text-left text-xs text-primary-700 px-3 py-2 rounded-xl bg-primary-50 border border-primary-100 hover:bg-primary-100 transition-colors flex items-center gap-1.5 font-medium">
+                      <ArrowRight className="w-3 h-3 shrink-0 text-primary-400" /> {q}
                     </button>
                   ))}
                 </div>
@@ -1495,15 +1383,27 @@ export default function TeacherPlanner() {
           </div>
         </div>
 
-        {/* Oakie's limits */}
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-          <p className="text-sm font-semibold text-amber-800 mb-2"> Good to know</p>
-          <ul className="text-xs text-amber-700 flex flex-col gap-1.5">
-            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">?</span> Oakie answers based on your curriculum only ? not general knowledge</li>
-            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">?</span> Oakie can answer up to 5 activity questions per day ? resets when you mark completion</li>
-            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">?</span> Classroom situation questions (crying child, not listening) are always unlimited</li>
-            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">?</span> Tomorrow's plan is only shown after today is marked as done</li>
-            <li className="flex items-start gap-1.5"><span className="shrink-0 mt-0.5">?</span> Oakie can suggest YouTube video links for classroom topics</li>
+        {/* Good to know */}
+        <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-xl bg-amber-100 flex items-center justify-center">
+              <span className="text-sm">💡</span>
+            </div>
+            <p className="text-sm font-semibold text-amber-900">Good to know</p>
+          </div>
+          <ul className="text-xs text-amber-800 flex flex-col gap-2">
+            {[
+              'Oakie answers based on your curriculum only — not general knowledge',
+              'Oakie can answer up to 5 activity questions per day — resets when you mark completion',
+              'Classroom situation questions (crying child, not listening) are always unlimited',
+              "Tomorrow's plan is only shown after today is marked as done",
+              'Oakie can suggest YouTube video links for classroom topics',
+            ].map((tip, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1.5" />
+                {tip}
+              </li>
+            ))}
           </ul>
         </div>
 
@@ -1519,10 +1419,10 @@ export default function TeacherPlanner() {
 
   // -- Main render -------------------------------------------------------
   return (
-    <div className="flex flex-col" style={{ height: '100dvh', background: 'linear-gradient(160deg, #f0fdf4 0%, #dcfce7 40%, #f0fdf4 100%)' }}>
+    <div className="flex flex-col" style={{ height: '100dvh', background: 'var(--bg)' }}>
       {/* -- Premium Header -- */}
       <header className="shrink-0 px-4 py-3 flex items-center justify-between relative overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #15803d 0%, #16a34a 50%, #22c55e 100%)', boxShadow: '0 4px 24px rgba(22,163,74,0.35)' }}>
+        style={{ background: 'linear-gradient(135deg, var(--brand-primary-dark) 0%, var(--brand-primary) 60%, var(--brand-primary-light) 100%)', boxShadow: '0 2px 16px rgba(31,122,90,0.30)' }}>
         {/* Animated background blob */}
         <div className="absolute -top-8 right-1/3 w-32 h-32 rounded-full pointer-events-none opacity-20"
           style={{ background: 'radial-gradient(circle, #86efac, transparent)', animation: 'pulse 5s ease-in-out infinite' }} />
@@ -1592,13 +1492,13 @@ export default function TeacherPlanner() {
       <div className="flex-1 min-h-0 overflow-hidden flex">
 
         {/* -- Desktop sidebar -- */}
-        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-r border-green-100 bg-white overflow-y-auto shrink-0"
-          style={{ boxShadow: '2px 0 12px rgba(22,163,74,0.06)' }}>
-          <div className="flex border-b border-green-100 shrink-0 px-3 pt-3 gap-1">
+        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-r border-neutral-100 bg-white overflow-y-auto shrink-0"
+          style={{ boxShadow: '2px 0 8px rgba(0,0,0,0.04)' }}>
+          <div className="flex border-b border-neutral-100 shrink-0 px-3 pt-3 gap-1">
             {(['plan', 'help'] as Tab[]).map(t => (
               <button key={t} onClick={() => setActiveTab(t)}
-                className={`relative flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                  activeTab === t ? 'text-green-700 bg-green-50 shadow-sm' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
+                className={`relative flex-1 py-2 text-sm font-medium rounded-xl transition-all ${
+                  activeTab === t ? 'text-primary-700 bg-primary-50 shadow-sm' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
                 }`}>
                 <span className="flex items-center justify-center gap-1.5">
                   {t === 'plan' ? <CalendarDays className="w-3.5 h-3.5" /> : <HelpCircle className="w-3.5 h-3.5" />}
@@ -1617,15 +1517,15 @@ export default function TeacherPlanner() {
         {/* -- Main content area -- */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Tablet top tabs */}
-          <div className="hidden md:flex lg:hidden border-b border-green-100 bg-white shrink-0 px-3 pt-2 gap-1">
+          <div className="hidden md:flex lg:hidden border-b border-neutral-100 bg-white shrink-0 px-3 pt-2 gap-1" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
             {([
               { id: 'plan', label: 'Plan', Icon: CalendarDays },
               { id: 'chat', label: 'Oakie', Icon: MessageCircle },
               { id: 'help', label: 'Help', Icon: HelpCircle },
             ] as { id: Tab; label: string; Icon: any }[]).map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`relative flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
-                  activeTab === tab.id ? 'text-green-700 bg-green-50' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
+                className={`relative flex-1 py-2 text-sm font-medium rounded-xl transition-all ${
+                  activeTab === tab.id ? 'text-primary-700 bg-primary-50 shadow-sm' : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
                 }`}>
                 <span className="flex items-center justify-center gap-1.5">
                   <tab.Icon className="w-3.5 h-3.5" />
@@ -1648,14 +1548,14 @@ export default function TeacherPlanner() {
         </div>
       </div>
 
-      {/* -- Premium Bottom Nav — mobile only -- */}
+      {/* -- Bottom Nav — mobile only -- */}
       <nav className="md:hidden flex shrink-0"
         style={{
           background: 'rgba(255,255,255,0.97)',
           backdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(22,163,74,0.15)',
+          borderTop: '1px solid var(--border)',
           paddingBottom: 'env(safe-area-inset-bottom)',
-          boxShadow: '0 -4px 24px rgba(22,163,74,0.12)',
+          boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
         }}>
         {([
           { id: 'plan', Icon: CalendarDays, label: 'Plan' },
@@ -1667,12 +1567,12 @@ export default function TeacherPlanner() {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className="flex-1 flex flex-col items-center py-2.5 gap-0.5 relative transition-all active:scale-95">
               {active && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-green-500 rounded-full" />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-600 rounded-full" />
               )}
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${active ? 'bg-green-500 shadow-md shadow-green-500/30' : 'bg-transparent'}`}>
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${active ? 'bg-primary-600 shadow-sm shadow-primary-600/30' : 'bg-transparent'}`}>
                 <tab.Icon className={`w-4.5 h-4.5 ${active ? 'text-white' : 'text-neutral-400'}`} size={18} />
               </div>
-              <span className={`text-[10px] font-semibold tracking-wide transition-colors ${active ? 'text-green-600' : 'text-neutral-400'}`}>
+              <span className={`text-[10px] font-semibold tracking-wide transition-colors ${active ? 'text-primary-600' : 'text-neutral-400'}`}>
                 {tab.label}
               </span>
             </button>

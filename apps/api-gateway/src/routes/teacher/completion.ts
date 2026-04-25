@@ -188,21 +188,30 @@ router.get('/pending', async (req: Request, res: Response) => {
       `SELECT dp.id, dp.plan_date, dp.chunk_ids
        FROM day_plans dp
        WHERE dp.section_id = $1 AND dp.plan_date < $2
+         AND dp.status NOT IN ('holiday', 'weekend')
        ORDER BY dp.plan_date ASC`,
       [section_id, today]
     );
 
-    // Get all completed chunk IDs for this section
+    // Get all completed chunk IDs for this section, plus dates that have a completion record
     const completions = await pool.query(
-      'SELECT covered_chunk_ids FROM daily_completions WHERE section_id = $1',
+      'SELECT completion_date::text, covered_chunk_ids FROM daily_completions WHERE section_id = $1',
       [section_id]
     );
     const coveredIds = new Set<string>(
       completions.rows.flatMap((r: any) => r.covered_chunk_ids || [])
     );
+    // Dates that have ANY completion record (including settling days with empty chunk_ids)
+    const completedDates = new Set<string>(
+      completions.rows.map((r: any) => (r.completion_date || '').split('T')[0])
+    );
 
     const pending = [];
     for (const plan of plans.rows) {
+      const planDate = (plan.plan_date || '').split('T')[0];
+      // Skip if this date has a completion record (teacher marked it done)
+      if (completedDates.has(planDate)) continue;
+
       const uncovered = (plan.chunk_ids || []).filter((id: string) => !coveredIds.has(id));
       if (uncovered.length === 0) continue;
 
@@ -211,7 +220,7 @@ router.get('/pending', async (req: Request, res: Response) => {
         [uncovered]
       );
       pending.push({
-        plan_date: plan.plan_date,
+        plan_date: planDate,
         chunks: chunks.rows,
       });
     }

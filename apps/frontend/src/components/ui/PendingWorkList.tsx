@@ -19,7 +19,7 @@ export default function PendingWorkList({ items, selectedChunks, onToggleChunk }
           className="bg-amber-50/80 rounded-2xl p-4 border border-amber-200/60">
           <p className="text-xs font-semibold text-amber-700 mb-3 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-            {new Date(day.plan_date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+            {new Date((day.plan_date || '').split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
           </p>
           <div className="flex flex-col gap-2">
             {day.chunks.map(chunk => (

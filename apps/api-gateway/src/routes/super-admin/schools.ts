@@ -57,6 +57,24 @@ router.post('/', async (req: Request, res: Response) => {
        RETURNING id, name, subdomain, status, plan_type, billing_status, created_at`,
       [name, subdomain, plan_type, contact ? JSON.stringify(contact) : null]
     );
+    const schoolId = result.rows[0].id;
+
+    // Seed default AI credits (₹2,000 = 200,000 paise) and school settings
+    await pool.query(
+      `INSERT INTO school_ai_wallet (school_id, balance_paise, lifetime_recharged_paise)
+       VALUES ($1, 200000, 200000) ON CONFLICT (school_id) DO NOTHING`,
+      [schoolId]
+    ).catch(() => {});
+    await pool.query(
+      `INSERT INTO ai_credit_transactions (school_id, type, amount_paise, balance_after_paise, description)
+       VALUES ($1, 'recharge', 200000, 200000, 'Default startup credits (₹2,000)')`,
+      [schoolId]
+    ).catch(() => {});
+    await pool.query(
+      `INSERT INTO school_settings (school_id, notes_expiry_days) VALUES ($1, 14) ON CONFLICT DO NOTHING`,
+      [schoolId]
+    ).catch(() => {});
+
     return res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);

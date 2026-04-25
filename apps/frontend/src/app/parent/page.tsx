@@ -1489,23 +1489,26 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; schoolInstagram?: string }) {
 
   function shareToInstagram(post: any) {
-    const img = post.images?.[0];
     const tag = schoolInstagram ? `@${schoolInstagram}` : '';
     const caption = [post.caption, tag].filter(Boolean).join(' ');
-    // Instagram doesn't support direct web share with image — open app via deep link
-    // On mobile this opens the Instagram app; on desktop opens instagram.com
-    const text = encodeURIComponent(caption);
-    const url = img
-      ? `instagram://library?AssetPath=${encodeURIComponent(img)}`
-      : `https://www.instagram.com/`;
-    // Try app deep link first, fall back to web
-    const a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.click();
-    // Copy caption to clipboard so user can paste it
+    // Copy caption to clipboard so user can paste it into Instagram
     if (caption) navigator.clipboard?.writeText(caption).catch(() => {});
+
+    // Use Web Share API if available (mobile browsers, PWA)
+    if (navigator.share && post.images?.[0]) {
+      navigator.share({
+        title: post.caption || 'School moment',
+        text: caption,
+        url: post.images[0],
+      }).catch(() => {
+        // Fallback: open Instagram app
+        window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
+      });
+      return;
+    }
+    // Desktop fallback: open Instagram and show toast that caption was copied
+    window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
+    if (caption) alert(`Caption copied to clipboard:\n\n${caption}\n\nPaste it when creating your Instagram post.`);
   }
 
   function shareToFacebook(post: any) {
@@ -1769,6 +1772,26 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
               ))}
             </div>
           )}
+          {/* Fee pending nudge */}
+          {invoice && invoice.net_payable > 0 ? (
+            <button onClick={() => onTabChange('fees')}
+              className="mt-3 w-full flex items-center justify-between px-3 py-2.5 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 transition-colors">
+              <div className="flex items-center gap-2">
+                <CreditCard size={13} className="text-orange-500 shrink-0" />
+                <span className="text-xs font-semibold text-orange-800">Fee pending: ₹{invoice.net_payable.toLocaleString('en-IN')}</span>
+              </div>
+              <ArrowRight size={12} className="text-orange-400" />
+            </button>
+          ) : invoice === null ? (
+            <button onClick={() => onTabChange('fees')}
+              className="mt-3 w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl hover:bg-gray-100 transition-colors">
+              <div className="flex items-center gap-2">
+                <CreditCard size={13} className="text-gray-400 shrink-0" />
+                <span className="text-xs text-gray-500">Fee structure not set up yet — contact admin</span>
+              </div>
+              <ArrowRight size={12} className="text-gray-300" />
+            </button>
+          ) : null}
         </div>
 
         {/* Fees Due */}
@@ -2151,23 +2174,56 @@ function AssignmentsTab({ activeChild, token }: { activeChild: Child | null; tok
 
 // ─── Fees Tab ─────────────────────────────────────────────────────────────────
 function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: Child | null; token: string }) {
+  const [txnId, setTxnId] = useState('');
+  const [txnFile, setTxnFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [txnMsg, setTxnMsg] = useState('');
+
+  async function submitPayment() {
+    if (!txnId.trim() && !txnFile) return;
+    setSubmitting(true); setTxnMsg('');
+    try {
+      const fd = new FormData();
+      if (txnId.trim()) fd.append('transaction_id', txnId.trim());
+      if (txnFile) fd.append('receipt', txnFile);
+      if (activeChild?.id) fd.append('student_id', activeChild.id);
+      const res = await fetch(`${API_BASE}/api/v1/parent/fees/payment-proof`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      setTxnMsg('✓ Payment details submitted. Admin will verify and update your fee status.');
+      setTxnId(''); setTxnFile(null);
+    } catch (e: any) { setTxnMsg(e.message || 'Failed to submit'); }
+    finally { setSubmitting(false); }
+  }
+
   if (!invoice) return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gray-800">Fees</h2>
-      <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 shadow-sm">
+      <div className="bg-white rounded-2xl p-8 text-center border border-gray-100 shadow-sm">
         <CreditCard size={40} className="text-gray-300 mx-auto mb-3" />
-        <p className="text-gray-500 font-medium">No fee information available</p>
+        <p className="text-gray-600 font-semibold mb-1">Fee structure not set up yet</p>
+        <p className="text-sm text-gray-400">Your school admin hasn't configured fees yet. Please check back later or contact the school office.</p>
       </div>
     </div>
   );
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gray-800">Fees</h2>
+
+      {/* Summary card */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-sm text-gray-500">Total Due</p>
-            <p className="text-3xl font-black text-gray-900">₹{invoice.net_payable?.toLocaleString('en-IN') ?? 0}</p>
+            <p className="text-xs text-gray-500 mb-0.5">Total Due</p>
+            <p className={`text-3xl font-black ${invoice.net_payable > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+              ₹{(invoice.net_payable ?? 0).toLocaleString('en-IN')}
+            </p>
+            {invoice.net_payable === 0 && <p className="text-xs text-emerald-600 font-medium mt-0.5">✓ All fees paid</p>}
           </div>
           {invoice.credit_balance > 0 && (
             <div className="text-right">
@@ -2176,8 +2232,11 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
             </div>
           )}
         </div>
+
+        {/* Fee breakdown */}
         {invoice.accounts?.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2 mb-4">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fee Structure</p>
             {invoice.accounts.map((acc: any) => (
               <div key={acc.id} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
                 <div>
@@ -2185,19 +2244,69 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
                   {acc.due_date && <p className="text-xs text-gray-400">Due {new Date(acc.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>}
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-bold text-gray-900">₹{acc.outstanding_balance?.toLocaleString('en-IN')}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{acc.status}</span>
+                  <p className="text-sm font-bold text-gray-900">₹{(acc.outstanding_balance ?? 0).toLocaleString('en-IN')}</p>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : acc.status === 'partial' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
+                    {acc.status}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
         )}
-        {invoice.net_payable > 0 && (
-          <button className="w-full mt-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors">
-            Pay Now <ArrowRight size={16} />
-          </button>
+
+        {/* Download receipt button */}
+        {invoice.receipt_url && (
+          <a href={invoice.receipt_url} target="_blank" rel="noopener noreferrer"
+            className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl text-sm font-semibold transition-colors">
+            <Download size={14} /> Download Receipt
+          </a>
         )}
       </div>
+
+      {/* Submit payment proof */}
+      {invoice.net_payable > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="text-sm font-bold text-gray-800 mb-1">Already paid?</p>
+          <p className="text-xs text-gray-500 mb-4">Enter your transaction ID or upload a payment screenshot. Admin will verify and update your status.</p>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Transaction / UTR ID</label>
+              <input
+                type="text"
+                value={txnId}
+                onChange={e => setTxnId(e.target.value)}
+                placeholder="e.g. UTR123456789012"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Upload Screenshot (optional)</label>
+              <label className="flex items-center gap-2 px-3 py-2.5 border border-dashed border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
+                <Paperclip size={14} className="text-gray-400" />
+                <span className="text-sm text-gray-500">{txnFile ? txnFile.name : 'Choose image…'}</span>
+                <input type="file" accept="image/*,application/pdf" className="hidden"
+                  onChange={e => setTxnFile(e.target.files?.[0] || null)} />
+              </label>
+            </div>
+
+            {txnMsg && (
+              <p className={`text-xs px-3 py-2 rounded-xl ${txnMsg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                {txnMsg}
+              </p>
+            )}
+
+            <button
+              onClick={submitPayment}
+              disabled={submitting || (!txnId.trim() && !txnFile)}
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 text-sm"
+            >
+              {submitting ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Submitting…</> : <>Submit Payment Details</>}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -216,4 +216,56 @@ router.get('/siblings', async (req, res) => {
   }
 });
 
+// ── POST /payment-proof — Parent submits transaction ID + optional screenshot ─
+router.post('/payment-proof', async (req, res) => {
+  try {
+    const parentId = req.user!.id;
+    const schoolId = req.user!.school_id;
+    const { transaction_id, student_id } = req.body;
+
+    if (!transaction_id && !req.file) {
+      return res.status(400).json({ error: 'transaction_id or receipt file is required' });
+    }
+
+    // Verify parent owns the student if provided
+    if (student_id && !(await verifyParentOwnsStudent(parentId, student_id, schoolId))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Store the payment proof submission
+    await pool.query(
+      `INSERT INTO parent_payment_proofs
+         (school_id, parent_id, student_id, transaction_id, status, created_at)
+       VALUES ($1, $2, $3, $4, 'pending', now())
+       ON CONFLICT DO NOTHING`,
+      [schoolId, parentId, student_id || null, transaction_id || null]
+    ).catch(async () => {
+      // Table may not exist yet — create it and retry
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS parent_payment_proofs (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+          parent_id UUID NOT NULL,
+          student_id UUID,
+          transaction_id TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          admin_note TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          reviewed_at TIMESTAMPTZ
+        )
+      `);
+      await pool.query(
+        `INSERT INTO parent_payment_proofs (school_id, parent_id, student_id, transaction_id, status, created_at)
+         VALUES ($1, $2, $3, $4, 'pending', now())`,
+        [schoolId, parentId, student_id || null, transaction_id || null]
+      );
+    });
+
+    return res.json({ ok: true, message: 'Payment proof submitted. Admin will verify and update your fee status.' });
+  } catch (err) {
+    console.error('[parent/fees POST /payment-proof]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
