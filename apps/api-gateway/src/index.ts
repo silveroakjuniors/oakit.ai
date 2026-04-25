@@ -103,6 +103,7 @@ import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
 import parentFeesRouter from './routes/parent/fees';
 
+import sharedTodayContextRouter from './routes/shared/todayContext';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
 import { connectRedis } from './lib/redis';
@@ -231,6 +232,9 @@ app.get('/health/ai', async (_req, res) => {
 
 // Public routes — no authentication required
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
+
+// Shared (any authenticated role)
+app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
 
 // Auth
 app.use('/api/v1/auth', authRateLimit, authRouter);

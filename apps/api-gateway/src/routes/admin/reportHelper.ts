@@ -194,6 +194,12 @@ The report must feel personal and specific — not generic.
 ## 🏫 Classroom Engagement
 ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
 ## 📝 Teacher's Personal Remarks
+## 🌱 Areas of Opportunity
+[Write 3-4 sentences identifying 2-3 specific areas where ${n} has room to grow. Frame these warmly and positively as opportunities, not weaknesses. Be specific — reference actual subjects or skills from the data above.]
+## 👨‍👩‍👧 How Parents Can Help at Home
+[Write 3-4 sentences with specific, practical, age-appropriate activities parents can do at home to support the areas of opportunity identified above. Tie each suggestion directly to a subject or skill ${n} is working on.]
+## 🏫 How the Teacher Will Support ${n}
+[Write 3-4 sentences describing the specific strategies, activities, and support the teacher will use in class to help ${n} grow in the identified areas. Be concrete — mention classroom techniques, one-on-one support, group activities, or specific exercises.]
 ## 💡 Recommendations for Home
 ## 🚀 Readiness Assessment`;
 
@@ -233,6 +239,12 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
       missedSubjects.length>0 ? `\n## 📅 Absence Note\n${n} was absent for ${att.absent} day${att.absent>1?'s':''} during this period, during which ${missedSubjects.join(', ')} were covered. We encourage reviewing these topics at home.` : '',
       `\n## 📝 Teacher's Personal Remarks`,
       `${n} has had a productive and meaningful period at school. ${firstHighlight?'One moment that stands out: '+firstHighlight.slice(0,120):n+' consistently brings a positive attitude and genuine curiosity to the classroom.'} We are proud of the progress made and look forward to seeing ${n} continue to grow and flourish.`,
+      `\n## 🌱 Areas of Opportunity`,
+      `Every child has areas where a little extra focus can make a big difference, and ${n} is no exception. ${coveredSubjects.length > 2 ? `Building greater confidence in ${coveredSubjects.slice(-2).join(' and ')} will help ${n} reach the next level.` : `Continued practice across all subjects will help ${n} build a stronger foundation.`} With consistent encouragement at home and targeted support in class, we are confident ${n} will make excellent progress in these areas.`,
+      `\n## 👨‍👩‍👧 How Parents Can Help at Home`,
+      `Parents play a vital role in reinforcing what ${n} learns at school. Spending 10–15 minutes each day on ${coveredSubjects[0] || 'reading and counting'} — through games, stories, or everyday conversations — will make a significant difference. ${coveredSubjects[1] ? `Practising ${coveredSubjects[1]} through fun activities like drawing, sorting objects, or singing songs will keep learning enjoyable.` : `Encouraging ${n} to talk about their school day builds language skills and confidence.`} Celebrating every small win will keep ${n} motivated and excited to learn.`,
+      `\n## 🏫 How the Teacher Will Support ${n}`,
+      `In class, the teacher will continue to provide personalised attention and encouragement to help ${n} grow. Targeted activities, small group work, and one-on-one check-ins will be used to strengthen areas that need extra practice. The teacher will also use positive reinforcement and hands-on learning experiences to keep ${n} engaged and build confidence. Regular progress checks will ensure that ${n}'s development is monitored and support is adjusted as needed.`,
       `\n## 💡 Recommendations for Home`,
       `To support ${n}'s learning at home, spend a few minutes each day talking about ${coveredSubjects[0]||'school'}. ${coveredSubjects[1]?'Practising '+coveredSubjects[1]+' through everyday activities will reinforce classroom learning.':'Reading together and encouraging storytelling will strengthen language skills.'} Celebrate every small achievement — ${n}'s confidence grows with every word of encouragement.`,
       `\n## 🚀 Readiness Assessment`,

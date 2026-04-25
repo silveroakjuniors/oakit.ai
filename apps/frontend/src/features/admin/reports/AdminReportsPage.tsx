@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Download, Sparkles, CheckCircle2, X, Edit2, Save, Users } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 import {
   fetchAdminClasses,
   fetchAdminStudents,
@@ -90,6 +91,7 @@ function Toast({ message, type, onClose }: { message: string; type: 'success' | 
 
 export default function AdminReportsPage() {
   const token = getToken() || '';
+  const { today, academicStart, academicEnd } = useAcademicCalendar(token);
   const [classes, setClasses] = useState<AdminClass[]>([]);
   const [students, setStudents] = useState<AdminStudent[]>([]);
   const [selectedClass, setSelectedClass] = useState('');
@@ -405,11 +407,11 @@ export default function AdminReportsPage() {
             <div className="flex gap-3 mb-4">
               <div className="flex-1">
                 <label className="text-xs font-medium text-neutral-600 mb-1 block">From</label>
-                <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none" />
+                <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} min={academicStart ?? undefined} max={today} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none" />
               </div>
               <div className="flex-1">
                 <label className="text-xs font-medium text-neutral-600 mb-1 block">To</label>
-                <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none" />
+                <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} min={academicStart ?? undefined} max={today} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none" />
               </div>
             </div>
             <button onClick={generateProgressReport} disabled={!selectedStudent || loading} className="w-full flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl disabled:opacity-50 transition-colors">
@@ -576,11 +578,11 @@ export default function AdminReportsPage() {
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="text-xs font-medium text-neutral-600 mb-1 block">{termType === 'annual' ? 'School Year Start' : 'Term Start'}</label>
-                  <input type="date" value={termFrom} onChange={e => setTermFrom(e.target.value)} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
+                  <input type="date" value={termFrom} onChange={e => setTermFrom(e.target.value)} min={academicStart ?? undefined} max={academicEnd ?? today} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
                 </div>
                 <div className="flex-1">
                   <label className="text-xs font-medium text-neutral-600 mb-1 block">{termType === 'annual' ? 'School Year End' : 'Term End'}</label>
-                  <input type="date" value={termTo} onChange={e => setTermTo(e.target.value)} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
+                  <input type="date" value={termTo} onChange={e => setTermTo(e.target.value)} min={academicStart ?? undefined} max={academicEnd ?? today} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
                 </div>
               </div>
               <p className="text-xs text-neutral-400 mt-1.5">{termType === 'annual' ? 'Covers the full school year — all topics, attendance, and observations from start to end' : 'Covers one term — all data between the selected dates'}</p>

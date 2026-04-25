@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Download, Sparkles, CheckCircle2, X, Edit2, Save, Users, ChevronDown, ChevronUp, AlertCircle, Share2, Trash2 } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 import {
   fetchAdminClasses,
   fetchAdminStudents,
@@ -106,6 +107,7 @@ function ReportViewer({ report }: { report: AdminProgressReport }) {
 
 export default function AdminReportsPage() {
   const token = getToken() || '';
+  const { today, academicStart, academicEnd } = useAcademicCalendar(token);
   const [classes, setClasses] = useState<AdminClass[]>([]);
   const [students, setStudents] = useState<AdminStudent[]>([]);
   const [selectedClass, setSelectedClass] = useState('');
@@ -487,11 +489,13 @@ export default function AdminReportsPage() {
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">From</label>
                   <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} 
+                    min={academicStart ?? undefined} max={today}
                     className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">To</label>
                   <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} 
+                    min={academicStart ?? undefined} max={today}
                     className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
               </div>
@@ -518,11 +522,13 @@ export default function AdminReportsPage() {
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Start</label>
                   <input type="date" value={termFrom} onChange={e => setTermFrom(e.target.value)} 
+                    min={academicStart ?? undefined} max={academicEnd ?? today}
                     className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-neutral-600 mb-1.5 block">End</label>
                   <input type="date" value={termTo} onChange={e => setTermTo(e.target.value)} 
+                    min={academicStart ?? undefined} max={academicEnd ?? today}
                     className="w-full px-3 sm:px-4 py-2.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
               </div>

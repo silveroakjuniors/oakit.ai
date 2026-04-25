@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { ChevronLeft, Calendar, BookOpen, Search } from 'lucide-react';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface JourneyEntry {
   id: string;
@@ -45,6 +46,7 @@ function ChildJourneyParentPage() {
   const searchParams = useSearchParams();
   const studentId = searchParams.get('student_id') || '';
   const token = getToken() || '';
+  const { academicStart } = useAcademicCalendar(token);
 
   const [data, setData] = useState<JourneyData | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -159,6 +161,7 @@ function ChildJourneyParentPage() {
             <input
               type="date"
               value={fromDate}
+              min={academicStart ?? undefined}
               max={toDate}
               onChange={e => setFromDate(e.target.value)}
               className="flex-1 text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-300"

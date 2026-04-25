@@ -6,6 +6,7 @@ import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import { ChevronLeft, Download, Calendar, Users, BookOpen, AlertCircle } from 'lucide-react';
 import OakitLogo from '@/components/OakitLogo';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface ClassStat {
   class_id: string; class_name: string; total_students: number;
@@ -77,6 +78,7 @@ const DAY_TYPE_COLORS: Record<string, string> = {
 export default function PrincipalOverviewPage() {
   const router = useRouter();
   const token = getToken() || '';
+  const { today, academicStart, academicEnd } = useAcademicCalendar(token);
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
@@ -312,11 +314,13 @@ export default function PrincipalOverviewPage() {
               <div className="flex-1">
                 <label className="text-xs font-medium text-neutral-600 mb-1 block">From</label>
                 <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)}
+                  min={academicStart ?? undefined} max={today}
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
               </div>
               <div className="flex-1">
                 <label className="text-xs font-medium text-neutral-600 mb-1 block">To</label>
                 <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)}
+                  min={academicStart ?? undefined} max={today}
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
               </div>
             </div>
