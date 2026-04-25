@@ -49,10 +49,10 @@ export default function PrincipalHRPage() {
     Promise.all([
       apiGet<OfferLetter[]>('/api/v1/staff/hr/offer-letters', token).then(setOffers).catch(() => {}),
       apiGet<LeaveRequest[]>('/api/v1/staff/hr/leaves', token).then(setLeaves).catch(() => {}),
-      apiGet<StaffUser[]>('/api/v1/admin/users', token).then(data => {
-        // Filter to staff roles only (not parents/students)
+      apiGet<any[]>('/api/v1/admin/users', token).then(data => {
+        // admin/users returns 'role' field (not role_name)
         const staffRoles = ['teacher', 'admin', 'principal'];
-        setStaff((data as any[]).filter(u => staffRoles.includes(u.role_name)).map(u => ({ id: u.id, name: u.name, email: u.email, role_name: u.role_name })));
+        setStaff(data.filter(u => staffRoles.includes(u.role)).map(u => ({ id: u.id, name: u.name, email: u.mobile || '', role_name: u.role })));
       }).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);

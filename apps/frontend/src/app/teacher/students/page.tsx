@@ -14,6 +14,7 @@ interface Milestone {
   id: string; domain: string; description: string; position: number;
   is_custom: boolean; term: string | null;
   achieved_at: string | null; achieved_by: string | null; achievement_comment: string | null;
+  parent_note: string | null; parent_noted_at: string | null;
 }
 interface MilestoneData { class_level: string; milestones: Milestone[]; total: number; achieved: number; completion_pct: number; }
 
@@ -49,58 +50,257 @@ const SKILL_DOMAINS = [
 
 // Class-level-aware suggestions per domain
 const CLASS_SUGGESTIONS: Record<string, Record<string, string[]>> = {
-  // Play Group / Nursery (youngest)
   playgroup: {
-    Cognitive:    ['Recognises familiar faces and objects', 'Responds to their own name', 'Shows curiosity by exploring objects', 'Begins to match simple shapes'],
-    Language:     ['Uses single words to communicate needs', 'Points to objects when named', 'Enjoys listening to simple rhymes', 'Babbles and vocalises expressively'],
-    Social:       ['Plays alongside other children (parallel play)', 'Responds to simple social cues', 'Enjoys interaction with familiar adults', 'Beginning to share with prompting'],
-    Emotional:    ['Shows attachment to primary caregiver', 'Expresses basic emotions (happy, sad, upset)', 'Needs comfort when distressed', 'Beginning to self-soothe with support'],
-    GrossMotor:   ['Walks steadily without support', 'Climbs low steps with help', 'Kicks a ball with one foot', 'Runs with increasing confidence'],
-    FineMotor:    ['Holds crayon with fist grip', 'Turns pages of a board book', 'Stacks 3–4 blocks', 'Scribbles spontaneously'],
-    Creativity:   ['Enjoys sensory play (sand, water, clay)', 'Participates in simple music and movement', 'Shows interest in art materials', 'Engages in simple pretend play'],
-    Participation:['Sits for short circle time activities', 'Follows one-step instructions', 'Attends to a story for 2–3 minutes', 'Participates in group songs'],
-    Peer:         ['Notices other children and smiles', 'Plays near peers without conflict', 'Offers toys occasionally', 'Watches and imitates peers'],
-    Behaviour:    ['Follows simple classroom routines with support', 'Responds to redirection', 'Transitions between activities with help', 'Shows positive response to praise'],
-    Other:        ['Demonstrates age-appropriate self-care (drinking, eating)', 'Recognises personal belongings', 'Shows interest in the environment'],
+    Cognitive:    [
+      'Recognises familiar faces and objects', 'Responds to their own name',
+      'Shows curiosity by exploring objects', 'Begins to match simple shapes',
+      'Points to body parts when named', 'Understands simple cause and effect',
+      'Imitates actions in songs and rhymes', 'Recognises common animals by sound',
+    ],
+    Language:     [
+      'Uses single words to communicate needs', 'Points to objects when named',
+      'Enjoys listening to simple rhymes and songs', 'Babbles and vocalises expressively',
+      'Repeats simple words after teacher', 'Responds to "no" and simple commands',
+      'Enjoys nursery rhymes — claps and sways along', 'Attempts to sing along to familiar songs',
+    ],
+    Social:       [
+      'Plays alongside other children (parallel play)', 'Responds to simple social cues',
+      'Enjoys interaction with familiar adults', 'Beginning to share with prompting',
+      'Waves bye-bye', 'Shows affection to familiar people',
+    ],
+    Emotional:    [
+      'Shows attachment to primary caregiver', 'Expresses basic emotions (happy, sad, upset)',
+      'Needs comfort when distressed', 'Beginning to self-soothe with support',
+      'Shows excitement at familiar activities', 'Calms down with adult support',
+    ],
+    GrossMotor:   [
+      'Walks steadily without support', 'Climbs low steps with help',
+      'Kicks a ball with one foot', 'Runs with increasing confidence',
+      'Squats to pick up objects', 'Pushes and pulls toys while walking',
+    ],
+    FineMotor:    [
+      'Holds crayon with fist grip', 'Turns pages of a board book',
+      'Stacks 3–4 blocks', 'Scribbles spontaneously',
+      'Picks up small objects with pincer grip', 'Bangs objects together deliberately',
+      'Finger painting with both hands', 'Tears paper into pieces',
+    ],
+    Creativity:   [
+      'Enjoys sensory play (sand, water, clay)', 'Participates in simple music and movement',
+      'Shows interest in art materials', 'Engages in simple pretend play',
+      'Dances to music spontaneously', 'Explores instruments by banging and shaking',
+    ],
+    Participation:[
+      'Sits for short circle time activities', 'Follows one-step instructions',
+      'Attends to a story for 2–3 minutes', 'Participates in group songs',
+      'Responds to name during roll call', 'Joins in action rhymes with prompting',
+    ],
+    Peer:         [
+      'Notices other children and smiles', 'Plays near peers without conflict',
+      'Offers toys occasionally', 'Watches and imitates peers',
+    ],
+    Behaviour:    [
+      'Follows simple classroom routines with support', 'Responds to redirection',
+      'Transitions between activities with help', 'Shows positive response to praise',
+    ],
+    Other:        [
+      'Demonstrates age-appropriate self-care (drinking, eating)',
+      'Recognises personal belongings', 'Shows interest in the environment',
+      'Responds to own name in print', 'Identifies own photo',
+    ],
   },
   nursery: {
-    Cognitive:    ['Sorts objects by colour or shape', 'Completes simple 4-piece puzzles', 'Understands concepts of big/small, more/less', 'Remembers simple sequences'],
-    Language:     ['Uses 2–3 word phrases', 'Names common objects and pictures', 'Follows two-step instructions', 'Enjoys simple stories and retells parts'],
-    Social:       ['Engages in simple cooperative play', 'Takes turns with prompting', 'Greets familiar adults and peers', 'Seeks help from teacher when needed'],
-    Emotional:    ['Separates from parent with minimal distress', 'Identifies own feelings', 'Shows empathy when peers are upset', 'Manages frustration with adult support'],
-    GrossMotor:   ['Jumps with both feet', 'Pedals a tricycle', 'Throws and catches a large ball', 'Balances on one foot briefly'],
-    FineMotor:    ['Holds pencil with emerging tripod grip', 'Cuts along a straight line', 'Draws circles and crosses', 'Strings large beads'],
-    Creativity:   ['Creates simple drawings with intention', 'Engages in role play with peers', 'Experiments with paint and collage', 'Sings simple songs from memory'],
-    Participation:['Sits attentively for 10 minutes', 'Raises hand to contribute', 'Follows classroom rules with reminders', 'Completes tasks with minimal prompting'],
-    Peer:         ['Plays cooperatively in small groups', 'Shares materials willingly', 'Resolves minor conflicts with guidance', 'Shows kindness to classmates'],
-    Behaviour:    ['Follows classroom routines independently', 'Responds well to positive reinforcement', 'Transitions smoothly between activities', 'Shows self-control in group settings'],
-    Other:        ['Recognises own name in print', 'Counts objects up to 5', 'Knows basic colours and shapes'],
+    Cognitive:    [
+      'Sorts objects by colour or shape', 'Completes simple 4-piece puzzles',
+      'Understands concepts of big/small, more/less', 'Remembers simple sequences',
+      'Matches identical pictures', 'Counts objects up to 5 with one-to-one correspondence',
+      'Identifies basic colours (red, blue, yellow, green)', 'Recognises circle, square, triangle',
+      'Follows a 2-step instruction', 'Understands "same" and "different"',
+    ],
+    Language:     [
+      'Uses 2–3 word phrases', 'Names common objects and pictures',
+      'Follows two-step instructions', 'Enjoys simple stories and retells parts',
+      'Recites short nursery rhymes from memory', 'Tells a simple story using pictures',
+      'Asks "what" and "where" questions', 'Sings simple songs independently',
+      'Communicates needs clearly to teacher', 'Describes pictures using simple sentences',
+      'Participates in show-and-tell with prompting', 'Listens attentively during story time',
+    ],
+    Social:       [
+      'Engages in simple cooperative play', 'Takes turns with prompting',
+      'Greets familiar adults and peers', 'Seeks help from teacher when needed',
+      'Plays in small groups of 2–3 children', 'Shares materials with encouragement',
+    ],
+    Emotional:    [
+      'Separates from parent with minimal distress', 'Identifies own feelings',
+      'Shows empathy when peers are upset', 'Manages frustration with adult support',
+      'Expresses happiness, sadness, anger appropriately', 'Seeks comfort from teacher when upset',
+    ],
+    GrossMotor:   [
+      'Jumps with both feet', 'Pedals a tricycle',
+      'Throws and catches a large ball', 'Balances on one foot briefly',
+      'Walks up and down stairs with alternating feet', 'Runs and stops on command',
+    ],
+    FineMotor:    [
+      'Holds pencil with emerging tripod grip', 'Cuts along a straight line',
+      'Draws circles and crosses', 'Strings large beads',
+      'Traces basic shapes', 'Colours within large boundaries',
+      'Finger grip is developing — holds pencil correctly with guidance',
+      'Tears and pastes paper accurately', 'Rolls and flattens clay',
+    ],
+    Creativity:   [
+      'Creates simple drawings with intention', 'Engages in role play with peers',
+      'Experiments with paint and collage', 'Sings simple songs from memory',
+      'Recites and acts out nursery rhymes', 'Creates patterns with blocks or stamps',
+      'Participates in storytelling with props', 'Enjoys music and movement activities',
+    ],
+    Participation:[
+      'Sits attentively for 10 minutes', 'Raises hand to contribute',
+      'Follows classroom rules with reminders', 'Completes tasks with minimal prompting',
+      'Participates in circle time discussions', 'Responds to questions during story time',
+    ],
+    Peer:         [
+      'Plays cooperatively in small groups', 'Shares materials willingly',
+      'Resolves minor conflicts with guidance', 'Shows kindness to classmates',
+    ],
+    Behaviour:    [
+      'Follows classroom routines independently', 'Responds well to positive reinforcement',
+      'Transitions smoothly between activities', 'Shows self-control in group settings',
+    ],
+    Other:        [
+      'Recognises own name in print', 'Counts objects up to 5',
+      'Knows basic colours and shapes', 'Identifies numbers 1–5',
+      'Knows first and last name', 'Identifies family members by name',
+    ],
   },
   lkg: {
-    Cognitive:    ['Counts objects up to 10 accurately', 'Identifies letters of the alphabet', 'Solves simple addition with objects', 'Understands cause and effect'],
-    Language:     ['Speaks in complete sentences', 'Retells a story in sequence', 'Asks and answers questions confidently', 'Vocabulary is expanding rapidly'],
-    Social:       ['Initiates play with peers', 'Negotiates roles in group play', 'Shows awareness of others\' feelings', 'Participates actively in group discussions'],
-    Emotional:    ['Manages emotions with minimal adult support', 'Shows confidence in new situations', 'Demonstrates resilience after setbacks', 'Expresses feelings using words'],
-    GrossMotor:   ['Hops on one foot', 'Catches a small ball', 'Skips with alternating feet', 'Rides a bicycle with training wheels'],
-    FineMotor:    ['Writes letters with guidance', 'Cuts along curved lines', 'Colours within boundaries', 'Folds paper into simple shapes'],
-    Creativity:   ['Creates detailed drawings with story', 'Engages in imaginative play scenarios', 'Composes simple songs or rhymes', 'Uses art to express ideas'],
-    Participation:['Listens attentively during lessons', 'Completes tasks independently', 'Asks relevant questions', 'Contributes ideas in group activities'],
-    Peer:         ['Maintains friendships over time', 'Supports peers who need help', 'Resolves conflicts independently', 'Shows leadership in group activities'],
-    Behaviour:    ['Follows multi-step instructions', 'Takes responsibility for belongings', 'Shows self-discipline during activities', 'Demonstrates respect for classroom rules'],
-    Other:        ['Recognises and writes own name', 'Identifies numbers 1–20', 'Reads simple CVC words'],
+    Cognitive:    [
+      'Counts objects up to 10 accurately', 'Identifies letters of the alphabet',
+      'Solves simple addition with objects', 'Understands cause and effect',
+      'Sequences 3-step picture stories', 'Identifies numbers 1–20',
+      'Matches uppercase and lowercase letters', 'Understands concepts of before/after, first/last',
+      'Completes 8–10 piece puzzles', 'Identifies patterns and continues them',
+    ],
+    Language:     [
+      'Speaks in complete sentences', 'Retells a story in sequence',
+      'Asks and answers questions confidently', 'Vocabulary is expanding rapidly',
+      'Recites rhymes and poems with expression', 'Tells a story from pictures independently',
+      'Participates confidently in show-and-tell', 'Communicates clearly in English and mother tongue',
+      'Describes events from home and school', 'Listens and responds to stories with comprehension',
+      'Reads simple CVC words (cat, bat, mat)', 'Identifies beginning sounds of words',
+      'Public speaking — speaks in front of the class with prompting',
+    ],
+    Social:       [
+      'Initiates play with peers', 'Negotiates roles in group play',
+      'Shows awareness of others\' feelings', 'Participates actively in group discussions',
+      'Helps classmates without being asked', 'Follows group rules in games',
+    ],
+    Emotional:    [
+      'Manages emotions with minimal adult support', 'Shows confidence in new situations',
+      'Demonstrates resilience after setbacks', 'Expresses feelings using words',
+      'Handles winning and losing gracefully', 'Shows pride in own achievements',
+    ],
+    GrossMotor:   [
+      'Hops on one foot', 'Catches a small ball',
+      'Skips with alternating feet', 'Rides a bicycle with training wheels',
+      'Participates actively in outdoor play', 'Demonstrates good balance on beam',
+    ],
+    FineMotor:    [
+      'Writes letters with guidance', 'Cuts along curved lines',
+      'Colours within boundaries', 'Folds paper into simple shapes',
+      'Finger grip is correct — holds pencil with tripod grip independently',
+      'Traces and copies letters accurately', 'Draws recognisable figures (person, house, tree)',
+      'Uses scissors with increasing precision', 'Laces and ties simple knots',
+    ],
+    Creativity:   [
+      'Creates detailed drawings with story', 'Engages in imaginative play scenarios',
+      'Composes simple songs or rhymes', 'Uses art to express ideas',
+      'Performs rhymes and songs with actions', 'Creates simple craft projects independently',
+      'Storytelling — creates and narrates a short story', 'Participates in drama and role play',
+    ],
+    Participation:[
+      'Listens attentively during lessons', 'Completes tasks independently',
+      'Asks relevant questions', 'Contributes ideas in group activities',
+      'Participates in class discussions without prompting', 'Follows multi-step instructions',
+    ],
+    Peer:         [
+      'Maintains friendships over time', 'Supports peers who need help',
+      'Resolves conflicts independently', 'Shows leadership in group activities',
+    ],
+    Behaviour:    [
+      'Follows multi-step instructions', 'Takes responsibility for belongings',
+      'Shows self-discipline during activities', 'Demonstrates respect for classroom rules',
+    ],
+    Other:        [
+      'Recognises and writes own name', 'Identifies numbers 1–20',
+      'Reads simple CVC words', 'Knows days of the week',
+      'Identifies coins and their values', 'Knows home address and phone number',
+    ],
   },
   ukg: {
-    Cognitive:    ['Solves simple word problems', 'Reads simple sentences independently', 'Demonstrates logical reasoning', 'Applies learning to new situations'],
-    Language:     ['Reads simple books with fluency', 'Writes simple sentences', 'Communicates ideas clearly in group', 'Uses descriptive language effectively'],
-    Social:       ['Collaborates effectively in team tasks', 'Shows leadership and initiative', 'Demonstrates empathy and inclusion', 'Resolves peer conflicts constructively'],
-    Emotional:    ['Demonstrates strong self-regulation', 'Shows confidence in public speaking', 'Handles disappointment maturely', 'Motivates peers positively'],
-    GrossMotor:   ['Demonstrates good balance and coordination', 'Participates actively in sports', 'Shows agility in physical activities', 'Follows rules in team games'],
-    FineMotor:    ['Writes legibly with correct grip', 'Draws detailed pictures with proportion', 'Uses scissors with precision', 'Completes craft projects neatly'],
-    Creativity:   ['Creates original stories and artwork', 'Performs confidently in class presentations', 'Shows innovation in problem-solving', 'Expresses creativity across subjects'],
-    Participation:['Leads group discussions', 'Completes all tasks on time', 'Shows enthusiasm for learning', 'Asks insightful questions'],
-    Peer:         ['Mentors younger or struggling peers', 'Builds positive relationships across groups', 'Shows fairness and sportsmanship', 'Celebrates peers\' achievements'],
-    Behaviour:    ['Consistently follows school values', 'Takes initiative without prompting', 'Shows accountability for actions', 'Models positive behaviour for peers'],
-    Other:        ['Reads chapter books independently', 'Solves 2-digit addition and subtraction', 'Demonstrates school readiness skills'],
+    Cognitive:    [
+      'Solves simple word problems', 'Reads simple sentences independently',
+      'Demonstrates logical reasoning', 'Applies learning to new situations',
+      'Counts and writes numbers up to 100', 'Understands place value (tens and ones)',
+      'Solves 2-digit addition and subtraction', 'Reads and writes simple sentences',
+      'Identifies and extends complex patterns', 'Demonstrates critical thinking in activities',
+    ],
+    Language:     [
+      'Reads simple books with fluency', 'Writes simple sentences independently',
+      'Communicates ideas clearly in group', 'Uses descriptive language effectively',
+      'Public speaking — presents confidently in front of the class',
+      'Storytelling — narrates a complete story with beginning, middle, end',
+      'Recites poems and rhymes with expression and confidence',
+      'Participates in debates and discussions', 'Writes 3–4 sentences on a topic',
+      'Reads aloud with correct pronunciation and expression',
+      'Communicates in English fluently in classroom context',
+      'Asks thoughtful questions during lessons',
+    ],
+    Social:       [
+      'Collaborates effectively in team tasks', 'Shows leadership and initiative',
+      'Demonstrates empathy and inclusion', 'Resolves peer conflicts constructively',
+      'Organises group activities', 'Mentors younger students',
+    ],
+    Emotional:    [
+      'Demonstrates strong self-regulation', 'Shows confidence in public speaking',
+      'Handles disappointment maturely', 'Motivates peers positively',
+      'Sets personal goals and works towards them', 'Shows resilience in challenging tasks',
+    ],
+    GrossMotor:   [
+      'Demonstrates good balance and coordination', 'Participates actively in sports',
+      'Shows agility in physical activities', 'Follows rules in team games',
+      'Demonstrates correct posture during activities', 'Participates in yoga and stretching',
+    ],
+    FineMotor:    [
+      'Writes legibly with correct grip', 'Draws detailed pictures with proportion',
+      'Uses scissors with precision', 'Completes craft projects neatly',
+      'Finger grip is excellent — writes with speed and accuracy',
+      'Writes within lines consistently', 'Copies from board accurately',
+      'Creates detailed art with fine tools (pencil, brush)',
+    ],
+    Creativity:   [
+      'Creates original stories and artwork', 'Performs confidently in class presentations',
+      'Shows innovation in problem-solving', 'Expresses creativity across subjects',
+      'Writes and performs original rhymes', 'Directs and participates in class plays',
+      'Storytelling — creates imaginative stories with detail and expression',
+      'Composes simple poems independently',
+    ],
+    Participation:[
+      'Leads group discussions', 'Completes all tasks on time',
+      'Shows enthusiasm for learning', 'Asks insightful questions',
+      'Volunteers to answer and present', 'Takes initiative in classroom activities',
+    ],
+    Peer:         [
+      'Mentors younger or struggling peers', 'Builds positive relationships across groups',
+      'Shows fairness and sportsmanship', 'Celebrates peers\' achievements',
+    ],
+    Behaviour:    [
+      'Consistently follows school values', 'Takes initiative without prompting',
+      'Shows accountability for actions', 'Models positive behaviour for peers',
+    ],
+    Other:        [
+      'Reads chapter books independently', 'Solves 2-digit addition and subtraction',
+      'Demonstrates school readiness skills', 'Knows months of the year in order',
+      'Understands basic money concepts', 'Writes a short paragraph independently',
+    ],
   },
 };
 
@@ -632,6 +832,12 @@ export default function TeacherStudentsPage() {
                                 {m.achievement_comment && (
                                   <p className="text-xs text-neutral-500 mt-0.5 italic">"{m.achievement_comment}"</p>
                                 )}
+                              </div>
+                            )}
+                            {m.parent_note && (
+                              <div className="mt-1.5 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5">
+                                <p className="text-[10px] font-semibold text-blue-500 mb-0.5">Parent note</p>
+                                <p className="text-xs text-blue-700">{m.parent_note}</p>
                               </div>
                             )}
                           </div>

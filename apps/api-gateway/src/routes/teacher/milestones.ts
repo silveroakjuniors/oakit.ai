@@ -16,6 +16,7 @@ async function getMilestoneData(studentId: string, schoolId: string) {
   const milestones = await pool.query(
     `SELECT m.id, m.domain, m.description, m.position, m.is_custom, m.term,
             sm.achieved_at, sm.teacher_id, sm.achievement_comment,
+            sm.parent_note, sm.parent_noted_at,
             u.name as achieved_by
      FROM milestones m
      LEFT JOIN student_milestones sm ON sm.milestone_id = m.id AND sm.student_id = $1

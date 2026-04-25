@@ -201,12 +201,13 @@ interface ChildComparison {
   trend: 'up' | 'down' | 'stable';
 }
 
-type Tab = 'home' | 'calendar' | 'progress' | 'assignments' | 'messages' | 'notifications' | 'fees' | 'reports' | 'settings' | 'chat' | 'insights';
+type Tab = 'home' | 'calendar' | 'progress' | 'milestones' | 'assignments' | 'messages' | 'notifications' | 'fees' | 'reports' | 'settings' | 'chat' | 'insights';
 
 const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
   { id: 'home',          Icon: Home,           label: 'Home' },
   { id: 'calendar',      Icon: Calendar,       label: 'Calendar' },
   { id: 'progress',      Icon: TrendingUp,     label: 'Progress' },
+  { id: 'milestones',    Icon: Target,         label: 'Milestones' },
   { id: 'insights',      Icon: BarChart3,      label: 'Insights' },
   { id: 'assignments',   Icon: ClipboardList,  label: 'Assignments' },
   { id: 'messages',      Icon: MessageSquare,  label: 'Messages' },
@@ -869,6 +870,7 @@ export default function ParentPage() {
                   )}
                   {tab === 'calendar' && <CalendarTab token={token} activeChild={activeChild} />}
                   {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
+                  {tab === 'milestones' && <MilestonesTab activeChild={activeChild} token={token} />}
                   {tab === 'assignments' && <AssignmentsTab activeChild={activeChild} token={token} />}
                   {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
                   {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
@@ -2251,6 +2253,262 @@ function AssignmentsTab({ activeChild, token }: { activeChild: Child | null; tok
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Milestones Tab -----------------------------------------------------------
+interface ParentMilestone {
+  id: string; domain: string; description: string; position: number;
+  is_custom: boolean; term: string | null;
+  achieved_at: string | null; achievement_comment: string | null;
+  parent_note: string | null; parent_noted_at: string | null;
+  achieved_by: string | null;
+}
+interface ParentMilestoneData {
+  class_level: string; milestones: ParentMilestone[];
+  total: number; achieved: number; completion_pct: number;
+}
+
+const DOMAIN_COLORS: Record<string, { bg: string; border: string; text: string; dot: string }> = {
+  Cognitive:    { bg: 'bg-pink-50',    border: 'border-pink-200',    text: 'text-pink-700',    dot: 'bg-pink-400' },
+  Language:     { bg: 'bg-purple-50',  border: 'border-purple-200',  text: 'text-purple-700',  dot: 'bg-purple-400' },
+  Social:       { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   dot: 'bg-amber-400' },
+  Emotional:    { bg: 'bg-yellow-50',  border: 'border-yellow-200',  text: 'text-yellow-700',  dot: 'bg-yellow-400' },
+  GrossMotor:   { bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-700',    dot: 'bg-blue-400' },
+  FineMotor:    { bg: 'bg-indigo-50',  border: 'border-indigo-200',  text: 'text-indigo-700',  dot: 'bg-indigo-400' },
+  Motor:        { bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-700',    dot: 'bg-blue-400' },
+  Creativity:   { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-400' },
+  Participation:{ bg: 'bg-teal-50',    border: 'border-teal-200',    text: 'text-teal-700',    dot: 'bg-teal-400' },
+  Peer:         { bg: 'bg-orange-50',  border: 'border-orange-200',  text: 'text-orange-700',  dot: 'bg-orange-400' },
+  Behaviour:    { bg: 'bg-rose-50',    border: 'border-rose-200',    text: 'text-rose-700',    dot: 'bg-rose-400' },
+  Other:        { bg: 'bg-neutral-50', border: 'border-neutral-200', text: 'text-neutral-700', dot: 'bg-neutral-400' },
+};
+
+function MilestonesTab({ activeChild, token }: { activeChild: Child | null; token: string }) {
+  const [data, setData] = useState<ParentMilestoneData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [noteModal, setNoteModal] = useState<ParentMilestone | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteMsg, setNoteMsg] = useState('');
+  const [filter, setFilter] = useState<'all' | 'achieved' | 'pending'>('all');
+
+  useEffect(() => {
+    if (!activeChild?.id || !token) return;
+    setLoading(true);
+    apiGet<ParentMilestoneData>(`/api/v1/parent/milestones/${activeChild.id}`, token)
+      .then(setData).catch(() => {}).finally(() => setLoading(false));
+  }, [activeChild?.id]);
+
+  async function saveNote() {
+    if (!noteModal || !noteText.trim() || !activeChild?.id) return;
+    setSavingNote(true); setNoteMsg('');
+    try {
+      await apiPost(`/api/v1/parent/milestones/${activeChild.id}/${noteModal.id}/note`, { note: noteText }, token);
+      setNoteMsg('Note saved! Your teacher will see this.');
+      setData(prev => prev ? {
+        ...prev,
+        milestones: prev.milestones.map(m => m.id === noteModal.id
+          ? { ...m, parent_note: noteText, parent_noted_at: new Date().toISOString() }
+          : m
+        ),
+      } : prev);
+      setTimeout(() => { setNoteModal(null); setNoteText(''); setNoteMsg(''); }, 1500);
+    } catch { setNoteMsg('Failed to save. Please try again.'); }
+    finally { setSavingNote(false); }
+  }
+
+  if (!activeChild) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <Target size={40} className="text-gray-200 mb-3" />
+      <p className="text-gray-400 text-sm">No child selected</p>
+    </div>
+  );
+
+  if (loading) return (
+    <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+  );
+
+  if (!data || data.total === 0) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center px-6">
+      <Target size={40} className="text-gray-200 mb-3" />
+      <p className="text-gray-600 font-semibold mb-1">No milestones yet</p>
+      <p className="text-gray-400 text-sm">Your child's teacher will assign milestones to track developmental progress.</p>
+    </div>
+  );
+
+  const grouped = data.milestones.reduce((acc: Record<string, ParentMilestone[]>, m) => {
+    if (!acc[m.domain]) acc[m.domain] = [];
+    acc[m.domain].push(m);
+    return acc;
+  }, {});
+
+  const filtered = (ms: ParentMilestone[]) => ms.filter(m =>
+    filter === 'all' ? true : filter === 'achieved' ? !!m.achieved_at : !m.achieved_at
+  );
+
+  const childFirst = activeChild.name.split(' ')[0];
+
+  return (
+    <div className="space-y-4">
+      {/* Note modal */}
+      {noteModal && (
+        <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => { setNoteModal(null); setNoteText(''); setNoteMsg(''); }}>
+          <div className="relative w-full lg:w-[480px] bg-white rounded-t-3xl lg:rounded-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 bg-emerald-50 border-b border-emerald-100">
+              <div>
+                <p className="text-sm font-bold text-neutral-800">Add Progress Note</p>
+                <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{noteModal.description}</p>
+              </div>
+              <button onClick={() => { setNoteModal(null); setNoteText(''); setNoteMsg(''); }}
+                className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Share how {childFirst} is practising this at home. Your teacher will see this note and it helps track progress together.
+              </p>
+              <textarea value={noteText} onChange={e => setNoteText(e.target.value)}
+                rows={4} autoFocus
+                placeholder={`e.g. ${childFirst} practised counting to 10 at home today using toys. Getting much better!`}
+                className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30 resize-none" />
+              {noteModal.parent_note && (
+                <div className="bg-neutral-50 rounded-xl px-3 py-2.5 border border-neutral-100">
+                  <p className="text-[10px] font-semibold text-neutral-400 mb-1">Previous note</p>
+                  <p className="text-xs text-neutral-600">{noteModal.parent_note}</p>
+                </div>
+              )}
+              {noteMsg && (
+                <p className={`text-xs font-medium ${noteMsg.includes('saved') ? 'text-emerald-600' : 'text-red-500'}`}>{noteMsg}</p>
+              )}
+            </div>
+            <div className="px-5 pb-5 flex gap-3">
+              <button onClick={() => { setNoteModal(null); setNoteText(''); setNoteMsg(''); }}
+                className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50">Cancel</button>
+              <button onClick={saveNote} disabled={savingNote || !noteText.trim()}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center justify-center gap-2">
+                {savingNote ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {savingNote ? 'Saving…' : 'Save Note'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">{childFirst}'s Milestones</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{data.class_level} · {data.achieved} of {data.total} achieved</p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-black text-emerald-600">{data.completion_pct}%</p>
+          <p className="text-[10px] text-gray-400">complete</p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full transition-all duration-700"
+          style={{ width: `${data.completion_pct}%` }} />
+      </div>
+
+      {/* What milestones mean */}
+      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 flex items-start gap-3">
+        <Target size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-xs font-semibold text-emerald-800">How milestones work</p>
+          <p className="text-xs text-emerald-700 mt-0.5 leading-relaxed">
+            Your teacher assigns milestones for {childFirst}'s class. When {childFirst} achieves one at school, the teacher marks it done.
+            You can add notes about home practice — this helps both you and the teacher track progress together.
+          </p>
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+        {(['all', 'achieved', 'pending'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all capitalize ${
+              filter === f ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+            }`}>
+            {f === 'all' ? `All (${data.total})` : f === 'achieved' ? `Done (${data.achieved})` : `Pending (${data.total - data.achieved})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Milestones by domain */}
+      {Object.entries(grouped).map(([domain, milestones]) => {
+        const visible = filtered(milestones);
+        if (visible.length === 0) return null;
+        const colors = DOMAIN_COLORS[domain] || DOMAIN_COLORS.Other;
+        const domainAchieved = milestones.filter(m => m.achieved_at).length;
+        return (
+          <div key={domain} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className={`px-4 py-3 flex items-center justify-between ${colors.bg} border-b ${colors.border}`}>
+              <p className={`text-sm font-bold ${colors.text}`}>{domain}</p>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full bg-white/60 ${colors.text}`}>
+                {domainAchieved}/{milestones.length}
+              </span>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {visible.map(m => {
+                const isAchieved = !!m.achieved_at;
+                const hasParentNote = !!m.parent_note;
+                return (
+                  <div key={m.id} className={`px-4 py-3 ${isAchieved ? 'bg-emerald-50/30' : 'bg-white'}`}>
+                    <div className="flex items-start gap-3">
+                      {/* Status dot */}
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                        isAchieved ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 bg-white'
+                      }`}>
+                        {isAchieved && <CheckCircle2 size={12} className="text-white" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm leading-snug ${isAchieved ? 'text-gray-600 line-through decoration-emerald-400' : 'text-gray-800 font-medium'}`}>
+                          {m.description}
+                        </p>
+                        {m.term && (
+                          <span className="inline-block mt-1 text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{m.term}</span>
+                        )}
+                        {isAchieved && (
+                          <p className="text-[11px] text-emerald-600 font-medium mt-1">
+                            Achieved {m.achieved_at ? new Date(m.achieved_at + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                            {m.achieved_by ? ` · by ${m.achieved_by}` : ''}
+                          </p>
+                        )}
+                        {m.achievement_comment && (
+                          <p className="text-xs text-gray-500 mt-1 italic">"{m.achievement_comment}"</p>
+                        )}
+                        {hasParentNote && (
+                          <div className="mt-2 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5">
+                            <p className="text-[10px] font-semibold text-blue-500 mb-0.5">Your note</p>
+                            <p className="text-xs text-blue-700">{m.parent_note}</p>
+                          </div>
+                        )}
+                      </div>
+                      {/* Add/edit note button */}
+                      <button
+                        onClick={() => { setNoteModal(m); setNoteText(m.parent_note || ''); setNoteMsg(''); }}
+                        className={`shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                          hasParentNote
+                            ? 'bg-blue-50 border-blue-200 text-blue-600 hover:bg-blue-100'
+                            : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
+                        }`}>
+                        {hasParentNote ? 'Edit note' : '+ Note'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
