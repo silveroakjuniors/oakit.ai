@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiGet, apiPost, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface Expense {
   id: string;
@@ -23,6 +24,7 @@ const CATEGORIES = [
 
 export default function ExpensesPage() {
   const token = getToken() || '';
+  const { today } = useAcademicCalendar(token);
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
@@ -196,7 +198,7 @@ export default function ExpensesPage() {
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
               <input type="date" className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                value={date} onChange={e => setDate(e.target.value)} />
+                max={today} value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₹)</label>

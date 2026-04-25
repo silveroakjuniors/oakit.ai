@@ -48,7 +48,7 @@ function getUserRole(token: string): string {
 
 export default function ReportsPage() {
   const token = getToken() || '';
-  const { today, academicStart } = useAcademicCalendar(token);
+  const { today } = useAcademicCalendar(token);
   const userRole = getUserRole(token);
   const isPrincipal = userRole === 'principal' || userRole === 'super_admin';
 
@@ -143,13 +143,13 @@ export default function ReportsPage() {
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
             <input type="date" className="px-3 py-2 rounded-lg border border-gray-300 text-sm"
-              min={academicStart ?? undefined} max={today}
+              max={today}
               value={fromDate} onChange={e => setFromDate(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
             <input type="date" className="px-3 py-2 rounded-lg border border-gray-300 text-sm"
-              min={academicStart ?? undefined} max={today}
+              max={today}
               value={toDate} onChange={e => setToDate(e.target.value)} />
           </div>
           <Button onClick={fetchReport} disabled={loading}>

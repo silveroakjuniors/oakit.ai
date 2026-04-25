@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { apiGet, apiPost, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface BankItem {
   id: string;
@@ -39,6 +40,7 @@ const MATCH_BADGE: Record<string, { bg: string; text: string; label: string }> =
 
 export default function ReconciliationPage() {
   const token = getToken() || '';
+  const { today } = useAcademicCalendar(token);
 
   // Bank upload
   const [bankFile, setBankFile] = useState<File | null>(null);
@@ -275,6 +277,7 @@ export default function ReconciliationPage() {
             <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
             <input
               type="date"
+              max={today}
               className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               value={cashDate}
               onChange={e => setCashDate(e.target.value)}

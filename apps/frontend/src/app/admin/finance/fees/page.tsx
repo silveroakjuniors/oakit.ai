@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { apiGet, apiPost, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface Student {
   id: string;
@@ -41,6 +42,7 @@ interface Payment {
 
 export default function FeesPage() {
   const token = getToken() || '';
+  const { today } = useAcademicCalendar(token);
 
   // Student search
   const [searchQuery, setSearchQuery] = useState('');
@@ -270,6 +272,7 @@ export default function FeesPage() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Payment Date</label>
                 <input
                   type="date"
+                  max={today}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                   value={paymentDate}
                   onChange={e => setPaymentDate(e.target.value)}
