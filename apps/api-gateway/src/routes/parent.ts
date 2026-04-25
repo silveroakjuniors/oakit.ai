@@ -378,7 +378,7 @@ router.get('/child/:student_id/week-schedule', async (req: Request, res: Respons
       }
       if (row.chunk_ids?.length > 0) {
         const chunkRows = await pool.query(
-          `SELECT topic_label, LEFT(content, 300) as snippet FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
+          `SELECT topic_label, content, LEFT(content, 1200) as snippet FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
           [row.chunk_ids]
         );
         // Check if this day has a completion record
@@ -386,9 +386,37 @@ router.get('/child/:student_id/week-schedule', async (req: Request, res: Respons
           `SELECT id FROM daily_completions WHERE section_id = $1 AND completion_date = $2 LIMIT 1`,
           [section_id, dateKey]
         );
+
+        // Extract subject headings from content when topic_label is "Week X Day Y"
+        function extractSubjects(content: string): string[] {
+          const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
+          const subjects: string[] = [];
+          for (const line of lines) {
+            if (/^week\s*\d+\s*day\s*\d+/i.test(line)) continue;
+            if (/^\d+$/.test(line)) continue;
+            // Subject heading: short line ending with colon, or ALL CAPS word, or "Subject:" pattern
+            if (
+              /^[A-Z][a-zA-Z\s&\/\-]{1,50}:\s*$/.test(line) ||
+              /^[A-Z][A-Z\s]{2,30}$/.test(line) ||
+              /^(English|Math|Maths|GK|General Knowledge|Circle Time|Fine Motor|Art|Craft|Music|PE|Science|Hindi|Telugu|Tamil|Kannada|Story|Rhymes?|Writing|Reading|Numbers?|Shapes?|Colours?|Colors?|Drawing|Phonics|EVS|Computer|Dance|Yoga|Library|Activity|Outdoor|Indoor|Language|Numeracy|Literacy|Motor Skills?|Sensory|Play|Exploration|Discovery|Social|Emotional|Cognitive|Creative|Physical)[:\s]/i.test(line)
+            ) {
+              subjects.push(line.replace(/:$/, '').trim());
+            }
+          }
+          return subjects;
+        }
+
         days[dateKey] = {
           topics: chunkRows.rows.map((c: any) => c.topic_label),
-          chunks: chunkRows.rows.map((c: any) => ({ topic: c.topic_label || '', snippet: c.snippet || '' })),
+          chunks: chunkRows.rows.map((c: any) => {
+            const isWeekDayLabel = /^week\s*\d+\s*day\s*\d+\s*$/i.test((c.topic_label || '').trim());
+            const subjects = isWeekDayLabel ? extractSubjects(c.content || '') : [];
+            return {
+              topic: c.topic_label || '',
+              snippet: c.snippet || '',
+              subjects: subjects.length > 0 ? subjects : undefined,
+            };
+          }),
           completed: compRow.rows.length > 0,
         };
       } else {
@@ -453,15 +481,41 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
       }
     }
 
-    // Fetch chunk details
-    let chunks: { id: string; topic_label: string; snippet: string }[] = [];
+    // Fetch chunk details — get full content to extract subjects
+    let chunks: { id: string; topic_label: string; snippet: string; subjects?: string[] }[] = [];
     if (allChunkIds.length > 0) {
       const chunksRow = await pool.query(
-        `SELECT id::text, topic_label, LEFT(content, 200) as snippet
+        `SELECT id::text, topic_label, content, LEFT(content, 400) as snippet
          FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
         [allChunkIds]
       );
-      chunks = chunksRow.rows;
+
+      // Extract subject headings from chunk content when label is "Week X Day Y"
+      function extractSubjects(content: string): string[] {
+        const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
+        const subjects: string[] = [];
+        const subjectRe = /^(English|Math|Maths|GK|General Knowledge|Circle Time|Fine Motor|Art|Craft|Music|PE|Science|Hindi|Telugu|Tamil|Kannada|Story|Rhymes?|Writing|Reading|Numbers?|Shapes?|Colours?|Colors?|Drawing|Phonics|EVS|Computer|Dance|Yoga|Library|Activity|Outdoor|Indoor|Language|Numeracy|Literacy|Motor Skills?|Sensory|Play|Exploration|Discovery|Social|Emotional|Cognitive|Creative|Physical)/i;
+        for (const line of lines) {
+          if (/^week\s*\d+\s*day\s*\d+/i.test(line)) continue;
+          if (/^\d+$/.test(line)) continue;
+          if (subjectRe.test(line) || /^[A-Z][a-zA-Z\s&\/\-]{1,50}:\s*$/.test(line)) {
+            const clean = line.replace(/:$/, '').trim();
+            if (clean && !subjects.includes(clean)) subjects.push(clean);
+          }
+        }
+        return subjects;
+      }
+
+      chunks = chunksRow.rows.map((c: any) => {
+        const isWeekDayLabel = /^week\s*\d+\s*day\s*\d+\s*$/i.test((c.topic_label || '').trim());
+        const subjects = isWeekDayLabel ? extractSubjects(c.content || '') : [];
+        return {
+          id: c.id,
+          topic_label: c.topic_label,
+          snippet: c.snippet || '',
+          subjects: subjects.length > 0 ? subjects : undefined,
+        };
+      });
     }
 
     // Settling day notes
@@ -959,6 +1013,95 @@ router.get('/missed-topics/completed', async (req: Request, res: Response) => {
     );
     return res.json(result.rows);
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/parent/calendar — holidays, special days, and announcements for the school
+router.get('/calendar', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+
+    // Get current academic year from school_calendar
+    const calRow = await pool.query(
+      `SELECT academic_year, start_date::text, end_date::text
+       FROM school_calendar
+       WHERE school_id = $1 AND now()::date BETWEEN start_date AND end_date
+       LIMIT 1`,
+      [school_id]
+    );
+    const academicYear = calRow.rows[0]?.academic_year || '';
+    const calStart = calRow.rows[0]?.start_date || new Date().toISOString().split('T')[0];
+    const calEnd   = calRow.rows[0]?.end_date   || new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0];
+
+    // Holidays
+    const holidayRows = await pool.query(
+      `SELECT id::text, holiday_date::text as date, event_name as title
+       FROM holidays
+       WHERE school_id = $1 AND academic_year = $2
+       ORDER BY holiday_date`,
+      [school_id, academicYear]
+    );
+
+    // Special days (settling, events, half-days, etc.)
+    const specialRows = await pool.query(
+      `SELECT id::text, day_date::text as date, label as title, day_type
+       FROM special_days
+       WHERE school_id = $1 AND academic_year = $2
+       ORDER BY day_date`,
+      [school_id, academicYear]
+    );
+
+    // Announcements (recent + upcoming)
+    const announcementRows = await pool.query(
+      `SELECT id::text, title, body, created_at::text, author_name
+       FROM announcements
+       WHERE school_id = $1
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [school_id]
+    );
+
+    // Map day_type to a friendly category
+    function mapDayType(dayType: string): string {
+      if (!dayType) return 'event';
+      const t = dayType.toLowerCase();
+      if (t.includes('settl')) return 'settling';
+      if (t.includes('half')) return 'half_day';
+      if (t.includes('exam') || t.includes('test')) return 'exam';
+      if (t.includes('sport') || t.includes('activity')) return 'activity';
+      if (t.includes('holiday') || t.includes('vacation')) return 'holiday';
+      return 'event';
+    }
+
+    return res.json({
+      academic_year: academicYear,
+      calendar_start: calStart,
+      calendar_end: calEnd,
+      holidays: holidayRows.rows.map((r: any) => ({
+        id: r.id,
+        date: r.date,
+        title: r.title,
+        type: 'holiday',
+      })),
+      special_days: specialRows.rows.map((r: any) => ({
+        id: r.id,
+        date: r.date,
+        title: r.title,
+        type: mapDayType(r.day_type),
+        day_type: r.day_type,
+      })),
+      announcements: announcementRows.rows.map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        body: r.body,
+        date: r.created_at?.split('T')[0] || '',
+        author: r.author_name,
+        type: 'announcement',
+      })),
+    });
+  } catch (err) {
+    console.error('[parent/calendar]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

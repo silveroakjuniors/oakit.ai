@@ -1743,6 +1743,7 @@ class TopicSummaryRequest(BaseModel):
     class_name: str = "Nursery"
     child_name: str = "your child"
     completed: bool = False   # True = teacher marked these as done today
+    feed_date: str = ""       # YYYY-MM-DD — actual date to use instead of "Week X Day Y"
 
 @app.post("/internal/topic-summary")
 async def topic_summary(req: TopicSummaryRequest):
@@ -1756,6 +1757,19 @@ async def topic_summary(req: TopicSummaryRequest):
     if not req.topics:
         return {"summary": ""}
 
+    # Format the actual date for display (e.g. "Monday, 15 June")
+    def format_date(date_str: str) -> str:
+        if not date_str:
+            return ""
+        try:
+            from datetime import datetime
+            d = datetime.strptime(date_str, "%Y-%m-%d")
+            return d.strftime("%A, %-d %B")  # e.g. "Monday, 15 June"
+        except Exception:
+            return date_str
+
+    date_label = format_date(req.feed_date) if req.feed_date else ""
+
     # Clean up raw "Week X Day Y" labels — extract meaningful subject names
     def clean_label(label: str) -> str:
         import re
@@ -1763,13 +1777,54 @@ async def topic_summary(req: TopicSummaryRequest):
         cleaned = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', label, flags=re.IGNORECASE).strip()
         # Remove leading/trailing punctuation
         cleaned = cleaned.strip(' -–—:,.')
-        return cleaned if cleaned else label
+        return cleaned  # return empty string if nothing left — caller handles fallback
 
-    cleaned_topics = [clean_label(t) for t in req.topics]
-    # Filter out empty labels
-    meaningful_topics = [t for t in cleaned_topics if t]
+    # Build meaningful topics list — for "Week X Day Y" labels, extract from chunk snippets
+    def extract_subjects_from_snippet(snippet: str) -> list:
+        import re
+        if not snippet:
+            return []
+        lines = [l.strip() for l in snippet.split('\n') if l.strip()]
+        subjects = []
+        subject_pattern = re.compile(
+            r'^(English|Math|Maths|GK|General Knowledge|Circle Time|Fine Motor|Art|Craft|Music|PE|'
+            r'Science|Hindi|Telugu|Tamil|Kannada|Story|Rhymes?|Writing|Reading|Numbers?|Shapes?|'
+            r'Colours?|Colors?|Drawing|Phonics|EVS|Computer|Dance|Yoga|Library|Activity|Outdoor|'
+            r'Indoor|Language|Numeracy|Literacy|Motor Skills?|Sensory|Play|Exploration|Discovery|'
+            r'Social|Emotional|Cognitive|Creative|Physical)',
+            re.IGNORECASE
+        )
+        for line in lines:
+            if re.match(r'^week\s*\d+\s*day\s*\d+', line, re.IGNORECASE):
+                continue
+            if re.match(r'^\d+$', line):
+                continue
+            if subject_pattern.match(line) or re.match(r'^[A-Z][a-zA-Z\s&/\-]{1,50}:\s*$', line):
+                subjects.append(line.rstrip(':').strip())
+        return subjects
+
+    meaningful_topics = []
+    for i, topic in enumerate(req.topics):
+        cleaned = clean_label(topic)
+        if cleaned:
+            meaningful_topics.append(cleaned)
+        else:
+            # Entire label was "Week X Day Y" — try to get subjects from chunk snippet
+            chunk = next((c for c in req.chunks if c.get("topic") == topic), None)
+            snippet = chunk.get("snippet", "") if chunk else ""
+            subjects = extract_subjects_from_snippet(snippet)
+            if subjects:
+                meaningful_topics.extend(subjects)
+            elif snippet:
+                # Use first meaningful line of snippet
+                first_line = next((l.strip() for l in snippet.split('\n')
+                                   if l.strip() and not re.match(r'^week\s*\d+\s*day\s*\d+', l.strip(), re.IGNORECASE)), "")
+                if first_line:
+                    meaningful_topics.append(first_line[:60])
+            # If still nothing, skip this topic entirely (don't use "Week X Day Y")
+
     if not meaningful_topics:
-        meaningful_topics = req.topics  # fallback to raw labels
+        meaningful_topics = [clean_label(t) or t for t in req.topics]
 
     # Build content context from chunk snippets if available
     content_lines = []
@@ -1777,18 +1832,20 @@ async def topic_summary(req: TopicSummaryRequest):
         topic = chunk.get("topic", "")
         snippet = (chunk.get("snippet") or "")[:250].strip()
         if snippet:
-            content_lines.append(f"• {topic}: {snippet}")
+            content_lines.append(f"• {snippet}")
 
     content_context = "\n".join(content_lines) if content_lines else ""
 
     tense = "learned" if req.completed else "will learn"
-    tense_intro = "Today" if req.completed else "Today's plan"
+    # Use actual date if available, otherwise "Today"
+    day_ref = date_label if date_label else "Today"
 
     system = (
         "You are Oakie, a warm and friendly school assistant writing to parents.\n"
         "Write in simple, joyful language that a parent can easily understand.\n"
         "Always mention the child's name naturally in the summary.\n"
         "Keep the summary to 2-3 sentences. No bullet points, no markdown.\n"
+        "IMPORTANT: Never use 'Week X Day Y' format. Always refer to the day by its actual date or just say 'today'.\n"
         "Focus on what the child actually learned or will learn — be specific and encouraging."
     )
 
@@ -1797,34 +1854,123 @@ async def topic_summary(req: TopicSummaryRequest):
     if content_context:
         prompt = f"""{req.child_name} is in {req.class_name}.
 
-{tense_intro}: {req.child_name} {tense} about {topics_list}.
+{day_ref}: {req.child_name} {tense} about {topics_list}.
 
-Curriculum content covered:
+Curriculum content:
 {content_context}
 
-Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} today. Be specific using the content above. Mention {req.child_name} by name."""
+Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} on {day_ref}. Be specific using the content above. Mention {req.child_name} by name. Do NOT say "Week 1 Day 4" or any week/day number — use the actual date "{day_ref}" or just "today"."""
     else:
         prompt = f"""{req.child_name} is in {req.class_name}.
 
-{tense_intro}: {req.child_name} {tense} about {topics_list}.
+{day_ref}: {req.child_name} {tense} about {topics_list}.
 
-Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} today. Be encouraging and specific. Mention {req.child_name} by name."""
+Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} on {day_ref}. Be encouraging and specific. Mention {req.child_name} by name. Do NOT say "Week 1 Day 4" or any week/day number — use the actual date "{day_ref}" or just "today"."""
 
     try:
         result, _ = await _call_llm(prompt, system)
         if result and len(result.strip()) > 10:
-            return {"summary": result.strip()}
+            # Post-process: strip any remaining "Week X Day Y" from the output
+            import re
+            cleaned_result = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', day_ref if day_ref != "Today" else "today", result.strip(), flags=re.IGNORECASE)
+            return {"summary": cleaned_result}
     except Exception as e:
         print(f"[topic-summary] LLM error: {e}")
 
     # Fallback: build a readable sentence without LLM
     if len(meaningful_topics) == 1:
-        summary = f"{tense_intro}, {req.child_name} {tense} about {meaningful_topics[0]}."
+        summary = f"{day_ref}, {req.child_name} {tense} about {meaningful_topics[0]}."
     elif len(meaningful_topics) == 2:
-        summary = f"{tense_intro}, {req.child_name} {tense} about {meaningful_topics[0]} and {meaningful_topics[1]}."
+        summary = f"{day_ref}, {req.child_name} {tense} about {meaningful_topics[0]} and {meaningful_topics[1]}."
     else:
         last = meaningful_topics[-1]
         rest = ", ".join(meaningful_topics[:-1])
-        summary = f"{tense_intro}, {req.child_name} {tense} about {rest}, and {last}."
+        summary = f"{day_ref}, {req.child_name} {tense} about {rest}, and {last}."
 
+    return {"summary": summary}
+
+
+# ---------------------------------------------------------------------------
+# Term-level cumulative learning summary (Progress tab — "What X has learned so far")
+# ---------------------------------------------------------------------------
+
+class TermSummaryRequest(BaseModel):
+    subjects: list          # list of clean subject/topic strings (no "Week X Day Y")
+    chunks: list = []       # optional: [{ "topic": str, "snippet": str }] for context
+    class_name: str = "Nursery"
+    child_name: str = "your child"
+    completion_days: int = 0   # number of school days completed so far
+    covered_chunks: int = 0    # total topics/chunks covered
+
+@app.post("/internal/term-summary")
+async def term_summary(req: TermSummaryRequest):
+    """
+    Generate a warm cumulative summary of everything a child has learned
+    from the start of the school year until today.
+    This is NOT a daily summary — it covers the full term so far.
+    """
+    from query_pipeline import _call_llm
+
+    if not req.subjects:
+        return {"summary": ""}
+
+    # Deduplicate and limit subjects
+    unique_subjects = list(dict.fromkeys(req.subjects))[:50]
+
+    # Build context from snippets
+    content_lines = []
+    for chunk in req.chunks[:10]:
+        snippet = (chunk.get("snippet") or "")[:200].strip()
+        if snippet:
+            content_lines.append(f"• {snippet}")
+    content_context = "\n".join(content_lines) if content_lines else ""
+
+    subjects_list = ", ".join(unique_subjects[:20])
+    days_text = f" over {req.completion_days} school days" if req.completion_days > 0 else ""
+
+    system = (
+        "You are Oakie, a warm and friendly school assistant writing to parents.\n"
+        "Write in simple, joyful language that a parent can easily understand.\n"
+        "This is a CUMULATIVE summary of everything the child has learned from the START of school until TODAY — not just today.\n"
+        "Always mention the child's name naturally.\n"
+        "Keep it to 3-4 sentences. No bullet points, no markdown.\n"
+        "IMPORTANT: Never mention 'Week X Day Y' or any week/day numbers.\n"
+        "Focus on the subjects and skills covered — be warm, specific, and encouraging.\n"
+        "Use past tense throughout since these are things already learned."
+    )
+
+    if content_context:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+Since the start of school{days_text}, {req.child_name} has covered these subjects: {subjects_list}.
+
+Some of what was covered:
+{content_context}
+
+Write a warm 3-4 sentence summary for the parent about everything {req.child_name} has learned so far this term. Use past tense. Be specific about the subjects. Mention {req.child_name} by name. Do NOT mention week numbers or day numbers."""
+    else:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+Since the start of school{days_text}, {req.child_name} has covered these subjects: {subjects_list}.
+
+Write a warm 3-4 sentence summary for the parent about everything {req.child_name} has learned so far this term. Use past tense. Be specific about the subjects. Mention {req.child_name} by name. Do NOT mention week numbers or day numbers."""
+
+    try:
+        result, _ = await _call_llm(prompt, system)
+        if result and len(result.strip()) > 10:
+            import re
+            # Strip any remaining "Week X Day Y" from output
+            cleaned = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', result.strip(), flags=re.IGNORECASE).strip()
+            return {"summary": cleaned}
+    except Exception as e:
+        print(f"[term-summary] LLM error: {e}")
+
+    # Fallback
+    if len(unique_subjects) == 0:
+        return {"summary": f"{req.child_name} has been busy learning at school this term!"}
+    elif len(unique_subjects) <= 3:
+        summary = f"So far this term, {req.child_name} has been learning about {', '.join(unique_subjects)}. It has been a wonderful start to the school year!"
+    else:
+        top = unique_subjects[:5]
+        summary = f"Since the start of school, {req.child_name} has covered a range of subjects including {', '.join(top[:3])} and more. It has been a wonderful learning journey so far!"
     return {"summary": summary}

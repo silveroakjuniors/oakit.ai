@@ -438,7 +438,7 @@ export default function ParentPage() {
       // Always load insights mock data (no real API yet)
       loadMockFeaturesData(false);
       
-      if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id); }
+      if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id, kids); }
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }
@@ -463,12 +463,7 @@ export default function ParentPage() {
       { type: 'announcements', enabled: false, channels: ['email'], quietHours: null, frequency: 'weekly' },
     ]);
 
-    // Calendar Events
-    setCalendarEvents([
-      { id: '1', title: 'Math Homework Due', description: 'Complete exercises 1-10 from chapter 5', start: '2026-04-20T18:00:00', end: '2026-04-20T18:00:00', type: 'homework', childId: activeChildId || '' },
-      { id: '2', title: 'Parent-Teacher Meeting', description: 'Discuss Aarav\'s progress this term', start: '2026-04-25T10:00:00', end: '2026-04-25T11:00:00', type: 'meeting', childId: activeChildId || '' },
-      { id: '3', title: 'Science Exam', description: 'Chapter 3-5 assessment', start: '2026-04-22T09:00:00', end: '2026-04-22T10:30:00', type: 'exam', childId: activeChildId || '' },
-    ]);
+    // Calendar Events — now loaded from real API in CalendarTab, no mock needed
 
     // Parent Insights
     setParentInsights({
@@ -508,8 +503,18 @@ export default function ParentPage() {
     setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
   }
 
-  const fetchChildData = useCallback(async (childId: string) => {
-    if (cache[childId]?.feed) return;
+  const fetchChildData = useCallback(async (childId: string, childList?: Child[]) => {
+    if (cache[childId]?.feed) {
+      // Data cached — still refresh class feed for this child
+      const resolvedChildren = childList ?? children;
+      const child = resolvedChildren.find(c => c.id === childId);
+      if (child?.section_id) {
+        apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
+          .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setClassFeed(posts.slice(0, 8)); })
+          .catch(() => {});
+      }
+      return;
+    }
     setChildLoading(true);
     try {
       const [feedRes, attRes, progRes] = await Promise.allSettled([
@@ -522,7 +527,9 @@ export default function ParentPage() {
       const prog = progRes.status === 'fulfilled' ? (progRes.value.find(p => p.student_id === childId) ?? null) : null;
       setCache(prev => ({ ...prev, [childId]: { feed, attendance: att, progress: prog } }));
       // Load class feed and invoice in background
-      const child = children.find(c => c.id === childId);
+      // Use passed childList (from init) or fall back to state
+      const resolvedChildren = childList ?? children;
+      const child = resolvedChildren.find(c => c.id === childId);
       if (child?.section_id) {
         apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
           .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setClassFeed(posts.slice(0, 8)); })
@@ -533,7 +540,7 @@ export default function ParentPage() {
     } finally { setChildLoading(false); }
   }, [cache, token, children]);
 
-  async function switchChild(childId: string) { setActiveChildId(childId); await fetchChildData(childId); }
+  async function switchChild(childId: string) { setActiveChildId(childId); setClassFeed([]); await fetchChildData(childId); }
 
   async function sendChat() {
     const text = chatInput.trim();
@@ -743,26 +750,41 @@ export default function ParentPage() {
               })}
             </nav>
 
-            {/* Child card at bottom */}
-            {activeChild && (
-              <div className="px-2 pb-3 pt-2 border-t border-gray-100">
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                  <div className="w-8 h-8 rounded-full bg-emerald-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                    {activeChild.photo_url ? (
-                      <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-emerald-700 font-bold text-xs">{activeChild.name[0]}</span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{activeChild.name}</p>
-                    <p className="text-[10px] text-gray-400 truncate">{activeChild.class_name} · {activeChild.section_label}</p>
-                  </div>
-                  {children.length > 1 && (
-                    <button onClick={() => { const idx = children.findIndex(c => c.id === activeChildId); switchChild(children[(idx + 1) % children.length].id); }}
-                      className="text-gray-400 hover:text-gray-600 text-xs">↕</button>
-                  )}
-                </div>
+            {/* Child switcher at bottom */}
+            {children.length > 0 && (
+              <div className="px-2 pb-3 pt-2 border-t border-gray-100 space-y-1">
+                {children.length > 1 && (
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 mb-1.5">My Children</p>
+                )}
+                {children.map(child => {
+                  const isActive = child.id === activeChildId;
+                  const photoUrl = child.photo_url
+                    ? (child.photo_url.startsWith('http') ? child.photo_url : `${API_BASE}${child.photo_url}`)
+                    : null;
+                  return (
+                    <button
+                      key={child.id}
+                      onClick={() => switchChild(child.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all text-left ${
+                        isActive ? 'bg-emerald-50 border border-emerald-100' : 'bg-gray-50 border border-gray-100 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
+                        style={{ background: isActive ? '#d1fae5' : '#f3f4f6' }}>
+                        {photoUrl ? (
+                          <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className={`font-bold text-xs ${isActive ? 'text-emerald-700' : 'text-gray-500'}`}>{child.name[0]}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs font-semibold truncate ${isActive ? 'text-emerald-800' : 'text-gray-700'}`}>{child.name}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{child.class_name} · {child.section_label}</p>
+                      </div>
+                      {isActive && <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -792,13 +814,36 @@ export default function ParentPage() {
                   </button>
                 )}
                 {activeChild && (
-                  <div className="w-8 h-8 rounded-full bg-emerald-100 overflow-hidden flex items-center justify-center">
-                    {activeChild.photo_url ? (
-                      <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-emerald-700 font-bold text-sm">{activeChild.name[0]}</span>
-                    )}
-                  </div>
+                  children.length > 1 ? (
+                    <div className="flex items-center gap-1">
+                      {children.map(child => {
+                        const isActive = child.id === activeChildId;
+                        const photoUrl = child.photo_url
+                          ? (child.photo_url.startsWith('http') ? child.photo_url : `${API_BASE}${child.photo_url}`)
+                          : null;
+                        return (
+                          <button key={child.id} onClick={() => switchChild(child.id)}
+                            className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center transition-all ${isActive ? 'ring-2 ring-emerald-500 ring-offset-1' : 'opacity-50'}`}
+                            style={{ background: '#d1fae5' }}
+                            title={child.name}>
+                            {photoUrl ? (
+                              <img src={photoUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-emerald-700 font-bold text-sm">{child.name[0]}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 overflow-hidden flex items-center justify-center">
+                      {activeChild.photo_url ? (
+                        <img src={activeChild.photo_url.startsWith('http') ? activeChild.photo_url : `${API_BASE}${activeChild.photo_url}`} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-emerald-700 font-bold text-sm">{activeChild.name[0]}</span>
+                      )}
+                    </div>
+                  )
                 )}
               </div>
             </header>
@@ -828,7 +873,7 @@ export default function ParentPage() {
                       classFeed={classFeed}
                     />
                   )}
-                  {tab === 'calendar' && <CalendarTab events={calendarEvents} />}
+                  {tab === 'calendar' && <CalendarTab token={token} activeChild={activeChild} />}
                   {tab === 'progress' && <ProgressTab data={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
                   {tab === 'assignments' && <AssignmentsTab activeChild={activeChild} token={token} />}
                   {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
@@ -1088,10 +1133,15 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
     if (!feed?.topics?.length || !activeChild?.id || !token) return;
     const cacheKey = `feed-summary:${activeChild.id}:${feedDateStr}`;
     const cached = localStorage.getItem(cacheKey);
-    if (cached) { setAiSummary(cached); return; }
+    // Bust stale cache if it contains "Week X Day Y"
+    if (cached && /week\s*\d+\s*day\s*\d+/i.test(cached)) {
+      localStorage.removeItem(cacheKey);
+    } else if (cached) {
+      setAiSummary(cached);
+      return;
+    }
 
     setSummaryLoading(true);
-    // completed = teacher has marked today's topics as done (not just attendance)
     const completed = !!feed.completion;
     apiPost<{ summary: string }>('/api/v1/ai/topic-summary', {
       topics: feed.topics,
@@ -1099,6 +1149,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       class_name: activeChild.class_name ?? 'Nursery',
       child_name: activeChild.name.split(' ')[0],
       completed,
+      feed_date: feedDateStr,
     }, token)
       .then(d => { if (d.summary) { setAiSummary(d.summary); localStorage.setItem(cacheKey, d.summary); } })
       .catch(() => {})
@@ -1284,14 +1335,26 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
               ) : (
                 <p className="text-sm text-emerald-800 leading-relaxed">
                   {aiSummary || (feed.completion
-                    ? `Today, ${activeChild.name.split(' ')[0]} learned about ${feed.topics.slice(0, 2).join(' and ')}.`
-                    : `Today, ${activeChild.name.split(' ')[0]} will learn about ${feed.topics.slice(0, 2).join(' and ')}.`)}
+                    ? `On ${feedDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}, ${activeChild.name.split(' ')[0]} learned about ${feed.topics.map(t => t.replace(/week\s*\d+\s*day\s*\d+\s*[-–:,.\s]*/gi, '').trim()).filter(Boolean).slice(0, 2).join(' and ') || 'various subjects'}.`
+                    : `On ${feedDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}, ${activeChild.name.split(' ')[0]} will learn about ${feed.topics.map(t => t.replace(/week\s*\d+\s*day\s*\d+\s*[-–:,.\s]*/gi, '').trim()).filter(Boolean).slice(0, 2).join(' and ') || 'various subjects'}.`)}
                 </p>
               )}
+              {/* Replace raw "Week X Day Y" topic pills with a status badge */}
               <div className="flex flex-wrap gap-1 mt-2">
-                {feed.topics.map((topic, i) => (
-                  <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-emerald-700 border border-emerald-200">{topic}</span>
-                ))}
+                {feed.topics.map((topic, i) => {
+                  const stripped = topic.replace(/week\s*\d+\s*day\s*\d+\s*[-–:,.\s]*/gi, '').trim();
+                  // If nothing left after stripping, this is a "Week X Day Y" label — show status instead
+                  if (!stripped) return null;
+                  return (
+                    <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white text-emerald-700 border border-emerald-200">{stripped}</span>
+                  );
+                })}
+                {/* Show status pill: Completed or In Progress */}
+                {feed.completion ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Completed</span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200">⏳ In Progress</span>
+                )}
               </div>
             </div>
           ) : (
@@ -1394,6 +1457,21 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </div>
       )}
 
+      {/* Ask Oakie — quick access button */}
+      <button
+        onClick={() => onTabChange('chat')}
+        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-emerald-100 bg-emerald-50 hover:bg-emerald-100 transition-all shadow-sm"
+      >
+        <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center flex-shrink-0">
+          <Sparkles size={16} className="text-white" />
+        </div>
+        <div className="flex-1 text-left">
+          <p className="text-sm font-bold text-emerald-800">Ask Oakie</p>
+          <p className="text-xs text-emerald-600">Ask anything about {activeChild.name.split(' ')[0]}</p>
+        </div>
+        <ChevronRight size={16} className="text-emerald-400 flex-shrink-0" />
+      </button>
+
       {/* Class Feed — mobile only (desktop shows in right column) */}
       <div className="xl:hidden">
         <ClassFeedColumn classFeed={classFeed} />
@@ -1489,10 +1567,10 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
   const pct = progress?.coverage_pct ?? 0;
   const weekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
 
-  const [weekSchedule, setWeekSchedule] = useState<Record<string, { topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean }>>({});
+  const [weekSchedule, setWeekSchedule] = useState<Record<string, { topics: string[]; chunks: { topic: string; snippet: string; subjects?: string[] }[]; completed: boolean }>>({});
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [todayFromApi, setTodayFromApi] = useState<string | null>(null);
-  const [drawerDay, setDrawerDay] = useState<{ date: string; label: string; topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean; isToday: boolean } | null>(null);
+  const [drawerDay, setDrawerDay] = useState<{ date: string; label: string; topics: string[]; chunks: { topic: string; snippet: string; subjects?: string[] }[]; completed: boolean; isToday: boolean; todayStr: string } | null>(null);
 
   useEffect(() => {
     if (!activeChild?.id || !token) return;
@@ -1522,7 +1600,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
     const completed = dayData?.completed ?? false;
     const isToday = dateStr === todayStr;
     const label = `${weekDays[i]} ${d.getUTCDate()} ${d.toLocaleDateString('en-IN', { month: 'short' })}`;
-    setDrawerDay({ date: dateStr, label, topics, chunks, completed, isToday });
+    setDrawerDay({ date: dateStr, label, topics, chunks, completed, isToday, todayStr });
   }
 
   return (
@@ -1545,7 +1623,13 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
               const dayData = weekSchedule[dateStr];
               const topics = dayData?.topics ?? [];
               const completed = dayData?.completed ?? false;
+              // Treat any past day as covered (time-machine aware)
+              const isPastDay = dateStr < todayStr;
+              const isCoveredDay = completed || isPastDay;
               const hasTopics = topics.length > 0;
+              // Clean topic label for display
+              const firstTopicRaw = topics[0] ?? '';
+              const firstTopicClean = firstTopicRaw.replace(/week\s*\d+\s*day\s*\d+\s*[-–:,.\s]*/gi, '').trim() || firstTopicRaw;
               return (
                 <button key={i} onClick={() => openDay(d, i)}
                   className={`w-full flex items-center justify-between py-2 px-2.5 rounded-xl transition-all text-left group ${isToday ? 'bg-emerald-50 border border-emerald-100' : 'hover:bg-gray-50'}`}>
@@ -1556,13 +1640,13 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
                     </p>
                     {hasTopics && (
                       <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                        {completed ? '✓ ' : ''}{topics[0]}
+                        {isCoveredDay ? '✓ ' : ''}{firstTopicClean}
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0 ml-1">
                     {hasTopics && (
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${completed ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-amber-600 bg-amber-50 border-amber-100'}`}>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${isCoveredDay ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-amber-600 bg-amber-50 border-amber-100'}`}>
                         {topics.length}
                       </span>
                     )}
@@ -1590,13 +1674,13 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
         </div>
 
         {/* Premium Features */}
-        <button className="w-full flex items-center justify-between px-3 py-3 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-100 transition-all shadow-sm">
+        <a href="/parent/premium" className="w-full flex items-center justify-between px-3 py-3 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-100 transition-all shadow-sm">
           <div className="flex items-center gap-2">
             <Star size={15} className="text-amber-500 fill-amber-400" />
             <span className="text-sm font-semibold text-amber-700">Premium Features</span>
           </div>
           <ArrowRight size={13} className="text-amber-400" />
-        </button>
+        </a>
 
         {/* Weekly Updates */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -1656,26 +1740,40 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
 
 // ─── Day Plan Drawer ──────────────────────────────────────────────────────────
 function DayPlanDrawer({ day, activeChild, token, onClose }: {
-  day: { date: string; label: string; topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean; isToday: boolean };
+  day: { date: string; label: string; topics: string[]; chunks: { topic: string; snippet: string; subjects?: string[] }[]; completed: boolean; isToday: boolean; todayStr: string };
   activeChild: Child | null;
   token: string;
   onClose: () => void;
 }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const todayRef = new Date().toISOString().split('T')[0];
+  // Use todayStr from API (time-machine aware) — not real browser date
+  const todayRef = day.todayStr || new Date().toISOString().split('T')[0];
+  // A day is "past" if its date is strictly before today (time-machine aware)
   const isPast = day.date < todayRef;
-  // A day is "covered" if teacher marked it completed
-  const isCovered = day.completed;
+  // A day is "covered" if teacher marked it completed OR if it's a past day
+  // (past days happened regardless of whether the completed flag was set)
+  const isCovered = day.completed || isPast;
 
   useEffect(() => {
     if (day.topics.length === 0) return;
+    // Clear any stale 'plan' cache for past days — they should now use 'done'
+    const staleCacheKey = `topic-summary:${activeChild?.id}:${day.date}:plan`;
+    if (isCovered && localStorage.getItem(staleCacheKey)) {
+      localStorage.removeItem(staleCacheKey);
+    }
     const cacheKey = `topic-summary:${activeChild?.id}:${day.date}:${isCovered ? 'done' : 'plan'}`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       try {
         const { ts, text } = JSON.parse(cached);
-        if (ts === todayRef) { setSummary(text); return; }
+        // Bust stale cache if it contains "Week X Day Y"
+        if (/week\s*\d+\s*day\s*\d+/i.test(text)) {
+          localStorage.removeItem(cacheKey);
+        } else if (ts === todayRef) {
+          setSummary(text);
+          return;
+        }
       } catch {}
     }
     setLoading(true);
@@ -1685,6 +1783,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
       class_name: activeChild?.class_name ?? 'Nursery',
       child_name: activeChild?.name?.split(' ')[0] ?? 'your child',
       completed: isCovered,
+      feed_date: day.date,
     }, token)
       .then(d => {
         if (d.summary) {
@@ -1705,9 +1804,10 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
           <div>
             <div className="flex items-center gap-2">
               <p className={`text-xs font-bold uppercase tracking-widest ${day.isToday ? 'text-emerald-600' : isCovered ? 'text-blue-600' : 'text-gray-400'}`}>
-                {day.isToday ? 'Today' : isCovered ? 'Completed' : isPast ? 'Past' : 'Upcoming'}
+                {day.isToday ? 'Today' : isCovered ? (day.completed ? 'Completed' : 'Past') : 'Upcoming'}
               </p>
-              {isCovered && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Covered</span>}
+              {day.completed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Covered</span>}
+              {isPast && !day.completed && !day.isToday && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Past</span>}
             </div>
             <p className="text-base font-bold text-gray-900 mt-0.5">{day.label}</p>
           </div>
@@ -1729,7 +1829,9 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles size={14} className={day.isToday ? 'text-emerald-600' : isCovered ? 'text-blue-600' : 'text-amber-600'} />
                   <p className={`text-xs font-bold uppercase tracking-wide ${day.isToday ? 'text-emerald-700' : isCovered ? 'text-blue-700' : 'text-amber-700'}`}>
-                    {isCovered ? 'What was learned' : day.isToday ? 'What will be covered today' : 'What will be covered'}
+                    {isCovered
+                      ? (day.isToday ? 'What was covered today' : 'What was covered')
+                      : (day.isToday ? 'What will be covered today' : 'What will be covered')}
                   </p>
                 </div>
                 {loading ? (
@@ -1746,22 +1848,66 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
 
               {/* Topic list */}
               <div>
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
-                  {day.topics.length} Topic{day.topics.length > 1 ? 's' : ''}
-                </p>
-                <div className="space-y-2">
-                  {day.topics.map((topic, i) => (
-                    <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
-                      <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                        {isCovered
-                          ? <CheckCircle2 size={14} className="text-emerald-500" />
-                          : <span className="text-[10px] font-bold text-gray-400 bg-gray-200 w-5 h-5 rounded-full flex items-center justify-center">{i + 1}</span>
+                {(() => {
+                  // Build display items — expand "Week X Day Y" chunks into their subjects
+                  const displayItems: { label: string; snippet: string }[] = [];
+
+                  for (const topic of day.topics) {
+                    const stripped = topic.replace(/week\s*\d+\s*day\s*\d+\s*[-–:,.\s]*/gi, '').trim();
+                    const chunk = day.chunks.find(c => c.topic === topic);
+                    const isWeekDayLabel = !stripped;
+
+                    if (isWeekDayLabel) {
+                      // Use server-extracted subjects if available
+                      if (chunk?.subjects && chunk.subjects.length > 0) {
+                        chunk.subjects.forEach(s => displayItems.push({ label: s, snippet: '' }));
+                      } else if (chunk?.snippet) {
+                        // Fallback: parse snippet client-side
+                        const lines = chunk.snippet.split('\n').map((l: string) => l.trim()).filter((l: string) => {
+                          if (!l) return false;
+                          if (/^week\s*\d+\s*day\s*\d+/i.test(l)) return false;
+                          if (/^\d+$/.test(l)) return false;
+                          return true;
+                        });
+                        if (lines.length > 0) {
+                          lines.slice(0, 8).forEach((l: string) => displayItems.push({ label: l.replace(/:$/, '').trim(), snippet: '' }));
+                        } else {
+                          displayItems.push({ label: topic, snippet: chunk.snippet });
                         }
-                      </span>
-                      <p className="text-sm text-gray-700 leading-snug">{topic}</p>
-                    </div>
-                  ))}
-                </div>
+                      } else {
+                        displayItems.push({ label: topic, snippet: '' });
+                      }
+                    } else {
+                      displayItems.push({ label: stripped, snippet: chunk?.snippet || '' });
+                    }
+                  }
+
+                  return (
+                    <>
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+                        {displayItems.length} Subject{displayItems.length !== 1 ? 's' : ''}
+                      </p>
+                      <div className="space-y-2">
+                        {displayItems.map((item, i) => (
+                          <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100">
+                            <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                              {isCovered
+                                ? <CheckCircle2 size={14} className="text-emerald-500" />
+                                : <span className="text-[10px] font-bold text-gray-400 bg-gray-200 w-5 h-5 rounded-full flex items-center justify-center">{i + 1}</span>
+                              }
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm text-gray-700 leading-snug font-medium">{item.label}</p>
+                              {item.snippet && (
+                                <p className="text-xs text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">{item.snippet}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </>
           )}
@@ -1770,34 +1916,113 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
     </div>
   );
 }
-function CalendarTab({ events }: { events: CalendarEvent[] }) {
-  const today = new Date();
+function CalendarTab({ token, activeChild }: { token: string; activeChild: Child | null }) {
+  const [data, setData] = useState<{
+    holidays: { id: string; date: string; title: string }[];
+    special_days: { id: string; date: string; title: string; type: string; day_type: string }[];
+    announcements: { id: string; title: string; body: string; date: string; author: string }[];
+    calendar_start: string;
+    calendar_end: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'upcoming' | 'all'>('upcoming');
+
+  useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    apiGet<any>('/api/v1/parent/calendar', token)
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  // Merge all events into a unified list
+  const allEvents = data ? [
+    ...data.holidays.map(h => ({ id: h.id, date: h.date, title: h.title, subtitle: 'School Holiday', type: 'holiday' as const })),
+    ...data.special_days.map(s => ({
+      id: s.id, date: s.date, title: s.title,
+      subtitle: s.day_type
+        ? s.day_type.charAt(0).toUpperCase() + s.day_type.slice(1).replace(/_/g, ' ')
+        : 'Special Day',
+      type: s.type as any,
+    })),
+    ...data.announcements.map(a => ({ id: a.id, date: a.date, title: a.title, subtitle: a.body?.slice(0, 80) || '', type: 'announcement' as const })),
+  ].sort((a, b) => a.date.localeCompare(b.date)) : [];
+
+  const upcoming = allEvents.filter(e => e.date >= today);
+  const past     = allEvents.filter(e => e.date < today).reverse(); // most recent first
+  const displayed = view === 'upcoming' ? upcoming : allEvents;
+
+  function typeConfig(type: string) {
+    switch (type) {
+      case 'holiday':      return { bg: 'bg-red-50',    border: 'border-red-100',    icon: '🏖️', label: 'Holiday',      labelCls: 'bg-red-100 text-red-700' };
+      case 'settling':     return { bg: 'bg-amber-50',  border: 'border-amber-100',  icon: '🌱', label: 'Settling Day',  labelCls: 'bg-amber-100 text-amber-700' };
+      case 'half_day':     return { bg: 'bg-yellow-50', border: 'border-yellow-100', icon: '⏰', label: 'Half Day',      labelCls: 'bg-yellow-100 text-yellow-700' };
+      case 'exam':         return { bg: 'bg-purple-50', border: 'border-purple-100', icon: '📝', label: 'Exam',          labelCls: 'bg-purple-100 text-purple-700' };
+      case 'activity':     return { bg: 'bg-blue-50',   border: 'border-blue-100',   icon: '🎉', label: 'Activity',      labelCls: 'bg-blue-100 text-blue-700' };
+      case 'announcement': return { bg: 'bg-emerald-50',border: 'border-emerald-100',icon: '📢', label: 'Announcement',  labelCls: 'bg-emerald-100 text-emerald-700' };
+      default:             return { bg: 'bg-gray-50',   border: 'border-gray-100',   icon: '📅', label: 'Event',         labelCls: 'bg-gray-100 text-gray-600' };
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gray-800">Calendar</h2>
-      {events.length === 0 ? (
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800">School Calendar</h2>
+        {data?.academic_year && (
+          <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-full">{data.academic_year}</span>
+        )}
+      </div>
+
+      {/* Toggle */}
+      <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+        <button onClick={() => setView('upcoming')}
+          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'upcoming' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+          Upcoming ({upcoming.length})
+        </button>
+        <button onClick={() => setView('all')}
+          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+          All Events ({allEvents.length})
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+      ) : displayed.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 shadow-sm">
           <Calendar size={40} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No upcoming events</p>
+          <p className="text-gray-500 font-medium">{view === 'upcoming' ? 'No upcoming events' : 'No events found'}</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {events.map(e => (
-            <div key={e.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
-                  e.type === 'exam' ? 'bg-red-50' : e.type === 'homework' ? 'bg-amber-50' : e.type === 'meeting' ? 'bg-blue-50' : 'bg-emerald-50'
-                }`}>
-                  {e.type === 'exam' ? <ClipboardList size={18} className="text-red-500" /> : e.type === 'homework' ? <BookOpen size={18} className="text-amber-500" /> : e.type === 'meeting' ? <User size={18} className="text-blue-500" /> : <CalendarDays size={18} className="text-emerald-500" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-800 text-sm">{e.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{e.description}</p>
-                  <p className="text-xs text-gray-400 mt-1">{new Date(e.start).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+        <div className="space-y-2">
+          {displayed.map(e => {
+            const cfg = typeConfig(e.type);
+            const dateObj = new Date(e.date + 'T12:00:00');
+            const isPast = e.date < today;
+            return (
+              <div key={`${e.type}-${e.id}`}
+                className={`rounded-2xl p-4 border ${cfg.bg} ${cfg.border} ${isPast ? 'opacity-60' : ''}`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 bg-white border border-white/80 shadow-sm">
+                    {cfg.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                      <p className="font-semibold text-gray-800 text-sm">{e.title}</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.labelCls}`}>{cfg.label}</span>
+                    </div>
+                    {e.subtitle && <p className="text-xs text-gray-500 line-clamp-2">{e.subtitle}</p>}
+                    <p className="text-xs text-gray-400 mt-1">
+                      {dateObj.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                      {isPast && <span className="ml-1.5 text-gray-300">· Past</span>}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -2016,21 +2241,57 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
     apiGet<any>(`/api/v1/parent/child/${activeChild.id}/term-summary`, token)
       .then(d => {
         setTermData(d);
-        // Generate AI summary of all covered topics
         if (d.chunks?.length > 0) {
           const cacheKey = `term-summary:${activeChild.id}:${d.covered_chunks}`;
           const cached = localStorage.getItem(cacheKey);
-          if (cached) { setAiSummary(cached); return; }
+          // Bust stale cache if it contains "Week X Day Y"
+          if (cached && /week\s*\d+\s*day\s*\d+/i.test(cached)) {
+            localStorage.removeItem(cacheKey);
+          } else if (cached) {
+            setAiSummary(cached);
+            return;
+          }
           setSummaryLoading(true);
-          const topics = d.chunks.slice(0, 30).map((c: any) => c.topic_label).filter(Boolean);
-          const chunks = d.chunks.slice(0, 15).map((c: any) => ({ topic: c.topic_label, snippet: c.snippet }));
+
+          // Build a clean topic list — expand "Week X Day Y" chunks using subjects/snippet
+          const meaningfulTopics: string[] = [];
+          const meaningfulChunks: { topic: string; snippet: string }[] = [];
+          for (const c of d.chunks.slice(0, 40)) {
+            const label: string = c.topic_label || '';
+            const isWeekDay = /^week\s*\d+\s*day\s*\d+\s*$/i.test(label.trim());
+            if (isWeekDay) {
+              // Use server-extracted subjects if available
+              if (c.subjects?.length) {
+                c.subjects.forEach((s: string) => {
+                  if (!meaningfulTopics.includes(s)) meaningfulTopics.push(s);
+                });
+              }
+              // Add snippet for context
+              if (c.snippet) meaningfulChunks.push({ topic: label, snippet: c.snippet });
+            } else {
+              const clean = label.replace(/week\s*\d+\s*day\s*\d+\s*[-–:,.\s]*/gi, '').trim();
+              if (clean && !meaningfulTopics.includes(clean)) meaningfulTopics.push(clean);
+              if (c.snippet) meaningfulChunks.push({ topic: clean || label, snippet: c.snippet });
+            }
+          }
+
+          // Deduplicate and limit to avoid token overflow (max ~50 topics, 15 chunks)
+          const topicsToSend = [...new Set(meaningfulTopics)].slice(0, 50);
+          const chunksToSend = meaningfulChunks.slice(0, 15);
+
           apiPost<{ summary: string }>('/api/v1/ai/topic-summary', {
-            topics, chunks,
+            topics: topicsToSend.length > 0 ? topicsToSend : ['various subjects'],
+            chunks: chunksToSend,
             class_name: activeChild.class_name ?? 'Nursery',
             child_name: activeChild.name.split(' ')[0],
             completed: true,
           }, token)
-            .then(r => { if (r.summary) { setAiSummary(r.summary); localStorage.setItem(cacheKey, r.summary); } })
+            .then(r => {
+              if (r.summary) {
+                setAiSummary(r.summary);
+                localStorage.setItem(cacheKey, r.summary);
+              }
+            })
             .catch(() => {})
             .finally(() => setSummaryLoading(false));
         }
@@ -2052,13 +2313,13 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
     };
     for (const t of topics) {
       const tl = t.toLowerCase();
-      if (/english|letter|phonics|reading|story|language|alphabet/.test(tl)) cats['English & Language'].push(t);
-      else if (/math|number|count|shape|pattern|addition|subtraction/.test(tl)) cats['Math & Numbers'].push(t);
-      else if (/art|craft|draw|paint|colour|collage|clay/.test(tl)) cats['Art & Craft'].push(t);
-      else if (/science|nature|plant|animal|weather|earth|experiment/.test(tl)) cats['Science & Nature'].push(t);
-      else if (/circle|gk|general|knowledge|quiz|question/.test(tl)) cats['Circle Time & GK'].push(t);
-      else if (/motor|writing|pencil|grip|trace|cut|fold|bead/.test(tl)) cats['Fine Motor & Writing'].push(t);
-      else if (/holiday|festival|special|event|celebration|birthday|diwali|christmas|eid|holi|settling/.test(tl)) cats['Special Days & Events'].push(t);
+      if (/english|letter|phonics|reading|story|language|alphabet|speaking|rhyme|listening/.test(tl)) cats['English & Language'].push(t);
+      else if (/math|maths|number|count|shape|pattern|addition|subtraction|numeracy/.test(tl)) cats['Math & Numbers'].push(t);
+      else if (/art|craft|draw|paint|colour|color|collage|clay|creative/.test(tl)) cats['Art & Craft'].push(t);
+      else if (/science|nature|plant|animal|weather|earth|experiment|evs|environment/.test(tl)) cats['Science & Nature'].push(t);
+      else if (/circle|gk|general|knowledge|quiz|question|social|emotional/.test(tl)) cats['Circle Time & GK'].push(t);
+      else if (/motor|writing|pencil|grip|trace|cut|fold|bead|scribbl|handwriting/.test(tl)) cats['Fine Motor & Writing'].push(t);
+      else if (/holiday|festival|special|event|celebration|birthday|diwali|christmas|eid|holi|settling|sensory|play|exploration/.test(tl)) cats['Special Days & Events'].push(t);
       else cats['Other Activities'].push(t);
     }
     return Object.entries(cats).filter(([, v]) => v.length > 0);
@@ -2076,9 +2337,27 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
     return cleaned || label;
   }
 
-  const allTopics = (termData?.chunks ?? []).map(c => c.topic_label).filter(Boolean);
-  const cleanedTopics = allTopics.map(cleanLabel);
-  const uniqueTopics = [...new Set(cleanedTopics)];
+  // Build clean topic list from chunks — expand "Week X Day Y" using server subjects
+  const allTopics: string[] = [];
+  for (const c of (termData?.chunks ?? [])) {
+    const label: string = c.topic_label || '';
+    const isWeekDay = /^week\s*\d+\s*day\s*\d+\s*$/i.test(label.trim());
+    if (isWeekDay) {
+      // Use server-extracted subjects
+      if ((c as any).subjects?.length) {
+        for (const s of (c as any).subjects) {
+          if (!allTopics.includes(s)) allTopics.push(s);
+        }
+      }
+      // else skip — don't show "Week X Day Y" at all
+    } else {
+      const clean = cleanLabel(label);
+      if (clean && !/^week\s*\d+\s*day\s*\d+/i.test(clean) && !allTopics.includes(clean)) {
+        allTopics.push(clean);
+      }
+    }
+  }
+  const uniqueTopics = [...new Set(allTopics)];
   const categorised = categorise(uniqueTopics);
 
   return (

@@ -848,31 +848,41 @@ router.get('/topic-summary', async (req: Request, res: Response) => {
 router.post('/topic-summary', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { topics: topicsArr, chunks = [], class_name: className = 'Nursery', child_name: childName = 'your child', completed = false } = req.body;
+    const { topics: topicsArr, chunks = [], class_name: className = 'Nursery', child_name: childName = 'your child', completed = false, feed_date = '' } = req.body;
 
     if (!topicsArr?.length) return res.status(400).json({ error: 'topics is required' });
 
     const topics: string[] = topicsArr.map((t: string) => t.trim()).filter(Boolean);
-    const cacheKey = `ai:topic-summary:${school_id}:${childName}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topics.join(',') + className).digest('hex')}`;
+    // Include feed_date in cache key so different dates get different summaries
+    const cacheKey = `ai:topic-summary:${school_id}:${childName}:${completed ? 'done' : 'plan'}:${feed_date}:${crypto.createHash('md5').update(topics.join(',') + className).digest('hex')}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json({ summary: cached });
 
     try {
       const aiResp = await axios.post(`${AI()}/internal/topic-summary`, {
-        topics, chunks, class_name: className, child_name: childName, completed,
+        topics, chunks, class_name: className, child_name: childName, completed, feed_date,
       }, { timeout: 15000 });
 
       const summary: string = aiResp.data?.summary || '';
       if (summary) await redis.setEx(cacheKey, 3600, summary);
       return res.json({ summary });
     } catch {
+      // Fallback: strip "Week X Day Y" and build a plain sentence
       const cleaned = topics.map((t: string) => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim()).filter(Boolean);
       const meaningful = cleaned.length > 0 ? cleaned : topics;
       const tense = completed ? 'learned about' : 'will learn about';
+      // Format date for display
+      let dayRef = 'Today';
+      if (feed_date) {
+        try {
+          const d = new Date(feed_date + 'T12:00:00');
+          dayRef = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+        } catch {}
+      }
       let summary: string;
-      if (meaningful.length === 1) summary = `Today, ${childName} ${tense} ${meaningful[0]}.`;
-      else if (meaningful.length === 2) summary = `Today, ${childName} ${tense} ${meaningful[0]} and ${meaningful[1]}.`;
-      else summary = `Today, ${childName} ${tense} ${meaningful.slice(0, -1).join(', ')}, and ${meaningful[meaningful.length - 1]}.`;
+      if (meaningful.length === 1) summary = `${dayRef}, ${childName} ${tense} ${meaningful[0]}.`;
+      else if (meaningful.length === 2) summary = `${dayRef}, ${childName} ${tense} ${meaningful[0]} and ${meaningful[1]}.`;
+      else summary = `${dayRef}, ${childName} ${tense} ${meaningful.slice(0, -1).join(', ')}, and ${meaningful[meaningful.length - 1]}.`;
       return res.json({ summary });
     }
   } catch (err) {
