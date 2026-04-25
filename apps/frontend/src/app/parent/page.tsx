@@ -304,7 +304,7 @@ export default function ParentPage() {
   const [schoolInstagram, setSchoolInstagram] = useState<string>('');
   const [schoolTranslationEnabled, setSchoolTranslationEnabled] = useState<boolean>(true);
   const [invoice, setInvoice] = useState<any | null>(null);
-  const [parentProfile, setParentProfile] = useState<{ name: string; mobile: string } | null>(null);
+  const [parentProfile, setParentProfile] = useState<{ name: string; mobile: string; mobile_can_update?: boolean } | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -418,8 +418,7 @@ export default function ParentPage() {
       try {
         const profile = await apiGet<{ name: string; mobile: string }>('/api/v1/parent/profile', token);
         setParentProfile(profile);
-      } catch { /* non-critical */ }
-      
+      } catch { /* non-critical */ }      
       // Load emergency contacts and settings from API (fallback to mock data)
       (async () => {
         try {
@@ -692,7 +691,7 @@ export default function ParentPage() {
                       <div>
                         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Mobile</p>
                         <p className="text-sm font-semibold text-gray-800">
-                          {parentProfile?.mobile ?? '—'}
+                          {parentProfile?.mobile ? `+91 ${parentProfile.mobile.slice(0,5)} ${parentProfile.mobile.slice(5)}` : '—'}
                         </p>
                       </div>
                     </div>
@@ -743,7 +742,7 @@ export default function ParentPage() {
                 return (
                   <button key={id} onClick={() => setTab(id)}
                     className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                      active ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                      active ? 'bg-emerald-50 text-emerald-700 font-semibold shadow-sm' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800 hover:translate-x-0.5 hover:shadow-sm'
                     }`}>
                     <Icon size={17} className={active ? 'text-emerald-600' : 'text-gray-400'} />
                     <span className="flex-1">{label}</span>
@@ -894,7 +893,7 @@ export default function ParentPage() {
 
           {/* ── CLASS FEED COLUMN (desktop only) ── */}
           <aside className="hidden xl:flex flex-col w-64 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
-            <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} />
+            <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
           </aside>
 
           {/* ── WEEKLY SCHEDULE COLUMN (desktop only) ── */}
@@ -919,7 +918,7 @@ export default function ParentPage() {
             const badge = id === 'messages' ? unreadMessages : id === 'notifications' ? unreadNotifs : 0;
             return (
               <button key={id} onClick={() => setTab(id)}
-                className="flex-1 flex flex-col items-center py-2 gap-0.5 relative">
+                className="flex-1 flex flex-col items-center py-2 gap-0.5 relative transition-transform hover:-translate-y-0.5 active:scale-95">
                 <span className={`text-lg leading-none ${active ? 'scale-110' : ''} transition-transform`}>
                   <Icon size={20} className={active ? 'text-emerald-600' : 'text-gray-400'} />
                 </span>
@@ -1121,7 +1120,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
   announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
   token: string; onChildUpdate: (url: string) => void;
   unreadMessages: number; unreadNotifs: number; invoice: any;
-  parentProfile: { name: string; mobile: string } | null;
+  parentProfile: { name: string; mobile: string; mobile_can_update?: boolean } | null;
   classFeed: any[];
   schoolInstagram: string;
 }) {
@@ -1188,7 +1187,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       {profileOpen && <StudentProfileModal child={activeChild} token={token} onClose={() => setProfileOpen(false)} />}
 
       {/* Child profile card */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
+      <div className="parent-card bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
         {/* Editable child photo */}
         <label className="relative w-14 h-14 rounded-full overflow-hidden bg-emerald-100 flex-shrink-0 flex items-center justify-center border-2 border-gray-100 cursor-pointer group">
           {activeChild.photo_url ? (
@@ -1236,7 +1235,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       {/* Stat cards row — 4 colored cards with mini donut graphs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Attendance */}
-        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#d1fae5,#a7f3d0)', border: '1px solid #6ee7b7' }}>
+        <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#d1fae5,#a7f3d0)', border: '1px solid #6ee7b7' }}>
           <div className="relative flex-shrink-0 w-12 h-12">
             <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
@@ -1255,7 +1254,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </div>
 
         {/* Progress */}
-        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', border: '1px solid #93c5fd' }}>
+        <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', border: '1px solid #93c5fd' }}>
           <div className="relative flex-shrink-0 w-12 h-12">
             <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
@@ -1274,7 +1273,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </div>
 
         {/* Messages */}
-        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd' }}>
+        <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd' }}>
           <div className="relative flex-shrink-0 w-12 h-12">
             <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
@@ -1293,7 +1292,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </div>
 
         {/* Updates */}
-        <div className="rounded-2xl p-4 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fcd34d' }}>
+        <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fcd34d' }}>
           <div className="relative flex-shrink-0 w-12 h-12">
             <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
@@ -1315,7 +1314,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       {/* Today's Feed + This Week + Curriculum Progress + Quick Actions — all in one row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Today's Feed — AI summary + teacher notes */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+        <div className="parent-card bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
               <ClipboardList size={13} className="text-gray-400" /> Today&apos;s Feed
@@ -1414,7 +1413,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
         </div>
 
         {/* This Week */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+        <div className="parent-card bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
             <CalendarDays size={13} className="text-gray-400" /> This Week
           </p>
@@ -1465,7 +1464,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
       {/* Ask Oakie — quick access button */}
       <button
         onClick={() => onTabChange('chat')}
-        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-emerald-100 bg-emerald-50 hover:bg-emerald-100 transition-all shadow-sm"
+        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-emerald-100 bg-emerald-50 hover:bg-emerald-100 hover:-translate-y-0.5 hover:shadow-md transition-all shadow-sm"
       >
         <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center flex-shrink-0">
           <Sparkles size={16} className="text-white" />
@@ -1479,14 +1478,44 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
       {/* Class Feed — mobile only (desktop shows in right column) */}
       <div className="xl:hidden">
-        <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} />
+        <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
       </div>
     </div>
   );
 }
 
 // ─── Class Feed Column ────────────────────────────────────────────────────────
-function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; schoolInstagram?: string }) {
+function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any[]; schoolInstagram?: string; token: string }) {
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; caption?: string } | null>(null);
+  // local like state: postId → { count, likedByMe }
+  const [likes, setLikes] = useState<Record<string, { count: number; likedByMe: boolean }>>(() =>
+    Object.fromEntries(classFeed.map(p => [p.id, { count: p.like_count ?? 0, likedByMe: p.liked_by_me ?? false }]))
+  );
+
+  async function toggleLike(postId: string) {
+    // Optimistic update
+    setLikes(prev => {
+      const cur = prev[postId] ?? { count: 0, likedByMe: false };
+      return { ...prev, [postId]: { count: cur.likedByMe ? cur.count - 1 : cur.count + 1, likedByMe: !cur.likedByMe } };
+    });
+    try {
+      const res = await apiPost<{ like_count: number; liked_by_me: boolean }>(`/api/v1/feed/posts/${postId}/like`, {}, token);
+      setLikes(prev => ({ ...prev, [postId]: { count: res.like_count, likedByMe: res.liked_by_me } }));
+    } catch {
+      // Revert on failure
+      setLikes(prev => {
+        const cur = prev[postId] ?? { count: 0, likedByMe: false };
+        return { ...prev, [postId]: { count: cur.likedByMe ? cur.count + 1 : cur.count - 1, likedByMe: !cur.likedByMe } };
+      });
+    }
+  }
+
+  function openLightbox(images: string[], index: number, caption?: string) {
+    setLightbox({ images, index, caption });
+  }
+  function closeLightbox() { setLightbox(null); }
+  function prevPhoto() { setLightbox(lb => lb && lb.index > 0 ? { ...lb, index: lb.index - 1 } : lb); }
+  function nextPhoto() { setLightbox(lb => lb && lb.index < lb.images.length - 1 ? { ...lb, index: lb.index + 1 } : lb); }
 
   function shareToInstagram(post: any) {
     const tag = schoolInstagram ? `@${schoolInstagram}` : '';
@@ -1522,6 +1551,7 @@ function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; sch
   }
 
   return (
+    <>
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white sticky top-0 z-10">
@@ -1557,7 +1587,8 @@ function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; sch
               return (
                 <div key={post.id} className="p-3">
                   {img ? (
-                    <img src={img} alt={post.caption ?? ''} className="w-full rounded-xl object-cover mb-2.5" style={{ height: 150 }} />
+                    <img src={img} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption)}
+                      className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity" style={{ height: 150 }} />
                   ) : (
                     <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2.5" style={{ height: 100 }}>
                       <ImageIcon size={28} className="text-emerald-300" />
@@ -1567,10 +1598,12 @@ function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; sch
                   {post.images?.length > 1 && (
                     <div className="flex gap-1.5 mb-2">
                       {post.images.slice(1, 4).map((img2: string, i: number) => (
-                        <img key={i} src={img2} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+                        <img key={i} src={img2} alt="" onClick={() => openLightbox(post.images, i + 1, post.caption)}
+                          className="w-14 h-14 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity" />
                       ))}
                       {post.images.length > 4 && (
-                        <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">
+                        <div onClick={() => openLightbox(post.images, 4, post.caption)}
+                          className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0 cursor-pointer hover:bg-gray-200 transition-colors">
                           +{post.images.length - 4}
                         </div>
                       )}
@@ -1583,10 +1616,23 @@ function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; sch
                       <p className="text-[10px] text-gray-400">{timeAgo}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
-                        <Heart size={12} className="fill-pink-400 text-pink-400" />
-                        <span>{post.like_count ?? 0}</span>
-                      </div>
+                      <button
+                        onClick={() => toggleLike(post.id)}
+                        className="flex items-center gap-1 text-xs font-semibold transition-transform active:scale-90"
+                        style={{ color: likes[post.id]?.likedByMe ? '#ec4899' : '#9ca3af' }}
+                      >
+                        <Heart
+                          size={14}
+                          className="transition-all"
+                          style={{
+                            fill: likes[post.id]?.likedByMe ? '#ec4899' : 'none',
+                            color: likes[post.id]?.likedByMe ? '#ec4899' : '#9ca3af',
+                            transform: likes[post.id]?.likedByMe ? 'scale(1.2)' : 'scale(1)',
+                            transition: 'transform 0.15s ease, fill 0.15s ease',
+                          }}
+                        />
+                        <span>{likes[post.id]?.count ?? 0}</span>
+                      </button>
                       {/* Share buttons */}
                       <button
                         onClick={() => shareToInstagram(post)}
@@ -1615,6 +1661,63 @@ function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; sch
         )}
       </div>
     </div>
+
+    {/* ── Lightbox ── */}
+    {lightbox && (
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(6px)' }}
+        onClick={closeLightbox}
+      >
+        {/* Close */}
+        <button
+          onClick={closeLightbox}
+          className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center text-white text-xl font-bold z-10"
+          style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+        >✕</button>
+
+        {/* Prev */}
+        {lightbox.index > 0 && (
+          <button
+            onClick={e => { e.stopPropagation(); prevPhoto(); }}
+            className="absolute left-4 w-10 h-10 rounded-full flex items-center justify-center text-white text-xl font-bold z-10"
+            style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+          >‹</button>
+        )}
+
+        {/* Image */}
+        <div className="flex flex-col items-center gap-3 px-16 max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+          <img
+            src={lightbox.images[lightbox.index]}
+            alt={lightbox.caption ?? ''}
+            className="rounded-2xl object-contain shadow-2xl"
+            style={{ maxHeight: '75vh', maxWidth: '100%', animation: 'scaleIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}
+          />
+          {lightbox.caption && (
+            <p className="text-white/80 text-sm text-center leading-relaxed">{lightbox.caption}</p>
+          )}
+          {lightbox.images.length > 1 && (
+            <div className="flex gap-2 mt-1">
+              {lightbox.images.map((_, i) => (
+                <button key={i} onClick={() => setLightbox(lb => lb ? { ...lb, index: i } : lb)}
+                  className="w-2 h-2 rounded-full transition-all"
+                  style={{ background: i === lightbox.index ? '#fff' : 'rgba(255,255,255,0.35)', transform: i === lightbox.index ? 'scale(1.3)' : 'scale(1)' }} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Next */}
+        {lightbox.index < lightbox.images.length - 1 && (
+          <button
+            onClick={e => { e.stopPropagation(); nextPhoto(); }}
+            className="absolute right-4 w-10 h-10 rounded-full flex items-center justify-center text-white text-xl font-bold z-10"
+            style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
+          >›</button>
+        )}
+      </div>
+    )}
+    </>
   );
 }
 
@@ -2666,27 +2769,37 @@ function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
   return (
     <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
       <div className="bg-[#0f2417] px-5 py-4 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-xl">🌳</div>
+        <div className={`w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-xl flex-shrink-0 transition-all ${loading ? 'ring-2 ring-emerald-300 ring-offset-1 ring-offset-[#0f2417]' : ''}`}
+          style={{ animation: loading ? 'oakieWobble 0.7s ease-in-out infinite alternate' : 'none' }}>🌳</div>
         <div>
           <p className="text-white font-bold text-sm">Oakie AI</p>
           <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-bold uppercase tracking-widest">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" /> Active
+            <span className={`w-1.5 h-1.5 rounded-full inline-block ${loading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
+            {loading ? 'Thinking…' : 'Active'}
           </div>
         </div>
+        <style>{`
+          @keyframes oakieWobble {
+            from { transform: rotate(-8deg) scale(1.05); }
+            to   { transform: rotate(8deg) scale(1.1); }
+          }
+        `}</style>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-50/50">
         {msgs.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            style={{ animation: 'fadeslideup 0.25s ease both' }}>
             {m.role === 'ai' && <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2 mt-0.5">🌳</div>}
             <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === 'user' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>{m.text}</div>
           </div>
         ))}
         {loading && (
-          <div className="flex justify-start">
-            <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2">🌳</div>
+          <div className="flex justify-start" style={{ animation: 'fadeslideup 0.2s ease both' }}>
+            <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2"
+              style={{ animation: 'oakieWobble 0.7s ease-in-out infinite alternate' }}>🌳</div>
             <div className="bg-white rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm border border-neutral-100">
-              <div className="flex gap-1 items-center h-4">
-                {[0, 150, 300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+              <div className="flex gap-1.5 items-center h-4">
+                {[0, 150, 300].map(d => <div key={d} className="w-2 h-2 rounded-full bg-emerald-400" style={{ animation: `bouncedot 1.2s ease-in-out ${d}ms infinite` }} />)}
               </div>
             </div>
           </div>
