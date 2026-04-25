@@ -179,7 +179,7 @@ router.get('/siblings', async (req, res) => {
     const studentsResult = await pool.query(
       `SELECT s.id, s.name FROM parent_student_links sp
        JOIN students s ON s.id = sp.student_id
-       WHERE sp.parent_id = $1 AND s.school_id = $2 AND s.status = 'active'`,
+       WHERE sp.parent_id = $1 AND s.school_id = $2 AND s.is_active = true`,
       [parentId, schoolId]
     );
 

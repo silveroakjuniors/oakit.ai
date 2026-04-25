@@ -54,8 +54,8 @@ router.get('/children', async (req: Request, res: Response) => {
               sec.id as section_id, s.class_id
        FROM parent_student_links psl
        JOIN students s ON s.id = psl.student_id
-       JOIN classes c ON c.id = s.class_id
-       JOIN sections sec ON sec.id = s.section_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       LEFT JOIN sections sec ON sec.id = s.section_id
        WHERE psl.parent_id = $1 AND s.school_id = $2 AND s.is_active = true
        ORDER BY c.name, s.name`,
       [user_id, school_id]
