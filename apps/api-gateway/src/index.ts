@@ -68,6 +68,7 @@ import parentEmergencyContactsRouter from './routes/parent/emergencyContacts';
 import parentSettingsRouter from './routes/parent/settings';
 import parentCalendarRouter from './routes/parent/calendar';
 import parentStudentAnalyticsRouter from './routes/parent/studentAnalytics';
+import parentClassComparisonRouter from './routes/parent/classComparison';
 import adminStudentPortalRouter from './routes/admin/studentPortal';
 import adminQuizzesRouter from './routes/admin/quizzes';
 import adminSmartAlertsRouter from './routes/admin/smartAlerts';
@@ -340,6 +341,7 @@ app.use('/api/v1/parent/emergency-contacts', parentEmergencyContactsRouter);
 app.use('/api/v1/parent/settings', parentSettingsRouter);
 app.use('/api/v1/parent/student-analytics', parentStudentAnalyticsRouter);
 app.use('/api/v1/parent/calendar', parentCalendarRouter);
+app.use('/api/v1/parent/class-comparison', parentClassComparisonRouter);
 
 // Admin — Student Portal
 app.use('/api/v1/admin/student-portal', adminStudentPortalRouter);

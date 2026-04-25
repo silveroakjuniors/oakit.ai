@@ -902,5 +902,38 @@ router.get('/voice-status', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/ai/term-summary — cumulative summary of everything learned from start of term
+router.post('/term-summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { subjects = [], chunks = [], class_name: className = 'Nursery', child_name: childName = 'your child', completion_days = 0, covered_chunks = 0 } = req.body;
+
+    if (!subjects?.length) return res.status(400).json({ error: 'subjects is required' });
+
+    const cacheKey = `ai:term-summary:${school_id}:${childName}:${covered_chunks}:${crypto.createHash('md5').update(subjects.slice(0, 20).join(',') + className).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json({ summary: cached });
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/term-summary`, {
+        subjects, chunks, class_name: className, child_name: childName, completion_days, covered_chunks,
+      }, { timeout: 15000 });
+
+      const summary: string = aiResp.data?.summary || '';
+      if (summary) await redis.setEx(cacheKey, 7200, summary); // cache 2h
+      return res.json({ summary });
+    } catch {
+      // Fallback
+      const top = subjects.slice(0, 5);
+      const summary = top.length > 0
+        ? `Since the start of school, ${childName} has been learning about ${top.slice(0, 3).join(', ')} and more. It has been a wonderful term so far!`
+        : `${childName} has been busy learning at school this term!`;
+      return res.json({ summary });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
 

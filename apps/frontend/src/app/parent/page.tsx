@@ -190,12 +190,11 @@ interface Goal {
 }
 
 interface ChildComparison {
-  childId: string;
-  name: string;
+  label: string;
+  isChild: boolean;
   attendance: number;
   progress: number;
   participation: number;
-  rank: number;
   trend: 'up' | 'down' | 'stable';
 }
 
@@ -302,6 +301,7 @@ export default function ParentPage() {
   const [noteModal, setNoteModal] = useState<NoteItem | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [classFeed, setClassFeed] = useState<any[]>([]);
+  const [schoolInstagram, setSchoolInstagram] = useState<string>('');
   const [invoice, setInvoice] = useState<any | null>(null);
   const [parentProfile, setParentProfile] = useState<{ name: string; mobile: string } | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -409,6 +409,10 @@ export default function ParentPage() {
       setNotifications(notifs);
       apiGet<Announcement[]>('/api/v1/parent/announcements', token).then(setAnnouncements).catch(() => {});
       apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {});
+      // Fetch school instagram handle (public settings endpoint)
+      apiGet<{ instagram_handle?: string }>('/api/v1/public/school-info', token)
+        .then(info => { if (info?.instagram_handle) setSchoolInstagram(info.instagram_handle); })
+        .catch(() => {});
       // Fetch parent profile with await so name is ready before loading clears
       try {
         const profile = await apiGet<{ name: string; mobile: string }>('/api/v1/parent/profile', token);
@@ -435,8 +439,6 @@ export default function ParentPage() {
           loadMockFeaturesData(true);
         }
       })();
-      // Always load insights mock data (no real API yet)
-      loadMockFeaturesData(false);
       
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id, kids); }
     } catch { /* ignore */ }
@@ -491,13 +493,6 @@ export default function ParentPage() {
       }
     });
 
-    // Child Comparisons
-    setChildComparisons([
-      { childId: activeChildId || '', name: activeChild?.name || 'Your Child', attendance: 92, progress: 88, participation: 85, rank: 3, trend: 'up' },
-      { childId: 'comp1', name: 'Class Average', attendance: 87, progress: 82, participation: 78, rank: 0, trend: 'stable' },
-      { childId: 'comp2', name: 'Top Performer', attendance: 98, progress: 95, participation: 92, rank: 1, trend: 'up' },
-    ]);
-
     // Integration Settings
     setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
     setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
@@ -526,6 +521,10 @@ export default function ParentPage() {
       const att = attRes.status === 'fulfilled' ? attRes.value : null;
       const prog = progRes.status === 'fulfilled' ? (progRes.value.find(p => p.student_id === childId) ?? null) : null;
       setCache(prev => ({ ...prev, [childId]: { feed, attendance: att, progress: prog } }));
+      // Capture instagram handle from feed response
+      if (feed && (feed as any).instagram_handle) {
+        setSchoolInstagram((feed as any).instagram_handle);
+      }
       // Load class feed and invoice in background
       // Use passed childList (from init) or fall back to state
       const resolvedChildren = childList ?? children;
@@ -871,6 +870,7 @@ export default function ParentPage() {
                       invoice={invoice}
                       parentProfile={parentProfile}
                       classFeed={classFeed}
+                      schoolInstagram={schoolInstagram}
                     />
                   )}
                   {tab === 'calendar' && <CalendarTab token={token} activeChild={activeChild} />}
@@ -890,7 +890,7 @@ export default function ParentPage() {
 
           {/* ── CLASS FEED COLUMN (desktop only) ── */}
           <aside className="hidden xl:flex flex-col w-64 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
-            <ClassFeedColumn classFeed={classFeed} />
+            <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} />
           </aside>
 
           {/* ── WEEKLY SCHEDULE COLUMN (desktop only) ── */}
@@ -1112,13 +1112,14 @@ function StudentProfileModal({ child, token, onClose }: { child: Child; token: s
 }
 
 // ─── Home Tab ────────────────────────────────────────────────────────────────
-function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed }: {
+function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed, schoolInstagram }: {
   feed: ChildFeed | null; progress: ProgressData | null; attendance: AttendanceData | null; activeChild: Child | null;
   announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
   token: string; onChildUpdate: (url: string) => void;
   unreadMessages: number; unreadNotifs: number; invoice: any;
   parentProfile: { name: string; mobile: string } | null;
   classFeed: any[];
+  schoolInstagram: string;
 }) {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -1474,14 +1475,45 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
       {/* Class Feed — mobile only (desktop shows in right column) */}
       <div className="xl:hidden">
-        <ClassFeedColumn classFeed={classFeed} />
+        <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} />
       </div>
     </div>
   );
 }
 
 // ─── Class Feed Column ────────────────────────────────────────────────────────
-function ClassFeedColumn({ classFeed }: { classFeed: any[] }) {
+function ClassFeedColumn({ classFeed, schoolInstagram }: { classFeed: any[]; schoolInstagram?: string }) {
+
+  function shareToInstagram(post: any) {
+    const img = post.images?.[0];
+    const tag = schoolInstagram ? `@${schoolInstagram}` : '';
+    const caption = [post.caption, tag].filter(Boolean).join(' ');
+    // Instagram doesn't support direct web share with image — open app via deep link
+    // On mobile this opens the Instagram app; on desktop opens instagram.com
+    const text = encodeURIComponent(caption);
+    const url = img
+      ? `instagram://library?AssetPath=${encodeURIComponent(img)}`
+      : `https://www.instagram.com/`;
+    // Try app deep link first, fall back to web
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+    // Copy caption to clipboard so user can paste it
+    if (caption) navigator.clipboard?.writeText(caption).catch(() => {});
+  }
+
+  function shareToFacebook(post: any) {
+    const img = post.images?.[0];
+    const tag = schoolInstagram ? `@${schoolInstagram}` : '';
+    const caption = [post.caption, tag].filter(Boolean).join(' ');
+    // Facebook sharer — works on web; on mobile opens FB app
+    const shareUrl = img || window.location.href;
+    const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(caption)}`;
+    window.open(fbUrl, '_blank', 'noopener,noreferrer,width=600,height=500');
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -1543,9 +1575,30 @@ function ClassFeedColumn({ classFeed }: { classFeed: any[] }) {
                       <p className="text-[11px] font-semibold text-gray-600">by {post.poster_name}</p>
                       <p className="text-[10px] text-gray-400">{timeAgo}</p>
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
-                      <Heart size={12} className="fill-pink-400 text-pink-400" />
-                      <span>{post.like_count ?? 0}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 text-xs text-pink-500 font-semibold">
+                        <Heart size={12} className="fill-pink-400 text-pink-400" />
+                        <span>{post.like_count ?? 0}</span>
+                      </div>
+                      {/* Share buttons */}
+                      <button
+                        onClick={() => shareToInstagram(post)}
+                        title={schoolInstagram ? `Share & tag @${schoolInstagram}` : 'Share to Instagram'}
+                        className="flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-white hover:opacity-90 active:scale-95 transition-all"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => shareToFacebook(post)}
+                        title={schoolInstagram ? `Share & tag @${schoolInstagram}` : 'Share to Facebook'}
+                        className="flex items-center justify-center w-7 h-7 rounded-full bg-[#1877F2] text-white hover:opacity-90 active:scale-95 transition-all"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1918,6 +1971,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
 }
 function CalendarTab({ token, activeChild }: { token: string; activeChild: Child | null }) {
   const [data, setData] = useState<{
+    today: string;
     holidays: { id: string; date: string; title: string }[];
     special_days: { id: string; date: string; title: string; type: string; day_type: string }[];
     announcements: { id: string; title: string; body: string; date: string; author: string }[];
@@ -1925,7 +1979,7 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
     calendar_end: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'upcoming' | 'all'>('upcoming');
+  const [view, setView] = useState<'upcoming' | 'past'>('upcoming');
 
   useEffect(() => {
     if (!token) return;
@@ -1936,7 +1990,8 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
       .finally(() => setLoading(false));
   }, [token]);
 
-  const today = new Date().toISOString().split('T')[0];
+  // Use school's today from API (time-machine aware), fall back to browser date
+  const today = data?.today ?? new Date().toISOString().split('T')[0];
 
   // Merge all events into a unified list
   const allEvents = data ? [
@@ -1951,9 +2006,10 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
     ...data.announcements.map(a => ({ id: a.id, date: a.date, title: a.title, subtitle: a.body?.slice(0, 80) || '', type: 'announcement' as const })),
   ].sort((a, b) => a.date.localeCompare(b.date)) : [];
 
+  // Split using school's today (time-machine aware)
   const upcoming = allEvents.filter(e => e.date >= today);
   const past     = allEvents.filter(e => e.date < today).reverse(); // most recent first
-  const displayed = view === 'upcoming' ? upcoming : allEvents;
+  const displayed = view === 'upcoming' ? upcoming : past;
 
   function typeConfig(type: string) {
     switch (type) {
@@ -1976,15 +2032,15 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
         )}
       </div>
 
-      {/* Toggle */}
+      {/* Toggle — Upcoming / Past */}
       <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
         <button onClick={() => setView('upcoming')}
           className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'upcoming' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
           Upcoming ({upcoming.length})
         </button>
-        <button onClick={() => setView('all')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
-          All Events ({allEvents.length})
+        <button onClick={() => setView('past')}
+          className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${view === 'past' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+          Completed ({past.length})
         </button>
       </div>
 
@@ -1993,17 +2049,19 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
       ) : displayed.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 shadow-sm">
           <Calendar size={40} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">{view === 'upcoming' ? 'No upcoming events' : 'No events found'}</p>
+          <p className="text-gray-500 font-medium">
+            {view === 'upcoming' ? 'No upcoming events' : 'No past events'}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
           {displayed.map(e => {
             const cfg = typeConfig(e.type);
             const dateObj = new Date(e.date + 'T12:00:00');
-            const isPast = e.date < today;
+            const isCompleted = e.date < today;
             return (
               <div key={`${e.type}-${e.id}`}
-                className={`rounded-2xl p-4 border ${cfg.bg} ${cfg.border} ${isPast ? 'opacity-60' : ''}`}>
+                className={`rounded-2xl p-4 border ${cfg.bg} ${cfg.border}`}>
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 bg-white border border-white/80 shadow-sm">
                     {cfg.icon}
@@ -2012,11 +2070,13 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
                     <div className="flex items-center gap-2 flex-wrap mb-0.5">
                       <p className="font-semibold text-gray-800 text-sm">{e.title}</p>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cfg.labelCls}`}>{cfg.label}</span>
+                      {isCompleted && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Done</span>
+                      )}
                     </div>
                     {e.subtitle && <p className="text-xs text-gray-500 line-clamp-2">{e.subtitle}</p>}
                     <p className="text-xs text-gray-400 mt-1">
                       {dateObj.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                      {isPast && <span className="ml-1.5 text-gray-300">· Past</span>}
                     </p>
                   </div>
                 </div>
@@ -2242,7 +2302,7 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
       .then(d => {
         setTermData(d);
         if (d.chunks?.length > 0) {
-          const cacheKey = `term-summary:${activeChild.id}:${d.covered_chunks}`;
+          const cacheKey = `term-summary-v2:${activeChild.id}:${d.covered_chunks}`;
           const cached = localStorage.getItem(cacheKey);
           // Bust stale cache if it contains "Week X Day Y"
           if (cached && /week\s*\d+\s*day\s*\d+/i.test(cached)) {
@@ -2279,12 +2339,13 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
           const topicsToSend = [...new Set(meaningfulTopics)].slice(0, 50);
           const chunksToSend = meaningfulChunks.slice(0, 15);
 
-          apiPost<{ summary: string }>('/api/v1/ai/topic-summary', {
-            topics: topicsToSend.length > 0 ? topicsToSend : ['various subjects'],
+          apiPost<{ summary: string }>('/api/v1/ai/term-summary', {
+            subjects: topicsToSend.length > 0 ? topicsToSend : ['various subjects'],
             chunks: chunksToSend,
             class_name: activeChild.class_name ?? 'Nursery',
             child_name: activeChild.name.split(' ')[0],
-            completed: true,
+            completion_days: d.completion_days ?? 0,
+            covered_chunks: d.covered_chunks ?? 0,
           }, token)
             .then(r => {
               if (r.summary) {
@@ -2388,7 +2449,17 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
               <p className="text-xs text-white/50 mt-1">🏆 {milestoneData.achieved}/{milestoneData.total} milestones · {milestoneData.completion_pct}%</p>
             )}
             {termData && (
-              <p className="text-xs text-white/40 mt-0.5">📅 {termData.completion_days} school days completed</p>
+              <div className="mt-1 space-y-0.5">
+                {(termData as any).settling_days > 0 && (
+                  <p className="text-xs text-white/50">🌱 {(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed</p>
+                )}
+                {(termData as any).curriculum_days > 0 && (
+                  <p className="text-xs text-white/40">📚 {(termData as any).curriculum_days} curriculum day{(termData as any).curriculum_days !== 1 ? 's' : ''} · {termData.completion_days} total school days</p>
+                )}
+                {(termData as any).curriculum_days === 0 && termData.completion_days > 0 && (
+                  <p className="text-xs text-white/40">📅 {termData.completion_days} school day{termData.completion_days !== 1 ? 's' : ''} completed</p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -2414,7 +2485,9 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
       {/* Settling period notes */}
       {termData?.settling_notes && termData.settling_notes.length > 0 && (
         <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
-          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">🌱 Settling Period</p>
+          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">
+            🌱 Settling Period · {(termData as any).settling_days ?? termData.settling_notes.length} days
+          </p>
           <div className="space-y-2">
             {termData.settling_notes.map((n, i) => (
               <div key={i} className="text-sm text-amber-800 leading-relaxed">
@@ -2422,6 +2495,13 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {/* Show settling days count even if no notes */}
+      {(termData as any)?.settling_days > 0 && (!termData?.settling_notes || termData.settling_notes.length === 0) && (
+        <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
+          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">🌱 Settling Period</p>
+          <p className="text-sm text-amber-800">{(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed — {activeChild?.name.split(' ')[0]} is getting comfortable in the classroom.</p>
         </div>
       )}
 
@@ -2729,10 +2809,20 @@ function InsightsTab({ insights, comparisons, activeChild, token }: { insights: 
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceData | null>(null);
   const [progress, setProgress] = useState<ProgressData | null>(null);
+  const [realComparisons, setRealComparisons] = useState<ChildComparison[]>([]);
+  const [compLoading, setCompLoading] = useState(false);
 
   useEffect(() => {
     if (!activeChild?.id || !token) return;
     setLoadingObs(true);
+
+    // Fetch real class comparison data
+    setCompLoading(true);
+    apiGet<ChildComparison[]>(`/api/v1/parent/class-comparison/${activeChild.id}`, token)
+      .then(setRealComparisons)
+      .catch(() => {})
+      .finally(() => setCompLoading(false));
+
     Promise.allSettled([
       apiGet<Observation[]>(`/api/v1/parent/observations/${activeChild.id}`, token),
       apiGet<AttendanceData>(`/api/v1/parent/child/${activeChild.id}/attendance`, token),
@@ -2920,28 +3010,32 @@ function InsightsTab({ insights, comparisons, activeChild, token }: { insights: 
       )}
 
       {/* Class comparison */}
-      {comparisons.length > 0 && (
+      {(compLoading || realComparisons.length > 0) && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <p className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
             <BarChart3 size={15} className="text-indigo-500" /> Class Comparison
           </p>
-          <div className="space-y-3">
-            {comparisons.map(comp => (
-              <div key={comp.childId} className={`rounded-xl p-3 border ${comp.childId === activeChild.id ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-100'}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`text-sm font-semibold ${comp.childId === activeChild.id ? 'text-emerald-800' : 'text-gray-700'}`}>{comp.name}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${comp.trend === 'up' ? 'bg-emerald-100 text-emerald-700' : comp.trend === 'down' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
-                    {comp.trend === 'up' ? '↑' : comp.trend === 'down' ? '↓' : '→'} {comp.trend}
-                  </span>
+          {compLoading ? (
+            <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-gray-300" /></div>
+          ) : (
+            <div className="space-y-3">
+              {realComparisons.map((comp, i) => (
+                <div key={i} className={`rounded-xl p-3 border ${comp.isChild ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-100'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-sm font-semibold ${comp.isChild ? 'text-emerald-800' : 'text-gray-700'}`}>{comp.label}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${comp.trend === 'up' ? 'bg-emerald-100 text-emerald-700' : comp.trend === 'down' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                      {comp.trend === 'up' ? '↑ up' : comp.trend === 'down' ? '↓ down' : '→ stable'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><p className="text-gray-400">Attendance</p><p className="font-bold text-gray-800">{comp.attendance}%</p></div>
+                    <div><p className="text-gray-400">Progress</p><p className="font-bold text-gray-800">{comp.progress}%</p></div>
+                    <div><p className="text-gray-400">Participation</p><p className="font-bold text-gray-800">{comp.participation}%</p></div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div><p className="text-gray-400">Attendance</p><p className="font-bold text-gray-800">{comp.attendance}%</p></div>
-                  <div><p className="text-gray-400">Progress</p><p className="font-bold text-gray-800">{comp.progress}%</p></div>
-                  <div><p className="text-gray-400">Participation</p><p className="font-bold text-gray-800">{comp.participation}%</p></div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

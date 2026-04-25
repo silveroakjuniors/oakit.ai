@@ -394,6 +394,7 @@ router.get('/child/:student_id/week-schedule', async (req: Request, res: Respons
           for (const line of lines) {
             if (/^week\s*\d+\s*day\s*\d+/i.test(line)) continue;
             if (/^\d+$/.test(line)) continue;
+            // Subject heading: short line ending with colon, or ALL CAPS word, or "Subject:" pattern
             if (
               /^[A-Z][a-zA-Z\s&\/\-]{1,50}:\s*$/.test(line) ||
               /^[A-Z][A-Z\s]{2,30}$/.test(line) ||
@@ -451,12 +452,19 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
     if (studentRow.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     const { section_id, name: student_name, class_name } = studentRow.rows[0];
 
-    // Get current academic year
-    const calRow = await pool.query(
+    // Get current academic year — fallback to most recent if time machine is active
+    let calRow = await pool.query(
       `SELECT start_date, end_date FROM school_calendar
        WHERE school_id = $1 AND now()::date BETWEEN start_date AND end_date LIMIT 1`,
       [school_id]
     );
+    if (calRow.rows.length === 0) {
+      calRow = await pool.query(
+        `SELECT start_date, end_date FROM school_calendar
+         WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1`,
+        [school_id]
+      );
+    }
     const yearStart = calRow.rows[0]?.start_date ?? null;
     const yearEnd = calRow.rows[0]?.end_date ?? null;
 
@@ -471,7 +479,29 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
       [section_id, yearStart, yearEnd]
     );
 
-    // Collect all unique chunk IDs
+    // Get school's today for accurate past-day counting (time machine aware)
+    const schoolToday = await getToday(school_id);
+
+    // Count past day_plans up to school's today — includes settling days even without completions
+    const pastDaysRow = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE dp.status = 'settling' OR sd.day_type ILIKE '%settl%') AS settling_days,
+         COUNT(*) FILTER (WHERE (dp.chunk_ids IS NOT NULL AND dp.chunk_ids != '{}') AND dp.status NOT IN ('holiday','weekend','settling')) AS curriculum_days,
+         COUNT(*) AS total_school_days
+       FROM day_plans dp
+       LEFT JOIN special_days sd ON sd.school_id = dp.school_id AND sd.day_date = dp.plan_date
+       WHERE dp.section_id = $1
+         AND dp.plan_date <= $2::date
+         AND dp.status NOT IN ('holiday','weekend')
+         AND ($3::date IS NULL OR dp.plan_date >= $3::date)`,
+      [section_id, schoolToday, yearStart]
+    );
+
+    const settlingDaysCount = parseInt(pastDaysRow.rows[0]?.settling_days ?? '0');
+    const curriculumDaysCount = parseInt(pastDaysRow.rows[0]?.curriculum_days ?? '0');
+    const totalSchoolDays = parseInt(pastDaysRow.rows[0]?.total_school_days ?? '0');
+
+    // Collect all unique chunk IDs from daily_completions
     const allChunkIds: string[] = [];
     const seenIds = new Set<string>();
     for (const row of completionsRow.rows) {
@@ -509,12 +539,10 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
       });
     }
 
-    // Settling day notes
     const settlingNotes = completionsRow.rows
       .filter((r: any) => r.settling_day_note)
       .map((r: any) => ({ date: r.completion_date, note: r.settling_day_note }));
 
-    // Total curriculum chunks for this section
     const totalRow = await pool.query(
       `SELECT COUNT(*)::int AS total FROM curriculum_chunks cc
        JOIN curriculum_documents cd ON cd.id = cc.document_id
@@ -524,13 +552,13 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
     );
 
     return res.json({
-      student_name,
-      class_name,
+      student_name, class_name,
       total_curriculum_chunks: totalRow.rows[0]?.total ?? 0,
       covered_chunks: allChunkIds.length,
-      chunks,
-      settling_notes: settlingNotes,
-      completion_days: completionsRow.rows.length,
+      chunks, settling_notes: settlingNotes,
+      settling_days: settlingDaysCount,
+      curriculum_days: curriculumDaysCount,
+      completion_days: totalSchoolDays,
     });
   } catch (err) {
     console.error('[term-summary]', err);
@@ -1011,15 +1039,25 @@ router.get('/missed-topics/completed', async (req: Request, res: Response) => {
 // GET /api/v1/parent/calendar — holidays, special days, and announcements for the school
 router.get('/calendar', async (req: Request, res: Response) => {
   try {
-    const { school_id } = req.user!;
+    const { user_id, school_id } = req.user!;
 
-    const calRow = await pool.query(
+    // Get school's "today" — respects time machine
+    const todayStr = await getToday(school_id);
+
+    let calRow = await pool.query(
       `SELECT academic_year, start_date::text, end_date::text
        FROM school_calendar
        WHERE school_id = $1 AND now()::date BETWEEN start_date AND end_date
        LIMIT 1`,
       [school_id]
     );
+    if (calRow.rows.length === 0) {
+      calRow = await pool.query(
+        `SELECT academic_year, start_date::text, end_date::text
+         FROM school_calendar WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1`,
+        [school_id]
+      );
+    }
     const academicYear = calRow.rows[0]?.academic_year || '';
     const calStart = calRow.rows[0]?.start_date || new Date().toISOString().split('T')[0];
     const calEnd   = calRow.rows[0]?.end_date   || new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0];
@@ -1034,10 +1072,22 @@ router.get('/calendar', async (req: Request, res: Response) => {
        FROM special_days WHERE school_id = $1 AND academic_year = $2 ORDER BY day_date`,
       [school_id, academicYear]
     );
+
+    const classIds = await pool.query(
+      `SELECT DISTINCT s.class_id FROM parent_student_links psl
+       JOIN students s ON s.id = psl.student_id WHERE psl.parent_id = $1`,
+      [user_id]
+    );
+    const ids = classIds.rows.map((r: any) => r.class_id);
     const announcementRows = await pool.query(
-      `SELECT id::text, title, body, created_at::text, author_name
-       FROM announcements WHERE school_id = $1 ORDER BY created_at DESC LIMIT 20`,
-      [school_id]
+      `SELECT a.id::text, a.title, a.body, a.created_at::text, u.name as author_name
+       FROM announcements a JOIN users u ON u.id = a.author_id
+       WHERE a.school_id = $1 AND a.deleted_at IS NULL
+         AND (a.expires_at IS NULL OR a.expires_at > now())
+         AND (a.target_audience IN ('all','parents')
+              OR (a.target_audience = 'class' AND a.target_class_id = ANY($2::uuid[])))
+       ORDER BY a.created_at DESC LIMIT 30`,
+      [school_id, ids]
     );
 
     function mapDayType(dayType: string): string {
@@ -1052,9 +1102,8 @@ router.get('/calendar', async (req: Request, res: Response) => {
     }
 
     return res.json({
-      academic_year: academicYear,
-      calendar_start: calStart,
-      calendar_end: calEnd,
+      today: todayStr,
+      academic_year: academicYear, calendar_start: calStart, calendar_end: calEnd,
       holidays: holidayRows.rows.map((r: any) => ({ id: r.id, date: r.date, title: r.title, type: 'holiday' })),
       special_days: specialRows.rows.map((r: any) => ({ id: r.id, date: r.date, title: r.title, type: mapDayType(r.day_type), day_type: r.day_type })),
       announcements: announcementRows.rows.map((r: any) => ({ id: r.id, title: r.title, body: r.body, date: r.created_at?.split('T')[0] || '', author: r.author_name, type: 'announcement' })),

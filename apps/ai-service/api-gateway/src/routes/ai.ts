@@ -853,6 +853,7 @@ router.post('/topic-summary', async (req: Request, res: Response) => {
     if (!topicsArr?.length) return res.status(400).json({ error: 'topics is required' });
 
     const topics: string[] = topicsArr.map((t: string) => t.trim()).filter(Boolean);
+    // Include feed_date in cache key so different dates get different summaries
     const cacheKey = `ai:topic-summary:${school_id}:${childName}:${completed ? 'done' : 'plan'}:${feed_date}:${crypto.createHash('md5').update(topics.join(',') + className).digest('hex')}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json({ summary: cached });
@@ -866,9 +867,11 @@ router.post('/topic-summary', async (req: Request, res: Response) => {
       if (summary) await redis.setEx(cacheKey, 3600, summary);
       return res.json({ summary });
     } catch {
+      // Fallback: strip "Week X Day Y" and build a plain sentence
       const cleaned = topics.map((t: string) => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim()).filter(Boolean);
       const meaningful = cleaned.length > 0 ? cleaned : topics;
       const tense = completed ? 'learned about' : 'will learn about';
+      // Format date for display
       let dayRef = 'Today';
       if (feed_date) {
         try {
@@ -896,6 +899,39 @@ router.get('/voice-status', async (req: Request, res: Response) => {
     return res.json({ voice_enabled: row.rows[0]?.voice_enabled ?? false });
   } catch {
     return res.json({ voice_enabled: false });
+  }
+});
+
+// POST /api/v1/ai/term-summary — cumulative summary of everything learned from start of term
+router.post('/term-summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { subjects = [], chunks = [], class_name: className = 'Nursery', child_name: childName = 'your child', completion_days = 0, covered_chunks = 0 } = req.body;
+
+    if (!subjects?.length) return res.status(400).json({ error: 'subjects is required' });
+
+    const cacheKey = `ai:term-summary:${school_id}:${childName}:${covered_chunks}:${crypto.createHash('md5').update(subjects.slice(0, 20).join(',') + className).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json({ summary: cached });
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/term-summary`, {
+        subjects, chunks, class_name: className, child_name: childName, completion_days, covered_chunks,
+      }, { timeout: 15000 });
+
+      const summary: string = aiResp.data?.summary || '';
+      if (summary) await redis.setEx(cacheKey, 7200, summary); // cache 2h
+      return res.json({ summary });
+    } catch {
+      // Fallback
+      const top = subjects.slice(0, 5);
+      const summary = top.length > 0
+        ? `Since the start of school, ${childName} has been learning about ${top.slice(0, 3).join(', ')} and more. It has been a wonderful term so far!`
+        : `${childName} has been busy learning at school this term!`;
+      return res.json({ summary });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
