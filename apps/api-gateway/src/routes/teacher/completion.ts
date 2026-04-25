@@ -191,7 +191,7 @@ router.get('/pending', async (req: Request, res: Response) => {
 
     // Get all past day plans that have chunk_ids
     const plans = await pool.query(
-      `SELECT dp.id, dp.plan_date, dp.chunk_ids
+      `SELECT dp.id, dp.plan_date::text AS plan_date, dp.chunk_ids
        FROM day_plans dp
        WHERE dp.section_id = $1 AND dp.plan_date < $2::date
          AND dp.status NOT IN ('holiday', 'weekend')
