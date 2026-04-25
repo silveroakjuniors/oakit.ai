@@ -8,7 +8,7 @@ router.use(jwtVerify);
 // Helper: verify parent owns the student
 async function verifyParentOwnsStudent(parentId: string, studentId: string, schoolId: string): Promise<boolean> {
   const result = await pool.query(
-    `SELECT 1 FROM student_parents sp
+    `SELECT 1 FROM parent_student_links sp
      JOIN students s ON s.id = sp.student_id
      WHERE sp.parent_id = $1 AND sp.student_id = $2 AND s.school_id = $3`,
     [parentId, studentId, schoolId]
@@ -177,7 +177,7 @@ router.get('/siblings', async (req, res) => {
     const schoolId = req.user!.school_id;
 
     const studentsResult = await pool.query(
-      `SELECT s.id, s.name FROM student_parents sp
+      `SELECT s.id, s.name FROM parent_student_links sp
        JOIN students s ON s.id = sp.student_id
        WHERE sp.parent_id = $1 AND s.school_id = $2 AND s.status = 'active'`,
       [parentId, schoolId]
