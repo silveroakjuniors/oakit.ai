@@ -691,7 +691,10 @@ export default function ParentPage() {
                       <div>
                         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Mobile</p>
                         <p className="text-sm font-semibold text-gray-800">
-                          {parentProfile?.mobile ? `+91 ${parentProfile.mobile.slice(0,5)} ${parentProfile.mobile.slice(5)}` : '—'}
+                          {(() => {
+                            const m = parentProfile?.mobile || activeChild?.parent_contact || '';
+                            return m ? `+91 ${m.slice(0,5)} ${m.slice(5)}` : '—';
+                          })()}
                         </p>
                       </div>
                     </div>
@@ -1103,11 +1106,6 @@ function StudentProfileModal({ child, token, onClose }: { child: Child; token: s
               <p className="text-sm font-semibold text-gray-800">{child.class_name} · Section {child.section_label}</p>
             </div>
           </div>
-
-          <a href={`/parent/journey?student_id=${child.id}`}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">
-            <BookOpen size={14} /> View Child&apos;s Journey
-          </a>
         </div>
       </div>
     </div>

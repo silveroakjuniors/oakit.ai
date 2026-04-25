@@ -933,17 +933,25 @@ router.get('/profile', async (req: Request, res: Response) => {
   try {
     const { user_id } = req.user!;
     const result = await pool.query(
-      `SELECT id, name, mobile, mobile_updated_at
-       FROM parent_users WHERE id = $1`,
+      `SELECT id, name, mobile FROM parent_users WHERE id = $1`,
       [user_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
     const p = result.rows[0];
+    // Check if mobile_updated_at column exists (added in migration 067)
+    let mobile_can_update = true;
+    try {
+      const upd = await pool.query(
+        `SELECT mobile_updated_at FROM parent_users WHERE id = $1`,
+        [user_id]
+      );
+      mobile_can_update = !upd.rows[0]?.mobile_updated_at;
+    } catch { /* column not yet migrated — allow update */ }
     return res.json({
       id: p.id,
       name: p.name,
       mobile: p.mobile,
-      mobile_can_update: !p.mobile_updated_at, // once-only: can only update if never updated before
+      mobile_can_update,
     });
   } catch (err) {
     console.error('[parent profile GET]', err);
@@ -964,7 +972,7 @@ router.put('/profile', async (req: Request, res: Response) => {
 
     // Fetch current profile
     const current = await pool.query(
-      `SELECT id, name, mobile, mobile_updated_at FROM parent_users WHERE id = $1`,
+      `SELECT id, name, mobile FROM parent_users WHERE id = $1`,
       [user_id]
     );
     if (current.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
@@ -976,12 +984,19 @@ router.put('/profile', async (req: Request, res: Response) => {
       if (!/^\d{10}$/.test(cleaned)) {
         return res.status(400).json({ error: 'Mobile must be a valid 10-digit number' });
       }
-      if (profile.mobile_updated_at) {
-        return res.status(403).json({
-          error: 'Mobile number has already been updated once and cannot be changed again. Contact the school admin if you need help.',
-          mobile_locked: true,
-        });
-      }
+      // Check once-only lock (column may not exist yet)
+      try {
+        const lockCheck = await pool.query(
+          `SELECT mobile_updated_at FROM parent_users WHERE id = $1`, [user_id]
+        );
+        if (lockCheck.rows[0]?.mobile_updated_at) {
+          return res.status(403).json({
+            error: 'Mobile number has already been updated once and cannot be changed again. Contact the school admin if you need help.',
+            mobile_locked: true,
+          });
+        }
+      } catch { /* column not yet migrated — allow update */ }
+
       if (cleaned === profile.mobile) {
         return res.status(400).json({ error: 'New mobile number is the same as the current one' });
       }
@@ -998,19 +1013,23 @@ router.put('/profile', async (req: Request, res: Response) => {
       // Update mobile + name (if provided)
       const bcrypt = require('bcryptjs');
       const newHash = await bcrypt.hash(cleaned, 12);
-      await pool.query(
-        `UPDATE parent_users
-         SET mobile = $1,
-             password_hash = $2,
-             mobile_updated_at = now(),
-             mobile_updated_by = 'parent',
-             ${name ? "name = $4," : ''}
-             force_password_reset = false
-         WHERE id = ${name ? '$5' : '$3'}`,
-        name
-          ? [cleaned, newHash, name.trim(), user_id]
-          : [cleaned, newHash, user_id]
-      );
+      try {
+        await pool.query(
+          `UPDATE parent_users
+           SET mobile = $1, password_hash = $2,
+               mobile_updated_at = now(), mobile_updated_by = 'parent',
+               ${name ? "name = $4," : ''}
+               force_password_reset = false
+           WHERE id = ${name ? '$5' : '$3'}`,
+          name ? [cleaned, newHash, name.trim(), user_id] : [cleaned, newHash, user_id]
+        );
+      } catch {
+        // Fallback if columns don't exist yet
+        await pool.query(
+          `UPDATE parent_users SET mobile = $1, password_hash = $2 ${name ? ', name = $4' : ''}, force_password_reset = false WHERE id = ${name ? '$5' : '$3'}`,
+          name ? [cleaned, newHash, name.trim(), user_id] : [cleaned, newHash, user_id]
+        );
+      }
 
       return res.json({
         success: true,
