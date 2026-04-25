@@ -31,7 +31,89 @@ const CATEGORY_CONFIG = [
 ] as const;
 
 const DOMAIN_ICONS: Record<string, string> = { Cognitive: '🧠', Social: '🤝', Motor: '🏃', Language: '🗣️', Other: '📌' };
-const DOMAINS = ['Cognitive', 'Language', 'Social', 'Motor', 'Other'];
+
+// All skill domains mapped to their display label and suggestions
+const SKILL_DOMAINS = [
+  { key: 'Cognitive',   label: 'Cognitive Skills',         icon: '🧠' },
+  { key: 'Language',    label: 'Language & Communication', icon: '🗣️' },
+  { key: 'Social',      label: 'Social Interaction',       icon: '🤝' },
+  { key: 'Emotional',   label: 'Emotional Development',    icon: '💛' },
+  { key: 'GrossMotor',  label: 'Gross Motor Skills',       icon: '🏃' },
+  { key: 'FineMotor',   label: 'Fine Motor Skills',        icon: '✏️' },
+  { key: 'Creativity',  label: 'Creativity & Expression',  icon: '🎨' },
+  { key: 'Participation', label: 'Classroom Participation', icon: '🙋' },
+  { key: 'Peer',        label: 'Peer Interaction',         icon: '👫' },
+  { key: 'Behaviour',   label: 'Behavioral Observations',  icon: '⭐' },
+  { key: 'Other',       label: 'Other',                    icon: '📌' },
+];
+
+// Class-level-aware suggestions per domain
+const CLASS_SUGGESTIONS: Record<string, Record<string, string[]>> = {
+  // Play Group / Nursery (youngest)
+  playgroup: {
+    Cognitive:    ['Recognises familiar faces and objects', 'Responds to their own name', 'Shows curiosity by exploring objects', 'Begins to match simple shapes'],
+    Language:     ['Uses single words to communicate needs', 'Points to objects when named', 'Enjoys listening to simple rhymes', 'Babbles and vocalises expressively'],
+    Social:       ['Plays alongside other children (parallel play)', 'Responds to simple social cues', 'Enjoys interaction with familiar adults', 'Beginning to share with prompting'],
+    Emotional:    ['Shows attachment to primary caregiver', 'Expresses basic emotions (happy, sad, upset)', 'Needs comfort when distressed', 'Beginning to self-soothe with support'],
+    GrossMotor:   ['Walks steadily without support', 'Climbs low steps with help', 'Kicks a ball with one foot', 'Runs with increasing confidence'],
+    FineMotor:    ['Holds crayon with fist grip', 'Turns pages of a board book', 'Stacks 3–4 blocks', 'Scribbles spontaneously'],
+    Creativity:   ['Enjoys sensory play (sand, water, clay)', 'Participates in simple music and movement', 'Shows interest in art materials', 'Engages in simple pretend play'],
+    Participation:['Sits for short circle time activities', 'Follows one-step instructions', 'Attends to a story for 2–3 minutes', 'Participates in group songs'],
+    Peer:         ['Notices other children and smiles', 'Plays near peers without conflict', 'Offers toys occasionally', 'Watches and imitates peers'],
+    Behaviour:    ['Follows simple classroom routines with support', 'Responds to redirection', 'Transitions between activities with help', 'Shows positive response to praise'],
+    Other:        ['Demonstrates age-appropriate self-care (drinking, eating)', 'Recognises personal belongings', 'Shows interest in the environment'],
+  },
+  nursery: {
+    Cognitive:    ['Sorts objects by colour or shape', 'Completes simple 4-piece puzzles', 'Understands concepts of big/small, more/less', 'Remembers simple sequences'],
+    Language:     ['Uses 2–3 word phrases', 'Names common objects and pictures', 'Follows two-step instructions', 'Enjoys simple stories and retells parts'],
+    Social:       ['Engages in simple cooperative play', 'Takes turns with prompting', 'Greets familiar adults and peers', 'Seeks help from teacher when needed'],
+    Emotional:    ['Separates from parent with minimal distress', 'Identifies own feelings', 'Shows empathy when peers are upset', 'Manages frustration with adult support'],
+    GrossMotor:   ['Jumps with both feet', 'Pedals a tricycle', 'Throws and catches a large ball', 'Balances on one foot briefly'],
+    FineMotor:    ['Holds pencil with emerging tripod grip', 'Cuts along a straight line', 'Draws circles and crosses', 'Strings large beads'],
+    Creativity:   ['Creates simple drawings with intention', 'Engages in role play with peers', 'Experiments with paint and collage', 'Sings simple songs from memory'],
+    Participation:['Sits attentively for 10 minutes', 'Raises hand to contribute', 'Follows classroom rules with reminders', 'Completes tasks with minimal prompting'],
+    Peer:         ['Plays cooperatively in small groups', 'Shares materials willingly', 'Resolves minor conflicts with guidance', 'Shows kindness to classmates'],
+    Behaviour:    ['Follows classroom routines independently', 'Responds well to positive reinforcement', 'Transitions smoothly between activities', 'Shows self-control in group settings'],
+    Other:        ['Recognises own name in print', 'Counts objects up to 5', 'Knows basic colours and shapes'],
+  },
+  lkg: {
+    Cognitive:    ['Counts objects up to 10 accurately', 'Identifies letters of the alphabet', 'Solves simple addition with objects', 'Understands cause and effect'],
+    Language:     ['Speaks in complete sentences', 'Retells a story in sequence', 'Asks and answers questions confidently', 'Vocabulary is expanding rapidly'],
+    Social:       ['Initiates play with peers', 'Negotiates roles in group play', 'Shows awareness of others\' feelings', 'Participates actively in group discussions'],
+    Emotional:    ['Manages emotions with minimal adult support', 'Shows confidence in new situations', 'Demonstrates resilience after setbacks', 'Expresses feelings using words'],
+    GrossMotor:   ['Hops on one foot', 'Catches a small ball', 'Skips with alternating feet', 'Rides a bicycle with training wheels'],
+    FineMotor:    ['Writes letters with guidance', 'Cuts along curved lines', 'Colours within boundaries', 'Folds paper into simple shapes'],
+    Creativity:   ['Creates detailed drawings with story', 'Engages in imaginative play scenarios', 'Composes simple songs or rhymes', 'Uses art to express ideas'],
+    Participation:['Listens attentively during lessons', 'Completes tasks independently', 'Asks relevant questions', 'Contributes ideas in group activities'],
+    Peer:         ['Maintains friendships over time', 'Supports peers who need help', 'Resolves conflicts independently', 'Shows leadership in group activities'],
+    Behaviour:    ['Follows multi-step instructions', 'Takes responsibility for belongings', 'Shows self-discipline during activities', 'Demonstrates respect for classroom rules'],
+    Other:        ['Recognises and writes own name', 'Identifies numbers 1–20', 'Reads simple CVC words'],
+  },
+  ukg: {
+    Cognitive:    ['Solves simple word problems', 'Reads simple sentences independently', 'Demonstrates logical reasoning', 'Applies learning to new situations'],
+    Language:     ['Reads simple books with fluency', 'Writes simple sentences', 'Communicates ideas clearly in group', 'Uses descriptive language effectively'],
+    Social:       ['Collaborates effectively in team tasks', 'Shows leadership and initiative', 'Demonstrates empathy and inclusion', 'Resolves peer conflicts constructively'],
+    Emotional:    ['Demonstrates strong self-regulation', 'Shows confidence in public speaking', 'Handles disappointment maturely', 'Motivates peers positively'],
+    GrossMotor:   ['Demonstrates good balance and coordination', 'Participates actively in sports', 'Shows agility in physical activities', 'Follows rules in team games'],
+    FineMotor:    ['Writes legibly with correct grip', 'Draws detailed pictures with proportion', 'Uses scissors with precision', 'Completes craft projects neatly'],
+    Creativity:   ['Creates original stories and artwork', 'Performs confidently in class presentations', 'Shows innovation in problem-solving', 'Expresses creativity across subjects'],
+    Participation:['Leads group discussions', 'Completes all tasks on time', 'Shows enthusiasm for learning', 'Asks insightful questions'],
+    Peer:         ['Mentors younger or struggling peers', 'Builds positive relationships across groups', 'Shows fairness and sportsmanship', 'Celebrates peers\' achievements'],
+    Behaviour:    ['Consistently follows school values', 'Takes initiative without prompting', 'Shows accountability for actions', 'Models positive behaviour for peers'],
+    Other:        ['Reads chapter books independently', 'Solves 2-digit addition and subtraction', 'Demonstrates school readiness skills'],
+  },
+};
+
+// Map class name to suggestion tier
+function getClassTier(classLevel: string): string {
+  const cl = classLevel.toLowerCase();
+  if (cl.includes('ukg') || cl.includes('upper kg') || cl.includes('kg 2') || cl.includes('sr kg') || cl.includes('senior kg')) return 'ukg';
+  if (cl.includes('lkg') || cl.includes('lower kg') || cl.includes('kg 1') || cl.includes('jr kg') || cl.includes('junior kg')) return 'lkg';
+  if (cl.includes('nursery') || cl.includes('nur')) return 'nursery';
+  return 'playgroup'; // play group, toddler, etc.
+}
+
+const DOMAINS = SKILL_DOMAINS.map(d => d.key);
 const TERMS = ['Term 1', 'Term 2', 'Term 3', 'Annual'];
 
 // ── Milestone Achievement Modal ───────────────────────────────────────────────
@@ -121,7 +203,27 @@ function MilestoneFormModal({ classLevel, existing, token, onClose, onSaved }: {
   const [domain, setDomain] = useState(existing?.domain || 'Cognitive');
   const [term, setTerm] = useState(existing?.term || '');
   const [saving, setSaving] = useState(false);
+  const [formatting, setFormatting] = useState(false);
   const [error, setError] = useState('');
+
+  const tier = getClassTier(classLevel);
+  const suggestions = CLASS_SUGGESTIONS[tier]?.[domain] ?? [];
+  const domainInfo = SKILL_DOMAINS.find(d => d.key === domain);
+
+  async function formatWithOakie() {
+    if (!description.trim()) return;
+    setFormatting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/ai/format-observation`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: description, category: domainInfo?.label || domain, student_name: '' }),
+      });
+      const data = await res.json();
+      if (data.formatted) setDescription(data.formatted);
+    } catch { /* silently fail */ }
+    finally { setFormatting(false); }
+  }
 
   async function save() {
     if (!description.trim()) { setError('Description is required'); return; }
@@ -147,33 +249,70 @@ function MilestoneFormModal({ classLevel, existing, token, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="relative w-full lg:w-[480px] bg-white rounded-t-3xl lg:rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 bg-indigo-50 border-b border-indigo-100">
-          <p className="text-sm font-bold text-neutral-800">{existing ? 'Edit Milestone' : 'Add Custom Milestone'}</p>
+      <div className="relative w-full lg:w-[520px] bg-white rounded-t-3xl lg:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 bg-indigo-50 border-b border-indigo-100 shrink-0">
+          <div>
+            <p className="text-sm font-bold text-neutral-800">{existing ? 'Edit Milestone' : 'Add Custom Milestone'}</p>
+            <p className="text-xs text-neutral-500 mt-0.5">{classLevel}</p>
+          </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500"><X size={16} /></button>
         </div>
-        <div className="px-5 py-4 space-y-4">
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
           {!existing && (
             <div>
-              <label className="text-xs font-semibold text-neutral-600 mb-1.5 block">Domain</label>
-              <div className="flex flex-wrap gap-2">
-                {DOMAINS.map(d => (
-                  <button key={d} onClick={() => setDomain(d)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${domain === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-neutral-200 text-neutral-600 hover:border-indigo-300'}`}>
-                    {DOMAIN_ICONS[d]} {d}
+              <label className="text-xs font-semibold text-neutral-600 mb-2 block">Skill Domain</label>
+              <div className="flex flex-wrap gap-1.5">
+                {SKILL_DOMAINS.map(d => (
+                  <button key={d.key} onClick={() => setDomain(d.key)}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
+                      domain === d.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-neutral-200 text-neutral-600 hover:border-indigo-300'
+                    }`}>
+                    <span>{d.icon}</span> {d.label}
                   </button>
                 ))}
               </div>
             </div>
           )}
+
+          {/* Class-level suggestions */}
+          {!existing && suggestions.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-neutral-500 mb-2 flex items-center gap-1.5">
+                <Sparkles size={11} className="text-indigo-400" />
+                Suggestions for {classLevel} — {domainInfo?.label}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestions.map((s, i) => (
+                  <button key={i} onClick={() => setDescription(s)}
+                    className={`text-xs px-2.5 py-1.5 rounded-full border transition-all text-left ${
+                      description === s
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-semibold'
+                        : 'border-neutral-200 text-neutral-600 hover:border-indigo-300 hover:bg-indigo-50'
+                    }`}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
-            <label className="text-xs font-semibold text-neutral-600 mb-1.5 block">Milestone Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value.slice(0, 200))}
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-neutral-600">Milestone Description</label>
+              <button onClick={formatWithOakie} disabled={formatting || !description.trim()}
+                className="flex items-center gap-1 text-[11px] px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-medium transition-colors disabled:opacity-40">
+                {formatting ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                Ask Oakie
+              </button>
+            </div>
+            <textarea value={description} onChange={e => setDescription(e.target.value)}
               placeholder="e.g. Can write their full name independently"
               rows={3} autoFocus
               className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 resize-none" />
-            <p className="text-xs text-neutral-400 mt-1">{description.length}/200</p>
+            <p className="text-xs text-neutral-400 mt-1">{description.length} chars</p>
           </div>
+
           <div>
             <label className="text-xs font-semibold text-neutral-600 mb-1.5 block">Term <span className="text-neutral-400 font-normal">(optional)</span></label>
             <div className="flex flex-wrap gap-2">
@@ -189,9 +328,11 @@ function MilestoneFormModal({ classLevel, existing, token, onClose, onSaved }: {
               ))}
             </div>
           </div>
+
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
         </div>
-        <div className="px-5 pb-5 flex gap-3">
+
+        <div className="px-5 pb-5 pt-3 flex gap-3 border-t border-neutral-100 shrink-0">
           <button onClick={onClose} className="flex-1 py-2.5 border border-neutral-200 rounded-xl text-sm text-neutral-600 hover:bg-neutral-50">Cancel</button>
           <button onClick={save} disabled={saving || !description.trim()}
             className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl disabled:opacity-40 flex items-center justify-center gap-2">
