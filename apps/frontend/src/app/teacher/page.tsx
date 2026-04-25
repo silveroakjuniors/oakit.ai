@@ -183,7 +183,7 @@ export default function TeacherPlanner() {
   const [inlineSubmitting, setInlineSubmitting] = useState<string | null>(null);
   const [inlineMsg, setInlineMsg] = useState<Record<string, string>>({});
   const [exporting, setExporting] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('chat');
+  const [activeTab, setActiveTab] = useState<Tab>('plan');
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
   const [className, setClassName] = useState('');
   const [planVideos, setPlanVideos] = useState<{ topic: string; videoId: string; title: string }[]>([]);
