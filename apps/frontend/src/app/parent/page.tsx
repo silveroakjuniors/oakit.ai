@@ -2843,7 +2843,7 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
   const catIcons: Record<string, string> = {
     'English & Language': 'EN', 'Math & Numbers': 'MA', 'Art & Craft': 'AR',
     'Science & Nature': 'SC', 'Circle Time & GK': 'GK', 'Fine Motor & Writing': 'FM',
-    'Special Days & Events': '??', 'Other Activities': '?',
+    'Special Days & Events': 'SD', 'Other Activities': 'OT',
   };
 
   // Clean raw "Week X Day Y" labels
@@ -2900,18 +2900,18 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
               <p className="text-sm text-white/60 mt-0.5">{data.covered} of {data.total_chunks} topics completed this term</p>
             ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
             {milestoneData && (
-              <p className="text-xs text-white/50 mt-1">?? {milestoneData.achieved}/{milestoneData.total} milestones � {milestoneData.completion_pct}%</p>
+              <p className="text-xs text-white/50 mt-1">{milestoneData.achieved}/{milestoneData.total} milestones · {milestoneData.completion_pct}%</p>
             )}
             {termData && (
               <div className="mt-1 space-y-0.5">
                 {(termData as any).settling_days > 0 && (
-                  <p className="text-xs text-white/50">?? {(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed</p>
+                  <p className="text-xs text-white/50">{(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed</p>
                 )}
                 {(termData as any).curriculum_days > 0 && (
-                  <p className="text-xs text-white/40">?? {(termData as any).curriculum_days} curriculum day{(termData as any).curriculum_days !== 1 ? 's' : ''} � {termData.completion_days} total school days</p>
+                  <p className="text-xs text-white/40">{(termData as any).curriculum_days} curriculum day{(termData as any).curriculum_days !== 1 ? 's' : ''} · {termData.completion_days} total school days</p>
                 )}
                 {(termData as any).curriculum_days === 0 && termData.completion_days > 0 && (
-                  <p className="text-xs text-white/40">?? {termData.completion_days} school day{termData.completion_days !== 1 ? 's' : ''} completed</p>
+                  <p className="text-xs text-white/40">{termData.completion_days} school day{termData.completion_days !== 1 ? 's' : ''} completed</p>
                 )}
               </div>
             )}
@@ -2954,8 +2954,8 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
       {/* Show settling days count even if no notes */}
       {(termData as any)?.settling_days > 0 && (!termData?.settling_notes || termData.settling_notes.length === 0) && (
         <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
-          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">?? Settling Period</p>
-          <p className="text-sm text-amber-800">{(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed � {activeChild?.name.split(' ')[0]} is getting comfortable in the classroom.</p>
+          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">Settling Period</p>
+          <p className="text-sm text-amber-800">{(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed · {activeChild?.name.split(' ')[0]} is getting comfortable in the classroom.</p>
         </div>
       )}
 
