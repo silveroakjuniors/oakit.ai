@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button, Card, Badge } from '@/UIComponents';
+import { Button, Card, Badge, Alert, GlassCard } from '@/UIComponents';
 import { OakieMessageText } from '@/UIComponents/teacher/OakieMessage';
 import { RawPlanModal } from '@/UIComponents/teacher/RawPlanModal';
 import { TopicsChecklist } from '@/UIComponents/teacher/TopicsChecklist';
@@ -650,78 +650,79 @@ export default function TeacherPlanner() {
       <div className="p-4 flex flex-col gap-3" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
         {/* Attendance alert */}
         {attendancePrompt && (
-          <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 shadow-sm">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                <span className="text-base">📋</span>
-              </div>
-              <p className="text-sm font-semibold text-amber-900">Attendance not marked yet</p>
-            </div>
-            <Button size="sm" onClick={() => router.push('/teacher/attendance')} className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-0 shadow-sm">Mark</Button>
-          </div>
+          <Alert
+            variant="warning"
+            title="Attendance not marked yet"
+            message="Mark attendance before the day gets busy."
+            action={{ label: 'Mark now →', onClick: () => router.push('/teacher/attendance') }}
+          />
         )}
 
         {/* Report readiness reminder */}
         {readinessReminder && (
-          <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-red-50 shadow-sm">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-                <span className="text-base">📋</span>
-              </div>
-              <p className="text-sm font-semibold text-orange-900">
-                {readinessMissCount} student{readinessMissCount > 1 ? 's' : ''} missing term report observations
-              </p>
-            </div>
-            <Button size="sm" onClick={() => router.push('/teacher/journey')} className="shrink-0 bg-orange-500 hover:bg-orange-600 text-white border-0 shadow-sm">Add</Button>
-          </div>
+          <Alert
+            variant="warning"
+            title={`${readinessMissCount} student${readinessMissCount > 1 ? 's' : ''} missing term report observations`}
+            message="Add observations so report cards can be generated."
+            action={{ label: 'Add observations →', onClick: () => router.push('/teacher/journey') }}
+          />
         )}
 
         {/* Today completed */}
         {todayCompleted ? (
           <>
-            <div className="rounded-2xl overflow-hidden shadow-sm border border-primary-200">
-              <div className="bg-gradient-to-br from-primary-600 to-primary-700 px-4 py-4">
+            <GlassCard padding="none" className="overflow-hidden border border-primary-200/60">
+              <div className="bg-gradient-to-br from-primary-600 via-primary-700 to-emerald-700 px-4 py-4">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center">
-                    <span className="text-xl">✅</span>
+                  <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                    <CheckCircle2 className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-white">Today's plan is complete!</p>
+                    <p className="text-sm font-bold text-white">Today's plan complete! 🎉</p>
                     <p className="text-xs text-primary-200">Parents have been notified.</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => router.push('/teacher/homework')}
-                    className="flex-1 py-2.5 text-xs bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition-colors border border-white/20"
+                    className="flex-1 py-2.5 text-xs bg-white/20 hover:bg-white/30 text-white rounded-xl font-semibold transition-colors border border-white/20 backdrop-blur-sm"
                   >
                     📝 Homework & Notes
                   </button>
                   <button
                     onClick={() => router.push('/teacher/journey')}
-                    className="flex-1 py-2.5 text-xs bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition-colors border border-white/15"
+                    className="flex-1 py-2.5 text-xs bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition-colors border border-white/15 backdrop-blur-sm"
                   >
                     📖 Child Journey
                   </button>
                 </div>
               </div>
-            </div>
+            </GlassCard>
             {tomorrowPlan && (
-              <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 shadow-sm">
+              <Card padding="sm" className="border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/80">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-7 h-7 rounded-xl bg-blue-100 flex items-center justify-center">
-                    <span className="text-sm">📅</span>
+                    <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
                   </div>
                   <p className="text-sm font-semibold text-blue-900">Prepare for tomorrow</p>
                 </div>
                 {tomorrowPlan.chunks?.length > 0 ? (
                   <>
-                    {tomorrowPlan.chunks.slice(0, 4).map((c: any, i: number) => (
-                      <div key={i} className="flex items-center gap-2 mb-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                        <p className="text-xs text-blue-800">{c.topic_label || `Topic ${i + 1}`}</p>
-                      </div>
-                    ))}
+                    {tomorrowPlan.chunks.slice(0, 4).map((c: any, i: number) => {
+                      // Strip generic "Week X Day Y" labels — show content-derived subject or a clean fallback
+                      const rawLabel = c.topic_label || '';
+                      const isGeneric = /week\s*\d|day\s*\d/i.test(rawLabel);
+                      const subjectMatch = isGeneric && c.content
+                        ? c.content.match(/^(English Speaking|English|Math(?:ematics)?|GK|General Knowledge|Writing|Art|Music|PE|Science|EVS|Hindi|Circle Time|Morning Meet|Regional Language)/im)
+                        : null;
+                      const displayLabel = subjectMatch ? subjectMatch[1] : (isGeneric ? `Topic ${i + 1}` : rawLabel);
+                      return (
+                        <div key={i} className="flex items-center gap-2 mb-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                          <p className="text-xs text-blue-800">{displayLabel}</p>
+                        </div>
+                      );
+                    })}
                     {tomorrowPlan.chunks.length > 4 && <p className="text-xs text-blue-500 ml-3.5">+{tomorrowPlan.chunks.length - 4} more topics</p>}
                   </>
                 ) : (
@@ -736,7 +737,7 @@ export default function TeacherPlanner() {
                   className="mt-3 flex items-center gap-1.5 text-xs text-blue-700 font-semibold hover:text-blue-900 transition-colors">
                   <Sparkles className="w-3 h-3" /> Ask Oakie about tomorrow
                 </button>
-              </div>
+              </Card>
             )}
           </>
         ) : plan?.chunks?.length ? (
@@ -870,91 +871,47 @@ export default function TeacherPlanner() {
         )}
 
         {/* Quick action cards */}
-        <div className="grid grid-cols-2 gap-2.5 mt-1">
-          <button
-            onClick={() => router.push('/teacher/homework')}
-            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-primary-200 hover:bg-primary-50/30 transition-all shadow-sm group"
-          >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-sm">
-              <BookOpen className="w-4 h-4 text-white" />
-            </div>
-            <div className="text-left">
-              <p className="text-xs font-semibold text-neutral-800 group-hover:text-primary-700 transition-colors">Homework & Notes</p>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Send to parents</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => router.push('/teacher/journey')}
-            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-emerald-200 hover:bg-emerald-50/30 transition-all shadow-sm group"
-          >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-sm">
-              <BookOpen className="w-4 h-4 text-white" />
-            </div>
-            <div className="text-left">
-              <p className="text-xs font-semibold text-neutral-800 group-hover:text-emerald-700 transition-colors">Child Journey</p>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Daily highlights</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => router.push('/teacher/reports')}
-            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-purple-200 hover:bg-purple-50/30 transition-all shadow-sm group"
-          >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-sm">
-              <ClipboardList className="w-4 h-4 text-white" />
-            </div>
-            <div className="text-left">
-              <p className="text-xs font-semibold text-neutral-800 group-hover:text-purple-700 transition-colors">Report Cards</p>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Generate for students</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => router.push('/teacher/feed')}
-            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-pink-200 hover:bg-pink-50/30 transition-all shadow-sm group"
-          >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-sm">
-              <Play className="w-4 h-4 text-white" />
-            </div>
-            <div className="text-left">
-              <p className="text-xs font-semibold text-neutral-800 group-hover:text-pink-700 transition-colors">Class Feed</p>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Post photos</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => router.push('/teacher/students')}
-            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-violet-200 hover:bg-violet-50/30 transition-all shadow-sm group"
-          >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-sm">
-              <Users className="w-4 h-4 text-white" />
-            </div>
-            <div className="text-left">
-              <p className="text-xs font-semibold text-neutral-800 group-hover:text-violet-700 transition-colors">Students</p>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Profiles & milestones</p>
-            </div>
-          </button>
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          {[
+            { label: 'Homework & Notes', sub: 'Send to parents', icon: BookOpen, gradient: 'from-primary-500 to-primary-700', hover: 'hover:border-primary-200 hover:bg-primary-50/40', path: '/teacher/homework' },
+            { label: 'Child Journey', sub: 'Daily highlights', icon: BookOpen, gradient: 'from-emerald-500 to-teal-600', hover: 'hover:border-emerald-200 hover:bg-emerald-50/40', path: '/teacher/journey' },
+            { label: 'Report Cards', sub: 'Generate for students', icon: ClipboardList, gradient: 'from-purple-500 to-indigo-600', hover: 'hover:border-purple-200 hover:bg-purple-50/40', path: '/teacher/reports' },
+            { label: 'Class Feed', sub: 'Post photos', icon: Play, gradient: 'from-pink-500 to-rose-600', hover: 'hover:border-pink-200 hover:bg-pink-50/40', path: '/teacher/feed' },
+            { label: 'Students', sub: 'Profiles & milestones', icon: Users, gradient: 'from-violet-500 to-purple-600', hover: 'hover:border-violet-200 hover:bg-violet-50/40', path: '/teacher/students' },
+          ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
+            <button key={path} onClick={() => router.push(path)}
+              className={`flex items-center gap-3 p-3.5 bg-white border border-neutral-100 rounded-2xl transition-all shadow-sm group ${hover}`}>
+              <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm shrink-0`}>
+                <Icon className="w-4 h-4 text-white" />
+              </div>
+              <div className="text-left min-w-0">
+                <p className="text-xs font-semibold text-neutral-800 truncate">{label}</p>
+                <p className="text-[10px] text-neutral-400 mt-0.5">{sub}</p>
+              </div>
+            </button>
+          ))}
         </div>
 
         {/* Pending work */}
         {pendingWork.length > 0 && (
-          <div className="mt-1">
-            <div className="flex items-center gap-2 mb-2">
-              <Clock className="w-4 h-4 text-amber-500" />
-              <h2 className="text-sm font-semibold text-neutral-800">Pending from previous days</h2>
+          <Card padding="sm" className="mt-1">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-7 h-7 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-neutral-800 flex-1">Pending from previous days</h2>
               <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{pendingWork.reduce((s, d) => s + d.chunks.length, 0)}</span>
             </div>
             <PendingWorkList items={pendingWork} selectedChunks={selectedChunks} onToggleChunk={toggleChunk} />
             {selectedChunks.length > 0 && (
-              <div className="mt-2">
+              <div className="mt-3 pt-3 border-t border-neutral-100">
                 {completionMsg && <p className="text-xs text-primary-600 mb-2 font-medium">{completionMsg}</p>}
                 <Button size="sm" onClick={submitCompletion} loading={submittingCompletion} className="w-full">
                   Mark {selectedChunks.length} as Covered
                 </Button>
               </div>
             )}
-          </div>
+          </Card>
         )}
       </div>
   );

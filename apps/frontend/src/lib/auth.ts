@@ -1,5 +1,7 @@
 'use client';
 
+import { API_BASE } from './api';
+
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('oakit_token');
@@ -53,7 +55,27 @@ export function getRoleRedirect(role: string): string {
   if (['teacher', 'class teacher', 'supporting teacher'].includes(r)) return '/teacher';
   if (r === 'parent') return '/parent';
   if (r === 'super_admin') return '/super-admin';
-  if (r === 'finance_manager') return '/admin'; // accountant uses admin portal
-  // Any unrecognised role — fall back to login so they don't get stuck
+  if (r === 'finance_manager') return '/admin';
   return '/login';
+}
+
+// Proper sign-out: calls logout API, clears local state, broadcasts to other tabs
+export async function signOut(): Promise<void> {
+  const token = getToken();
+  // Call logout API to invalidate session on server
+  if (token) {
+    try {
+      await fetch(`${API_BASE}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* ignore network errors — still clear locally */ }
+  }
+  clearToken();
+  // Broadcast logout to all other tabs
+  try {
+    const bc = new BroadcastChannel('oakit_session');
+    bc.postMessage({ type: 'LOGOUT' });
+    bc.close();
+  } catch { /* BroadcastChannel not supported */ }
 }
