@@ -89,7 +89,7 @@ function ChildJourneyParentPage() {
 
     // Load snapshot once (cached per day)
     setSnapshotLoading(true);
-    apiGet<Snapshot>(`/api/v1/parent/child-journey/${studentId}/snapshot`, token)
+    apiGet<Snapshot>(`/api/v1/parent/child-journey/parent/${studentId}/snapshot`, token)
       .then(setSnapshot).catch(() => {}).finally(() => setSnapshotLoading(false));
   }, [studentId]);
 
@@ -98,7 +98,7 @@ function ChildJourneyParentPage() {
     setLoading(true);
     try {
       const d = await apiGet<JourneyData>(
-        `/api/v1/parent/child-journey/${studentId}?from=${from}&to=${to}`,
+        `/api/v1/parent/child-journey/parent/${studentId}?from=${from}&to=${to}`,
         token
       );
       setData(d);

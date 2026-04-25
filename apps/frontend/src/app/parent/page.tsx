@@ -302,6 +302,7 @@ export default function ParentPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [classFeed, setClassFeed] = useState<any[]>([]);
   const [schoolInstagram, setSchoolInstagram] = useState<string>('');
+  const [schoolTranslationEnabled, setSchoolTranslationEnabled] = useState<boolean>(true);
   const [invoice, setInvoice] = useState<any | null>(null);
   const [parentProfile, setParentProfile] = useState<{ name: string; mobile: string } | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -429,7 +430,7 @@ export default function ParentPage() {
           const mapped = rows.map(r => ({ id: r.id, name: r.name, relation: r.relationship || r.relation || '', phone: r.phone, priority: (r.is_primary ? 1 : 2) as 1 | 2 | 3, available: true }));
           setEmergencyContacts(mapped);
           if (settings) {
-            if (settings.notification_prefs) setNotificationPrefs(settings.notification_prefs);
+            if (settings.notification_prefs) setNotificationPrefs(Array.isArray(settings.notification_prefs) ? settings.notification_prefs : []);
             if (typeof settings.calendar_sync === 'boolean') setCalendarSyncEnabled(settings.calendar_sync);
             if (typeof settings.assistant_reminders === 'boolean') setAssistantReminders(settings.assistant_reminders);
             if (settings.translation_settings) setTranslationSettings(settings.translation_settings);
@@ -521,9 +522,12 @@ export default function ParentPage() {
       const att = attRes.status === 'fulfilled' ? attRes.value : null;
       const prog = progRes.status === 'fulfilled' ? (progRes.value.find(p => p.student_id === childId) ?? null) : null;
       setCache(prev => ({ ...prev, [childId]: { feed, attendance: att, progress: prog } }));
-      // Capture instagram handle from feed response
+      // Capture instagram handle and translation flag from feed response
       if (feed && (feed as any).instagram_handle) {
         setSchoolInstagram((feed as any).instagram_handle);
+      }
+      if (feed && typeof (feed as any).translation_enabled === 'boolean') {
+        setSchoolTranslationEnabled((feed as any).translation_enabled);
       }
       // Load class feed and invoice in background
       // Use passed childList (from init) or fall back to state
@@ -880,7 +884,7 @@ export default function ParentPage() {
                   {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
                   {tab === 'fees' && <FeesTab invoice={invoice} activeChild={activeChild} token={token} />}
                   {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} />}
-                  {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} />}
+                  {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} translationEnabled={schoolTranslationEnabled} />}
                   {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
                   {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} token={token} />}
                 </div>
@@ -3048,7 +3052,7 @@ function InsightsTab({ insights, comparisons, activeChild, token }: { insights: 
   );
 }
 
-function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEvents, calendarSyncEnabled, assistantReminders, translationSettings, onEmergencyContactsChange, onNotificationPrefsChange, onCalendarSyncChange, onAssistantRemindersChange, onTranslationSettingsChange }: {
+function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEvents, calendarSyncEnabled, assistantReminders, translationSettings, onEmergencyContactsChange, onNotificationPrefsChange, onCalendarSyncChange, onAssistantRemindersChange, onTranslationSettingsChange, translationEnabled }: {
   emergencyContacts: EmergencyContact[];
   notificationPrefs: NotificationPreference[];
   calendarEvents: CalendarEvent[];
@@ -3060,6 +3064,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
   onCalendarSyncChange: (enabled: boolean) => void;
   onAssistantRemindersChange: (enabled: boolean) => void;
   onTranslationSettingsChange: (settings: TranslationSettings) => void;
+  translationEnabled: boolean;
   token: string;
 }) {
   const { t } = useTranslation();
@@ -3077,8 +3082,8 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
   const [editPriority, setEditPriority] = useState<number>(2);
   const [editSaving, setEditSaving] = useState(false);
 
-  const [localPrefs, setLocalPrefs] = useState<NotificationPreference[]>(notificationPrefs);
-  useEffect(() => setLocalPrefs(notificationPrefs), [notificationPrefs]);
+  const [localPrefs, setLocalPrefs] = useState<NotificationPreference[]>(Array.isArray(notificationPrefs) ? notificationPrefs : []);
+  useEffect(() => setLocalPrefs(Array.isArray(notificationPrefs) ? notificationPrefs : []), [notificationPrefs]);
 
   const languageNames: Record<string, string> = {
     en: 'English',
@@ -3321,38 +3326,91 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
         </div>
       )}
 
-      {/* Translation Section — Paid Feature */}
+      {/* Translation Section */}
       {activeSection === 'translation' && (
         <div className="bg-white rounded-2xl p-6 border border-neutral-100 shadow-sm">
           <div className="flex items-center gap-3 mb-2">
-            <Zap className="w-6 h-6 text-indigo-600" />
-            <h2 className="text-xl font-bold text-neutral-800">Translation</h2>
-            <span className="ml-auto text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Premium</span>
+            <Globe className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-xl font-bold text-neutral-800">Language & Translation</h2>
           </div>
-          <p className="text-sm text-neutral-500 mb-6">Translate the parent portal into your local language — Hindi, Telugu, Tamil, Kannada and more.</p>
+          <p className="text-sm text-neutral-500 mb-6">Choose your preferred language for the parent portal.</p>
 
-          {/* Paid feature gate */}
-          <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 p-6 flex flex-col items-center text-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center">
-              <Globe className="w-7 h-7 text-indigo-500" />
+          {!translationEnabled ? (
+            /* School has disabled translation */
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-6 text-center">
+              <Globe className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-neutral-600 mb-1">Translation not available</p>
+              <p className="text-xs text-neutral-400">Your school has not enabled multilingual support. Contact your school admin for more information.</p>
             </div>
-            <p className="font-bold text-neutral-800 text-base">Multilingual Support</p>
-            <p className="text-sm text-neutral-500 max-w-xs leading-relaxed">
-              Read homework, updates, and announcements in your preferred language. Supports 10 Indian languages.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2 my-1">
-              {['हिंदी', 'తెలుగు', 'தமிழ்', 'ಕನ್ನಡ', 'മലയാളം', 'ગુજરાતી', 'বাংলা', 'मराठी'].map(lang => (
-                <span key={lang} className="text-xs px-2.5 py-1 rounded-full bg-white border border-indigo-200 text-indigo-700 font-medium">{lang}</span>
-              ))}
+          ) : (
+            <div className="space-y-5">
+              {/* Enable toggle */}
+              <div className="flex items-center justify-between px-4 py-3 bg-neutral-50 rounded-xl border border-neutral-100">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-800">Enable Translation</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">Translate portal content to your language</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    const next = { ...translationSettings, enabled: !translationSettings.enabled };
+                    onTranslationSettingsChange(next);
+                    await apiPut('/api/v1/parent/settings', { translation_settings: next }, token).catch(() => {});
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${translationSettings.enabled ? 'bg-indigo-600' : 'bg-neutral-200'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${translationSettings.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* Language picker — only shown when enabled */}
+              {translationSettings.enabled && (
+                <div>
+                  <p className="text-xs font-semibold text-neutral-600 mb-3">Select Language</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { code: 'en', label: 'English', native: 'English' },
+                      { code: 'hi', label: 'Hindi', native: 'हिंदी' },
+                      { code: 'te', label: 'Telugu', native: 'తెలుగు' },
+                      { code: 'ta', label: 'Tamil', native: 'தமிழ்' },
+                      { code: 'kn', label: 'Kannada', native: 'ಕನ್ನಡ' },
+                      { code: 'ml', label: 'Malayalam', native: 'മലയാളം' },
+                      { code: 'gu', label: 'Gujarati', native: 'ગુજરાતી' },
+                      { code: 'bn', label: 'Bengali', native: 'বাংলা' },
+                      { code: 'mr', label: 'Marathi', native: 'मराठी' },
+                      { code: 'pa', label: 'Punjabi', native: 'ਪੰਜਾਬੀ' },
+                    ].map(lang => {
+                      const selected = translationSettings.targetLanguage === lang.code;
+                      return (
+                        <button
+                          key={lang.code}
+                          onClick={async () => {
+                            const next = { ...translationSettings, targetLanguage: lang.code };
+                            onTranslationSettingsChange(next);
+                            await apiPut('/api/v1/parent/settings', { translation_settings: next }, token).catch(() => {});
+                          }}
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all ${
+                            selected
+                              ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                              : 'bg-white border-neutral-200 text-neutral-700 hover:border-indigo-200'
+                          }`}
+                        >
+                          <span className="text-lg leading-none">{lang.native}</span>
+                          <div>
+                            <p className={`text-xs font-semibold ${selected ? 'text-indigo-700' : 'text-neutral-700'}`}>{lang.label}</p>
+                            {selected && <p className="text-[10px] text-indigo-500">Active</p>}
+                          </div>
+                          {selected && <span className="ml-auto text-indigo-500 text-sm">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-3">
+                    Note: Translation applies to UI labels. Homework and teacher notes are shown in the original language.
+                  </p>
+                </div>
+              )}
             </div>
-            <div className="w-full bg-white border border-indigo-200 rounded-xl p-4 mt-1">
-              <p className="text-xs font-semibold text-neutral-600 mb-1">Coming soon — Subscription required</p>
-              <p className="text-xs text-neutral-400">Payment integration is being set up. You'll be notified when this feature is available for purchase.</p>
-            </div>
-            <button disabled className="w-full py-3 bg-indigo-600 text-white rounded-xl font-semibold text-sm opacity-50 cursor-not-allowed flex items-center justify-center gap-2">
-              <Zap size={16} /> Unlock Translation — Coming Soon
-            </button>
-          </div>
+          )}
         </div>
       )}
     </div>

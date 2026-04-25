@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard } from '../../middleware/auth';
+import { getToday } from '../../lib/today';
 
 const router = Router();
 router.use(jwtVerify, schoolScope);
@@ -32,18 +33,19 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
 
     // Beautify with AI
     let beautified_text = raw_text;
+    const today = await getToday(school_id);
     try {
       const aiResp = await axios.post(`${AI_SERVICE_URL()}/internal/beautify-child-journey`, {
         raw_text,
         student_name: student.name,
         class_level: student.class_name,
         entry_type,
-        entry_date: entry_date || new Date().toISOString().split('T')[0],
+        entry_date: entry_date || today,
       }, { timeout: 15000 });
       beautified_text = aiResp.data.beautified_text || raw_text;
     } catch { /* fallback to raw */ }
 
-    const date = entry_date || new Date().toISOString().split('T')[0];
+    const date = entry_date || today;
 
     // Upsert ÔÇö one entry per student per date per type
     const r = await pool.query(
@@ -119,9 +121,9 @@ router.get('/parent/:studentId/snapshot', async (req: Request, res: Response) =>
     }
     const student = accessCheck.rows[0];
 
-    // Cache key: per student per calendar date
+    // Cache key: per student per calendar date (time-machine aware)
     const { redis } = await import('../../lib/redis');
-    const today = new Date().toISOString().split('T')[0];
+    const today = await getToday(school_id);
     const cacheKey = `snapshot:${studentId}:${today}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
@@ -139,14 +141,14 @@ router.get('/parent/:studentId/snapshot', async (req: Request, res: Response) =>
       ageText = y > 0 ? `${y} year${y > 1 ? 's' : ''}${m > 0 ? ` and ${m} month${m > 1 ? 's' : ''}` : ''}` : `${m} month${m > 1 ? 's' : ''}`;
     }
 
-    // Get recent journey entries (last 14 days)
+    // Get recent journey entries (last 14 days relative to mocked today)
     const entriesRow = await pool.query(
       `SELECT entry_type, beautified_text, entry_date
        FROM child_journey_entries
        WHERE student_id = $1 AND school_id = $2
-         AND entry_date >= CURRENT_DATE - 14
+         AND entry_date >= $3::date - 14
        ORDER BY entry_date DESC LIMIT 5`,
-      [studentId, school_id]
+      [studentId, school_id, today]
     );
 
     // Get class info
@@ -158,13 +160,13 @@ router.get('/parent/:studentId/snapshot', async (req: Request, res: Response) =>
     );
     const className = classRow.rows[0]?.class_name || 'preschool';
 
-    // Get attendance this month
+    // Get attendance this month (relative to mocked today)
     const attRow = await pool.query(
       `SELECT COUNT(*) FILTER (WHERE status='present')::int as present,
               COUNT(*) FILTER (WHERE status='absent')::int as absent
        FROM attendance_records
-       WHERE student_id = $1 AND attend_date >= date_trunc('month', CURRENT_DATE)`,
-      [studentId]
+       WHERE student_id = $1 AND attend_date >= date_trunc('month', $2::date)`,
+      [studentId, today]
     );
     const att = attRow.rows[0];
 

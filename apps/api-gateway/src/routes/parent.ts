@@ -202,7 +202,7 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
 
     // School instagram handle for social sharing
     const igRow = await pool.query(
-      `SELECT instagram_handle FROM school_settings WHERE school_id = $1`,
+      `SELECT instagram_handle, COALESCE(translation_enabled, true) as translation_enabled FROM school_settings WHERE school_id = $1`,
       [school_id]
     ).catch(() => ({ rows: [] }));
 
@@ -218,6 +218,7 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
       homework: hwRow.rows[0] || null,
       notes: notesRow.rows,
       instagram_handle: igRow.rows[0]?.instagram_handle ?? '',
+      translation_enabled: igRow.rows[0]?.translation_enabled ?? true,
     });
   } catch (err) {
     console.error(err);
