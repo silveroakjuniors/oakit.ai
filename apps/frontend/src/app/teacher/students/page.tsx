@@ -470,6 +470,37 @@ function MilestoneFormModal({ classLevel, existing, token, onClose, onSaved }: {
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+          {/* ── Tips panel (new milestones only) ── */}
+          {!existing && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3">
+              <p className="text-xs font-bold text-indigo-700 uppercase tracking-widest">How milestones work</p>
+              <div className="space-y-2.5 text-xs text-indigo-800 leading-relaxed">
+                <div className="flex gap-2">
+                  <span className="shrink-0 font-bold text-indigo-500">1.</span>
+                  <p><span className="font-semibold">Applies to the whole class.</span> A milestone you create here is assigned to every student in this section — not just the child you're viewing.</p>
+                </div>
+                <div className="flex gap-2">
+                  <span className="shrink-0 font-bold text-indigo-500">2.</span>
+                  <p><span className="font-semibold">Use [Student's Name] as a placeholder.</span> Write <code className="bg-white/70 px-1 py-0.5 rounded font-mono text-[11px]">[Student's Name]</code> in the description — it will automatically be replaced with each child's first name when parents view it. Example: <em>"[Student's Name] can recite the alphabet independently."</em></p>
+                </div>
+                <div className="flex gap-2">
+                  <span className="shrink-0 font-bold text-indigo-500">3.</span>
+                  <p><span className="font-semibold">Tag a term.</span> Use Term 1 / Term 2 / Term 3 to indicate when this milestone should be achieved. This helps you filter milestones by the current term and plan your teaching.</p>
+                </div>
+                <div className="flex gap-2">
+                  <span className="shrink-0 font-bold text-indigo-500">4.</span>
+                  <p><span className="font-semibold">Use Ask Oakie to polish your description.</span> Type a rough note and tap Ask Oakie — it will rewrite it into a warm, professional milestone statement suitable for a school report.</p>
+                </div>
+                <div className="flex gap-2">
+                  <span className="shrink-0 font-bold text-indigo-500">5.</span>
+                  <p><span className="font-semibold">Parents can add home practice notes.</span> Once a milestone is visible to parents, they can record how their child is practising it at home — you'll see their notes alongside the milestone.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Skill Domain ── */}
           {!existing && (
             <div>
               <label className="text-xs font-semibold text-neutral-600 mb-2 block">Skill Domain</label>
