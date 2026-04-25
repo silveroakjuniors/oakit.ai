@@ -2361,7 +2361,7 @@ function MilestonesTab({ activeChild, token }: { activeChild: Child | null; toke
             <div className="flex items-center justify-between px-5 py-4 bg-emerald-50 border-b border-emerald-100">
               <div>
                 <p className="text-sm font-bold text-neutral-800">Add Progress Note</p>
-                <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{noteModal.description}</p>
+                <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{noteModal.description.replace(/\[Student'?s? ?Name\]/gi, childFirst)}</p>
               </div>
               <button onClick={() => { setNoteModal(null); setNoteText(''); setNoteMsg(''); }}
                 className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500">
@@ -2470,7 +2470,7 @@ function MilestonesTab({ activeChild, token }: { activeChild: Child | null; toke
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm leading-snug ${isAchieved ? 'text-gray-600 line-through decoration-emerald-400' : 'text-gray-800 font-medium'}`}>
-                          {m.description}
+                          {m.description.replace(/\[Student'?s? ?Name\]/gi, childFirst)}
                         </p>
                         {m.term && (
                           <span className="inline-block mt-1 text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{m.term}</span>

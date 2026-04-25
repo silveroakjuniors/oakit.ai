@@ -6,6 +6,7 @@ import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, signOut } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
 import { X, Loader2, Sparkles, CheckCircle2, Plus, Pencil, Trash2, Wand2 } from 'lucide-react';
+import InlineMicButton from '@/components/InlineMicButton';
 
 interface Student { id: string; name: string; class_name: string; section_label: string; photo_url?: string; }
 interface Section { section_id: string; section_label: string; class_name: string; role: string; }
@@ -337,7 +338,7 @@ function MilestoneAchieveModal({ milestone, student, token, onClose, onSaved }: 
         body: JSON.stringify({
           text: comment,
           student_name: student.name,
-          category: milestone.description,   // milestone description as context
+          category: milestone.description.replace(/\[Student'?s? ?Name\]/gi, student.name.split(' ')[0]),
           class_name: '',
         }),
       });
@@ -367,7 +368,7 @@ function MilestoneAchieveModal({ milestone, student, token, onClose, onSaved }: 
         <div className="flex items-center justify-between px-5 py-4 bg-emerald-50 border-b border-emerald-100">
           <div>
             <p className="text-sm font-bold text-neutral-800">Mark as Achieved</p>
-            <p className="text-xs text-neutral-500">{milestone.description}</p>
+            <p className="text-xs text-neutral-500">{milestone.description.replace(/\[Student'?s? ?Name\]/gi, student.name.split(' ')[0])}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500"><X size={16} /></button>
         </div>
@@ -381,10 +382,13 @@ function MilestoneAchieveModal({ milestone, student, token, onClose, onSaved }: 
                 Ask Oakie
               </button>
             </div>
-            <textarea value={comment} onChange={e => setComment(e.target.value.slice(0, 400))}
-              placeholder={`e.g. ${student.name.split(' ')[0]} demonstrated this during circle time by...`}
-              rows={4} autoFocus
-              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none" />
+            <div className="flex gap-2 items-start">
+              <textarea value={comment} onChange={e => setComment(e.target.value.slice(0, 400))}
+                placeholder={`e.g. ${student.name.split(' ')[0]} demonstrated this during circle time by...`}
+                rows={4} autoFocus
+                className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none" />
+              <InlineMicButton token={token} onTranscript={t => setComment(prev => prev ? prev + ' ' + t : t)} />
+            </div>
             <p className="text-xs text-neutral-400 mt-1">{comment.length}/400</p>
           </div>
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
@@ -513,10 +517,13 @@ function MilestoneFormModal({ classLevel, existing, token, onClose, onSaved }: {
                 Ask Oakie
               </button>
             </div>
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
-              placeholder="e.g. Can write their full name independently"
-              rows={3} autoFocus
-              className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 resize-none" />
+            <div className="flex gap-2 items-start">
+              <textarea value={description} onChange={e => setDescription(e.target.value)}
+                placeholder="e.g. Can write their full name independently"
+                rows={3} autoFocus
+                className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 resize-none" />
+              <InlineMicButton token={token} onTranscript={t => setDescription(prev => prev ? prev + ' ' + t : t)} />
+            </div>
             <p className="text-xs text-neutral-400 mt-1">{description.length} chars</p>
           </div>
 
@@ -589,6 +596,7 @@ export default function TeacherStudentsPage() {
   async function openStudent(student: Student) {
     setActiveStudent(student);
     setStudentTab('observations');
+    setAchieveModal(null); // clear any stale milestone modal from a previous student
     await Promise.all([loadObservations(student.id), loadMilestones(student.id)]);
   }
 
@@ -831,7 +839,9 @@ export default function TeacherStudentsPage() {
 
                           {/* Content */}
                           <div className="flex-1 min-w-0">
-                            <p className={`text-sm ${isAchieved ? 'text-emerald-700' : 'text-neutral-700'}`}>{m.description}</p>
+                            <p className={`text-sm ${isAchieved ? 'text-emerald-700' : 'text-neutral-700'}`}>
+                              {m.description.replace(/\[Student'?s? ?Name\]/gi, activeStudent.name.split(' ')[0])}
+                            </p>
                             {m.term && <span className="text-[10px] text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded-full mt-0.5 inline-block">{m.term}</span>}
                             {isAchieved && (
                               <div className="mt-1">

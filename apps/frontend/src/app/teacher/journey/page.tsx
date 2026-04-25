@@ -8,6 +8,7 @@ import {
   ChevronLeft, Send, BookOpen, ClipboardList, CheckCircle2, AlertCircle,
   X, Loader2, Sparkles, Users, Wand2,
 } from 'lucide-react';
+import InlineMicButton from '@/components/InlineMicButton';
 
 interface Student { id: string; name: string; }
 interface JourneyEntry {
@@ -410,14 +411,17 @@ export default function ChildJourneyPage() {
                     Ask Oakie
                   </button>
                 </div>
-                <textarea
-                  value={modalText}
-                  onChange={e => setModalText(e.target.value)}
-                  placeholder={`Describe what you observed about ${modalStudent.name.split(' ')[0]}…`}
-                  rows={4}
-                  autoFocus
-                  className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400 resize-none"
-                />
+                <div className="flex gap-2 items-start">
+                  <textarea
+                    value={modalText}
+                    onChange={e => setModalText(e.target.value)}
+                    placeholder={`Describe what you observed about ${modalStudent.name.split(' ')[0]}…`}
+                    rows={4}
+                    autoFocus
+                    className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400 resize-none"
+                  />
+                  <InlineMicButton token={token} onTranscript={t => setModalText(prev => prev ? prev + ' ' + t : t)} />
+                </div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-xs text-neutral-400">{modalText.length} chars</span>
                   {modalText.length > 0 && (
@@ -538,16 +542,22 @@ export default function ChildJourneyPage() {
                       </button>
                     </div>
                     <div className="px-3 py-2">
-                      <textarea
-                        value={bulkTexts[student.id] || ''}
-                        rows={2}
-                        onChange={e => {
-                          setBulkTexts(prev => ({ ...prev, [student.id]: e.target.value }));
+                      <div className="flex gap-2 items-start">
+                        <textarea
+                          value={bulkTexts[student.id] || ''}
+                          rows={2}
+                          onChange={e => {
+                            setBulkTexts(prev => ({ ...prev, [student.id]: e.target.value }));
+                            if (bulkFormatted[student.id]) setBulkFormatted(prev => ({ ...prev, [student.id]: false }));
+                          }}
+                          placeholder={`Note for ${student.name.split(' ')[0]}…`}
+                          className="flex-1 px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white resize-none"
+                        />
+                        <InlineMicButton token={token} onTranscript={t => {
+                          setBulkTexts(prev => ({ ...prev, [student.id]: (prev[student.id] ? prev[student.id] + ' ' : '') + t }));
                           if (bulkFormatted[student.id]) setBulkFormatted(prev => ({ ...prev, [student.id]: false }));
-                        }}
-                        placeholder={`Note for ${student.name.split(' ')[0]}…`}
-                        className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white resize-none"
-                      />
+                        }} />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -585,6 +595,7 @@ export default function ChildJourneyPage() {
                   placeholder="e.g. Great participation in circle time today!"
                   className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 bg-white resize-none"
                 />
+                <InlineMicButton token={token} onTranscript={t => setClassNoteText(prev => prev ? prev + ' ' + t : t)} />
                 <button
                   onClick={formatClassNoteWithOakie}
                   disabled={classNoteFormatting || !classNoteText.trim()}
@@ -781,13 +792,16 @@ export default function ChildJourneyPage() {
                       Ask Oakie
                     </button>
                   </div>
-                  <textarea
-                    value={obsText}
-                    onChange={e => setObsText(e.target.value)}
-                    rows={3}
-                    placeholder={obsCategory ? `e.g. ${REPORT_CATEGORIES.find(c => c.key === obsCategory)?.hint}` : 'Describe what you observed…'}
-                    className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white"
-                  />
+                  <div className="flex gap-2 items-start">
+                    <textarea
+                      value={obsText}
+                      onChange={e => setObsText(e.target.value)}
+                      rows={3}
+                      placeholder={obsCategory ? `e.g. ${REPORT_CATEGORIES.find(c => c.key === obsCategory)?.hint}` : 'Describe what you observed…'}
+                      className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white"
+                    />
+                    <InlineMicButton token={token} onTranscript={t => setObsText(prev => prev ? prev + ' ' + t : t)} />
+                  </div>
                 </div>
 
                 {obsMsg && (

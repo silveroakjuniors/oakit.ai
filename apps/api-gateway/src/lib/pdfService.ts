@@ -64,6 +64,12 @@ export interface OfferLetterData {
   salary_breakdown: { component: string; amount: number }[];
   employment_terms: string;
   school_name: string;
+  signature?: {
+    type: 'typed' | 'drawn';
+    value: string;        // typed name string OR base64 PNG data URL
+    signed_at: Date;
+    signer_name: string;
+  };
 }
 
 export interface ExperienceLetterData {
@@ -94,22 +100,29 @@ const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
 /**
  * Add a branded header to the current page position.
- * TODO: Add logo rendering once logo_url is a reliable local/CDN path.
- *       Currently skipped because logo_url may be a remote URL that requires
- *       async fetching; use school name as text header instead.
+ * When `logoBuffer` is provided the logo image is embedded at the top;
+ * otherwise the school name is rendered as bold text (original behaviour).
  */
 function addBrandedHeader(
   doc: PDFKit.PDFDocument,
   branding: BrandingContext,
   reportTitle?: string,
+  logoBuffer?: Buffer | null,
 ): void {
   const startY = doc.y;
 
-  // School name — bold, 16pt, centered
-  doc
-    .font('Helvetica-Bold')
-    .fontSize(16)
-    .text(branding.school_name, MARGIN, startY, { align: 'center', width: CONTENT_WIDTH });
+  if (logoBuffer) {
+    // Embed logo image, centred, max 80pt tall
+    const logoX = MARGIN + (CONTENT_WIDTH - 120) / 2;
+    doc.image(logoBuffer, logoX, startY, { fit: [120, 80], align: 'center' });
+    doc.y = startY + 88;
+  } else {
+    // School name — bold, 16pt, centered
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(16)
+      .text(branding.school_name, MARGIN, startY, { align: 'center', width: CONTENT_WIDTH });
+  }
 
   // School address — 10pt, gray, centered
   doc
@@ -637,6 +650,161 @@ export async function generateExperienceLetterPDF(
   // Signature block
   doc.font('Helvetica').fontSize(10).text('Authorised Signatory', MARGIN, doc.y);
   doc.text(data.school_name, MARGIN, doc.y + 2);
+
+  doc.end();
+  return bufferPromise;
+}
+
+/**
+ * Generate an offer letter PDF with full branding support.
+ *
+ * Fetches the school logo from `branding.logo_url` (if non-null) and embeds
+ * it in the header. Falls back gracefully to a text header if the fetch fails.
+ * Renders a per-page footer with school name and address.
+ * If `data.signature` is present, appends a signature block at the end.
+ */
+export async function generateOfferLetterPDFWithBranding(
+  data: OfferLetterData,
+  branding: BrandingContext,
+): Promise<Buffer> {
+  // --- Fetch logo -----------------------------------------------------------
+  let logoBuffer: Buffer | null = null;
+  if (branding.logo_url) {
+    try {
+      const response = await fetch(branding.logo_url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      logoBuffer = Buffer.from(arrayBuffer);
+    } catch (err) {
+      console.warn(
+        `[pdfService] Could not fetch logo from ${branding.logo_url}: ${(err as Error).message}. Falling back to text header.`,
+      );
+    }
+  }
+
+  // --- Build document -------------------------------------------------------
+  const doc = new PDFDocument({ margin: MARGIN, size: 'A4', bufferPages: true });
+  const bufferPromise = collectBuffer(doc);
+
+  // Per-page footer: school name + address
+  doc.on('pageAdded', () => {
+    const footerY = doc.page.height - 40;
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor('#888888')
+      .text(
+        `${branding.school_name}  |  ${branding.school_address}`,
+        MARGIN,
+        footerY,
+        { align: 'center', width: CONTENT_WIDTH },
+      );
+    doc.fillColor('#000000');
+  });
+
+  addBrandedHeader(doc, branding, 'Offer Letter', logoBuffer);
+
+  doc.moveDown(0.8);
+
+  const startDateStr = data.start_date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  // Salutation
+  doc.font('Helvetica').fontSize(11).text(`Dear ${data.staff_name},`, MARGIN, doc.y);
+  doc.moveDown(0.5);
+
+  doc.text(
+    `We are pleased to offer you the position of ${data.role} at ${data.school_name}, ` +
+      `effective from ${startDateStr}. Please find the details of your offer below.`,
+    MARGIN,
+    doc.y,
+    { width: CONTENT_WIDTH },
+  );
+
+  doc.moveDown(0.8);
+
+  // Salary breakdown table
+  doc.font('Helvetica-Bold').fontSize(11).text('Compensation Breakdown', MARGIN, doc.y);
+  doc.moveDown(0.3);
+  const salaryRows = data.salary_breakdown.map((s) => [s.component, `₹ ${s.amount.toFixed(2)}`]);
+  addTable(doc, ['Component', 'Amount (per month)'], salaryRows, [
+    CONTENT_WIDTH * 0.65,
+    CONTENT_WIDTH * 0.35,
+  ]);
+
+  doc.moveDown(0.8);
+
+  // Employment terms
+  doc.font('Helvetica-Bold').fontSize(11).text('Terms and Conditions', MARGIN, doc.y);
+  doc.moveDown(0.3);
+  doc.font('Helvetica').fontSize(10).text(data.employment_terms, MARGIN, doc.y, { width: CONTENT_WIDTH });
+
+  doc.moveDown(1.5);
+
+  // Authorised signatory block
+  doc.font('Helvetica').fontSize(10).text('Authorised Signatory', MARGIN, doc.y);
+  doc.text(data.school_name, MARGIN, doc.y + 2);
+
+  // --- Candidate signature block (optional) ---------------------------------
+  if (data.signature) {
+    doc.moveDown(2);
+
+    const signedAtStr = data.signature.signed_at.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .text('Candidate Signature', MARGIN, doc.y);
+    doc.moveDown(0.4);
+
+    if (data.signature.type === 'typed') {
+      // Typed signature — render name as styled text
+      doc
+        .font('Helvetica')
+        .fontSize(10)
+        .text('Signed by:', MARGIN, doc.y);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(14)
+        .text(data.signature.value, MARGIN, doc.y + 2);
+      doc.moveDown(0.4);
+      doc
+        .font('Helvetica')
+        .fontSize(9)
+        .fillColor('#555555')
+        .text(`Signed on: ${signedAtStr}`, MARGIN, doc.y);
+      doc.fillColor('#000000');
+    } else {
+      // Drawn signature — embed base64 PNG
+      const base64Data = data.signature.value.replace(/^data:image\/png;base64,/, '');
+      const imgBuffer = Buffer.from(base64Data, 'base64');
+      doc.image(imgBuffer, MARGIN, doc.y, { fit: [200, 80] });
+      doc.y = doc.y + 88;
+      doc
+        .font('Helvetica')
+        .fontSize(9)
+        .fillColor('#555555')
+        .text(`Signed on: ${signedAtStr}`, MARGIN, doc.y);
+      doc.fillColor('#000000');
+    }
+
+    doc.moveDown(0.3);
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor('#555555')
+      .text(`Signer: ${data.signature.signer_name}`, MARGIN, doc.y);
+    doc.fillColor('#000000');
+  }
 
   doc.end();
   return bufferPromise;
