@@ -601,6 +601,34 @@ router.get('/child/:student_id/term-summary', async (req: Request, res: Response
   }
 });
 
+// GET /api/v1/parent/child/:student_id/report-card?from=&to=
+// Parent generates a full report card for their own child
+router.get('/child/:student_id/report-card', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { student_id } = req.params;
+    const { from, to } = req.query as Record<string, string>;
+
+    // Verify parent owns this student
+    const link = await pool.query(
+      `SELECT 1 FROM parent_student_links psl JOIN students s ON s.id = psl.student_id
+       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3`,
+      [user_id, student_id, school_id]
+    );
+    if (link.rows.length === 0) return res.status(403).json({ error: 'Access denied' });
+
+    const fromDate = from || new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+    const toDate = to || new Date().toISOString().split('T')[0];
+
+    const { generateProgressReport } = await import('./admin/reportHelper');
+    const result = await generateProgressReport(student_id, school_id, fromDate, toDate, 'progress', user_id);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[parent report-card]', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
 // GET /api/v1/parent/child/:student_id/attendance — attendance history for a child
 router.get('/child/:student_id/attendance', async (req: Request, res: Response) => {
   try {

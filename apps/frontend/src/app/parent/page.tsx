@@ -13,6 +13,7 @@ import {
 import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
+import ReportCardGenerator from '@/components/ReportCardGenerator';
 
 // ─── Translation Settings type (needed by TranslationContext) ─────────────────
 interface TranslationSettings {
@@ -885,7 +886,7 @@ export default function ParentPage() {
                   {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
                   {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
                   {tab === 'fees' && <FeesTab invoice={invoice} activeChild={activeChild} token={token} />}
-                  {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} />}
+                  {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
                   {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} translationEnabled={schoolTranslationEnabled} />}
                   {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
                   {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} token={token} />}
@@ -1843,57 +1844,45 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
           <ArrowRight size={13} className="text-amber-400" />
         </a>
 
-        {/* Weekly Updates */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Bell size={15} className="text-gray-500" />
-            <p className="text-sm font-bold text-gray-800">Weekly Updates</p>
-          </div>
-          {announcements.length === 0 && notifications.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-2">No updates this week</p>
-          ) : (
-            <div className="space-y-2.5">
-              {announcements.slice(0, 2).map(a => (
-                <div key={a.id} className="flex items-start gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{a.title}</p>
-                    <p className="text-[11px] text-gray-500 line-clamp-2">{a.body}</p>
-                  </div>
+        {/* Fee Detail */}
+        {invoice && invoice.net_payable > 0 ? (() => {
+          const dueDate = invoice.accounts?.[0]?.due_date ? new Date(invoice.accounts[0].due_date) : null;
+          const today = new Date(); today.setHours(0,0,0,0);
+          const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
+          const isUrgent = daysLeft !== null && daysLeft <= 5 && daysLeft >= 0;
+          const isOverdue = daysLeft !== null && daysLeft < 0;
+          const urgentBg = isOverdue ? 'bg-red-50 border-red-200 hover:bg-red-100' : isUrgent ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' : 'bg-orange-50 border-orange-100 hover:bg-orange-100';
+          const iconColor = isOverdue ? 'text-red-500' : isUrgent ? 'text-amber-500' : 'text-orange-500';
+          const textColor = isOverdue ? 'text-red-800' : isUrgent ? 'text-amber-800' : 'text-orange-800';
+          const subColor = isOverdue ? 'text-red-500' : isUrgent ? 'text-amber-600' : 'text-orange-500';
+          const arrowColor = isOverdue ? 'text-red-400' : isUrgent ? 'text-amber-400' : 'text-orange-400';
+          return (
+            <button onClick={() => onFeesClick()}
+              className={`w-full flex items-center justify-between px-3 py-3 border rounded-2xl transition-colors shadow-sm ${urgentBg}`}>
+              <div className="flex items-center gap-2 min-w-0">
+                {(isUrgent || isOverdue) ? <AlertCircle size={13} className={`${iconColor} shrink-0`} /> : <CreditCard size={13} className={`${iconColor} shrink-0`} />}
+                <div className="min-w-0">
+                  <p className={`text-xs font-semibold ${textColor}`}>Fee pending: ₹{invoice.net_payable.toLocaleString('en-IN')}</p>
+                  {dueDate && (
+                    <p className={`text-[11px] ${subColor}`}>
+                      {isOverdue ? `Overdue by ${Math.abs(daysLeft!)} day${Math.abs(daysLeft!) !== 1 ? 's' : ''}` : isUrgent ? `Due in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} — pay now` : `Due ${dueDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                    </p>
+                  )}
                 </div>
-              ))}
-              {notifications.slice(0, 2).map(n => (
-                <div key={n.id} className="flex items-start gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{n.section_name}</p>
-                    <p className="text-[11px] text-gray-500">{n.chunks_covered} topics · {n.completion_date.split('T')[0]}</p>
-                  </div>
-                </div>
-              ))}
+              </div>
+              <ArrowRight size={12} className={`${arrowColor} shrink-0`} />
+            </button>
+          );
+        })() : invoice === null ? (
+          <button onClick={() => onFeesClick()}
+            className="w-full flex items-center justify-between px-3 py-2.5 bg-blue-50 border border-blue-100 rounded-2xl hover:bg-blue-100 transition-colors shadow-sm">
+            <div className="flex items-center gap-2">
+              <CreditCard size={13} className="text-blue-400 shrink-0" />
+              <span className="text-xs text-blue-500">Fee structure not set up yet — contact admin</span>
             </div>
-          )}
-          {/* Fee pending nudge */}
-          {invoice && invoice.net_payable > 0 ? (
-            <button onClick={() => onFeesClick()}
-              className="mt-3 w-full flex items-center justify-between px-3 py-2.5 bg-orange-50 border border-orange-200 rounded-xl hover:bg-orange-100 transition-colors">
-              <div className="flex items-center gap-2">
-                <CreditCard size={13} className="text-orange-500 shrink-0" />
-                <span className="text-xs font-semibold text-orange-800">Fee pending: ₹{invoice.net_payable.toLocaleString('en-IN')}</span>
-              </div>
-              <ArrowRight size={12} className="text-orange-400" />
-            </button>
-          ) : invoice === null ? (
-            <button onClick={() => onFeesClick()}
-              className="mt-3 w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl hover:bg-gray-100 transition-colors">
-              <div className="flex items-center gap-2">
-                <CreditCard size={13} className="text-gray-400 shrink-0" />
-                <span className="text-xs text-gray-500">Fee structure not set up yet — contact admin</span>
-              </div>
-              <ArrowRight size={12} className="text-gray-300" />
-            </button>
-          ) : null}
-        </div>
+            <ArrowRight size={12} className="text-blue-300" />
+          </button>
+        ) : null}
 
         {/* Fees Due */}
         {invoice && invoice.net_payable > 0 && (
@@ -2413,7 +2402,7 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
 }
 
 // ─── Reports Tab ──────────────────────────────────────────────────────────────
-function ReportsTab({ attendance, progress, activeChild }: { attendance: AttendanceData | null; progress: ProgressData | null; activeChild: Child | null }) {
+function ReportsTab({ attendance, progress, activeChild, token }: { attendance: AttendanceData | null; progress: ProgressData | null; activeChild: Child | null; token: string }) {
   const attPct = attendance?.attendance_pct ?? 0;
   const pct = progress?.coverage_pct ?? 0;
   return (
@@ -2433,11 +2422,12 @@ function ReportsTab({ attendance, progress, activeChild }: { attendance: Attenda
       </div>
       {activeChild && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <p className="text-sm font-semibold text-gray-800 mb-3">📊 Full Report Card</p>
-          <a href={`/parent/journey?student_id=${activeChild.id}`}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors">
-            <BookOpen size={14} /> View Child&apos;s Journey
-          </a>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-base">📊</span>
+            <p className="text-sm font-bold text-gray-800">Full Report Card</p>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">Complete descriptive report based on all teacher observations, journal entries, and curriculum covered.</p>
+          <ReportCardGenerator token={token} role="parent" fixedStudentId={activeChild.id} fixedStudentName={activeChild.name} />
         </div>
       )}
     </div>

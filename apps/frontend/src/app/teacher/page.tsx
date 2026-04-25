@@ -20,7 +20,7 @@ import { useRouter } from 'next/navigation';
 import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
   ChevronDown, ChevronUp, Send, Paperclip, BookOpen, Sparkles,
-  LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X
+  LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X, ClipboardList
 } from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
@@ -894,6 +894,19 @@ export default function TeacherPlanner() {
             <div className="text-left">
               <p className="text-xs font-semibold text-neutral-800 group-hover:text-emerald-700 transition-colors">Child Journey</p>
               <p className="text-[10px] text-neutral-400 mt-0.5">Daily highlights</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => router.push('/teacher/reports')}
+            className="flex flex-col items-start gap-2 p-3.5 bg-white border border-neutral-200 rounded-2xl hover:border-purple-200 hover:bg-purple-50/30 transition-all shadow-sm group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-sm">
+              <ClipboardList className="w-4 h-4 text-white" />
+            </div>
+            <div className="text-left">
+              <p className="text-xs font-semibold text-neutral-800 group-hover:text-purple-700 transition-colors">Report Cards</p>
+              <p className="text-[10px] text-neutral-400 mt-0.5">Generate for students</p>
             </div>
           </button>
 

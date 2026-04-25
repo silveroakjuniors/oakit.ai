@@ -76,6 +76,7 @@ import textbookPlannerRouter from './routes/admin/textbookPlanner';
 import adminEnquiriesRouter from './routes/admin/enquiries';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
 import teacherQuizRouter from './routes/teacher/quiz';
+import teacherReportCardRouter from './routes/teacher/reportCard';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
@@ -350,9 +351,10 @@ app.use('/api/v1/admin/quizzes', adminQuizzesRouter);
 app.use('/api/v1/admin/smart-alerts', adminSmartAlertsRouter);
 app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 
-// Teacher — Student Credentials & Quiz
+// Teacher — Student Credentials, Quiz & Report Card
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
+app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
 
 // Student Portal
 app.use('/api/v1/student', studentFeedRouter);
