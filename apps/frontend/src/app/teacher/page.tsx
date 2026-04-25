@@ -11,8 +11,7 @@ import PendingWorkList from '@/components/ui/PendingWorkList';
 import OakitLogo from '@/components/OakitLogo';
 import { useSessionManager } from '@/hooks/useSessionManager';
 import ThemeToggle from '@/components/ThemeToggle';
-import VoiceMicButton from '@/components/VoiceMicButton';
-import { useVoiceInput } from '@/hooks/useVoiceInput';
+import InlineMicButton from '@/components/InlineMicButton';
 import SessionRecorder from '@/components/SessionRecorder';
 import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
@@ -209,7 +208,6 @@ export default function TeacherPlanner() {
   const [fetchingDetailedPlan, setFetchingDetailedPlan] = useState(false);
   const [showRawPlanModal, setShowRawPlanModal] = useState(false);
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
   // Per-chunk homework state (Req 1.1–1.3, 6.5)
@@ -217,13 +215,7 @@ export default function TeacherPlanner() {
   const [homeworkByChunk, setHomeworkByChunk] = useState<Record<string, HomeworkState>>({});
   const [homeworkModalChunk, setHomeworkModalChunk] = useState<{ chunkId: string; label: string; content: string } | null>(null);
 
-  // Voice input hook
-  const { state: voiceState, startRecording, stopRecording, isSupported: voiceSupported } = useVoiceInput({
-    token,
-    language: 'en',
-    onTranscript: (text) => setInput(text),
-  });
-  const showMic = voiceEnabled && voiceSupported;
+
   // Homework submission tracking state
   const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, 'completed' | 'partial' | 'not_submitted'>>({});
@@ -249,8 +241,6 @@ export default function TeacherPlanner() {
   async function loadAll() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
-    // Check voice feature status
-    apiGet<{ voice_enabled: boolean }>('/api/v1/ai/voice-status', token).then(d => setVoiceEnabled(d.voice_enabled)).catch(() => {});
     if (!todayCompletedRef.current) await autoShowDailyPlan(effectiveToday);
   }
 
@@ -1236,14 +1226,7 @@ export default function TeacherPlanner() {
             </div>
           ) : null}
           <form onSubmit={sendMessage} className="flex gap-2 items-center pb-2">
-            {showMic && (
-              <VoiceMicButton
-                state={voiceState}
-                onStart={startRecording}
-                onStop={stopRecording}
-                size="sm"
-              />
-            )}
+            <InlineMicButton onTranscript={t => setInput(prev => prev ? prev + ' ' + t : t)} disabled={limitReached} />
             <div className="flex-1 relative">
               <input
                 className="w-full px-4 py-3 rounded-2xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300/40 focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-400 bg-neutral-50/50 transition-colors"

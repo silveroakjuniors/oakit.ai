@@ -967,5 +967,48 @@ router.post('/format-observation', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/ai/hr-terms — generate employment terms using Oakie (principal/admin only)
+router.post('/hr-terms', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id, role } = req.user!;
+    if (!['principal', 'admin'].includes(role)) return res.status(403).json({ error: 'Forbidden' });
+
+    const { school_name, designation, salary, context } = req.body;
+    if (!school_name || !designation || !salary)
+      return res.status(400).json({ error: 'school_name, designation, salary are required' });
+
+    // Check and deduct credits
+    const credit = await checkAndDeductCredits({
+      schoolId: school_id, actorId: user_id, actorRole: role, endpoint: 'hr-terms',
+    });
+    if (!credit.allowed) {
+      return res.status(402).json({ error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' });
+    }
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/query`, {
+        text: `Generate professional employment terms and conditions for a ${designation} position at ${school_name}. Monthly salary: ₹${salary}. ${context || ''} Write formal, clear terms covering probation period, notice period, working hours, leave policy, and code of conduct. Return only the terms text, no preamble.`,
+        teacher_id: user_id,
+        school_id,
+        role,
+      }, { timeout: AI_TIMEOUT_MS });
+
+      return res.json({ terms: aiResp.data.response });
+    } catch (err: unknown) {
+      const requestId = crypto.randomBytes(6).toString('hex');
+      console.error(`[ai.hr-terms][${requestId}] upstream error`, {
+        user_id, school_id, role,
+        endpoint: `${AI()}/internal/query`,
+        message: getAiErrorMessage(err),
+      });
+      return res.status(503).json({ error: 'Oakie is temporarily unavailable', code: 'AI_UNAVAILABLE' });
+    }
+  } catch (err: unknown) {
+    const requestId = crypto.randomBytes(6).toString('hex');
+    console.error(`[ai.hr-terms][${requestId}] route error`, { message: getAiErrorMessage(err) });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
 
