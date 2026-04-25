@@ -329,13 +329,20 @@ function MilestoneAchieveModal({ milestone, student, token, onClose, onSaved }: 
     if (!comment.trim()) return;
     setAiLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/ai/query`, {
+      // Use the dedicated format-observation endpoint — bypasses off-topic filter
+      // Pass milestone description as category context so Oakie understands what's being achieved
+      const res = await fetch(`${API_BASE}/api/v1/ai/format-observation`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: `Rewrite this milestone achievement note as a warm, professional 1-2 sentence observation for a school report: "${comment}"` }),
+        body: JSON.stringify({
+          text: comment,
+          student_name: student.name,
+          category: milestone.description,   // milestone description as context
+          class_name: '',
+        }),
       });
       const data = await res.json();
-      const refined = data.response || data.result || data.answer || data.text || '';
+      const refined = data.formatted || '';
       if (refined) setComment(refined);
     } catch { /* silent */ }
     finally { setAiLoading(false); }
