@@ -414,7 +414,7 @@ router.patch('/resignations/:id/acknowledge', async (req: Request, res: Response
     const { id } = req.params;
     const result = await pool.query(
       `UPDATE employment_records
-       SET resignation_status = 'acknowledged', updated_at = now()
+       SET resignation_status = 'acknowledged'
        WHERE id = $1 AND school_id = $2 AND event_type = 'resignation'
        RETURNING *`,
       [id, school_id]

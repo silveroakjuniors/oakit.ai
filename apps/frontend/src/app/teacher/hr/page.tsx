@@ -230,7 +230,7 @@ export default function TeacherHRPage() {
       apiGet<Payslip[]>('/api/v1/staff/hr/my-payslips', token).then(setPayslips).catch(() => {}),
       apiGet<OfferLetter[]>('/api/v1/staff/hr/my-offer-letters', token).then(setOffers).catch(() => {}),
       apiGet<LeaveRequest[]>('/api/v1/staff/hr/my-leaves', token).then(setLeaves).catch(() => {}),
-      apiGet<ResignationRecord[]>('/api/v1/teacher/hr/resignations', token).then(setResignations).catch(() => {}),
+      apiGet<ResignationRecord[]>('/api/v1/staff/hr/resignations', token).then(setResignations).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
 
@@ -250,11 +250,11 @@ export default function TeacherHRPage() {
     if (!resignForm.last_working_day) return;
     setSubmittingResign(true); setResignMsg('');
     try {
-      const res = await apiPost<{ notice_period_days: number }>('/api/v1/teacher/hr/resignations', resignForm, token);
+      const res = await apiPost<{ notice_period_days: number }>('/api/v1/staff/hr/resignations', resignForm, token);
       setResignNoticeDays(res.notice_period_days);
       setResignMsg('success');
       // Refresh resignations
-      apiGet<ResignationRecord[]>('/api/v1/teacher/hr/resignations', token).then(setResignations).catch(() => {});
+      apiGet<ResignationRecord[]>('/api/v1/staff/hr/resignations', token).then(setResignations).catch(() => {});
     } catch (e: any) {
       if (e.message?.includes('RESIGNATION_EXISTS') || e.message?.includes('active resignation')) {
         setResignMsg('exists');

@@ -117,6 +117,21 @@ export default function PrincipalHRPage() {
   const [terminating, setTerminating] = useState(false);
   const [terminateMsg, setTerminateMsg] = useState('');
 
+  // ── Employment history ──
+  const [historyTarget, setHistoryTarget] = useState<StaffUser | null>(null);
+  const [historyRecords, setHistoryRecords] = useState<EmploymentRecord[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  async function openHistory(s: StaffUser) {
+    setHistoryTarget(s);
+    setLoadingHistory(true);
+    try {
+      const records = await apiGet<EmploymentRecord[]>(`/api/v1/principal/hr/staff/${s.id}/employment-history`, token);
+      setHistoryRecords(records);
+    } catch { setHistoryRecords([]); }
+    finally { setLoadingHistory(false); }
+  }
+
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
     Promise.all([
@@ -425,10 +440,16 @@ export default function PrincipalHRPage() {
                             <p className="text-sm font-semibold text-neutral-800">{s.name}</p>
                             <p className="text-xs text-neutral-400 capitalize">{s.role_name}</p>
                           </div>
-                          <button onClick={() => { setTerminateTarget(s); setTerminateReason(''); setTerminateMsg(''); }}
-                            className="text-xs px-2.5 py-1.5 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition-colors font-medium">
-                            Terminate
-                          </button>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => openHistory(s)}
+                              className="text-xs px-2.5 py-1.5 border border-neutral-200 text-neutral-600 rounded-xl hover:bg-neutral-50 transition-colors font-medium">
+                              History
+                            </button>
+                            <button onClick={() => { setTerminateTarget(s); setTerminateReason(''); setTerminateMsg(''); }}
+                              className="text-xs px-2.5 py-1.5 border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition-colors font-medium">
+                              Terminate
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -808,6 +829,43 @@ export default function PrincipalHRPage() {
           </>
         )}
       </div>
+
+      {/* ══ EMPLOYMENT HISTORY MODAL ════════════════════════════════════ */}
+      {historyTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 space-y-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-neutral-800">Employment History — {historyTarget.name}</p>
+              <button onClick={() => setHistoryTarget(null)} className="text-neutral-400 hover:text-neutral-600 text-lg">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {loadingHistory ? (
+                <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-neutral-300" /></div>
+              ) : historyRecords.length === 0 ? (
+                <p className="text-xs text-neutral-400 text-center py-8">No employment records found</p>
+              ) : (
+                historyRecords.map(r => (
+                  <div key={r.id} className="border border-neutral-100 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        r.event_type === 'offer_sent' ? 'bg-blue-100 text-blue-700' :
+                        r.event_type === 'offer_signed' ? 'bg-emerald-100 text-emerald-700' :
+                        r.event_type === 'resignation' ? 'bg-amber-100 text-amber-700' :
+                        'bg-red-100 text-red-700'
+                      }`}>{r.event_type.replace('_', ' ')}</span>
+                      <p className="text-xs text-neutral-400">{new Date(r.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                    </div>
+                    {r.resignation_reason && <p className="text-xs text-neutral-500 mt-1">Reason: {r.resignation_reason}</p>}
+                    {r.termination_reason && <p className="text-xs text-neutral-500 mt-1">Reason: {r.termination_reason}</p>}
+                    {r.notice_period_days != null && <p className="text-xs text-neutral-400">Notice: {r.notice_period_days} days</p>}
+                    {r.notes && <p className="text-xs text-neutral-400 mt-1">{r.notes}</p>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ TERMINATION MODAL ═══════════════════════════════════════════════ */}
       {terminateTarget && (

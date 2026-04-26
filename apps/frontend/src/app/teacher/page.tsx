@@ -1351,7 +1351,7 @@ export default function TeacherPlanner() {
         <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-xl bg-amber-100 flex items-center justify-center">
-              <span className="text-sm">💡</span>
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
             </div>
             <p className="text-sm font-semibold text-amber-900">Good to know</p>
           </div>

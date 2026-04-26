@@ -6,9 +6,11 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard } from '../../middleware/auth';
-import { generateOfferLetterPDF } from '../../lib/pdfService';
+import { generateOfferLetterPDF, generateOfferLetterPDFWithBranding } from '../../lib/pdfService';
 import type { BrandingContext, GeneratorContext, OfferLetterData } from '../../lib/pdfService';
+import { calcNoticePeriodDays } from '../../lib/noticePeriod';
 import { createClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 router.use(jwtVerify, schoolScope);
@@ -63,17 +65,94 @@ router.get('/my-offer-letters', async (req: Request, res: Response) => {
 // ── POST /api/v1/staff/hr/offer-letters/:id/sign ─────────────────────────────
 router.post('/offer-letters/:id/sign', async (req: Request, res: Response) => {
   try {
-    const { id: userId } = req.user!;
+    const { id: userId, school_id } = req.user!;
     const { id } = req.params;
-    const result = await pool.query(
-      `UPDATE staff_offer_letters
-       SET status = 'signed', signed_at = now(), updated_at = now()
-       WHERE id = $1 AND user_id = $2 AND status = 'pending'
-       RETURNING *`,
-      [id, userId]
+    const { signature_type, signature_value } = req.body;
+
+    // Validate signature
+    if (!signature_type || !['typed', 'drawn'].includes(signature_type) || !signature_value || !String(signature_value).trim()) {
+      return res.status(400).json({ error: 'Invalid or empty signature', code: 'EMPTY_SIGNATURE' });
+    }
+    if (signature_type === 'drawn' && !signature_value.startsWith('data:image/png;base64,')) {
+      return res.status(400).json({ error: 'Invalid or empty signature', code: 'EMPTY_SIGNATURE' });
+    }
+
+    // Fetch offer letter
+    const letterRow = await pool.query(
+      `SELECT * FROM staff_offer_letters WHERE id = $1 AND user_id = $2 AND school_id = $3`,
+      [id, userId, school_id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Offer letter not found or already actioned' });
-    return res.json(result.rows[0]);
+    if (letterRow.rows.length === 0)
+      return res.status(404).json({ error: 'Offer letter not found', code: 'OFFER_LETTER_NOT_FOUND' });
+    if (letterRow.rows[0].status !== 'pending')
+      return res.status(409).json({ error: 'Offer letter already actioned', code: 'ALREADY_ACTIONED' });
+
+    // Update with signature
+    const updated = await pool.query(
+      `UPDATE staff_offer_letters
+       SET status = 'signed', signed_at = now(), signature_type = $1, signature_value = $2, updated_at = now()
+       WHERE id = $3 AND school_id = $4 AND user_id = $5
+       RETURNING *`,
+      [signature_type, signature_value, id, school_id, userId]
+    );
+    const letter = updated.rows[0];
+
+    // Regenerate PDF with signature block (non-blocking)
+    try {
+      const schoolRow = await pool.query(
+        `SELECT name, logo_path, contact->>'address' as address FROM schools WHERE id = $1`,
+        [school_id]
+      );
+      const school = schoolRow.rows[0] || {};
+      const branding: BrandingContext = {
+        school_name: school.name || '',
+        school_address: school.address || '',
+        logo_url: school.logo_path || null,
+      };
+      const staffRow = await pool.query(`SELECT name FROM users WHERE id = $1`, [userId]);
+      const staff_name = staffRow.rows[0]?.name || 'Staff Member';
+
+      const pdfData: OfferLetterData = {
+        staff_name,
+        role: letter.role || '',
+        start_date: new Date(letter.start_date),
+        salary_breakdown: (letter.components || []).map((c: any) => ({
+          component: c.component || c.name || '',
+          amount: Number(c.amount) || 0,
+        })),
+        employment_terms: letter.employment_terms || '',
+        school_name: branding.school_name,
+        signature: {
+          type: signature_type as 'typed' | 'drawn',
+          value: signature_value,
+          signed_at: new Date(),
+          signer_name: staff_name,
+        },
+      };
+
+      const pdfBuffer = await generateOfferLetterPDFWithBranding(pdfData, branding);
+      const supabase = getSupabase();
+      if (supabase) {
+        const storagePath = `offer-letters/signed/${school_id}/${uuidv4()}.pdf`;
+        await supabase.storage.from(BUCKET).upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+        const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+        if (data.publicUrl) {
+          await pool.query(`UPDATE staff_offer_letters SET signed_pdf_url = $1 WHERE id = $2`, [data.publicUrl, id]);
+          letter.signed_pdf_url = data.publicUrl;
+        }
+      }
+    } catch (pdfErr) {
+      console.error('[hr] POST /offer-letters/:id/sign PDF regeneration failed', pdfErr);
+    }
+
+    // Insert employment record
+    await pool.query(
+      `INSERT INTO employment_records (event_type, offer_letter_id, user_id, school_id, event_date)
+       VALUES ('offer_signed', $1, $2, $3, CURRENT_DATE)`,
+      [id, userId, school_id]
+    ).catch(e => console.error('[hr] POST /offer-letters/:id/sign employment_records insert', e));
+
+    return res.json(letter);
   } catch (err) {
     console.error('[hr] POST /offer-letters/:id/sign', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -83,19 +162,77 @@ router.post('/offer-letters/:id/sign', async (req: Request, res: Response) => {
 // ── POST /api/v1/staff/hr/offer-letters/:id/decline ──────────────────────────
 router.post('/offer-letters/:id/decline', async (req: Request, res: Response) => {
   try {
-    const { id: userId } = req.user!;
+    const { id: userId, school_id } = req.user!;
     const { id } = req.params;
     const result = await pool.query(
       `UPDATE staff_offer_letters
        SET status = 'declined', updated_at = now()
-       WHERE id = $1 AND user_id = $2 AND status = 'pending'
+       WHERE id = $1 AND user_id = $2 AND school_id = $3 AND status = 'pending'
        RETURNING *`,
-      [id, userId]
+      [id, userId, school_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Offer letter not found or already actioned' });
+    // signature_type, signature_value, signed_at remain NULL (not set)
     return res.json(result.rows[0]);
   } catch (err) {
     console.error('[hr] POST /offer-letters/:id/decline', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/v1/staff/hr/resignations ───────────────────────────────────────
+router.post('/resignations', async (req: Request, res: Response) => {
+  try {
+    const { id: userId, school_id } = req.user!;
+    const { last_working_day, reason } = req.body;
+    if (!last_working_day)
+      return res.status(400).json({ error: 'last_working_day is required' });
+
+    // Check for existing pending resignation
+    const existing = await pool.query(
+      `SELECT id FROM employment_records
+       WHERE user_id = $1 AND event_type = 'resignation' AND resignation_status = 'pending'`,
+      [userId]
+    );
+    if (existing.rows.length > 0)
+      return res.status(409).json({ error: 'You already have an active resignation', code: 'RESIGNATION_EXISTS' });
+
+    // Fetch default notice period
+    const settingsRow = await pool.query(
+      `SELECT default_notice_period FROM hr_settings WHERE school_id = $1`,
+      [school_id]
+    );
+    const default_notice_period = settingsRow.rows[0]?.default_notice_period ?? 30;
+    const notice_period_days = calcNoticePeriodDays(new Date(), new Date(last_working_day));
+
+    const result = await pool.query(
+      `INSERT INTO employment_records
+         (event_type, user_id, school_id, last_working_day, notice_period_days, default_notice_period,
+          resignation_reason, resignation_status, event_date)
+       VALUES ('resignation', $1, $2, $3, $4, $5, $6, 'pending', CURRENT_DATE)
+       RETURNING *`,
+      [userId, school_id, last_working_day, notice_period_days, default_notice_period, reason || null]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[hr] POST /resignations', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /api/v1/staff/hr/resignations ────────────────────────────────────────
+router.get('/resignations', async (req: Request, res: Response) => {
+  try {
+    const { id: userId, school_id } = req.user!;
+    const result = await pool.query(
+      `SELECT * FROM employment_records
+       WHERE user_id = $1 AND school_id = $2 AND event_type = 'resignation'
+       ORDER BY created_at DESC`,
+      [userId, school_id]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[hr] GET /resignations', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

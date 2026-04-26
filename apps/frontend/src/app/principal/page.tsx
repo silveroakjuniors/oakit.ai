@@ -544,7 +544,7 @@ export default function PrincipalDashboard() {
               <div className="py-8 text-center"><p className="text-sm text-neutral-400">Loading�</p></div>
             ) : (
               <Collapsible
-                title=" Classes & Sections"
+                title="Classes & Sections"
                 subtitle={`${Object.keys(byClass).length} classes · ${(ctx?.sections || []).length} sections · ${ctx?.summary.total_students ?? 0} students`}
                 defaultOpen={false}
               >
@@ -595,7 +595,7 @@ export default function PrincipalDashboard() {
                                   </div>
                                   <div className="flex gap-1 shrink-0">
                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.attendance_submitted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                      {sec.attendance_submitted ? '✓ Att' : '⏳'}
+                                      {sec.attendance_submitted ? '✓' : '–'}
                                     </span>
                                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.plan_completed ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>
                                       {sec.plan_completed ? '? Plan' : '� Plan'}
