@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
+import InlineMicButton from '@/components/InlineMicButton';
 
 interface Resource {
   id: string; title: string; description: string | null; subject_tag: string | null;
@@ -90,9 +91,12 @@ export default function ResourcesPage() {
             <div className="flex flex-col gap-3">
               <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value.slice(0, 100) }))}
                 placeholder="Title (required)" className="px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-primary-400" />
-              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value.slice(0, 300) }))}
-                rows={2} placeholder="Description (optional)"
-                className="px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-primary-400 resize-none" />
+              <div className="flex gap-2 items-start">
+                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value.slice(0, 300) }))}
+                  rows={2} placeholder="Description (optional)"
+                  className="flex-1 px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-primary-400 resize-none" />
+                <InlineMicButton onTranscript={t => setForm(f => ({ ...f, description: (f.description ? f.description + ' ' : '') + t }))} />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <select value={form.subject_tag} onChange={e => setForm(f => ({ ...f, subject_tag: e.target.value }))}
                   className="px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none">

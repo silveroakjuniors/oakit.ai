@@ -609,6 +609,7 @@ export default function TeacherStudentsPage() {
   const [formModal, setFormModal] = useState<{ existing?: Milestone } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [unachieving, setUnachieving] = useState<string | null>(null);
+  const [milestoneTermFilter, setMilestoneTermFilter] = useState<string>('all');
 
   useEffect(() => { if (!token) { router.push('/login'); return; } loadSections(); }, []);
 
@@ -670,11 +671,13 @@ export default function TeacherStudentsPage() {
   }, {});
   const coveredCategories = Object.keys(obsByCategory).length;
 
-  const groupedMilestones = milestoneData?.milestones.reduce((acc: Record<string, Milestone[]>, m) => {
-    if (!acc[m.domain]) acc[m.domain] = [];
-    acc[m.domain].push(m);
-    return acc;
-  }, {}) ?? {};
+  const groupedMilestones = milestoneData?.milestones
+    .filter(m => milestoneTermFilter === 'all' ? true : milestoneTermFilter === 'untagged' ? !m.term : m.term === milestoneTermFilter)
+    .reduce((acc: Record<string, Milestone[]>, m) => {
+      if (!acc[m.domain]) acc[m.domain] = [];
+      acc[m.domain].push(m);
+      return acc;
+    }, {}) ?? {};
 
   return (
     <div className="min-h-screen bg-neutral-50 flex flex-col">
@@ -846,6 +849,29 @@ export default function TeacherStudentsPage() {
                   className="flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-indigo-200 rounded-2xl text-sm font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors">
                   <Plus size={16} /> Add Custom Milestone
                 </button>
+
+                {/* Term filter */}
+                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                  {['all', 'Term 1', 'Term 2', 'Term 3', 'Annual', 'untagged'].map(f => {
+                    const label = f === 'all' ? 'All' : f === 'untagged' ? 'No term' : f;
+                    const count = f === 'all'
+                      ? milestoneData.total
+                      : f === 'untagged'
+                      ? milestoneData.milestones.filter(m => !m.term).length
+                      : milestoneData.milestones.filter(m => m.term === f).length;
+                    if (count === 0 && f !== 'all') return null;
+                    return (
+                      <button key={f} onClick={() => setMilestoneTermFilter(f)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors shrink-0 ${
+                          milestoneTermFilter === f
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-white border-neutral-200 text-neutral-600 hover:border-indigo-300'
+                        }`}>
+                        {label} {count > 0 && <span className="opacity-70">({count})</span>}
+                      </button>
+                    );
+                  })}
+                </div>
 
                 {/* Milestones grouped by domain */}
                 {Object.entries(groupedMilestones).map(([domain, items]) => (

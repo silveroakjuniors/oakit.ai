@@ -1379,19 +1379,29 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
               <p className="text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1.5">
                 <ClipboardList size={12} className="text-gray-400" /> Teacher Notes
               </p>
-              {feed.notes.slice(0, 1).map(note => {
+              {feed.notes.slice(0, 2).map(note => {
                 const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
+                // File notes — direct download link
+                if (note.file_name) {
+                  return (
+                    <a key={note.id}
+                      href={`${API_BASE}/api/v1/parent/notes/${note.id}/download`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="w-full text-left bg-gray-50 hover:bg-emerald-50 rounded-xl px-3 py-2 transition-colors border border-gray-100 hover:border-emerald-200 flex items-center gap-2 mb-1.5">
+                      <Download size={12} className="text-emerald-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        {note.note_text && <p className="text-xs text-gray-700 line-clamp-1 mb-0.5">{note.note_text}</p>}
+                        <p className="text-xs text-emerald-600 font-medium truncate">{note.file_name}</p>
+                      </div>
+                      <p className={`text-[10px] shrink-0 ${dl <= 3 ? 'text-red-500' : 'text-gray-400'}`}>{dl}d</p>
+                    </a>
+                  );
+                }
+                // Text notes — tap to open modal
                 return (
                   <button key={note.id} onClick={() => onNoteClick(note)}
-                    className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2 transition-colors border border-gray-100">
-                    {note.note_text && <p className="text-xs text-gray-700 line-clamp-1">{note.note_text}</p>}
-                    {note.file_name && (
-                      <div className="flex items-center gap-1.5">
-                        <Paperclip size={11} className="text-gray-400" />
-                        <p className="text-xs text-gray-500 truncate flex-1">{note.file_name}</p>
-                        <Download size={11} className="text-emerald-500" />
-                      </div>
-                    )}
+                    className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2 transition-colors border border-gray-100 mb-1.5">
+                    <p className="text-xs text-gray-700 line-clamp-2">{note.note_text}</p>
                     <p className={`text-[10px] mt-0.5 ${dl <= 3 ? 'text-red-500' : 'text-gray-400'}`}>Expires in {dl}d</p>
                   </button>
                 );
