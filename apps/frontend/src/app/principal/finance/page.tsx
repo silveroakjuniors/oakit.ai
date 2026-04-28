@@ -10,11 +10,13 @@ interface DailyCollection { total: number; count: number; }
 interface StudentPending { total_pending: number; student_count: number; }
 
 const QUICK_LINKS = [
+  { href: '/principal/finance/fees',           label: 'Collect Fee',         icon: '💳', desc: 'Record cash, UPI & bank payments' },
   { href: '/principal/finance/fee-structures', label: 'Fee Structures', icon: '🏷️', desc: 'Create & assign fee structures' },
   { href: '/principal/finance/concessions',    label: 'Concessions',    icon: '🎁', desc: 'Approve pending concessions' },
   { href: '/principal/finance/expenses',       label: 'Expenses',       icon: '🧾', desc: 'View & add school expenses' },
   { href: '/principal/finance/salary',         label: 'Salary',         icon: '👔', desc: 'Manage staff salaries' },
-  { href: '/principal/finance/reconciliation', label: 'Reconciliation', icon: '🔍', desc: 'Bank & cash reconciliation' },
+  { href: '/principal/finance/reconciliation', label: 'Cash Reconciliation', icon: '💵', desc: 'Reconcile cash collections' },
+  { href: '/principal/finance/reconciliation/online', label: 'Online Reconciliation', icon: '🔍', desc: 'Verify online payments' },
   { href: '/principal/finance/reports',        label: 'Reports',        icon: '📈', desc: 'Financial reports & insights' },
   { href: '/principal/finance/permissions',    label: 'Permissions',    icon: '🔐', desc: 'Assign finance roles to staff' },
 ];

@@ -28,6 +28,7 @@ import { getToken, clearToken, getRoleRedirect } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronDown, Users, CheckCircle2, XCircle, AlertTriangle, BarChart2, BookOpen, ClipboardList, TrendingUp, DollarSign, Gift, Flame, Send, Sparkles, LogOut, FileText, Calendar } from 'lucide-react';
+import FeeSummaryCard from '@/features/admin/fees/FeeSummaryCard';
 
 // -- Types ----------------------------------------------------
 interface SectionSummary {
@@ -345,6 +346,9 @@ export default function PrincipalDashboard() {
               </div>
               <span className="text-neutral-300 text-lg shrink-0">›</span>
             </Link>
+
+            {/* Fee assignment summary */}
+            <FeeSummaryCard token={token} />
 
             {/* -- Birthdays � collapsible -- */}
             {birthdays.length > 0 && (

@@ -1,26 +1,21 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { apiGet, apiPost, API_BASE } from '@/lib/api';
+import { useState, useEffect } from 'react';
+import { apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
 import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
-interface BankItem {
+interface CashPayment {
   id: string;
-  transaction_date: string;
+  sl_no: number;
   amount: number;
-  reference: string;
-  match_status: 'matched' | 'partial' | 'unmatched';
-}
-
-interface BankUploadStatus {
-  id: string;
-  status: 'processing' | 'completed' | 'failed';
-  items: BankItem[];
-  matched_count: number;
-  partial_count: number;
-  unmatched_count: number;
+  payment_date: string;
+  receipt_number: string;
+  reference_number?: string;
+  student_name: string;
+  class_name?: string;
+  fee_head_name: string;
 }
 
 interface CashLog {
@@ -32,40 +27,28 @@ interface CashLog {
   status: string;
 }
 
-const MATCH_BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  matched:   { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Matched'   },
-  partial:   { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Partial'   },
-  unmatched: { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Unmatched' },
-};
-
 export default function ReconciliationPage() {
   const token = getToken() || '';
   const { today } = useAcademicCalendar(token);
 
-  // Bank upload
-  const [bankFile, setBankFile] = useState<File | null>(null);
-  const [uploadLoading, setUploadLoading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
-  const [uploadId, setUploadId] = useState<string | null>(null);
-  const [bankStatus, setBankStatus] = useState<BankUploadStatus | null>(null);
-  const [polling, setPolling] = useState(false);
-  const [confirmLoading, setConfirmLoading] = useState(false);
-  const [confirmMsg, setConfirmMsg] = useState('');
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Cash reconciliation
-  const [cashDate, setCashDate] = useState(new Date().toISOString().split('T')[0]);
-  const [totalCash, setTotalCash] = useState('');
-  const [cashLoading, setCashLoading] = useState(false);
-  const [cashError, setCashError] = useState('');
-  const [cashSuccess, setCashSuccess] = useState('');
-  const [cashLogs, setCashLogs] = useState<CashLog[]>([]);
-  const [cashLogsLoading, setCashLogsLoading] = useState(false);
-
-  // Permissions
   const [canPerform, setCanPerform] = useState(false);
   const [canView, setCanView] = useState(false);
   const [permsLoaded, setPermsLoaded] = useState(false);
+
+  // Pending cash payments
+  const [pendingPayments, setPendingPayments] = useState<CashPayment[]>([]);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmMsg, setConfirmMsg] = useState('');
+  const [confirmError, setConfirmError] = useState('');
+
+  // History
+  const [cashLogs, setCashLogs] = useState<CashLog[]>([]);
+  const [cashLogsLoading, setCashLogsLoading] = useState(false);
 
   useEffect(() => {
     apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
@@ -76,9 +59,30 @@ export default function ReconciliationPage() {
         setPermsLoaded(true);
       })
       .catch(() => setPermsLoaded(true));
-    loadCashLogs();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
+
+  useEffect(() => {
+    if (permsLoaded && (canView || canPerform)) {
+      loadPendingPayments();
+      loadCashLogs();
+    }
+  }, [permsLoaded]);
+
+  async function loadPendingPayments() {
+    setPendingLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (fromDate) params.set('from', fromDate);
+      if (toDate) params.set('to', toDate);
+      const data = await apiGet<{ payments: CashPayment[]; total_pending: number }>(
+        `/api/v1/financial/reconciliation/cash/pending?${params.toString()}`, token
+      );
+      setPendingPayments(data.payments || []);
+      setPendingTotal(data.total_pending || 0);
+      setSelected(new Set());
+    } catch { setPendingPayments([]); setPendingTotal(0); }
+    finally { setPendingLoading(false); }
+  }
 
   async function loadCashLogs() {
     setCashLogsLoading(true);
@@ -89,82 +93,45 @@ export default function ReconciliationPage() {
     finally { setCashLogsLoading(false); }
   }
 
-  async function handleBankUpload() {
-    if (!bankFile) { setUploadError('Select a file first.'); return; }
-    const ext = bankFile.name.split('.').pop()?.toLowerCase();
-    if (!['pdf', 'csv'].includes(ext || '')) {
-      setUploadError('Only PDF or CSV files are allowed.');
-      return;
-    }
-    setUploadError('');
-    setUploadLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', bankFile);
-      const res = await fetch(`${API_BASE}/api/v1/financial/reconciliation/bank/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
-      setUploadId(data.upload_id || data.id);
-      startPolling(data.upload_id || data.id);
-    } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
-    } finally {
-      setUploadLoading(false);
-    }
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   }
 
-  function startPolling(id: string) {
-    setPolling(true);
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const data = await apiGet<BankUploadStatus>(`/api/v1/financial/reconciliation/bank/${id}`, token);
-        setBankStatus(data);
-        if (data.status === 'completed' || data.status === 'failed') {
-          setPolling(false);
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      } catch { /* ignore */ }
-    }, 2000);
+  function toggleAll() {
+    setSelected(
+      selected.size === pendingPayments.length
+        ? new Set()
+        : new Set(pendingPayments.map(p => p.id))
+    );
   }
+
+  const selectedTotal = pendingPayments
+    .filter(p => selected.has(p.id))
+    .reduce((sum, p) => sum + Number(p.amount), 0);
 
   async function handleConfirm() {
-    if (!uploadId) return;
-    setConfirmLoading(true);
+    if (selected.size === 0) return;
+    setConfirmError('');
     setConfirmMsg('');
+    setConfirmLoading(true);
     try {
-      await apiPost(`/api/v1/financial/reconciliation/bank/${uploadId}/confirm`, {}, token);
-      setConfirmMsg('✓ Reconciliation confirmed.');
-    } catch (err: unknown) {
-      setConfirmMsg(err instanceof Error ? err.message : 'Failed to confirm.');
-    } finally {
-      setConfirmLoading(false);
-    }
-  }
-
-  async function handleCashSubmit() {
-    setCashError('');
-    setCashSuccess('');
-    const cash = parseFloat(totalCash);
-    if (!cash || cash < 0) { setCashError('Enter a valid cash amount.'); return; }
-    setCashLoading(true);
-    try {
-      await apiPost('/api/v1/financial/reconciliation/cash', {
-        date: cashDate,
-        total_cash: cash,
-      }, token);
-      setCashSuccess('✓ Cash reconciliation logged.');
-      setTotalCash('');
+      const result = await apiPost<{ reconciled_count: number; total_confirmed: number }>(
+        '/api/v1/financial/reconciliation/cash/confirm',
+        { payment_ids: Array.from(selected) },
+        token
+      );
+      setConfirmMsg(
+        `✓ ${result.reconciled_count} payment${result.reconciled_count !== 1 ? 's' : ''} reconciled — ₹${Number(result.total_confirmed).toLocaleString('en-IN')} confirmed.`
+      );
+      await loadPendingPayments();
       await loadCashLogs();
     } catch (err: unknown) {
-      setCashError(err instanceof Error ? err.message : 'Failed to log cash.');
-    } finally {
-      setCashLoading(false);
-    }
+      setConfirmError(err instanceof Error ? err.message : 'Failed to confirm.');
+    } finally { setConfirmLoading(false); }
   }
 
   if (permsLoaded && !canView && !canPerform) {
@@ -178,148 +145,168 @@ export default function ReconciliationPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-primary">Reconciliation</h1>
+    <div className="p-6 space-y-5">
+      <h1 className="text-2xl font-semibold text-primary">Cash Reconciliation</h1>
+
+      {/* Summary banner */}
+      <div className="rounded-2xl bg-amber-50 border border-amber-200 px-5 py-4 flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Total Pending Reconciliation</p>
+          <p className="text-3xl font-black text-amber-800 mt-0.5">
+            ₹{pendingTotal.toLocaleString('en-IN')}
+          </p>
+          <p className="text-xs text-amber-600 mt-0.5">
+            {pendingPayments.length} cash payment{pendingPayments.length !== 1 ? 's' : ''} collected but not yet reconciled
+          </p>
+        </div>
+        {selected.size > 0 && (
+          <div className="text-right">
+            <p className="text-xs font-semibold text-primary uppercase tracking-wide">Selected to confirm</p>
+            <p className="text-3xl font-black text-primary mt-0.5">₹{selectedTotal.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{selected.size} payment{selected.size !== 1 ? 's' : ''}</p>
+          </div>
+        )}
       </div>
 
-      {/* Bank statement upload — only for users with PERFORM_RECONCILIATION */}
-      {canPerform && (
-      <Card className="mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Bank Statement Upload</h2>
-        <div className="flex items-center gap-3 mb-4">
-          <input
-            type="file"
-            accept=".pdf,.csv"
-            className="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-            onChange={e => setBankFile(e.target.files?.[0] || null)}
-          />
-          <Button size="sm" onClick={handleBankUpload} disabled={uploadLoading || !bankFile}>
-            {uploadLoading ? 'Uploading…' : 'Upload'}
+      {/* Date filter */}
+      <Card>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
+            <input type="date" className="px-3 py-2 rounded-lg border border-gray-300 text-sm"
+              value={fromDate} onChange={e => setFromDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
+            <input type="date" max={today} className="px-3 py-2 rounded-lg border border-gray-300 text-sm"
+              value={toDate} onChange={e => setToDate(e.target.value)} />
+          </div>
+          <Button size="sm" onClick={loadPendingPayments} disabled={pendingLoading}>
+            {pendingLoading ? 'Loading…' : 'Apply'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setFromDate(''); setToDate(''); }}>
+            Clear
           </Button>
         </div>
-        {uploadError && <p className="text-xs text-red-500 mb-3">{uploadError}</p>}
-
-        {polling && (
-          <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
-            <span className="w-4 h-4 rounded-full border-2 border-t-transparent border-primary animate-spin" />
-            Processing bank statement…
-          </div>
-        )}
-
-        {bankStatus && bankStatus.status === 'completed' && (
-          <>
-            <div className="flex gap-4 mb-4 text-sm">
-              <span className="text-green-700 font-medium">✓ {bankStatus.matched_count} matched</span>
-              <span className="text-yellow-700 font-medium">~ {bankStatus.partial_count} partial</span>
-              <span className="text-red-700 font-medium">✗ {bankStatus.unmatched_count} unmatched</span>
-            </div>
-            <div className="overflow-x-auto mb-4">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Date</th>
-                    <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Amount</th>
-                    <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Reference</th>
-                    <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bankStatus.items.map(item => {
-                    const badge = MATCH_BADGE[item.match_status] || MATCH_BADGE.unmatched;
-                    return (
-                      <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50">
-                        <td className="py-2 px-3 text-gray-600 text-xs">
-                          {new Date(item.transaction_date).toLocaleDateString('en-IN')}
-                        </td>
-                        <td className="py-2 px-3 text-right font-medium text-gray-800">
-                          ₹{item.amount.toLocaleString('en-IN')}
-                        </td>
-                        <td className="py-2 px-3 text-gray-600 text-xs">{item.reference}</td>
-                        <td className="py-2 px-3 text-center">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badge.bg} ${badge.text}`}>
-                            {badge.label}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {bankStatus.items.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-6 text-center text-gray-400 text-sm">No transactions found</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {confirmMsg ? (
-              <p className="text-sm text-green-600">{confirmMsg}</p>
-            ) : (
-              <Button onClick={handleConfirm} disabled={confirmLoading}>
-                {confirmLoading ? 'Confirming…' : 'Confirm Reconciliation'}
-              </Button>
-            )}
-          </>
-        )}
-
-        {bankStatus && bankStatus.status === 'failed' && (
-          <p className="text-sm text-red-500">Processing failed. Please try again.</p>
-        )}
       </Card>
-      )} {/* end canPerform */}
 
-      {/* Cash reconciliation — only for users with PERFORM_RECONCILIATION */}
-      {canPerform && (
-      <Card className="mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Cash Reconciliation</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-            <input
-              type="date"
-              max={today}
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={cashDate}
-              onChange={e => setCashDate(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Total Cash (₹)</label>
-            <input
-              type="number"
-              min="0"
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              placeholder="0"
-              value={totalCash}
-              onChange={e => setTotalCash(e.target.value)}
-            />
-          </div>
-          <div className="flex items-end">
-            <Button onClick={handleCashSubmit} disabled={cashLoading}>
-              {cashLoading ? 'Logging…' : 'Log Cash'}
-            </Button>
-          </div>
-        </div>
-        {cashError && <p className="text-xs text-red-500 mb-2">{cashError}</p>}
-        {cashSuccess && <p className="text-xs text-green-600 mb-2">{cashSuccess}</p>}
-      </Card>
-      )} {/* end canPerform */}
-
-      {/* Cash logs table — visible to anyone with VIEW_RECONCILIATION or PERFORM_RECONCILIATION */}
+      {/* Payments table */}
       <Card>
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Cash Reconciliation Logs</h2>
-        {cashLogsLoading ? (
-          <p className="text-sm text-gray-400">Loading…</p>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            {pendingPayments.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+                <input type="checkbox" className="rounded"
+                  checked={selected.size === pendingPayments.length && pendingPayments.length > 0}
+                  onChange={toggleAll}
+                />
+                Select all
+              </label>
+            )}
+            {selected.size > 0 && (
+              <span className="text-xs text-primary font-medium">
+                {selected.size} selected · ₹{selectedTotal.toLocaleString('en-IN')}
+              </span>
+            )}
+          </div>
+          {canPerform && selected.size > 0 && (
+            <Button size="sm" onClick={handleConfirm} disabled={confirmLoading}>
+              {confirmLoading ? 'Confirming…' : `✓ Confirm ₹${selectedTotal.toLocaleString('en-IN')}`}
+            </Button>
+          )}
+        </div>
+
+        {confirmMsg && (
+          <div className="mb-3 rounded-lg bg-green-50 border border-green-200 px-4 py-2.5 text-sm text-green-700 font-medium">
+            {confirmMsg}
+          </div>
+        )}
+        {confirmError && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-700">
+            {confirmError}
+          </div>
+        )}
+
+        {pendingLoading ? (
+          <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+        ) : pendingPayments.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-3xl mb-2">✓</p>
+            <p className="text-sm font-semibold text-gray-600">All cash payments reconciled</p>
+            <p className="text-xs text-gray-400 mt-1">No pending cash payments found for the selected period</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Date</th>
-                  <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Total Cash</th>
-                  <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Expected</th>
-                  <th className="text-right py-2 px-3 text-xs font-medium text-gray-500">Variance</th>
-                  <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Status</th>
+                <tr className="border-b border-gray-100 text-xs font-medium text-gray-500">
+                  <th className="py-2 px-2 w-8"></th>
+                  <th className="py-2 px-2 w-8 text-center">#</th>
+                  <th className="text-left py-2 px-3">Student</th>
+                  <th className="text-left py-2 px-3">Fee Head</th>
+                  <th className="text-center py-2 px-3">Date</th>
+                  <th className="text-left py-2 px-3">Receipt</th>
+                  <th className="text-right py-2 px-3">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingPayments.map((p, idx) => (
+                  <tr key={p.id}
+                    className={`border-b border-gray-50 cursor-pointer transition-colors ${selected.has(p.id) ? 'bg-primary/5' : 'hover:bg-gray-50'}`}
+                    onClick={() => toggleSelect(p.id)}
+                  >
+                    <td className="py-2 px-2 text-center">
+                      <input type="checkbox" className="rounded pointer-events-none"
+                        checked={selected.has(p.id)} readOnly />
+                    </td>
+                    <td className="py-2 px-2 text-center text-xs text-gray-400">{idx + 1}</td>
+                    <td className="py-2 px-3">
+                      <p className="font-medium text-gray-800">{p.student_name}</p>
+                      {p.class_name && <p className="text-xs text-gray-400">{p.class_name}</p>}
+                    </td>
+                    <td className="py-2 px-3 text-gray-600 text-xs">{p.fee_head_name}</td>
+                    <td className="py-2 px-3 text-center text-xs text-gray-500">
+                      {new Date(p.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td className="py-2 px-3 text-xs text-gray-500">{p.receipt_number || '—'}</td>
+                    <td className="py-2 px-3 text-right font-semibold text-gray-800">
+                      ₹{Number(p.amount).toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 bg-gray-50">
+                  <td colSpan={6} className="py-2 px-3 text-xs font-semibold text-gray-600 text-right">
+                    Total pending
+                  </td>
+                  <td className="py-2 px-3 text-right font-black text-gray-800">
+                    ₹{pendingTotal.toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Reconciliation history */}
+      <Card>
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Reconciliation History</h2>
+        {cashLogsLoading ? (
+          <p className="text-sm text-gray-400">Loading…</p>
+        ) : cashLogs.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">No reconciliation history yet</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-xs font-medium text-gray-500">
+                  <th className="text-left py-2 px-3">Date</th>
+                  <th className="text-right py-2 px-3">Confirmed</th>
+                  <th className="text-right py-2 px-3">Expected</th>
+                  <th className="text-right py-2 px-3">Variance</th>
+                  <th className="text-center py-2 px-3">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -328,25 +315,20 @@ export default function ReconciliationPage() {
                     <td className="py-2 px-3 text-gray-600 text-xs">
                       {new Date(log.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>
-                    <td className="py-2 px-3 text-right text-gray-700">₹{log.total_cash.toLocaleString('en-IN')}</td>
-                    <td className="py-2 px-3 text-right text-gray-700">₹{log.expected_cash.toLocaleString('en-IN')}</td>
-                    <td className={`py-2 px-3 text-right font-medium ${log.variance < 0 ? 'text-red-600' : log.variance > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
-                      {log.variance >= 0 ? '+' : ''}₹{log.variance.toLocaleString('en-IN')}
+                    <td className="py-2 px-3 text-right text-gray-700">₹{Number(log.total_cash).toLocaleString('en-IN')}</td>
+                    <td className="py-2 px-3 text-right text-gray-700">₹{Number(log.expected_cash).toLocaleString('en-IN')}</td>
+                    <td className={`py-2 px-3 text-right font-medium ${Number(log.variance) < 0 ? 'text-red-600' : Number(log.variance) > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {Number(log.variance) >= 0 ? '+' : ''}₹{Number(log.variance).toLocaleString('en-IN')}
                     </td>
                     <td className="py-2 px-3 text-center">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        log.status === 'approved' ? 'bg-green-100 text-green-700' :
-                        log.status === 'flagged' ? 'bg-red-100 text-red-700' :
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        log.status === 'matched' ? 'bg-green-100 text-green-700' :
+                        log.status === 'mismatch' ? 'bg-red-100 text-red-700' :
                         'bg-yellow-100 text-yellow-700'
                       }`}>{log.status}</span>
                     </td>
                   </tr>
                 ))}
-                {cashLogs.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-gray-400 text-sm">No cash logs yet</td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>

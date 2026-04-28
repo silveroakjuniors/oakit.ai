@@ -32,15 +32,16 @@ interface CashReconciliation {
 }
 
 const ALL_TILES = [
-  { path: '/admin/finance/fees',          icon: '💳', label: 'Fee Collection',  perm: 'COLLECT_PAYMENT' },
-  { path: '/admin/finance/concessions',   icon: '🎁', label: 'Concessions',     perm: 'MANAGE_CONCESSION' },
-  { path: '/admin/finance/reconciliation',icon: '🔍', label: 'Reconciliation',  perm: 'VIEW_RECONCILIATION' },
-  { path: '/admin/finance/enquiries',     icon: '📝', label: 'Admissions',      perm: 'VIEW_FEES' },
-  { path: '/admin/finance/fee-structures',icon: '🏷️', label: 'Fee Structures',  perm: 'MANAGE_FEE_STRUCTURE' },
-  { path: '/admin/finance/expenses',      icon: '🧾', label: 'Expenses',        perm: 'VIEW_EXPENSE' },
-  { path: '/admin/finance/salary',        icon: '👔', label: 'Salary',          perm: 'VIEW_SALARY' },
-  { path: '/admin/finance/reports',       icon: '📈', label: 'Reports',         perm: 'VIEW_REPORTS' },
-  { path: '/admin/finance/profitability', icon: '💹', label: 'Profitability',   perm: 'VIEW_PROFIT' },
+  { path: '/admin/finance/fees',                       icon: '💳', label: 'Fee Collection',       perm: 'COLLECT_PAYMENT' },
+  { path: '/admin/finance/concessions',                icon: '🎁', label: 'Concessions',           perm: 'MANAGE_CONCESSION' },
+  { path: '/admin/finance/reconciliation',             icon: '💵', label: 'Cash Reconciliation',   perm: 'VIEW_RECONCILIATION' },
+  { path: '/admin/finance/reconciliation/online',      icon: '🔍', label: 'Online Reconciliation', perm: 'VIEW_RECONCILIATION' },
+  { path: '/admin/finance/enquiries',                  icon: '📝', label: 'Admissions',            perm: 'VIEW_FEES' },
+  { path: '/admin/finance/fee-structures',             icon: '🏷️', label: 'Fee Structures',        perm: 'MANAGE_FEE_STRUCTURE' },
+  { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'VIEW_EXPENSE' },
+  { path: '/admin/finance/salary',                     icon: '👔', label: 'Salary',                perm: 'VIEW_SALARY' },
+  { path: '/admin/finance/reports',                    icon: '📈', label: 'Reports',               perm: 'VIEW_REPORTS' },
+  { path: '/admin/finance/profitability',              icon: '💹', label: 'Profitability',         perm: 'VIEW_PROFIT' },
 ] as const;
 
 export default function FinanceDashboardPage() {

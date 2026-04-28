@@ -2,10 +2,39 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { pool } from '../../../lib/db';
 import { redis } from '../../../lib/redis';
-import { jwtVerify, roleGuard } from '../../../middleware/auth';
+import { jwtVerify } from '../../../middleware/auth';
+import { verifyToken } from '../../../lib/jwt';
+import type { Request, Response, NextFunction } from 'express';
 
 const router = Router();
-router.use(jwtVerify);
+
+// Lenient JWT middleware for PIN routes — accepts expired tokens.
+// The user may have an expired session but still needs to verify their PIN.
+// We only check the signature, not expiry or session.
+function jwtVerifyLenient(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing authorization token' });
+  }
+  const token = authHeader.slice(7);
+  try {
+    // Use jsonwebtoken directly to ignore expiry
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || 'change_me';
+    const payload = jwt.verify(token, secret, { ignoreExpiration: true }) as any;
+    req.user = payload;
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+// Status and verify use lenient check (user may have expired token)
+// Set and change use strict check (must be authenticated)
+router.use('/status', jwtVerifyLenient);
+router.use('/verify', jwtVerifyLenient);
+router.use('/set', jwtVerify);
+router.use('/change', jwtVerify);
 
 const PIN_SESSION_TTL = 60 * 60 * 8; // 8 hours
 const MAX_ATTEMPTS = 3;
@@ -26,8 +55,8 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// ── POST /set — Set PIN (principal only) ─────────────────────────────────────
-router.post('/set', roleGuard('principal'), async (req, res) => {
+// ── POST /set — Set PIN ───────────────────────────────────────────────────────
+router.post('/set', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { pin } = req.body as { pin: string };
@@ -117,7 +146,7 @@ router.post('/verify', async (req, res) => {
 });
 
 // ── POST /change — Change PIN (requires current PIN) ─────────────────────────
-router.post('/change', roleGuard('principal'), async (req, res) => {
+router.post('/change', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { current_pin, new_pin } = req.body as { current_pin: string; new_pin: string };

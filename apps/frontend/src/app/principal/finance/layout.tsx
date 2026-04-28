@@ -6,14 +6,16 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clearToken, getRole } from '@/lib/auth';
 
 const FINANCE_NAV = [
-  { href: '/principal/finance',                label: 'Overview',       icon: '💰' },
-  { href: '/principal/finance/fee-structures', label: 'Fee Structures', icon: '🏷️' },
-  { href: '/principal/finance/concessions',    label: 'Concessions',    icon: '🎁' },
-  { href: '/principal/finance/expenses',       label: 'Expenses',       icon: '🧾' },
-  { href: '/principal/finance/salary',         label: 'Salary',         icon: '👔' },
-  { href: '/principal/finance/reconciliation', label: 'Reconciliation', icon: '🔍' },
-  { href: '/principal/finance/reports',        label: 'Reports',        icon: '📈' },
-  { href: '/principal/finance/permissions',    label: 'Permissions',    icon: '🔐' },
+  { href: '/principal/finance',                       label: 'Overview',             icon: '💰' },
+  { href: '/principal/finance/fees',                  label: 'Collect Fee',          icon: '💳' },
+  { href: '/principal/finance/fee-structures',        label: 'Fee Structures',       icon: '🏷️' },
+  { href: '/principal/finance/concessions',           label: 'Concessions',          icon: '🎁' },
+  { href: '/principal/finance/expenses',              label: 'Expenses',             icon: '🧾' },
+  { href: '/principal/finance/salary',                label: 'Salary',               icon: '👔' },
+  { href: '/principal/finance/reconciliation',        label: 'Cash Reconciliation',  icon: '💵' },
+  { href: '/principal/finance/reconciliation/online', label: 'Online Reconciliation',icon: '🔍' },
+  { href: '/principal/finance/reports',               label: 'Reports',              icon: '📈' },
+  { href: '/principal/finance/permissions',           label: 'Permissions',          icon: '🔐' },
 ];
 
 export default function PrincipalFinanceLayout({ children }: { children: ReactNode }) {

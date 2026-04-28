@@ -19,6 +19,7 @@
  * PUT  /api/v1/principal/hr/settings               — update HR settings
  */
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard } from '../../middleware/auth';
 import { validateTerms, findMissingVariables } from '../../lib/templateSubstitution';
@@ -55,15 +56,20 @@ async function uploadPdfBuffer(buffer: Buffer, storagePath: string): Promise<str
 
 /** Fetch school branding for PDF generation. */
 async function fetchSchoolBranding(schoolId: string): Promise<BrandingContext> {
-  const row = await pool.query(
-    `SELECT name, logo_path, contact->>'address' as address FROM schools WHERE id = $1`,
-    [schoolId]
-  );
-  const school = row.rows[0] || {};
+  const [schoolRow, settingsRow] = await Promise.all([
+    pool.query(`SELECT name, logo_path, contact->>'address' as address FROM schools WHERE id = $1`, [schoolId]),
+    // Use SELECT * so missing columns don't cause errors — new columns are accessed safely
+    pool.query(`SELECT * FROM hr_settings WHERE school_id = $1`, [schoolId]).catch(() => ({ rows: [] })),
+  ]);
+  const school = schoolRow.rows[0] || {};
+  const settings = settingsRow.rows[0] || {};
   return {
     school_name: school.name || '',
     school_address: school.address || '',
     logo_url: school.logo_path || null,
+    letterhead_url: settings.letterhead_url || null,
+    principal_signature_url: settings.principal_signature_url || null,
+    principal_designation: settings.principal_designation || null,
   };
 }
 
@@ -196,12 +202,16 @@ router.post('/offer-letters/preview', async (req: Request, res: Response) => {
     );
     const staff_name = staffRow.rows[0]?.name || 'Staff Member';
 
+    // Safe date parsing — fall back to today if invalid
+    const parsedStartDate = start_date ? new Date(start_date) : new Date();
+    const safeStartDate = isNaN(parsedStartDate.getTime()) ? new Date() : parsedStartDate;
+
     const data = {
       staff_name,
       role: role || '',
-      start_date: new Date(start_date),
+      start_date: safeStartDate,
       salary_breakdown: (components || []).map((c: any) => ({
-        component: c.component || c.name || '',
+        component: String(c.component || c.name || ''),
         amount: Number(c.amount) || 0,
       })),
       employment_terms: employment_terms || '',
@@ -211,9 +221,9 @@ router.post('/offer-letters/preview', async (req: Request, res: Response) => {
     let pdfBuffer: Buffer;
     try {
       pdfBuffer = await generateOfferLetterPDFWithBranding(data, branding);
-    } catch (pdfErr) {
-      console.error('[principal/hr POST /offer-letters/preview] PDF generation failed', pdfErr);
-      return res.status(500).json({ error: 'PDF generation failed', code: 'PDF_GENERATION_FAILED' });
+    } catch (pdfErr: any) {
+      console.error('[principal/hr POST /offer-letters/preview] PDF generation failed:', pdfErr?.message || pdfErr);
+      return res.status(500).json({ error: 'PDF generation failed', code: 'PDF_GENERATION_FAILED', detail: pdfErr?.message });
     }
 
     const storagePath = `offer-letters/previews/${school_id}/${uuidv4()}.pdf`;
@@ -263,12 +273,14 @@ router.post('/offer-letters', async (req: Request, res: Response) => {
     // Generate PDF
     const branding = await fetchSchoolBranding(school_id);
     const staff_name = staffCheck.rows[0].name;
+    const parsedStartDate = start_date ? new Date(start_date) : new Date();
+    const safeStartDate = isNaN(parsedStartDate.getTime()) ? new Date() : parsedStartDate;
     const data = {
       staff_name,
       role,
-      start_date: new Date(start_date),
+      start_date: safeStartDate,
       salary_breakdown: (components || []).map((c: any) => ({
-        component: c.component || c.name || '',
+        component: String(c.component || c.name || ''),
         amount: Number(c.amount) || 0,
       })),
       employment_terms,
@@ -412,12 +424,27 @@ router.patch('/resignations/:id/acknowledge', async (req: Request, res: Response
   try {
     const { school_id } = req.user!;
     const { id } = req.params;
+    const { last_working_day } = req.body; // optional principal override
+
+    // Build update fields
+    const updates: string[] = ['resignation_status = \'acknowledged\''];
+    const params: any[] = [id, school_id];
+
+    if (last_working_day) {
+      params.push(last_working_day);
+      updates.push(`last_working_day = $${params.length}`);
+      updates.push(`principal_override_last_working_day = $${params.length}`);
+      // Recalculate notice_period_days based on override
+      params.push(last_working_day);
+      updates.push(`notice_period_days = ($${params.length}::date - CURRENT_DATE)`);
+    }
+
     const result = await pool.query(
       `UPDATE employment_records
-       SET resignation_status = 'acknowledged'
+       SET ${updates.join(', ')}
        WHERE id = $1 AND school_id = $2 AND event_type = 'resignation'
        RETURNING *`,
-      [id, school_id]
+      params
     );
     if (result.rows.length === 0)
       return res.status(404).json({ error: 'Resignation not found' });
@@ -492,7 +519,7 @@ router.get('/settings', async (req: Request, res: Response) => {
       [school_id]
     );
     if (result.rows.length === 0)
-      return res.json({ default_notice_period: 30 });
+      return res.json({ default_notice_period: 30, letterhead_url: null });
     return res.json(result.rows[0]);
   } catch (err) {
     console.error('[principal/hr GET /settings]', err);
@@ -518,6 +545,148 @@ router.put('/settings', async (req: Request, res: Response) => {
     return res.json(result.rows[0]);
   } catch (err) {
     console.error('[principal/hr PUT /settings]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /settings/letterhead — upload letterhead PDF or image ────────────────
+const letterheadUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF or image files are allowed for letterhead'));
+    }
+  },
+});
+
+router.post('/settings/letterhead', letterheadUpload.single('letterhead'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const file = (req as any).file;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+    if (!supabaseUrl || !supabaseKey || supabaseKey === 'your_service_role_key_here') {
+      return res.status(503).json({ error: 'Storage not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const ext = file.mimetype === 'application/pdf' ? '.pdf' : '.png';
+    // Use timestamp in path to bust CDN cache on re-upload
+    const storagePath = `hr-letterheads/${school_id}/letterhead-${Date.now()}${ext}`;
+
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, file.buffer, { contentType: file.mimetype, upsert: false });
+
+    if (error) {
+      console.error('[principal/hr POST /settings/letterhead] upload error', error.message);
+      return res.status(500).json({ error: 'Upload failed: ' + error.message });
+    }
+
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+    const letterhead_url = data.publicUrl;
+
+    // Ensure hr_settings row exists first, then update letterhead_url separately
+    await pool.query(
+      `INSERT INTO hr_settings (school_id, default_notice_period)
+       VALUES ($1, 30)
+       ON CONFLICT (school_id) DO NOTHING`,
+      [school_id]
+    );
+    await pool.query(
+      `UPDATE hr_settings SET letterhead_url = $1 WHERE school_id = $2`,
+      [letterhead_url, school_id]
+    );
+
+    return res.json({ letterhead_url });
+  } catch (err: any) {
+    console.error('[principal/hr POST /settings/letterhead]', err);
+    return res.status(500).json({ error: err?.message || 'Internal server error' });
+  }
+});
+
+// ── DELETE /settings/letterhead — remove letterhead ───────────────────────────
+router.delete('/settings/letterhead', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    await pool.query(`UPDATE hr_settings SET letterhead_url = NULL WHERE school_id = $1`, [school_id]);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[principal/hr DELETE /settings/letterhead]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /settings/signature — upload principal signature image ───────────────
+const signatureUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed for signature'));
+  },
+});
+
+router.post('/settings/signature', signatureUpload.single('signature'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const file = (req as any).file;
+    const { designation } = req.body;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+    if (!supabaseUrl || !supabaseKey || supabaseKey === 'your_service_role_key_here') {
+      return res.status(503).json({ error: 'Storage not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const ext = file.mimetype.includes('png') ? '.png' : '.jpg';
+    const storagePath = `hr-signatures/${school_id}/principal-signature${ext}`;
+
+    const { error } = await supabase.storage
+      .from(BUCKET)
+      .upload(storagePath, file.buffer, { contentType: file.mimetype, upsert: true });
+
+    if (error) {
+      console.error('[principal/hr POST /settings/signature] upload error', error.message);
+      return res.status(500).json({ error: 'Upload failed: ' + error.message });
+    }
+
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+    const signature_url = data.publicUrl;
+
+    await pool.query(
+      `INSERT INTO hr_settings (school_id, default_notice_period, principal_signature_url, principal_designation)
+       VALUES ($1, 30, $2, $3)
+       ON CONFLICT (school_id) DO UPDATE
+       SET principal_signature_url = $2, principal_designation = $3`,
+      [school_id, signature_url, designation || null]
+    );
+
+    return res.json({ signature_url, designation: designation || null });
+  } catch (err: any) {
+    console.error('[principal/hr POST /settings/signature]', err);
+    return res.status(500).json({ error: err?.message || 'Internal server error' });
+  }
+});
+
+// ── DELETE /settings/signature — remove principal signature ──────────────────
+router.delete('/settings/signature', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    await pool.query(
+      `UPDATE hr_settings SET principal_signature_url = NULL, principal_designation = NULL WHERE school_id = $1`,
+      [school_id]
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[principal/hr DELETE /settings/signature]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

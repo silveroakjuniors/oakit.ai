@@ -180,13 +180,33 @@ router.post('/offer-letters/:id/decline', async (req: Request, res: Response) =>
   }
 });
 
+// ── GET /api/v1/staff/hr/notice-period ───────────────────────────────────────
+router.get('/notice-period', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const settingsRow = await pool.query(
+      `SELECT default_notice_period FROM hr_settings WHERE school_id = $1`,
+      [school_id]
+    );
+    const default_notice_period = settingsRow.rows[0]?.default_notice_period ?? 30;
+    const today = new Date();
+    const autoLastWorkingDay = new Date(today);
+    autoLastWorkingDay.setDate(today.getDate() + default_notice_period);
+    return res.json({
+      default_notice_period,
+      auto_last_working_day: autoLastWorkingDay.toISOString().split('T')[0],
+    });
+  } catch (err) {
+    console.error('[hr] GET /notice-period', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /api/v1/staff/hr/resignations ───────────────────────────────────────
 router.post('/resignations', async (req: Request, res: Response) => {
   try {
     const { id: userId, school_id } = req.user!;
-    const { last_working_day, reason } = req.body;
-    if (!last_working_day)
-      return res.status(400).json({ error: 'last_working_day is required' });
+    const { reason, requested_last_working_day } = req.body;
 
     // Check for existing pending resignation
     const existing = await pool.query(
@@ -203,15 +223,34 @@ router.post('/resignations', async (req: Request, res: Response) => {
       [school_id]
     );
     const default_notice_period = settingsRow.rows[0]?.default_notice_period ?? 30;
-    const notice_period_days = calcNoticePeriodDays(new Date(), new Date(last_working_day));
+
+    // Auto-calculate last working day = today + default_notice_period
+    const today = new Date();
+    const autoLastWorkingDay = new Date(today);
+    autoLastWorkingDay.setDate(today.getDate() + default_notice_period);
+    const last_working_day = autoLastWorkingDay.toISOString().split('T')[0];
+    const notice_period_days = default_notice_period;
+
+    // Validate requested_last_working_day if provided (must be >= auto-calculated)
+    if (requested_last_working_day) {
+      const reqDate = new Date(requested_last_working_day);
+      if (reqDate < autoLastWorkingDay) {
+        return res.status(400).json({
+          error: `Requested last working day cannot be before the minimum notice period date (${last_working_day})`,
+          code: 'INVALID_REQUESTED_DATE',
+          minimum_last_working_day: last_working_day,
+        });
+      }
+    }
 
     const result = await pool.query(
       `INSERT INTO employment_records
          (event_type, user_id, school_id, last_working_day, notice_period_days, default_notice_period,
-          resignation_reason, resignation_status, event_date)
-       VALUES ('resignation', $1, $2, $3, $4, $5, $6, 'pending', CURRENT_DATE)
+          resignation_reason, resignation_status, event_date, requested_last_working_day)
+       VALUES ('resignation', $1, $2, $3, $4, $5, $6, 'pending', CURRENT_DATE, $7)
        RETURNING *`,
-      [userId, school_id, last_working_day, notice_period_days, default_notice_period, reason || null]
+      [userId, school_id, last_working_day, notice_period_days, default_notice_period,
+       reason || null, requested_last_working_day || null]
     );
     return res.status(201).json(result.rows[0]);
   } catch (err) {

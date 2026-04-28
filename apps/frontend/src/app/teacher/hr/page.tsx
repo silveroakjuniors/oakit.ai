@@ -219,7 +219,9 @@ export default function TeacherHRPage() {
 
   // Resignation form state
   const today = new Date().toISOString().split('T')[0];
-  const [resignForm, setResignForm] = useState({ last_working_day: '', reason: '' });
+  const [noticePeriodInfo, setNoticePeriodInfo] = useState<{ default_notice_period: number; auto_last_working_day: string } | null>(null);
+  const [resignForm, setResignForm] = useState({ reason: '', requested_last_working_day: '' });
+  const [showRequestDifferentDate, setShowRequestDifferentDate] = useState(false);
   const [submittingResign, setSubmittingResign] = useState(false);
   const [resignMsg, setResignMsg] = useState('');
   const [resignNoticeDays, setResignNoticeDays] = useState<number | null>(null);
@@ -231,6 +233,7 @@ export default function TeacherHRPage() {
       apiGet<OfferLetter[]>('/api/v1/staff/hr/my-offer-letters', token).then(setOffers).catch(() => {}),
       apiGet<LeaveRequest[]>('/api/v1/staff/hr/my-leaves', token).then(setLeaves).catch(() => {}),
       apiGet<ResignationRecord[]>('/api/v1/staff/hr/resignations', token).then(setResignations).catch(() => {}),
+      apiGet<{ default_notice_period: number; auto_last_working_day: string }>('/api/v1/staff/hr/notice-period', token).then(setNoticePeriodInfo).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
 
@@ -247,13 +250,15 @@ export default function TeacherHRPage() {
   }
 
   async function submitResignation() {
-    if (!resignForm.last_working_day) return;
     setSubmittingResign(true); setResignMsg('');
     try {
-      const res = await apiPost<{ notice_period_days: number }>('/api/v1/staff/hr/resignations', resignForm, token);
+      const payload: any = { reason: resignForm.reason };
+      if (showRequestDifferentDate && resignForm.requested_last_working_day) {
+        payload.requested_last_working_day = resignForm.requested_last_working_day;
+      }
+      const res = await apiPost<{ notice_period_days: number; last_working_day: string }>('/api/v1/staff/hr/resignations', payload, token);
       setResignNoticeDays(res.notice_period_days);
       setResignMsg('success');
-      // Refresh resignations
       apiGet<ResignationRecord[]>('/api/v1/staff/hr/resignations', token).then(setResignations).catch(() => {});
     } catch (e: any) {
       if (e.message?.includes('RESIGNATION_EXISTS') || e.message?.includes('active resignation')) {
@@ -535,6 +540,12 @@ export default function TeacherHRPage() {
                   {pending.notice_period_days != null && (
                     <p className="text-xs text-neutral-600">Notice period: <span className="font-semibold">{pending.notice_period_days} days</span></p>
                   )}
+                  {(pending as any).requested_last_working_day && (
+                    <p className="text-xs text-neutral-500">
+                      Your requested last day: <span className="font-semibold">{new Date((pending as any).requested_last_working_day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      <span className="text-neutral-400"> (pending principal approval)</span>
+                    </p>
+                  )}
                   <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full ${statusBadge(pending.resignation_status || 'pending')}`}>
                     {pending.resignation_status || 'pending'}
                   </span>
@@ -543,25 +554,64 @@ export default function TeacherHRPage() {
                 <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center space-y-2">
                   <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
                   <p className="text-sm font-bold text-emerald-700">Resignation submitted</p>
-                  {resignNoticeDays != null && (
-                    <p className="text-xs text-emerald-600">Your notice period is {resignNoticeDays} days.</p>
+                  {resignNoticeDays != null && noticePeriodInfo && (
+                    <p className="text-xs text-emerald-600">
+                      Your last working day is <span className="font-semibold">{new Date(noticePeriodInfo.auto_last_working_day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span> ({resignNoticeDays} days notice).
+                    </p>
                   )}
                 </div>
               ) : (
                 <div className="bg-white rounded-2xl border border-neutral-100 p-4 shadow-sm space-y-3">
                   <p className="text-sm font-bold text-neutral-800">Submit Resignation</p>
-                  <div>
-                    <label className="text-xs font-medium text-neutral-600 mb-1 block">Last Working Day</label>
-                    <input type="date" min={today} value={resignForm.last_working_day}
-                      onChange={e => setResignForm(f => ({ ...f, last_working_day: e.target.value }))}
-                      className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
+
+                  {/* Auto-calculated last working day — read only */}
+                  <div className="bg-neutral-50 rounded-xl p-3 space-y-1">
+                    <p className="text-xs font-medium text-neutral-600">Notice Period</p>
+                    {noticePeriodInfo ? (
+                      <>
+                        <p className="text-sm font-bold text-neutral-800">
+                          {noticePeriodInfo.default_notice_period} days
+                        </p>
+                        <p className="text-xs text-neutral-500">
+                          Your last working day will be{' '}
+                          <span className="font-semibold text-neutral-700">
+                            {new Date(noticePeriodInfo.auto_last_working_day).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          </span>
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-neutral-400">Loading notice period…</p>
+                    )}
                   </div>
+
+                  {/* Optional: request a different last working day */}
+                  <div>
+                    <button
+                      onClick={() => setShowRequestDifferentDate(v => !v)}
+                      className="text-xs text-primary-600 hover:text-primary-700 font-medium underline">
+                      {showRequestDifferentDate ? 'Cancel request' : 'Request a different last working day'}
+                    </button>
+                    {showRequestDifferentDate && noticePeriodInfo && (
+                      <div className="mt-2">
+                        <label className="text-xs font-medium text-neutral-600 mb-1 block">Preferred Last Working Day</label>
+                        <input
+                          type="date"
+                          min={noticePeriodInfo.auto_last_working_day}
+                          value={resignForm.requested_last_working_day}
+                          onChange={e => setResignForm(f => ({ ...f, requested_last_working_day: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
+                        <p className="text-xs text-neutral-400 mt-1">Must be on or after {new Date(noticePeriodInfo.auto_last_working_day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}. Subject to principal approval.</p>
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <label className="text-xs font-medium text-neutral-600 mb-1 block">Reason (optional)</label>
                     <textarea value={resignForm.reason} onChange={e => setResignForm(f => ({ ...f, reason: e.target.value }))}
                       rows={3} placeholder="Brief reason…"
                       className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
                   </div>
+
                   {resignMsg === 'exists' && (
                     <p className="text-xs text-amber-600 font-medium flex items-center gap-1">
                       <AlertCircle className="w-3.5 h-3.5" /> You already have an active resignation.
@@ -570,7 +620,7 @@ export default function TeacherHRPage() {
                   {resignMsg && resignMsg !== 'exists' && resignMsg !== 'success' && (
                     <p className="text-xs text-red-500 font-medium">{resignMsg}</p>
                   )}
-                  <button onClick={submitResignation} disabled={submittingResign || !resignForm.last_working_day}
+                  <button onClick={submitResignation} disabled={submittingResign}
                     className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                     {submittingResign ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
                     Submit Resignation

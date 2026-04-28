@@ -255,6 +255,51 @@ router.post('/student-login', loginThrottle, async (req: Request, res: Response)
   }
 });
 
+// POST /api/v1/auth/refresh
+// Issues a fresh token if the current session is still active in Redis.
+// Accepts an expired token — only the session validity matters.
+router.post('/refresh', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing authorization token' });
+  }
+  const token = authHeader.slice(7);
+  try {
+    // Decode without verifying expiry so we can still read the payload
+    const import_jwt = require('jsonwebtoken');
+    let payload: any;
+    try {
+      payload = import_jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+    } catch {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const { user_id, sid } = payload;
+    if (!user_id || !sid) {
+      return res.status(401).json({ error: 'Invalid token payload' });
+    }
+
+    // Check the session is still registered in Redis
+    const activeSession = await redis.get(`session:${user_id}`);
+    if (!activeSession || activeSession !== sid) {
+      return res.status(401).json({ error: 'Session expired — please log in again', code: 'SESSION_EXPIRED' });
+    }
+
+    // Issue a fresh token with the same payload (minus exp/iat/sid — signToken adds a new sid)
+    const { signToken: sign } = await import('../lib/jwt');
+    const { exp, iat, ...rest } = payload;
+    const newToken = sign({ ...rest, sid } as any);
+
+    // Extend the Redis session TTL
+    await redis.set(`session:${user_id}`, sid, { EX: SESSION_TTL });
+
+    return res.json({ token: newToken });
+  } catch (err) {
+    console.error('Refresh error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/v1/auth/logout
 router.post('/logout', jwtVerify, async (req: Request, res: Response) => {
   try {

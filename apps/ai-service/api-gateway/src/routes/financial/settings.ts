@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../../lib/db';
 import { redis } from '../../lib/redis';
 import { jwtVerify, roleGuard } from '../../middleware/auth';
+import { DEFAULT_ROLE_PERMISSIONS } from '../../lib/permissions';
 
 const router = Router();
 
@@ -115,14 +116,26 @@ router.get('/permissions', async (req, res) => {
     }
 
     const overrides: Record<string, boolean> = result.rows[0].financial_permissions || {};
-    // Merge JWT permissions with per-user overrides stored in the DB
     const jwtPerms: string[] = (req.user as any).permissions || [];
-    const effectivePerms = jwtPerms.filter(p => overrides[p] !== false);
-    // Add any permissions explicitly granted via overrides
+    const role: string = (req.user as any).role || '';
+    const roleDefaults: string[] = DEFAULT_ROLE_PERMISSIONS[role] || [];
+
+    // Merge JWT perms + role defaults
+    const merged = new Set([...jwtPerms, ...roleDefaults]);
+
+    // Per-user DB overrides only apply to non-privileged roles.
+    // principal, admin, and super_admin have role-defined permissions that
+    // cannot be reduced by per-user overrides — only additions are allowed.
+    const PRIVILEGED_ROLES = new Set(['principal', 'admin', 'super_admin']);
     Object.entries(overrides).forEach(([perm, granted]) => {
-      if (granted && !effectivePerms.includes(perm)) effectivePerms.push(perm);
+      if (granted) {
+        merged.add(perm);
+      } else if (!PRIVILEGED_ROLES.has(role)) {
+        merged.delete(perm);
+      }
     });
 
+    const effectivePerms = Array.from(merged);
     return res.json({ permissions: effectivePerms, overrides });
   } catch (err) {
     console.error('[financial/permissions GET]', err);

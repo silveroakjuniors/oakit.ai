@@ -497,4 +497,151 @@ router.get('/today-sections', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/admin/dashboard/fee-alerts
+router.get('/fee-alerts', async (req: Request, res: Response) => {
+  try {
+    const schoolId = req.user!.school_id;
+
+    // 1. Get current academic year label
+    const ayResult = await pool.query(
+      `SELECT label FROM academic_years WHERE school_id = $1 AND is_current = true LIMIT 1`,
+      [schoolId]
+    );
+
+    if (ayResult.rows.length === 0) {
+      return res.json({ fee_alerts: { unmapped_classes: [] } });
+    }
+
+    const currentYear = ayResult.rows[0].label;
+
+    // 2. Find active classes with no active fee structure for the current year
+    const result = await pool.query(
+      `SELECT c.id, c.name
+       FROM classes c
+       WHERE c.school_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM fee_structures fs
+           WHERE fs.school_id = $1
+             AND fs.class_id = c.id
+             AND fs.academic_year = $2
+             AND fs.is_active = true
+         )
+       ORDER BY c.name ASC`,
+      [schoolId, currentYear]
+    );
+
+    return res.json({ fee_alerts: { unmapped_classes: result.rows } });
+  } catch (err) {
+    console.error('[dashboard GET /fee-alerts]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/dashboard/fee-summary
+// Returns per-class fee assignment stats for the current academic year:
+// - total active students
+// - students with at least one fee account (assigned)
+// - students with no fee account (unassigned)
+// - breakdown by fee type (tuition, admission, transport, etc.)
+router.get('/fee-summary', async (req: Request, res: Response) => {
+  try {
+    const schoolId = req.user!.school_id;
+
+    // Resolve current academic year
+    const ayResult = await pool.query(
+      `SELECT label FROM academic_years WHERE school_id = $1 AND is_current = true LIMIT 1`,
+      [schoolId]
+    );
+    const currentYear = ayResult.rows.length > 0 ? ayResult.rows[0].label : null;
+
+    // Per-class stats: total students, assigned students, and per-type counts
+    const result = await pool.query(
+      `WITH class_students AS (
+         SELECT c.id AS class_id, c.name AS class_name,
+                COUNT(s.id)::int AS total_students
+         FROM classes c
+         LEFT JOIN students s ON s.class_id = c.id AND s.school_id = $1 AND s.is_active = true
+         WHERE c.school_id = $1
+         GROUP BY c.id, c.name
+       ),
+       assigned_students AS (
+         -- Students who have at least one active fee account
+         SELECT s.class_id,
+                COUNT(DISTINCT s.id)::int AS students_assigned
+         FROM students s
+         WHERE s.school_id = $1 AND s.is_active = true
+           AND EXISTS (
+             SELECT 1 FROM student_fee_accounts sfa
+             WHERE sfa.student_id = s.id
+               AND sfa.school_id = $1
+               AND sfa.deleted_at IS NULL
+           )
+         GROUP BY s.class_id
+       ),
+       fee_type_counts AS (
+         -- Per class, per fee type: how many distinct students have an account
+         SELECT s.class_id,
+                fh.type AS fee_type,
+                COUNT(DISTINCT sfa.student_id)::int AS students_with_type
+         FROM student_fee_accounts sfa
+         JOIN fee_heads fh ON fh.id = sfa.fee_head_id
+         JOIN students s ON s.id = sfa.student_id AND s.school_id = $1 AND s.is_active = true
+         WHERE sfa.school_id = $1 AND sfa.deleted_at IS NULL AND fh.deleted_at IS NULL
+         GROUP BY s.class_id, fh.type
+       ),
+       fee_type_agg AS (
+         SELECT class_id,
+                json_object_agg(fee_type, students_with_type) AS by_type
+         FROM fee_type_counts
+         GROUP BY class_id
+       ),
+       has_primary_fee AS (
+         -- Classes that have a tuition/annual/term fee head assigned
+         SELECT DISTINCT fh.class_id
+         FROM fee_heads fh
+         JOIN fee_structures fs ON fs.id = fh.fee_structure_id
+         WHERE fh.school_id = $1
+           AND fh.deleted_at IS NULL
+           AND fh.type IN ('tuition', 'admission')
+           AND fh.class_id IS NOT NULL
+           ${currentYear ? "AND fs.academic_year = $2" : ""}
+       )
+       SELECT
+         cs.class_id,
+         cs.class_name,
+         cs.total_students,
+         COALESCE(ast.students_assigned, 0) AS students_assigned,
+         cs.total_students - COALESCE(ast.students_assigned, 0) AS students_unassigned,
+         COALESCE(fta.by_type, '{}'::json) AS by_fee_type,
+         (hpf.class_id IS NOT NULL) AS has_primary_fee
+       FROM class_students cs
+       LEFT JOIN assigned_students ast ON ast.class_id = cs.class_id
+       LEFT JOIN fee_type_agg fta ON fta.class_id = cs.class_id
+       LEFT JOIN has_primary_fee hpf ON hpf.class_id = cs.class_id
+       ORDER BY cs.class_name ASC`,
+      currentYear ? [schoolId, currentYear] : [schoolId]
+    );
+
+    // School-wide totals
+    const totals = result.rows.reduce(
+      (acc: any, r: any) => {
+        acc.total_students += r.total_students;
+        acc.students_assigned += r.students_assigned;
+        acc.students_unassigned += r.students_unassigned;
+        return acc;
+      },
+      { total_students: 0, students_assigned: 0, students_unassigned: 0 }
+    );
+
+    return res.json({
+      academic_year: currentYear,
+      totals,
+      by_class: result.rows,
+    });
+  } catch (err) {
+    console.error('[dashboard GET /fee-summary]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

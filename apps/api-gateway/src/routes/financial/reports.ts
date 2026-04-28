@@ -28,6 +28,11 @@ router.get('/revenue', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { from, to } = req.query as Record<string, string>;
+    const params: any[] = [schoolId];
+    let idx = 2;
+    let dateFilter = '';
+    if (from) { dateFilter += ` AND fp.payment_date >= $${idx++}`; params.push(from); }
+    if (to)   { dateFilter += ` AND fp.payment_date <= $${idx++}`; params.push(to); }
     const result = await pool.query(
       `SELECT
          COALESCE(SUM(fp.amount), 0) AS total_collected,
@@ -38,11 +43,9 @@ router.get('/revenue', async (req, res) => {
        FROM student_fee_accounts sfa
        LEFT JOIN fee_payments fp ON fp.fee_head_id = sfa.fee_head_id
          AND fp.student_id = sfa.student_id AND fp.school_id = sfa.school_id
-         AND fp.deleted_at IS NULL
-         ${from ? `AND fp.payment_date >= '${from}'` : ''}
-         ${to   ? `AND fp.payment_date <= '${to}'`   : ''}
+         AND fp.deleted_at IS NULL${dateFilter}
        WHERE sfa.school_id = $1 AND sfa.deleted_at IS NULL`,
-      [schoolId]
+      params
     );
     return res.json(result.rows[0]);
   } catch (err) {
@@ -56,14 +59,15 @@ router.get('/expenses', principalOnly, async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { from, to } = req.query as Record<string, string>;
-    let query = `SELECT category, SUM(amount) AS total,
-                   DATE_TRUNC('month', date) AS month
-                 FROM expenses WHERE school_id = $1 AND deleted_at IS NULL`;
     const params: any[] = [schoolId];
     let idx = 2;
-    if (from) { query += ` AND date >= $${idx++}`; params.push(from); }
-    if (to)   { query += ` AND date <= $${idx++}`; params.push(to); }
-    query += ` GROUP BY category, DATE_TRUNC('month', date) ORDER BY month DESC`;
+    let dateFilter = '';
+    if (from) { dateFilter += ` AND date >= $${idx++}`; params.push(from); }
+    if (to)   { dateFilter += ` AND date <= $${idx++}`; params.push(to); }
+    const query = `SELECT category, SUM(amount) AS total,
+                   DATE_TRUNC('month', date) AS month
+                 FROM expenses WHERE school_id = $1 AND deleted_at IS NULL${dateFilter}
+                 GROUP BY category, DATE_TRUNC('month', date) ORDER BY month DESC`;
     const result = await pool.query(query, params);
     return res.json(result.rows);
   } catch (err) {
@@ -77,19 +81,34 @@ router.get('/profit-loss', principalOnly, async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { from, to } = req.query as Record<string, string>;
+    const incomeParams: any[] = [schoolId];
+    const expenseParams: any[] = [schoolId];
+    let incomeFilter = '';
+    let expenseFilter = '';
+    let idx = 2;
+    if (from) {
+      incomeFilter  += ` AND payment_date >= $${idx}`;
+      expenseFilter += ` AND date >= $${idx}`;
+      incomeParams.push(from);
+      expenseParams.push(from);
+      idx++;
+    }
+    if (to) {
+      incomeFilter  += ` AND payment_date <= $${idx}`;
+      expenseFilter += ` AND date <= $${idx}`;
+      incomeParams.push(to);
+      expenseParams.push(to);
+      idx++;
+    }
     const incomeResult = await pool.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_income FROM fee_payments
-       WHERE school_id = $1 AND deleted_at IS NULL
-       ${from ? `AND payment_date >= '${from}'` : ''}
-       ${to   ? `AND payment_date <= '${to}'`   : ''}`,
-      [schoolId]
+       WHERE school_id = $1 AND deleted_at IS NULL${incomeFilter}`,
+      incomeParams
     );
     const expenseResult = await pool.query(
       `SELECT COALESCE(SUM(amount), 0) AS total_expenses FROM expenses
-       WHERE school_id = $1 AND deleted_at IS NULL
-       ${from ? `AND date >= '${from}'` : ''}
-       ${to   ? `AND date <= '${to}'`   : ''}`,
-      [schoolId]
+       WHERE school_id = $1 AND deleted_at IS NULL${expenseFilter}`,
+      expenseParams
     );
     const income = parseFloat(incomeResult.rows[0].total_income);
     const expenses = parseFloat(expenseResult.rows[0].total_expenses);
@@ -107,7 +126,9 @@ router.get('/daily-collection', async (req, res) => {
     const { date } = req.query as { date?: string };
     const targetDate = date || new Date().toISOString().split('T')[0];
     const result = await pool.query(
-      `SELECT fp.*, s.name AS student_name, fh.name AS fee_head_name
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY fp.created_at DESC) AS sl_no,
+         fp.*, s.name AS student_name, fh.name AS fee_head_name
        FROM fee_payments fp
        JOIN students s ON s.id = fp.student_id
        JOIN fee_heads fh ON fh.id = fp.fee_head_id
@@ -115,7 +136,11 @@ router.get('/daily-collection', async (req, res) => {
        ORDER BY fp.created_at DESC`,
       [schoolId, targetDate]
     );
-    return res.json({ date: targetDate, payments: result.rows, total: result.rows.reduce((s: number, r: any) => s + parseFloat(r.amount), 0) });
+    return res.json({
+      date: targetDate,
+      payments: result.rows,
+      total: result.rows.reduce((s: number, r: any) => s + parseFloat(r.amount), 0),
+    });
   } catch (err) {
     console.error('[reports GET /daily-collection]', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -165,10 +190,17 @@ router.get('/student-pending', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const result = await pool.query(
-      `SELECT s.id, s.name AS student_name, SUM(sfa.outstanding_balance) AS total_outstanding
-       FROM student_fee_accounts sfa JOIN students s ON s.id = sfa.student_id
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY SUM(sfa.outstanding_balance) DESC) AS sl_no,
+         s.id, s.name AS student_name,
+         c.name AS class_name,
+         SUM(sfa.outstanding_balance) AS total_outstanding
+       FROM student_fee_accounts sfa
+       JOIN students s ON s.id = sfa.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
        WHERE sfa.school_id = $1 AND sfa.deleted_at IS NULL AND sfa.outstanding_balance > 0
-       GROUP BY s.id, s.name ORDER BY total_outstanding DESC`,
+       GROUP BY s.id, s.name, c.name
+       ORDER BY total_outstanding DESC`,
       [schoolId]
     );
     return res.json(result.rows);
@@ -183,9 +215,11 @@ router.get('/class-collection', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const result = await pool.query(
-      `SELECT c.id, c.name AS class_name,
-              COALESCE(SUM(fp.amount), 0) AS total_collected,
-              COALESCE(SUM(sfa.outstanding_balance), 0) AS total_pending
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY c.name ASC) AS sl_no,
+         c.id, c.name AS class_name,
+         COALESCE(SUM(fp.amount), 0) AS total_collected,
+         COALESCE(SUM(sfa.outstanding_balance), 0) AS total_pending
        FROM classes c
        LEFT JOIN students s ON s.class_id = c.id AND s.school_id = $1
        LEFT JOIN student_fee_accounts sfa ON sfa.student_id = s.id AND sfa.school_id = $1 AND sfa.deleted_at IS NULL
@@ -206,7 +240,10 @@ router.get('/activity-revenue', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const result = await pool.query(
-      `SELECT fh.name AS activity_name, COALESCE(SUM(fp.amount), 0) AS total_revenue
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY COALESCE(SUM(fp.amount), 0) DESC) AS sl_no,
+         fh.name AS activity_name,
+         COALESCE(SUM(fp.amount), 0) AS total_revenue
        FROM fee_heads fh
        LEFT JOIN fee_payments fp ON fp.fee_head_id = fh.id AND fp.school_id = $1 AND fp.deleted_at IS NULL
        WHERE fh.school_id = $1 AND fh.type = 'activity' AND fh.deleted_at IS NULL
@@ -225,14 +262,15 @@ router.get('/daycare-usage', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { from, to } = req.query as Record<string, string>;
-    let query = `SELECT ur.student_id, s.name AS student_name, SUM(ur.quantity) AS total_hours
-                 FROM usage_records ur JOIN students s ON s.id = ur.student_id
-                 WHERE ur.school_id = $1 AND ur.service_type = 'daycare'`;
     const params: any[] = [schoolId];
     let idx = 2;
-    if (from) { query += ` AND ur.date >= $${idx++}`; params.push(from); }
-    if (to)   { query += ` AND ur.date <= $${idx++}`; params.push(to); }
-    query += ` GROUP BY ur.student_id, s.name ORDER BY total_hours DESC`;
+    let dateFilter = '';
+    if (from) { dateFilter += ` AND ur.date >= $${idx++}`; params.push(from); }
+    if (to)   { dateFilter += ` AND ur.date <= $${idx++}`; params.push(to); }
+    const query = `SELECT ur.student_id, s.name AS student_name, SUM(ur.quantity) AS total_hours
+                 FROM usage_records ur JOIN students s ON s.id = ur.student_id
+                 WHERE ur.school_id = $1 AND ur.service_type = 'daycare'${dateFilter}
+                 GROUP BY ur.student_id, s.name ORDER BY total_hours DESC`;
     const result = await pool.query(query, params);
     return res.json(result.rows);
   } catch (err) {

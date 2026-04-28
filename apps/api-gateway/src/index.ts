@@ -105,6 +105,7 @@ import financialSalaryRecordsRouter from './routes/financial/salary/records';
 import financialUsageRecordsRouter from './routes/financial/usageRecords';
 import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
+import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
@@ -397,6 +398,7 @@ app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalar
 app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalaryRecordsRouter);
 app.use('/api/v1/financial/usage-records',  financialModuleGuard, financialUsageRecordsRouter);
 app.use('/api/v1/financial/reports',        financialModuleGuard, financialReportsRouter);
+app.use('/api/v1/financial/reminders',      financialModuleGuard, financialRemindersRouter);
 app.use('/api/v1/financial',                financialModuleGuard, financialInsightsRouter);
 
 // Parent fees (guarded by financialModuleGuard)

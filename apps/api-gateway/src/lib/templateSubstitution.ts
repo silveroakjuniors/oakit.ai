@@ -10,6 +10,9 @@
  * Replace every `{{key}}` occurrence in `body` with the corresponding value
  * from `values`. All occurrences of each variable are replaced (global).
  *
+ * Uses a replacer function so that special replacement patterns in `value`
+ * (e.g. $&, $', $1) are treated as literal strings, not regex back-references.
+ *
  * @param body   - Template string containing zero or more `{{key}}` placeholders.
  * @param values - Map of variable names to their replacement strings.
  * @returns The body with all matched placeholders substituted.
@@ -17,14 +20,18 @@
 export function substituteVariables(body: string, values: Record<string, string>): string {
   return Object.entries(values).reduce((result, [key, value]) => {
     // Escape any regex special chars in the key before building the pattern
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return result.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), value);
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, (ch) => '\\' + ch);
+    // Use a replacer function so that special replacement patterns in `value`
+    // (e.g. $&, $', $1) are treated as literal strings, not regex back-references.
+    return result.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), () => value);
   }, body);
 }
 
 /**
  * Find all `{{variable_name}}` placeholders in `body` that have no
  * corresponding entry in `values` (or whose entry is an empty string).
+ *
+ * Uses Object.prototype.hasOwnProperty to safely handle keys like '__proto__'.
  *
  * @param body   - Template string to scan for placeholders.
  * @param values - Map of variable names to their replacement strings.
@@ -39,7 +46,9 @@ export function findMissingVariables(body: string, values: Record<string, string
     found.add(match[1]);
   }
 
-  return Array.from(found).filter((name) => !values[name]);
+  return Array.from(found).filter(
+    (name) => !Object.prototype.hasOwnProperty.call(values, name) || !values[name],
+  );
 }
 
 /**
