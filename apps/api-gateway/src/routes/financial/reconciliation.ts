@@ -4,6 +4,8 @@ import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { pool } from '../../lib/db';
 import { jwtVerify, permissionGuard } from '../../middleware/auth';
+import { generateReceiptPDF } from '../../lib/pdfService';
+import type { BrandingContext, GeneratorContext, ReceiptData } from '../../lib/pdfService';
 
 const router = Router();
 router.use(jwtVerify);
@@ -17,6 +19,17 @@ function getSupabase() {
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key || key === 'your_service_role_key_here') return null;
   return createClient(url, key);
+}
+
+async function uploadPdfBuffer(buffer: Buffer, storagePath: string): Promise<string> {
+  const supabase = getSupabase();
+  if (!supabase) return `/receipts/${storagePath}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(storagePath, buffer, {
+    contentType: 'application/pdf', upsert: true,
+  });
+  if (error) throw new Error(`PDF upload failed: ${error.message}`);
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+  return data.publicUrl;
 }
 
 // ── GET /bank — List all bank reconciliation uploads ─────────────────────────
@@ -647,6 +660,184 @@ router.post('/cash/:id/review', permissionGuard('PERFORM_RECONCILIATION'), async
   } catch (err) {
     console.error('[reconciliation POST /cash/:id/review]', err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /admin-payments/match — Match pending admin-recorded payments against bank CSV rows
+// Takes bank_rows: [{ reference: string, amount: number, date: string }]
+// Groups pending payments by reference, matches by reference + total_amount in same bank row.
+router.post('/admin-payments/match', permissionGuard('PERFORM_RECONCILIATION'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { bank_rows } = req.body as {
+      bank_rows: Array<{ reference: string; amount: number; date: string }>;
+    };
+    if (!Array.isArray(bank_rows) || bank_rows.length === 0)
+      return res.status(400).json({ error: 'bank_rows array is required' });
+
+    // Fetch all pending payments grouped by reference
+    const result = await pool.query(
+      `SELECT fp.id, fp.reference_number, fp.amount, fp.payment_date
+       FROM fee_payments fp
+       WHERE fp.school_id = $1
+         AND fp.needs_reconciliation = true
+         AND fp.reconciled_at IS NULL
+         AND fp.deleted_at IS NULL`,
+      [schoolId]
+    );
+
+    // Group by reference
+    const groups: Record<string, { ids: string[]; total: number }> = {};
+    for (const row of result.rows) {
+      const key = row.reference_number || `__no_ref_${row.id}`;
+      if (!groups[key]) groups[key] = { ids: [], total: 0 };
+      groups[key].ids.push(row.id);
+      groups[key].total += parseFloat(row.amount);
+    }
+
+    // Match each group against bank rows
+    const matches: Array<{
+      reference_number: string | null;
+      payment_ids: string[];
+      total_amount: number;
+      matched: boolean;
+      bank_date: string | null;
+    }> = [];
+
+    for (const [key, group] of Object.entries(groups)) {
+      const ref = key.startsWith('__no_ref_') ? null : key;
+      const bankRow = ref
+        ? bank_rows.find(r =>
+            r.reference.trim().toLowerCase() === ref.trim().toLowerCase() &&
+            Math.abs(r.amount - group.total) < 0.01
+          )
+        : null;
+
+      matches.push({
+        reference_number: ref,
+        payment_ids: group.ids,
+        total_amount: Math.round(group.total * 100) / 100,
+        matched: !!bankRow,
+        bank_date: bankRow?.date || null,
+      });
+    }
+
+    return res.json({
+      matches,
+      matched_count: matches.filter(m => m.matched).length,
+      unmatched_count: matches.filter(m => !m.matched).length,
+    });
+  } catch (err) {
+    console.error('[reconciliation POST /admin-payments/match]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /admin-payments/confirm — Mark matched admin payments as reconciled + generate receipts
+router.post('/admin-payments/confirm', permissionGuard('PERFORM_RECONCILIATION'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const schoolId = req.user!.school_id;
+    const { confirmations } = req.body as {
+      confirmations: Array<{ payment_ids: string[]; bank_date: string }>;
+    };
+    if (!Array.isArray(confirmations) || confirmations.length === 0)
+      return res.status(400).json({ error: 'confirmations array is required' });
+
+    // Fetch school branding once
+    const schoolResult = await client.query(
+      `SELECT s.name, s.contact->>'address' AS address, s.logo_path, hs.letterhead_url
+       FROM schools s LEFT JOIN hr_settings hs ON hs.school_id = s.id
+       WHERE s.id = $1`, [schoolId]
+    );
+    const school = schoolResult.rows[0] || { name: 'School', address: '', logo_path: null, letterhead_url: null };
+    const branding: BrandingContext = {
+      school_name: school.name,
+      school_address: school.address || '',
+      logo_url: school.logo_path || null,
+      letterhead_url: school.letterhead_url || null,
+    };
+    const ctx: GeneratorContext = {
+      generated_by_name: (req.user as any).name || 'System',
+      generated_by_role: req.user!.role,
+      generated_at: new Date(),
+    };
+
+    await client.query('BEGIN');
+    let totalConfirmed = 0;
+
+    for (const { payment_ids, bank_date } of confirmations) {
+      // Mark reconciled
+      await client.query(
+        `UPDATE fee_payments
+         SET reconciled_at = now(), reconciled_by = $1
+         WHERE id = ANY($2::uuid[]) AND school_id = $3
+           AND needs_reconciliation = true AND reconciled_at IS NULL AND deleted_at IS NULL`,
+        [req.user!.id, payment_ids, schoolId]
+      );
+      totalConfirmed += payment_ids.length;
+
+      // Generate one receipt per payment in this group
+      for (const paymentId of payment_ids) {
+        const pmtResult = await client.query(
+          `SELECT fp.*, s.name AS student_name, c.name AS class_name,
+                  fh.name AS fee_head_name, sc.subdomain AS school_code
+           FROM fee_payments fp
+           JOIN students s ON s.id = fp.student_id
+           LEFT JOIN classes c ON c.id = s.class_id
+           JOIN fee_heads fh ON fh.id = fp.fee_head_id
+           JOIN schools sc ON sc.id = fp.school_id
+           WHERE fp.id = $1`,
+          [paymentId]
+        );
+        if (pmtResult.rows.length === 0) continue;
+        const pmt = pmtResult.rows[0];
+
+        try {
+          const receiptData: ReceiptData = {
+            receipt_number: pmt.receipt_number,
+            student_name: pmt.student_name,
+            class_name: pmt.class_name || '',
+            fee_head_breakdown: [{ name: pmt.fee_head_name, amount: parseFloat(pmt.amount) }],
+            amount_paid: parseFloat(pmt.amount),
+            payment_mode: pmt.payment_mode,
+            payment_date: new Date(bank_date),
+            school_name: school.name,
+            outstanding_after_payment: 0,
+            reference_number: pmt.reference_number || undefined,
+          };
+          const pdfBuffer = await generateReceiptPDF(receiptData, branding, ctx);
+          const receiptUrl = await uploadPdfBuffer(
+            pdfBuffer,
+            `receipts/${schoolId}/${pmt.receipt_number}.pdf`
+          );
+          await client.query(
+            `UPDATE fee_payments SET receipt_url = $1, receipt_released_at = now() WHERE id = $2`,
+            [receiptUrl, paymentId]
+          );
+        } catch (pdfErr) {
+          console.error('[admin-payments/confirm] PDF generation failed for', paymentId, pdfErr);
+          // Don't fail the whole reconciliation if PDF fails
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+
+    pool.query(
+      `INSERT INTO audit_logs (school_id, user_id, actor_role, action, module, after_data)
+       VALUES ($1,$2,$3,'RECONCILE_ADMIN_PAYMENTS','reconciliation',$4)`,
+      [schoolId, req.user!.id, req.user!.role,
+       JSON.stringify({ confirmed_payment_count: totalConfirmed })]
+    ).catch(() => {});
+
+    return res.json({ success: true, confirmed_payment_count: totalConfirmed });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[reconciliation POST /admin-payments/confirm]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 

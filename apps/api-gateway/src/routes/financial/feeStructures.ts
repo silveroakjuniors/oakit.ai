@@ -141,9 +141,9 @@ router.get(
                  'students_total',       (
                    SELECT COUNT(*)::int
                    FROM students s
-                   WHERE s.class_id = fh.class_id
-                     AND s.school_id = fh.school_id
+                   WHERE s.school_id = fh.school_id
                      AND s.is_active = true
+                     AND (fh.class_id IS NULL OR s.class_id = fh.class_id)
                  ),
                  'payments_count',       (
                    SELECT COUNT(*)::int
@@ -1200,6 +1200,188 @@ router.post(
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('[fee-structures POST /:id/fee-heads/:headId/assign-student]', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ── POST /api/v1/financial/fee-structures/:id/fee-heads/:headId/sync-students ──
+// Accepts { student_ids: string[] } — the full desired set of assigned students.
+// In one transaction: assigns any newly checked students, unassigns any unchecked
+// ones (soft-delete their fee accounts, blocked if paid_amount > 0).
+router.post(
+  '/:id/fee-heads/:headId/sync-students',
+  permissionGuard('MANAGE_FEE_STRUCTURE'),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const schoolId = req.user!.school_id;
+      const { id, headId } = req.params;
+      const { student_ids } = req.body as { student_ids: string[] };
+
+      if (!Array.isArray(student_ids)) {
+        return res.status(400).json({ error: 'student_ids must be an array' });
+      }
+
+      // Verify fee head
+      const headResult = await client.query(
+        `SELECT * FROM fee_heads
+         WHERE id = $1 AND fee_structure_id = $2 AND school_id = $3 AND deleted_at IS NULL`,
+        [headId, id, schoolId]
+      );
+      if (headResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Fee head not found' });
+      }
+      const head = headResult.rows[0];
+
+      await client.query('BEGIN');
+
+      // Current assignments (non-deleted)
+      const currentResult = await client.query(
+        `SELECT student_id FROM student_fee_accounts
+         WHERE fee_head_id = $1 AND school_id = $2 AND deleted_at IS NULL`,
+        [headId, schoolId]
+      );
+      const currentIds = new Set(currentResult.rows.map((r: { student_id: string }) => r.student_id));
+      const desiredIds = new Set(student_ids);
+
+      // Block unassign if any to-remove student has payments
+      const toRemove = [...currentIds].filter(sid => !desiredIds.has(sid));
+      if (toRemove.length > 0) {
+        const paidCheck = await client.query(
+          `SELECT sfa.student_id FROM student_fee_accounts sfa
+           WHERE sfa.fee_head_id = $1 AND sfa.school_id = $2 AND sfa.student_id = ANY($3)
+             AND sfa.deleted_at IS NULL
+             AND EXISTS (
+               SELECT 1 FROM fee_payments fp
+               WHERE fp.fee_head_id = sfa.fee_head_id
+                 AND fp.student_id = sfa.student_id
+                 AND fp.school_id = sfa.school_id
+                 AND fp.deleted_at IS NULL
+             )`,
+          [headId, schoolId, toRemove]
+        );
+        if (paidCheck.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: 'Cannot unassign students who have already made payments.',
+            student_ids: paidCheck.rows.map((r: { student_id: string }) => r.student_id),
+          });
+        }
+        await client.query(
+          `UPDATE student_fee_accounts
+           SET deleted_at = now(), updated_at = now()
+           WHERE fee_head_id = $1 AND school_id = $2 AND student_id = ANY($3) AND deleted_at IS NULL`,
+          [headId, schoolId, toRemove]
+        );
+      }
+
+      // Assign new students
+      const toAdd = [...desiredIds].filter(sid => !currentIds.has(sid));
+      const assignedAmount =
+        head.rounded_monthly_fee ?? head.calculated_monthly_fee ?? head.amount ?? 0;
+      let added = 0;
+      for (const sid of toAdd) {
+        const r = await client.query(
+          `INSERT INTO student_fee_accounts (
+             student_id, school_id, fee_head_id,
+             assigned_amount, outstanding_balance, status, admission_date
+           ) VALUES ($1, $2, $3, $4, $5, 'pending', CURRENT_DATE)
+           ON CONFLICT DO NOTHING`,
+          [sid, schoolId, headId, assignedAmount, assignedAmount]
+        );
+        added += r.rowCount ?? 0;
+      }
+
+      await client.query('COMMIT');
+      return res.json({ success: true, assigned: added, unassigned: toRemove.length });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('[fee-structures POST /:id/fee-heads/:headId/sync-students]', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// ── POST /api/v1/financial/fee-structures/:id/fee-heads/:headId/restructure ───
+// Nuclear option: wipes ALL payment data for this fee head (fee_payments,
+// student_fee_accounts, online_payment_proofs, credit_balances contributions)
+// then clears the class assignment so it can be reassigned fresh.
+// Requires explicit confirmation: { confirm: "RESTRUCTURE" } in body.
+// Only callable by admin with MANAGE_FEE_STRUCTURE permission.
+router.post(
+  '/:id/fee-heads/:headId/restructure',
+  permissionGuard('MANAGE_FEE_STRUCTURE'),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const schoolId = req.user!.school_id;
+      const { id, headId } = req.params;
+      const { confirm } = req.body as { confirm?: string };
+
+      if (confirm !== 'RESTRUCTURE') {
+        return res.status(400).json({
+          error: 'You must send { "confirm": "RESTRUCTURE" } to proceed.',
+        });
+      }
+
+      const headResult = await client.query(
+        `SELECT fh.id, fh.name FROM fee_heads fh
+         WHERE fh.id = $1 AND fh.fee_structure_id = $2 AND fh.school_id = $3 AND fh.deleted_at IS NULL`,
+        [headId, id, schoolId]
+      );
+      if (headResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Fee head not found' });
+      }
+
+      await client.query('BEGIN');
+
+      // 1. Hard-delete all payment records for this fee head
+      const paymentsResult = await client.query(
+        `DELETE FROM fee_payments
+         WHERE fee_head_id = $1 AND school_id = $2
+         RETURNING id`,
+        [headId, schoolId]
+      );
+
+      // 2. Hard-delete online payment proofs
+      await client.query(
+        `DELETE FROM online_payment_proofs
+         WHERE fee_head_id = $1 AND school_id = $2`,
+        [headId, schoolId]
+      );
+
+      // 3. Hard-delete student fee accounts
+      const accountsResult = await client.query(
+        `DELETE FROM student_fee_accounts
+         WHERE fee_head_id = $1 AND school_id = $2
+         RETURNING id`,
+        [headId, schoolId]
+      );
+
+      // 4. Clear class assignment on the fee head
+      await client.query(
+        `UPDATE fee_heads SET class_id = NULL, updated_at = now()
+         WHERE id = $1 AND school_id = $2`,
+        [headId, schoolId]
+      );
+
+      await client.query('COMMIT');
+
+      return res.json({
+        success: true,
+        fee_head_id: headId,
+        payments_deleted: paymentsResult.rowCount ?? 0,
+        accounts_deleted: accountsResult.rowCount ?? 0,
+        message: 'Fee head has been restructured. All payment history has been permanently deleted.',
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('[fee-structures POST /:id/fee-heads/:headId/restructure]', err);
       return res.status(500).json({ error: 'Internal server error' });
     } finally {
       client.release();

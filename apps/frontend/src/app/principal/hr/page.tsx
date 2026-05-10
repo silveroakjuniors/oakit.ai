@@ -1120,8 +1120,8 @@ export default function PrincipalHRPage() {
                 {/* Letterhead Upload */}
                 <div className="border-t border-neutral-100 pt-4 space-y-3">
                   <div>
-                    <p className="text-xs font-bold text-neutral-700 mb-1">Offer Letter Letterhead</p>
-                    <p className="text-xs text-neutral-400 mb-3">Upload your school letterhead (PDF or image). It will be used as the background for all offer letters — your header, footer, logo and address will come from the letterhead automatically.</p>
+                    <p className="text-xs font-bold text-neutral-700 mb-1">Letterhead</p>
+                    <p className="text-xs text-neutral-400 mb-3">Upload your school letterhead as a PNG or JPG image. It will be used as the full-page background for offer letters and fee receipts — your header, footer, logo and address will come from the letterhead automatically.</p>
                   </div>
 
                   {hrSettings.letterhead_url ? (
@@ -1144,7 +1144,7 @@ export default function PrincipalHRPage() {
                           {uploadingLetterhead ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                           {uploadingLetterhead ? 'Uploading…' : 'Choose Letterhead'}
                         </span>
-                        <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden"
+                        <input type="file" accept=".png,.jpg,.jpeg" className="hidden"
                           onChange={uploadLetterhead} disabled={uploadingLetterhead} />
                       </label>
                     </div>

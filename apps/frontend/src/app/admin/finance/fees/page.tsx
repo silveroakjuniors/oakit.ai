@@ -53,6 +53,12 @@ interface Invoice {
   credit_balance: number;
   gross_payable: number;
   net_payable: number;
+  total_assigned: number;
+  total_paid: number;
+  confirmed_paid: number;
+  total_concessions: number;
+  reconciliation_pending_amount: number;
+  reconciliation_pending_count: number;
 }
 
 interface Payment {
@@ -64,6 +70,29 @@ interface Payment {
   receipt_url?: string;
   fee_head_name?: string;
   needs_reconciliation?: boolean;
+  collected_by_name?: string;
+  collected_by_role?: string;
+  reconciled_at?: string;
+  reconciled_by_name?: string;
+  reconciled_by_role?: string;
+  cancel_status?: string;
+  cancel_reason?: string;
+  cancel_requested_by_name?: string;
+  cancel_approved_by_name?: string;
+  created_at?: string;
+}
+
+interface CancelledPayment {
+  id: string;
+  receipt_number: string;
+  amount: number;
+  payment_mode: string;
+  payment_date: string;
+  fee_head_name?: string;
+  cancel_reason: string;
+  requested_by_name?: string;
+  approved_by_name?: string;
+  approved_at: string;
 }
 
 interface DuplicateInfo {
@@ -106,7 +135,13 @@ export default function FeesPage() {
   const [payResult, setPayResult] = useState<{ receipt_url?: string; receipt_number?: string; needs_reconciliation?: boolean } | null>(null);
 
   const [history, setHistory] = useState<Payment[]>([]);
+  const [cancellations, setCancellations] = useState<CancelledPayment[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Cancel request state
+  const [cancelTarget, setCancelTarget] = useState<Payment | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelMsg, setCancelMsg] = useState('');
 
   const needsRef = ['upi', 'online', 'bank_transfer'].includes(paymentMode);
 
@@ -175,9 +210,12 @@ export default function FeesPage() {
   async function loadHistory(studentId: string) {
     setHistoryLoading(true);
     try {
-      const data = await apiGet<Payment[]>(`/api/v1/financial/payments/student/${studentId}`, token);
-      setHistory(Array.isArray(data) ? data : []);
-    } catch { setHistory([]); }
+      const data = await apiGet<{ payments: Payment[]; cancellations: CancelledPayment[] }>(
+        `/api/v1/financial/payments/student/${studentId}`, token
+      );
+      setHistory(Array.isArray(data.payments) ? data.payments : []);
+      setCancellations(Array.isArray(data.cancellations) ? data.cancellations : []);
+    } catch { setHistory([]); setCancellations([]); }
     finally { setHistoryLoading(false); }
   }
 
@@ -273,6 +311,8 @@ export default function FeesPage() {
           payment_date: paymentDate,
           reference_number: referenceNumber.trim() || undefined,
           screenshot_url: screenshotUrl || undefined,
+          allow_duplicate: dupOverride || undefined,
+          override_reason: dupOverride ? dupOverrideComment.trim() : undefined,
         },
         token
       );
@@ -338,10 +378,55 @@ export default function FeesPage() {
               <Card>
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-sm font-semibold text-gray-700">Fee Summary — {selectedStudent.name}</h2>
-                  <span className="text-xs text-gray-500">
-                    Total outstanding: <strong className="text-primary">₹{invoice.net_payable.toLocaleString('en-IN')}</strong>
-                  </span>
                 </div>
+
+                {/* Summary stats bar */}
+                {(() => {
+                  const paidPct = invoice.total_assigned > 0
+                    ? Math.round((invoice.total_paid / invoice.total_assigned) * 100) : 0;
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-gray-50 rounded-xl">
+                      <div>
+                        <p className="text-xs text-gray-400 mb-0.5">Total Assigned</p>
+                        <p className="text-sm font-bold text-gray-800">₹{Number(invoice.total_assigned).toLocaleString('en-IN')}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 mb-0.5">Paid</p>
+                        <p className="text-sm font-bold text-green-700">₹{Number(invoice.total_paid).toLocaleString('en-IN')}</p>
+                        <p className="text-xs text-gray-400">{paidPct}% collected</p>
+                        {invoice.reconciliation_pending_amount > 0 && (
+                          <p className="text-xs text-amber-500 mt-0.5">
+                            incl. ₹{Number(invoice.reconciliation_pending_amount).toLocaleString('en-IN')} pending bank match
+                          </p>
+                        )}
+                      </div>
+                      {invoice.total_concessions > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-400 mb-0.5">Concessions</p>
+                          <p className="text-sm font-bold text-blue-600">− ₹{Number(invoice.total_concessions).toLocaleString('en-IN')}</p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-xs text-gray-400 mb-0.5">Outstanding</p>
+                        <p className="text-sm font-bold text-primary">₹{Number(invoice.net_payable).toLocaleString('en-IN')}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Progress bar — paid (green) + recon pending portion (amber) */}
+                {invoice.total_assigned > 0 && (
+                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4 flex">
+                    <div
+                      className="h-full bg-green-500 transition-all"
+                      style={{ width: `${Math.round(((Number(invoice.total_paid) - Number(invoice.reconciliation_pending_amount)) / invoice.total_assigned) * 100)}%` }}
+                    />
+                    <div
+                      className="h-full bg-amber-400 transition-all"
+                      style={{ width: `${Math.round((Number(invoice.reconciliation_pending_amount) / invoice.total_assigned) * 100)}%` }}
+                    />
+                  </div>
+                )}
                 <div className="space-y-2">
                   {invoice.accounts.map(acc => {
                     const isSelected = selectedAccount?.fee_head_id === acc.fee_head_id;
@@ -576,6 +661,7 @@ export default function FeesPage() {
           {/* Payment history */}
           <Card>
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Payment History</h2>
+            {cancelMsg && <p className="text-xs text-green-600 mb-3">{cancelMsg}</p>}
             {historyLoading ? (
               <p className="text-sm text-gray-400">Loading…</p>
             ) : (
@@ -589,12 +675,15 @@ export default function FeesPage() {
                       <th className="text-right py-2 px-3">Amount</th>
                       <th className="text-center py-2 px-3">Mode</th>
                       <th className="text-center py-2 px-3">Date</th>
+                      <th className="text-left py-2 px-3">Collected by</th>
+                      <th className="text-left py-2 px-3">Reconciled</th>
                       <th className="text-center py-2 px-3">Receipt</th>
+                      <th className="text-center py-2 px-3">Cancel</th>
                     </tr>
                   </thead>
                   <tbody>
                     {history.map((p, idx) => (
-                      <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <tr key={p.id} className={`border-b border-gray-50 hover:bg-gray-50 ${p.cancel_status === 'pending_approval' ? 'bg-red-50/30' : ''}`}>
                         <td className="py-2 px-2 text-center text-xs text-gray-400">{idx + 1}</td>
                         <td className="py-2 px-3 text-gray-600 text-xs font-mono">{p.receipt_number}</td>
                         <td className="py-2 px-3 text-gray-700 text-xs">{p.fee_head_name || '—'}</td>
@@ -605,23 +694,142 @@ export default function FeesPage() {
                         <td className="py-2 px-3 text-center text-gray-600 text-xs">
                           {new Date(p.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
+                        <td className="py-2 px-3 text-xs">
+                          {p.collected_by_name ? (
+                            <div>
+                              <p className="text-gray-700 font-medium">{p.collected_by_name}</p>
+                              <p className="text-gray-400 capitalize">{p.collected_by_role?.replace('_', ' ')}</p>
+                              {p.created_at && (
+                                <p className="text-gray-400">
+                                  {new Date(p.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">Online / System</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-xs">
+                          {p.needs_reconciliation ? (
+                            p.reconciled_at ? (
+                              <div>
+                                <p className="text-green-700 font-medium">✓ Reconciled</p>
+                                <p className="text-gray-500">
+                                  {new Date(p.reconciled_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  {p.reconciled_by_name && ` · ${p.reconciled_by_name}`}
+                                  {p.reconciled_by_role && ` (${p.reconciled_by_role.replace(/_/g, ' ')})`}
+                                </p>
+                              </div>
+                            ) : (
+                              <span className="text-amber-600 font-medium">⏳ Pending</span>
+                            )
+                          ) : (
+                            <span className="text-gray-400 text-xs">Cash — N/A</span>
+                          )}
+                        </td>
                         <td className="py-2 px-3 text-center">
                           {p.receipt_url ? (
-                            <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 underline">Download</a>
-                          ) : p.needs_reconciliation ? (
-                            <span className="text-xs text-amber-600">Pending</span>
+                            <a href={p.receipt_url} target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-blue-600 underline">Download</a>
+                          ) : p.needs_reconciliation && !p.reconciled_at ? (
+                            <span className="text-xs text-amber-500">After reconciliation</span>
                           ) : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {p.cancel_status === 'pending_approval' ? (
+                            <span className="text-xs text-red-500 font-medium">⏳ Pending principal</span>
+                          ) : !p.cancel_status ? (
+                            <button
+                              onClick={() => { setCancelTarget(p); setCancelReason(''); setCancelMsg(''); }}
+                              className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                            >
+                              Request Cancel
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
-                    {history.length === 0 && (
-                      <tr><td colSpan={7} className="py-6 text-center text-gray-400 text-sm">No payment history</td></tr>
+                    {/* Cancelled payments audit trail */}
+                    {cancellations.map(c => (
+                      <tr key={c.id} className="border-b border-gray-50 bg-red-50/20">
+                        <td className="py-2 px-2 text-center text-xs text-gray-300">—</td>
+                        <td className="py-2 px-3 text-xs font-mono text-red-400 line-through">{c.receipt_number}</td>
+                        <td className="py-2 px-3 text-xs text-gray-400">{c.fee_head_name || '—'}</td>
+                        <td className="py-2 px-3 text-right text-xs text-red-400 line-through">₹{Number(c.amount).toLocaleString('en-IN')}</td>
+                        <td className="py-2 px-3 text-center">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-500">cancelled</span>
+                        </td>
+                        <td className="py-2 px-3 text-center text-xs text-gray-400">
+                          {new Date(c.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td className="py-2 px-3 text-xs text-gray-400" colSpan={2}>
+                          <p>Cancelled by {c.requested_by_name || '—'}</p>
+                          <p>Approved by {c.approved_by_name || '—'} · {new Date(c.approved_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                          <p className="text-red-400 italic">Reason: {c.cancel_reason}</p>
+                        </td>
+                        <td className="py-2 px-3 text-center text-xs text-gray-300">—</td>
+                        <td />
+                      </tr>
+                    ))}
+                    {history.length === 0 && cancellations.length === 0 && (
+                      <tr><td colSpan={10} className="py-6 text-center text-gray-400 text-sm">No payment history</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
             )}
           </Card>
+
+          {/* Cancel request modal */}
+          {cancelTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border-2 border-red-200">
+                <h2 className="font-bold text-red-700 text-lg mb-1">Request Receipt Cancellation</h2>
+                <p className="text-sm text-gray-600 mb-1">
+                  Receipt <span className="font-mono font-medium">{cancelTarget.receipt_number}</span>
+                  {' · '}₹{Number(cancelTarget.amount).toLocaleString('en-IN')}
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-700">
+                  This will be sent to the Principal for approval. Once approved, the payment will be permanently deleted and the student's outstanding balance will be restored.
+                </div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Reason for cancellation <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none mb-3"
+                  rows={3}
+                  placeholder="Explain why this receipt needs to be cancelled…"
+                  value={cancelReason}
+                  onChange={e => setCancelReason(e.target.value)}
+                />
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="ghost" onClick={() => setCancelTarget(null)} disabled={cancelLoading}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-40"
+                    disabled={!cancelReason.trim() || cancelLoading}
+                    onClick={async () => {
+                      setCancelLoading(true);
+                      try {
+                        await apiPost(`/api/v1/financial/payments/${cancelTarget.id}/request-cancel`, { reason: cancelReason.trim() }, token);
+                        setCancelMsg(`✓ Cancellation request sent to Principal for ${cancelTarget.receipt_number}`);
+                        setCancelTarget(null);
+                        if (selectedStudent) await loadHistory(selectedStudent.id);
+                      } catch (err: unknown) {
+                        setCancelMsg(err instanceof Error ? err.message : 'Failed to submit request.');
+                      } finally {
+                        setCancelLoading(false);
+                      }
+                    }}
+                  >
+                    {cancelLoading ? 'Submitting…' : 'Submit Request'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

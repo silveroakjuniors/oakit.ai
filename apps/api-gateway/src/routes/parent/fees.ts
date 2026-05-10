@@ -17,9 +17,14 @@ router.get('/invoice/:studentId', async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
 
     const accountsResult = await pool.query(
-      `SELECT sfa.*, fh.name AS fee_head_name, fh.type AS fee_head_type
+      `SELECT sfa.*,
+              fh.name AS fee_head_name, fh.type AS fee_head_type,
+              s.name AS student_name,
+              c.name AS class_name
        FROM student_fee_accounts sfa
        JOIN fee_heads fh ON fh.id = sfa.fee_head_id
+       JOIN students s ON s.id = sfa.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
        WHERE sfa.student_id = $1 AND sfa.school_id = $2 AND sfa.deleted_at IS NULL`,
       [studentId, schoolId]
     );
@@ -54,6 +59,8 @@ router.get('/invoice/:studentId', async (req, res) => {
 
     return res.json({
       student_id: studentId,
+      student_name: accountsResult.rows[0]?.student_name ?? '',
+      class_name: accountsResult.rows[0]?.class_name ?? '',
       accounts: accountsResult.rows,
       concessions: concessionsResult.rows,
       usage_charges: usageResult.rows,
@@ -167,8 +174,9 @@ router.get('/siblings', async (req, res) => {
     const schoolId = req.user!.school_id;
 
     const studentsResult = await pool.query(
-      `SELECT s.id, s.name FROM parent_student_links sp
+      `SELECT s.id, s.name, c.name AS class_name FROM parent_student_links sp
        JOIN students s ON s.id = sp.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
        WHERE sp.parent_id = $1 AND s.school_id = $2 AND s.is_active = true`,
       [parentId, schoolId]
     );
@@ -191,6 +199,7 @@ router.get('/siblings', async (req, res) => {
         return {
           student_id: student.id,
           student_name: student.name,
+          class_name: student.class_name ?? '',
           outstanding_balance: outstanding,
           credit_balance: credit,
           net_payable: Math.max(0, outstanding - credit),

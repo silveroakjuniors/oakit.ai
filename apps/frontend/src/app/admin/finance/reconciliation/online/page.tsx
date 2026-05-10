@@ -19,11 +19,32 @@ interface PendingProof {
   outstanding_balance?: number;
 }
 
+interface PendingPaymentRow {
+  id: string;
+  student_name: string;
+  class_name?: string;
+  fee_head_name: string;
+  amount: number;
+  receipt_number: string;
+}
+
+interface PendingPaymentGroup {
+  reference_number: string | null;
+  total_amount: number;
+  payment_mode: string;
+  payment_date: string;
+  payment_ids: string[];
+  rows: PendingPaymentRow[];
+  // set after matching
+  match_status?: 'unmatched' | 'auto_matched' | 'manual';
+  bank_date?: string;
+}
+
 type MatchStatus = 'unmatched' | 'auto_matched' | 'manual';
 
 interface ProofState extends PendingProof {
   match_status: MatchStatus;
-  bank_date: string;       // date to use for the fee payment
+  bank_date: string;
   manual_note?: string;
 }
 
@@ -36,6 +57,16 @@ export default function OnlineReconciliationPage() {
 
   const [proofs, setProofs] = useState<ProofState[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Admin-recorded UPI/bank payments pending reconciliation (grouped by reference)
+  const [pendingGroups, setPendingGroups] = useState<PendingPaymentGroup[]>([]);
+  const [adminBankFile, setAdminBankFile] = useState<File | null>(null);
+  const [adminMatchLoading, setAdminMatchLoading] = useState(false);
+  const [adminMatchDone, setAdminMatchDone] = useState(false);
+  const [adminMatchSummary, setAdminMatchSummary] = useState<{ matched: number; unmatched: number } | null>(null);
+  const [adminConfirmLoading, setAdminConfirmLoading] = useState(false);
+  const [adminConfirmMsg, setAdminConfirmMsg] = useState('');
+  const [adminConfirmError, setAdminConfirmError] = useState('');
 
   // Bank statement upload
   const [bankFile, setBankFile] = useState<File | null>(null);
@@ -74,8 +105,15 @@ export default function OnlineReconciliationPage() {
     setMatchDone(false);
     setBankRows([]);
     setMatchSummary(null);
+    setAdminMatchDone(false);
+    setAdminMatchSummary(null);
+    setAdminConfirmMsg('');
+    setAdminConfirmError('');
     try {
-      const data = await apiGet<PendingProof[]>('/api/v1/financial/reconciliation/online/pending', token);
+      const [data, pending] = await Promise.all([
+        apiGet<PendingProof[]>('/api/v1/financial/reconciliation/online/pending', token),
+        apiGet<{ payments: PendingPaymentGroup[] }>('/api/v1/financial/reports/reconciliation-pending', token).catch(() => ({ payments: [] })),
+      ]);
       setProofs(
         (Array.isArray(data) ? data : []).map(p => ({
           ...p,
@@ -83,7 +121,12 @@ export default function OnlineReconciliationPage() {
           bank_date: new Date().toISOString().split('T')[0],
         }))
       );
-    } catch { setProofs([]); }
+      setPendingGroups((pending.payments || []).map(g => ({
+        ...g,
+        match_status: 'unmatched' as const,
+        bank_date: new Date().toISOString().split('T')[0],
+      })));
+    } catch { setProofs([]); setPendingGroups([]); }
     finally { setLoading(false); }
   }
 
@@ -354,7 +397,7 @@ export default function OnlineReconciliationPage() {
       {/* Pending proofs table */}
       {loading ? (
         <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
-      ) : proofs.length === 0 ? (
+      ) : proofs.length === 0 && pendingGroups.length === 0 ? (
         <Card>
           <div className="py-10 text-center">
             <p className="text-3xl mb-2">✓</p>
@@ -362,7 +405,7 @@ export default function OnlineReconciliationPage() {
             <p className="text-xs text-gray-400 mt-1">All submitted payments have been reconciled</p>
           </div>
         </Card>
-      ) : (
+      ) : proofs.length === 0 ? null : (
         <Card>
           <h2 className="text-sm font-semibold text-gray-700 mb-3">
             Step 2 — Review &amp; Reconcile
@@ -491,6 +534,197 @@ export default function OnlineReconciliationPage() {
               {confirmError}
             </div>
           )}
+        </Card>
+      )}
+
+      {/* ── Admin-recorded UPI/bank payments pending reconciliation ─────── */}
+      {pendingGroups.length > 0 && (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700">Admin-Recorded Payments — Pending Bank Match</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                UPI / bank transfer payments recorded by staff. Payments with the same reference number are grouped
+                (e.g. siblings paying together). Upload your bank statement to auto-match by reference + total amount.
+              </p>
+            </div>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
+              {pendingGroups.length} group{pendingGroups.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {/* Bank statement upload */}
+          {canPerform && (
+            <div className="mb-4 p-3 bg-gray-50 rounded-xl">
+              <p className="text-xs font-medium text-gray-600 mb-2">
+                Upload bank statement CSV — system matches by <strong>reference number + total amount in the same row</strong>
+              </p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <input type="file" accept=".csv,.txt"
+                  className="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                  onChange={e => { setAdminBankFile(e.target.files?.[0] || null); setAdminMatchDone(false); setAdminMatchSummary(null); }}
+                />
+                <Button size="sm" disabled={adminMatchLoading || !adminBankFile}
+                  onClick={async () => {
+                    if (!adminBankFile) return;
+                    setAdminMatchLoading(true);
+                    setAdminConfirmMsg('');
+                    setAdminConfirmError('');
+                    try {
+                      const text = await adminBankFile.text();
+                      // Parse CSV: find reference (alphanumeric 8-30 chars), amount, date per row
+                      const bankRows: { reference: string; amount: number; date: string }[] = [];
+                      for (const line of text.split('\n').filter(l => l.trim())) {
+                        const cols = line.split(/[,\t]/).map(c => c.trim().replace(/^"|"$/g, ''));
+                        let ref = '', amount = 0, date = '';
+                        for (const col of cols) {
+                          if (!ref && /^[A-Z0-9]{8,30}$/i.test(col)) ref = col;
+                          if (!amount) { const n = parseFloat(col.replace(/,/g, '')); if (n > 0) amount = n; }
+                          if (!date) {
+                            const m = col.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/) || col.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
+                            if (m) date = col.includes('-') && col.length === 10 && col[4] === '-' ? col : `${m[3]}-${m[2]}-${m[1]}`;
+                          }
+                        }
+                        if (ref && amount && date) bankRows.push({ reference: ref, amount, date });
+                      }
+                      const result = await apiPost<{
+                        matches: Array<{ reference_number: string | null; payment_ids: string[]; total_amount: number; matched: boolean; bank_date: string | null }>;
+                        matched_count: number; unmatched_count: number;
+                      }>('/api/v1/financial/reconciliation/admin-payments/match', { bank_rows: bankRows }, token);
+
+                      setPendingGroups(prev => prev.map(g => {
+                        const match = result.matches.find(m =>
+                          m.reference_number === g.reference_number &&
+                          Math.abs(m.total_amount - g.total_amount) < 0.01
+                        );
+                        if (match?.matched && match.bank_date) {
+                          return { ...g, match_status: 'auto_matched' as const, bank_date: match.bank_date };
+                        }
+                        return g;
+                      }));
+                      setAdminMatchSummary({ matched: result.matched_count, unmatched: result.unmatched_count });
+                      setAdminMatchDone(true);
+                    } catch (err: unknown) {
+                      setAdminConfirmError(err instanceof Error ? err.message : 'Failed to process bank statement.');
+                    } finally { setAdminMatchLoading(false); }
+                  }}
+                >
+                  {adminMatchLoading ? 'Matching…' : 'Match Transactions'}
+                </Button>
+              </div>
+              {adminMatchDone && adminMatchSummary && (
+                <p className="text-xs mt-2 text-gray-600">
+                  <span className="text-green-700 font-medium">{adminMatchSummary.matched} matched</span>
+                  {' · '}
+                  <span className="text-amber-600">{adminMatchSummary.unmatched} not found — mark manually below</span>
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Groups table */}
+          <div className="space-y-3">
+            {pendingGroups.map((g, idx) => (
+              <div key={idx} className={`rounded-xl border p-3 ${
+                g.match_status === 'auto_matched' ? 'bg-green-50 border-green-200' :
+                g.match_status === 'manual' ? 'bg-blue-50 border-blue-200' :
+                'bg-white border-gray-200'
+              }`}>
+                {/* Group header */}
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded font-medium">
+                      {g.reference_number || 'No reference'}
+                    </span>
+                    <span className="text-sm font-bold text-gray-800">
+                      ₹{Number(g.total_amount).toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{g.payment_mode}</span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(g.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                    {g.rows.length > 1 && (
+                      <span className="text-xs text-gray-400">{g.rows.length} payments (split)</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {g.match_status === 'auto_matched' && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">✓ Auto matched</span>
+                    )}
+                    {g.match_status === 'manual' && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">✎ Manual</span>
+                    )}
+                    {g.match_status === 'unmatched' && canPerform && (
+                      <button
+                        className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                        onClick={() => setPendingGroups(prev => prev.map((x, i) => i === idx ? { ...x, match_status: 'manual' as const, bank_date: new Date().toISOString().split('T')[0] } : x))}
+                      >
+                        ✎ Mark manually
+                      </button>
+                    )}
+                    {(g.match_status === 'auto_matched' || g.match_status === 'manual') && (
+                      <>
+                        <input type="date"
+                          className="px-2 py-1 rounded border border-gray-300 text-xs"
+                          value={g.bank_date || ''}
+                          onChange={e => setPendingGroups(prev => prev.map((x, i) => i === idx ? { ...x, bank_date: e.target.value } : x))}
+                        />
+                        <button
+                          className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-500 hover:bg-gray-200"
+                          onClick={() => setPendingGroups(prev => prev.map((x, i) => i === idx ? { ...x, match_status: 'unmatched' as const } : x))}
+                        >✕</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {/* Individual rows */}
+                <div className="space-y-1">
+                  {g.rows.map(r => (
+                    <div key={r.id} className="flex items-center justify-between text-xs text-gray-600 px-1">
+                      <span>{r.student_name} · {r.fee_head_name}</span>
+                      <span className="font-medium">₹{Number(r.amount).toLocaleString('en-IN')} · {r.receipt_number}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Confirm button */}
+          {canPerform && (() => {
+            const toConfirm = pendingGroups.filter(g => g.match_status === 'auto_matched' || g.match_status === 'manual');
+            if (toConfirm.length === 0) return null;
+            return (
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between flex-wrap gap-3">
+                <p className="text-xs text-gray-500">
+                  {toConfirm.length} group{toConfirm.length !== 1 ? 's' : ''} ready ·
+                  Total ₹{toConfirm.reduce((s, g) => s + g.total_amount, 0).toLocaleString('en-IN')}
+                </p>
+                <Button size="sm" disabled={adminConfirmLoading}
+                  onClick={async () => {
+                    setAdminConfirmLoading(true);
+                    setAdminConfirmMsg('');
+                    setAdminConfirmError('');
+                    try {
+                      const result = await apiPost<{ confirmed_payment_count: number }>(
+                        '/api/v1/financial/reconciliation/admin-payments/confirm',
+                        { confirmations: toConfirm.map(g => ({ payment_ids: g.payment_ids, bank_date: g.bank_date! })) },
+                        token
+                      );
+                      setAdminConfirmMsg(`✓ ${result.confirmed_payment_count} payment${result.confirmed_payment_count !== 1 ? 's' : ''} reconciled.`);
+                      await loadProofs();
+                    } catch (err: unknown) {
+                      setAdminConfirmError(err instanceof Error ? err.message : 'Failed to confirm.');
+                    } finally { setAdminConfirmLoading(false); }
+                  }}
+                >
+                  {adminConfirmLoading ? 'Confirming…' : `✓ Confirm & Reconcile ${toConfirm.length} Group${toConfirm.length !== 1 ? 's' : ''}`}
+                </Button>
+              </div>
+            );
+          })()}
+          {adminConfirmMsg && <p className="text-xs text-green-600 mt-2">{adminConfirmMsg}</p>}
+          {adminConfirmError && <p className="text-xs text-red-500 mt-2">{adminConfirmError}</p>}
         </Card>
       )}
 

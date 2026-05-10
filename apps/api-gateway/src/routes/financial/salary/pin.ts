@@ -82,7 +82,7 @@ router.post('/set', async (req, res) => {
 router.post('/verify', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
-    const userId = req.user!.id;
+    const userId = req.user!.id || req.user!.user_id;
     const { pin } = req.body as { pin: string };
 
     if (!pin) return res.status(400).json({ error: 'pin is required' });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { apiGet, apiPost, API_BASE } from '@/lib/api';
+import { apiGet, apiPost, apiPut, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
 
@@ -18,14 +18,11 @@ interface StaffSalary {
   components: { name: string; type: string; amount: number }[];
   effective_from: string | null;
   config_created_at: string | null;
-}
-
-interface OfferLetter {
-  id: string;
-  gross_salary: number;
-  components: { name: string; type: string; amount: number }[];
-  start_date: string;
-  status: string;
+  // offer letter fields (null if no signed offer letter exists)
+  offer_letter_id: string | null;
+  offer_gross_salary: number | null;
+  offer_components: { name: string; type: string; amount: number }[] | null;
+  offer_start_date: string | null;
 }
 
 interface SalaryRecord {
@@ -74,6 +71,7 @@ export default function SalaryPage() {
   // Staff list
   const [staff, setStaff] = useState<StaffSalary[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
+  const [staffError, setStaffError] = useState('');
 
   // Assign salary modal
   const [assignTarget, setAssignTarget] = useState<StaffSalary | null>(null);
@@ -84,7 +82,7 @@ export default function SalaryPage() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignError, setAssignError] = useState('');
   const [assignSuccess, setAssignSuccess] = useState('');
-  const [offerLetters, setOfferLetters] = useState<OfferLetter[]>([]);
+  const [assignManual, setAssignManual] = useState(false);
 
   // Records tab
   const [records, setRecords] = useState<SalaryRecord[]>([]);
@@ -127,7 +125,7 @@ export default function SalaryPage() {
         const hasPerm = (d.permissions || []).includes('VIEW_SALARY');
         setHasPermission(hasPerm);
         if (!hasPerm) return;
-        if (salarySessionUnlocked) { setPinState('unlocked'); loadStaff(); }
+        if (salarySessionUnlocked) { setPinState('unlocked'); }
         else checkPinStatus();
       })
       .catch(() => setHasPermission(false));
@@ -148,7 +146,11 @@ export default function SalaryPage() {
 
   async function checkPinStatus() {
     try {
-      const data = await apiGet<{ is_set: boolean }>('/api/v1/financial/salary/pin/status', token);
+      const res = await fetch(`${API_BASE}/api/v1/financial/salary/pin/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setPinState('pin_required'); return; }
+      const data = await res.json();
       setPinState(data.is_set ? 'pin_required' : 'pin_not_set');
     } catch { setPinState('pin_required'); }
   }
@@ -197,7 +199,6 @@ export default function SalaryPage() {
       salarySessionUnlocked = true;
       setVerifyPin('');
       setPinState('unlocked');
-      loadStaff();
     } catch (err: unknown) {
       setVerifyError('Network error. Please try again.');
       setVerifyPin('');
@@ -221,16 +222,26 @@ export default function SalaryPage() {
 
   async function loadStaff() {
     setStaffLoading(true);
+    setStaffError('');
     try {
-      const data = await apiGet<StaffSalary[]>('/api/v1/financial/salary/config/staff', token);
-      setStaff(Array.isArray(data) ? data : []);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '';
-      if (msg.includes('SALARY_PIN_REQUIRED') || msg.includes('PIN')) {
-        // PIN session expired — go back to PIN screen without logging out
-        salarySessionUnlocked = false;
-        setPinState('pin_required');
+      const { API_BASE } = await import('@/lib/api');
+      const res = await fetch(`${API_BASE}/api/v1/financial/salary/staff`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 403 || data?.code === 'SALARY_PIN_REQUIRED') {
+          salarySessionUnlocked = false;
+          setPinState('pin_required');
+        } else {
+          setStaffError(data?.error || `Error ${res.status} loading staff`);
+        }
+        setStaff([]);
+        return;
       }
+      setStaff(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setStaffError(err instanceof Error ? err.message : 'Network error loading staff');
       setStaff([]);
     } finally { setStaffLoading(false); }
   }
@@ -238,28 +249,44 @@ export default function SalaryPage() {
   async function loadRecords() {
     setRecordsLoading(true);
     try {
-      const data = await apiGet<SalaryRecord[]>(
-        `/api/v1/financial/salary?year=${recordYear}&month=${recordMonth}`, token
+      const { API_BASE } = await import('@/lib/api');
+      const res = await fetch(
+        `${API_BASE}/api/v1/financial/salary?year=${recordYear}&month=${recordMonth}`,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-      setRecords(Array.isArray(data) ? data : []);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '';
-      if (msg.includes('SALARY_PIN_REQUIRED') || msg.includes('PIN')) {
-        salarySessionUnlocked = false;
-        setPinState('pin_required');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 403 || data?.code === 'SALARY_PIN_REQUIRED') {
+          salarySessionUnlocked = false;
+          setPinState('pin_required');
+        }
+        setRecords([]);
+        return;
       }
+      const data = await res.json();
+      setRecords(Array.isArray(data) ? data : []);
+    } catch {
       setRecords([]);
     } finally { setRecordsLoading(false); }
   }
 
   async function loadWorkingDays() {
     try {
-      const data = await apiGet<WorkingDays[]>(
-        `/api/v1/financial/salary/config/working-days?year=${recordYear}&month=${recordMonth}`, token
+      const res = await fetch(
+        `${API_BASE}/api/v1/financial/salary/working-days?year=${recordYear}&month=${recordMonth}`,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
+      if (!res.ok) { setWorkingDays(null); return; }
+      const data = await res.json();
       setWorkingDays(Array.isArray(data) && data.length > 0 ? data[0] : null);
     } catch { setWorkingDays(null); }
   }
+
+  useEffect(() => {
+    if (pinState === 'unlocked' && tab === 'staff') {
+      loadStaff();
+    }
+  }, [tab, pinState]);
 
   useEffect(() => {
     if (pinState === 'unlocked' && tab === 'records') {
@@ -270,20 +297,18 @@ export default function SalaryPage() {
 
   async function openAssignModal(s: StaffSalary) {
     setAssignTarget(s);
-    setAssignGross(s.gross_salary ? String(s.gross_salary) : '');
-    setAssignEffectiveFrom(new Date().toISOString().split('T')[0]);
     setAssignError('');
     setAssignSuccess('');
-    // Try to load offer letters for this staff member
-    try {
-      const letters = await apiGet<OfferLetter[]>(
-        `/api/v1/principal/hr/offer-letters`, token
-      );
-      const staffLetters = (Array.isArray(letters) ? letters : [])
-        .filter((l: any) => l.user_id === s.user_id && l.status === 'signed')
-        .sort((a: any, b: any) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
-      setOfferLetters(staffLetters);
-    } catch { setOfferLetters([]); }
+    setAssignManual(false);
+
+    // Pre-fill from existing salary config if present, otherwise from offer letter
+    const prefill = s.gross_salary ?? s.offer_gross_salary;
+    setAssignGross(prefill ? String(prefill) : '');
+    setAssignEffectiveFrom(
+      s.offer_start_date
+        ? s.offer_start_date.split('T')[0]
+        : new Date().toISOString().split('T')[0]
+    );
   }
 
   async function handleAssignSalary() {
@@ -294,9 +319,11 @@ export default function SalaryPage() {
     if (!assignEffectiveFrom) { setAssignError('Select an effective date.'); return; }
     setAssignLoading(true);
     try {
+      // Use components from offer letter if available, otherwise empty
+      const components = assignTarget.offer_components ?? [];
       await apiPost(
-        `/api/v1/financial/salary/config/staff/${assignTarget.user_id}/config`,
-        { gross_salary: gross, components: [], effective_from: assignEffectiveFrom },
+        `/api/v1/financial/salary/staff/${assignTarget.user_id}/config`,
+        { gross_salary: gross, components, effective_from: assignEffectiveFrom },
         token
       );
       setAssignSuccess('Salary assigned successfully.');
@@ -313,7 +340,7 @@ export default function SalaryPage() {
     if (!days || days < 1) { setWdMsg('Enter valid working days.'); return; }
     setWdLoading(true);
     try {
-      await apiPost('/api/v1/financial/salary/config/working-days', {
+      await apiPut('/api/v1/financial/salary/working-days', {
         year: wdYear, month: wdMonth, working_days: days, calculation_method: wdMethod,
       }, token);
       setWdMsg('✓ Working days saved.');
@@ -477,6 +504,11 @@ export default function SalaryPage() {
         <Card>
           {staffLoading ? (
             <p className="text-sm text-gray-400 py-6 text-center">Loading staff…</p>
+          ) : staffError ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-red-500 mb-2">{staffError}</p>
+              <button onClick={loadStaff} className="text-xs text-primary underline">Retry</button>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -651,59 +683,82 @@ export default function SalaryPage() {
             </h2>
             <p className="text-xs text-gray-500 mb-4 capitalize">{assignTarget.role}</p>
 
-            {/* Offer letter pre-fill */}
-            {offerLetters.length > 0 && (
-              <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3">
-                <p className="text-xs font-semibold text-blue-800 mb-2">📄 From signed offer letter</p>
-                {offerLetters.slice(0, 1).map(ol => (
-                  <div key={ol.id} className="flex items-center justify-between">
-                    <span className="text-xs text-blue-700">
-                      ₹{Number(ol.gross_salary).toLocaleString('en-IN')} · from {new Date(ol.start_date).toLocaleDateString('en-IN')}
-                    </span>
-                    <button
-                      onClick={() => { setAssignGross(String(ol.gross_salary)); setAssignEffectiveFrom(ol.start_date); }}
-                      className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
-                    >
-                      Use this
-                    </button>
+            {/* No offer letter and no existing salary — prompt before showing form */}
+            {!assignTarget.offer_letter_id && !assignTarget.gross_salary && !assignManual ? (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
+                  <p className="text-sm font-semibold text-amber-800 mb-1">No offer letter released</p>
+                  <p className="text-xs text-amber-700">
+                    {assignTarget.staff_name} doesn't have a signed offer letter yet. You can assign a salary manually instead.
+                  </p>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Button>
+                  <Button size="sm" onClick={() => setAssignManual(true)}>Assign Manually</Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Offer letter banner — shown when offer letter exists */}
+                {assignTarget.offer_letter_id && (
+                  <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-3">
+                    <p className="text-xs font-semibold text-blue-800 mb-1">📄 From signed offer letter</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-blue-700">
+                        ₹{Number(assignTarget.offer_gross_salary).toLocaleString('en-IN')}
+                        {' · '}effective {new Date(assignTarget.offer_start_date!).toLocaleDateString('en-IN')}
+                      </span>
+                      {assignGross !== String(assignTarget.offer_gross_salary) && (
+                        <button
+                          onClick={() => {
+                            setAssignGross(String(assignTarget.offer_gross_salary));
+                            setAssignEffectiveFrom(assignTarget.offer_start_date!.split('T')[0]);
+                          }}
+                          className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+                        >
+                          Reset to offer
+                        </button>
+                      )}
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {assignTarget.gross_salary && (
-              <div className="mb-4 rounded-lg bg-gray-50 border border-gray-200 p-3 flex items-center justify-between">
-                <span className="text-xs text-gray-600">Current: <strong>₹{Number(assignTarget.gross_salary).toLocaleString('en-IN')}</strong></span>
-                {parseFloat(assignGross) > assignTarget.gross_salary && (
-                  <span className="text-xs text-green-600 font-semibold">
-                    +₹{(parseFloat(assignGross) - assignTarget.gross_salary).toLocaleString('en-IN')} increment
-                  </span>
                 )}
-              </div>
+
+                {/* Current salary diff indicator */}
+                {assignTarget.gross_salary && (
+                  <div className="mb-4 rounded-lg bg-gray-50 border border-gray-200 p-3 flex items-center justify-between">
+                    <span className="text-xs text-gray-600">Current: <strong>₹{Number(assignTarget.gross_salary).toLocaleString('en-IN')}</strong></span>
+                    {parseFloat(assignGross) > assignTarget.gross_salary && (
+                      <span className="text-xs text-green-600 font-semibold">
+                        +₹{(parseFloat(assignGross) - assignTarget.gross_salary).toLocaleString('en-IN')} increment
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Gross Salary (₹)</label>
+                    <input type="number" min={1} className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      placeholder="e.g. 25000" value={assignGross} onChange={e => setAssignGross(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Effective From</label>
+                    <input type="date" className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      value={assignEffectiveFrom} onChange={e => setAssignEffectiveFrom(e.target.value)} />
+                  </div>
+                </div>
+
+                {assignError && <p className="text-xs text-red-500 mt-3">{assignError}</p>}
+                {assignSuccess && <p className="text-xs text-green-600 mt-3">{assignSuccess}</p>}
+
+                <div className="flex gap-2 justify-end mt-4">
+                  <Button size="sm" variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Button>
+                  <Button size="sm" onClick={handleAssignSalary} disabled={assignLoading}>
+                    {assignLoading ? 'Saving…' : assignTarget.gross_salary ? 'Update Salary' : 'Assign Salary'}
+                  </Button>
+                </div>
+              </>
             )}
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Gross Salary (₹)</label>
-                <input type="number" min={1} className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="e.g. 25000" value={assignGross} onChange={e => setAssignGross(e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Effective From</label>
-                <input type="date" className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  value={assignEffectiveFrom} onChange={e => setAssignEffectiveFrom(e.target.value)} />
-              </div>
-            </div>
-
-            {assignError && <p className="text-xs text-red-500 mt-3">{assignError}</p>}
-            {assignSuccess && <p className="text-xs text-green-600 mt-3">{assignSuccess}</p>}
-
-            <div className="flex gap-2 justify-end mt-4">
-              <Button size="sm" variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Button>
-              <Button size="sm" onClick={handleAssignSalary} disabled={assignLoading}>
-                {assignLoading ? 'Saving…' : assignTarget.gross_salary ? 'Update Salary' : 'Assign Salary'}
-              </Button>
-            </div>
           </div>
         </div>
       )}

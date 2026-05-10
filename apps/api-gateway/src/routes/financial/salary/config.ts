@@ -6,6 +6,26 @@ import { salaryPinGuard } from '../../../middleware/salaryPinGuard';
 const router = Router();
 router.use(jwtVerify, salaryPinGuard, permissionGuard('VIEW_SALARY'));
 
+// ── GET /debug-staff — Temporary debug: returns raw user data without filters ─
+router.get('/debug-staff', async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const result = await pool.query(
+      `SELECT u.id, u.name, u.role AS role_text, r.name AS role_from_table,
+              u.role_id, u.is_active, u.school_id,
+              LOWER(COALESCE(u.role, r.name, 'staff')) AS coalesced_role
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id
+       WHERE u.school_id = $1 AND u.is_active = true
+       ORDER BY u.name`,
+      [schoolId]
+    );
+    return res.json({ school_id: schoolId, count: result.rows.length, users: result.rows });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /staff — List all staff with their latest salary config ───────────────
 router.get('/staff', async (req, res) => {
   try {
@@ -15,13 +35,17 @@ router.get('/staff', async (req, res) => {
          ROW_NUMBER() OVER (ORDER BY u.name ASC) AS sl_no,
          u.id AS user_id,
          u.name AS staff_name,
-         r.name AS role,
+         COALESCE(u.role, r.name, 'staff') AS role,
          ssc.gross_salary,
          ssc.components,
          ssc.effective_from,
-         ssc.created_at AS config_created_at
+         ssc.created_at AS config_created_at,
+         ol.id            AS offer_letter_id,
+         ol.gross_salary  AS offer_gross_salary,
+         ol.components    AS offer_components,
+         ol.start_date    AS offer_start_date
        FROM users u
-       JOIN roles r ON r.id = u.role_id
+       LEFT JOIN roles r ON r.id = u.role_id
        LEFT JOIN LATERAL (
          SELECT gross_salary, components, effective_from, created_at
          FROM staff_salary_config
@@ -29,8 +53,15 @@ router.get('/staff', async (req, res) => {
          ORDER BY effective_from DESC
          LIMIT 1
        ) ssc ON true
+       LEFT JOIN LATERAL (
+         SELECT id, gross_salary, components, start_date
+         FROM staff_offer_letters
+         WHERE school_id = $1 AND user_id = u.id AND status = 'signed'
+         ORDER BY start_date DESC
+         LIMIT 1
+       ) ol ON true
        WHERE u.school_id = $1
-         AND r.name NOT IN ('principal', 'super_admin', 'franchise_admin', 'parent', 'student')
+         AND LOWER(COALESCE(u.role, r.name, 'staff')) NOT IN ('super_admin', 'franchise_admin', 'parent', 'student')
          AND u.is_active = true
        ORDER BY u.name ASC`,
       [schoolId]

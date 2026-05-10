@@ -11,11 +11,11 @@ import { redis } from '../lib/redis';
  * Bypasses for super_admin only.
  */
 export async function salaryPinGuard(req: Request, res: Response, next: NextFunction) {
-  const userId = req.user?.id;
+  const userId = req.user?.id || req.user?.user_id;
   const role = req.user?.role;
 
-  // Only super_admin bypasses the PIN requirement
-  if (role === 'super_admin') return next();
+  // super_admin and principal bypass the PIN requirement
+  if (role === 'super_admin' || role === 'principal') return next();
 
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -23,6 +23,7 @@ export async function salaryPinGuard(req: Request, res: Response, next: NextFunc
 
   try {
     const session = await redis.get(`salary_pin_session:${userId}`);
+    console.log(`[salaryPinGuard] userId=${userId} role=${role} session=${session ? 'found' : 'NOT FOUND'}`);
     if (!session) {
       return res.status(403).json({
         error: 'Salary PIN verification required. Please verify your PIN to access salary data.',

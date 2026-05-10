@@ -279,6 +279,182 @@ router.get('/daycare-usage', async (req, res) => {
   }
 });
 
+// ── GET /fee-summary — Total collected + instalment-wise pending ──────────────
+router.get('/fee-summary', async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+
+    const [collectedResult, assignedResult, instalmentResult] = await Promise.all([
+      // Total actually collected (from fee_payments directly)
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total_collected
+         FROM fee_payments
+         WHERE school_id = $1 AND deleted_at IS NULL`,
+        [schoolId]
+      ),
+      // Total assigned and outstanding (from student_fee_accounts)
+      pool.query(
+        `SELECT
+           COALESCE(SUM(assigned_amount), 0)     AS total_assigned,
+           COALESCE(SUM(outstanding_balance), 0) AS total_outstanding
+         FROM student_fee_accounts
+         WHERE school_id = $1 AND deleted_at IS NULL`,
+        [schoolId]
+      ),
+      // Instalment-wise: join through fee_heads to scope by school
+      pool.query(
+        `SELECT
+           fi.id AS instalment_id,
+           fi.instalment_number,
+           COALESCE(fi.label, 'Instalment ' || fi.instalment_number) AS label,
+           fi.due_date,
+           fi.amount AS per_student_amount,
+           fh.id    AS fee_head_id,
+           fh.name  AS fee_head_name,
+           COUNT(DISTINCT sfa.student_id)::int AS student_count
+         FROM fee_instalments fi
+         JOIN fee_heads fh
+           ON fh.id = fi.fee_head_id
+           AND fh.school_id = $1
+           AND fh.deleted_at IS NULL
+         JOIN student_fee_accounts sfa
+           ON sfa.fee_head_id = fi.fee_head_id
+           AND sfa.school_id = $1
+           AND sfa.deleted_at IS NULL
+         GROUP BY fi.id, fi.instalment_number, fi.label, fi.due_date, fi.amount, fh.id, fh.name
+         ORDER BY fi.due_date ASC NULLS LAST, fi.instalment_number ASC`,
+        [schoolId]
+      ),
+    ]);
+
+    // For each instalment, compute paid vs pending
+    const instalments = await Promise.all(
+      instalmentResult.rows.map(async (inst: any) => {
+        const studentCount = inst.student_count;
+        const perStudent = parseFloat(inst.per_student_amount);
+        const totalDue = perStudent * studentCount;
+        const instNum = inst.instalment_number;
+
+        // Total paid for this fee head across all students
+        const paidResult = await pool.query(
+          `SELECT COALESCE(SUM(amount), 0) AS total_paid
+           FROM fee_payments
+           WHERE fee_head_id = $1 AND school_id = $2 AND deleted_at IS NULL`,
+          [inst.fee_head_id, schoolId]
+        );
+        const totalPaidForHead = parseFloat(paidResult.rows[0].total_paid);
+
+        // Attribute payments to instalments in order
+        const paidUpToThis = Math.min(totalPaidForHead, instNum * totalDue);
+        const paidUpToPrev = Math.min(totalPaidForHead, (instNum - 1) * totalDue);
+        const paidForThis  = Math.max(0, paidUpToThis - paidUpToPrev);
+        const pendingForThis = Math.max(0, totalDue - paidForThis);
+
+        return {
+          instalment_number:       instNum,
+          label:                   inst.label,
+          due_date:                inst.due_date,
+          fee_head_name:           inst.fee_head_name,
+          student_count:           studentCount,
+          total_instalment_amount: Math.round(totalDue * 100) / 100,
+          total_paid:              Math.round(paidForThis * 100) / 100,
+          total_pending:           Math.round(pendingForThis * 100) / 100,
+        };
+      })
+    );
+
+    return res.json({
+      total_collected:   parseFloat(collectedResult.rows[0].total_collected),
+      total_assigned:    parseFloat(assignedResult.rows[0].total_assigned),
+      total_outstanding: parseFloat(assignedResult.rows[0].total_outstanding),
+      instalments,
+    });
+  } catch (err) {
+    console.error('[reports GET /fee-summary]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /reconciliation-pending ───────────────────────────────────────────────
+// Returns admin-recorded UPI/bank payments pending reconciliation,
+// GROUPED by reference_number so sibling/split payments appear as one entry.
+// Each group shows: reference, total_amount, payment_date, mode, and the
+// individual payment rows (student name, fee head, amount).
+router.get('/reconciliation-pending', async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+
+    // Fetch all individual pending payments
+    const result = await pool.query(
+      `SELECT
+         fp.id, fp.reference_number, fp.amount, fp.payment_mode,
+         fp.payment_date, fp.receipt_number, fp.created_at,
+         s.name AS student_name,
+         c.name AS class_name,
+         fh.name AS fee_head_name
+       FROM fee_payments fp
+       JOIN students s ON s.id = fp.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       JOIN fee_heads fh ON fh.id = fp.fee_head_id
+       WHERE fp.school_id = $1
+         AND fp.needs_reconciliation = true
+         AND fp.reconciled_at IS NULL
+         AND fp.deleted_at IS NULL
+       ORDER BY fp.reference_number NULLS LAST, fp.created_at DESC`,
+      [schoolId]
+    );
+
+    // Group by reference_number (null refs each get their own group keyed by id)
+    const groups: Record<string, {
+      reference_number: string | null;
+      total_amount: number;
+      payment_mode: string;
+      payment_date: string;
+      payment_ids: string[];
+      rows: any[];
+    }> = {};
+
+    for (const row of result.rows) {
+      const key = row.reference_number || `__no_ref_${row.id}`;
+      if (!groups[key]) {
+        groups[key] = {
+          reference_number: row.reference_number || null,
+          total_amount: 0,
+          payment_mode: row.payment_mode,
+          payment_date: row.payment_date,
+          payment_ids: [],
+          rows: [],
+        };
+      }
+      groups[key].total_amount += parseFloat(row.amount);
+      groups[key].payment_ids.push(row.id);
+      groups[key].rows.push({
+        id: row.id,
+        student_name: row.student_name,
+        class_name: row.class_name,
+        fee_head_name: row.fee_head_name,
+        amount: parseFloat(row.amount),
+        receipt_number: row.receipt_number,
+      });
+    }
+
+    const payments = Object.values(groups).map(g => ({
+      ...g,
+      total_amount: Math.round(g.total_amount * 100) / 100,
+    }));
+
+    return res.json({
+      count: result.rows.length,
+      group_count: payments.length,
+      total_amount: payments.reduce((s, g) => s + g.total_amount, 0),
+      payments,
+    });
+  } catch (err) {
+    console.error('[reports GET /reconciliation-pending]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET /reconciliation-summary ───────────────────────────────────────────────
 router.get('/reconciliation-summary', async (req, res) => {
   try {

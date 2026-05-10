@@ -117,6 +117,10 @@ export default function FeeStructuresPage() {
   const [studentPickerLoading, setStudentPickerLoading] = useState(false);
   const [studentPickerMsg, setStudentPickerMsg] = useState('');
   const [togglingStudentId, setTogglingStudentId] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  // checkbox selection: student ids the user wants assigned (local state, not yet saved)
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [applyingSync, setApplyingSync] = useState(false);
 
   // Unassign class confirmation
   const [unassignHead, setUnassignHead] = useState<{
@@ -127,6 +131,16 @@ export default function FeeStructuresPage() {
   } | null>(null);
   const [unassignLoading, setUnassignLoading] = useState(false);
   const [unassignError, setUnassignError] = useState('');
+
+  // Restructure confirmation (nuclear — wipes all payment data)
+  const [restructureHead, setRestructureHead] = useState<{
+    structureId: string;
+    headId: string;
+    headName: string;
+  } | null>(null);
+  const [restructureConfirmText, setRestructureConfirmText] = useState('');
+  const [restructureLoading, setRestructureLoading] = useState(false);
+  const [restructureError, setRestructureError] = useState('');
 
   // Delete confirmations
   const [deleteStructureId, setDeleteStructureId] = useState<string | null>(null);
@@ -172,8 +186,11 @@ export default function FeeStructuresPage() {
         token
       );
       setStudentList(data);
+      // seed checkboxes from current assignments
+      setSelectedStudentIds(new Set(data.filter(s => s.is_assigned).map(s => s.id)));
     } catch {
       setStudentList([]);
+      setSelectedStudentIds(new Set());
     } finally {
       setStudentPickerLoading(false);
     }
@@ -247,7 +264,8 @@ export default function FeeStructuresPage() {
 
   const isLumpSumBasis = billingBasis === 'per_year' || billingBasis === 'per_term';
 
-  // Fee types that assign to a whole class vs individual students
+  // Fee types that assign to a whole class (Assign Class flow)
+  // vs individual student picker (transport / activity / daycare / bags_and_books / custom)
   const CLASS_ASSIGN_TYPES = ['tuition', 'admission'];
 
   async function handleWizardCalculate() {
@@ -556,8 +574,8 @@ export default function FeeStructuresPage() {
                               No class
                             </span>
                           )}
-                          {/* Student coverage count — only shown when a class is assigned */}
-                          {fh.class_id && (
+                          {/* Student coverage count — always shown */}
+                          {(fh.students_total ?? 0) > 0 && (
                             <span
                               className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                                 fh.students_total && fh.students_assigned === fh.students_total
@@ -574,80 +592,112 @@ export default function FeeStructuresPage() {
                             ₹{Number(displayAmount).toLocaleString('en-IN')}
                             {label}
                           </span>
-                          {/* Assign / Unassign per fee head */}
-                          {fh.class_id ? (
-                            <button
-                              onClick={() =>
-                                setUnassignHead({
-                                  structureId: s.id,
-                                  headId: fh.id,
-                                  headName: fh.name,
-                                  className: fh.class_name ?? '',
-                                })
-                              }
-                              className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 hover:bg-amber-100"
-                              title={CLASS_ASSIGN_TYPES.includes(fh.type) ? 'Unassign class' : 'Manage students'}
-                            >
-                              {CLASS_ASSIGN_TYPES.includes(fh.type) ? 'Unassign' : 'Students'}
-                            </button>
-                          ) : CLASS_ASSIGN_TYPES.includes(fh.type) ? (
+                          {/* If payments exist — locked, show Restructure only */}
+                          {(fh.payments_count ?? 0) > 0 ? (
                             <button
                               onClick={() => {
-                                setAssignHead({
-                                  structureId: s.id,
-                                  headId: fh.id,
-                                  headName: fh.name,
-                                  feeType: fh.type,
-                                });
-                                setAssignClassId('');
-                                setAssignMsg('');
-                                loadClasses(s.id);
+                                setRestructureHead({ structureId: s.id, headId: fh.id, headName: fh.name });
+                                setRestructureConfirmText('');
+                                setRestructureError('');
                               }}
-                              className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
-                              title="Assign to class"
+                              className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium"
+                              title={`${fh.payments_count} payment(s) recorded — restructure to reset`}
                             >
-                              Assign Class
+                              🔒 Restructure
                             </button>
                           ) : (
-                            <button
-                              onClick={() => {
-                                setStudentPickerClassId('');
-                                setStudentList([]);
-                                setStudentPickerMsg('');
-                                setAssignStudentsHead({
-                                  structureId: s.id,
-                                  headId: fh.id,
-                                  headName: fh.name,
-                                  classId: '',
-                                });
-                                loadClasses(); // no filter — show all classes
-                              }}
-                              className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
-                              title="Assign to students"
-                            >
-                              Assign Students
-                            </button>
+                            <>
+                              {/* Assign / Unassign per fee head */}
+                              {fh.class_id ? (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => {
+                                      setStudentPickerClassId(fh.class_id ?? '');
+                                      setStudentList([]);
+                                      setStudentPickerMsg('');
+                                      setSelectedStudentIds(new Set());
+                                      setAssignStudentsHead({
+                                        structureId: s.id,
+                                        headId: fh.id,
+                                        headName: fh.name,
+                                        classId: fh.class_id ?? '',
+                                      });
+                                      loadClasses();
+                                      if (fh.class_id) {
+                                        loadStudentsForHead(fh.class_id, fh.id);
+                                      }
+                                    }}
+                                    className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                    title="Manage individual students"
+                                  >
+                                    Manage
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      setUnassignHead({
+                                        structureId: s.id,
+                                        headId: fh.id,
+                                        headName: fh.name,
+                                        className: fh.class_name ?? '',
+                                      })
+                                    }
+                                    className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                    title="Unassign entire class"
+                                  >
+                                    Unassign
+                                  </button>
+                                </div>
+                              ) : CLASS_ASSIGN_TYPES.includes(fh.type) ? (
+                                <button
+                                  onClick={() => {
+                                    setAssignHead({
+                                      structureId: s.id,
+                                      headId: fh.id,
+                                      headName: fh.name,
+                                      feeType: fh.type,
+                                    });
+                                    setAssignClassId('');
+                                    setAssignMsg('');
+                                    loadClasses(s.id);
+                                  }}
+                                  className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                  title="Assign to class"
+                                >
+                                  Assign Class
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setStudentPickerClassId('');
+                                    setStudentList([]);
+                                    setStudentPickerMsg('');
+                                    setAssignStudentsHead({
+                                      structureId: s.id,
+                                      headId: fh.id,
+                                      headName: fh.name,
+                                      classId: '',
+                                    });
+                                    loadClasses();
+                                  }}
+                                  className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                  title="Assign to students"
+                                >
+                                  Assign Students
+                                </button>
+                              )}
+                              <button
+                                onClick={() => {
+                                  setDeleteHeadId(fh.id);
+                                  setDeleteHeadStructureId(s.id);
+                                  setDeleteHeadError('');
+                                }}
+                                className="text-xs px-2 py-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                                title="Delete fee type"
+                              >
+                                ✕
+                              </button>
+                            </>
                           )}
-                          <button
-                            onClick={() => {
-                              setDeleteHeadId(fh.id);
-                              setDeleteHeadStructureId(s.id);
-                              setDeleteHeadError('');
-                            }}
-                            className={`text-xs px-2 py-0.5 rounded hover:bg-red-50 ${
-                              (fh.payments_count ?? 0) > 0
-                                ? 'text-gray-300 cursor-not-allowed'
-                                : 'text-red-400 hover:text-red-600'
-                            }`}
-                            title={
-                              (fh.payments_count ?? 0) > 0
-                                ? `Cannot delete — ${fh.payments_count} payment${fh.payments_count === 1 ? '' : 's'} collected`
-                                : 'Delete fee type'
-                            }
-                            disabled={(fh.payments_count ?? 0) > 0}
-                          >
-                            ✕
-                          </button>
                         </div>
                       </div>
                     );
@@ -715,6 +765,7 @@ export default function FeeStructuresPage() {
                       <option value="transport">Transport</option>
                       <option value="activity">Activity</option>
                       <option value="daycare">Daycare</option>
+                      <option value="bags_and_books">Bags &amp; Books</option>
                       <option value="custom">Custom</option>
                     </select>
                   </div>
@@ -1266,24 +1317,32 @@ export default function FeeStructuresPage() {
             </div>
 
             <div className="px-6 py-4 shrink-0">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Filter by class</label>
-              <select
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                value={studentPickerClassId}
-                onChange={e => {
-                  setStudentPickerClassId(e.target.value);
-                  if (e.target.value) {
-                    loadStudentsForHead(e.target.value, assignStudentsHead.headId);
-                  } else {
-                    setStudentList([]);
-                  }
-                }}
-              >
-                <option value="">Select a class…</option>
-                {classes.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              {assignStudentsHead.classId ? (
+                <p className="text-xs text-gray-500">
+                  Class: <span className="font-medium text-gray-700">{classes.find(c => c.id === assignStudentsHead.classId)?.name ?? assignStudentsHead.classId}</span>
+                </p>
+              ) : (
+                <>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Filter by class</label>
+                  <select
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    value={studentPickerClassId}
+                    onChange={e => {
+                      setStudentPickerClassId(e.target.value);
+                      if (e.target.value) {
+                        loadStudentsForHead(e.target.value, assignStudentsHead.headId);
+                      } else {
+                        setStudentList([]);
+                      }
+                    }}
+                  >
+                    <option value="">Select a class…</option>
+                    {classes.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
 
             {studentPickerMsg && (
@@ -1297,71 +1356,92 @@ export default function FeeStructuresPage() {
                 <p className="text-sm text-gray-400 text-center py-6">No students in this class.</p>
               ) : studentList.length === 0 ? null : (
                 <div className="space-y-1">
-                  {/* Select all / deselect all */}
+                  {/* Select all / clear all */}
                   <div className="flex items-center justify-between py-2 border-b border-gray-100 mb-2">
                     <span className="text-xs text-gray-500">
-                      {studentList.filter(s => s.is_assigned).length}/{studentList.length} assigned
+                      {selectedStudentIds.size}/{studentList.length} selected
                     </span>
                     <div className="flex gap-2">
                       <button
-                        className="text-xs text-primary hover:underline"
-                        onClick={async () => {
-                          for (const s of studentList.filter(s => !s.is_assigned)) {
-                            await handleToggleStudent(s);
-                          }
-                        }}
+                        className="text-xs text-primary hover:underline disabled:opacity-40"
+                        disabled={applyingSync}
+                        onClick={() => setSelectedStudentIds(new Set(studentList.map(s => s.id)))}
                       >
-                        Assign all
+                        Select all
                       </button>
                       <button
-                        className="text-xs text-red-500 hover:underline"
-                        onClick={async () => {
-                          for (const s of studentList.filter(s => s.is_assigned)) {
-                            await handleToggleStudent(s);
-                          }
-                        }}
+                        className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                        disabled={applyingSync}
+                        onClick={() => setSelectedStudentIds(new Set())}
                       >
-                        Remove all
+                        Clear all
                       </button>
                     </div>
                   </div>
                   {studentList.map(student => (
                     <div
                       key={student.id}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50"
+                      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 cursor-pointer select-none"
+                      onClick={() => {
+                        if (applyingSync) return;
+                        setSelectedStudentIds(prev => {
+                          const next = new Set(prev);
+                          next.has(student.id) ? next.delete(student.id) : next.add(student.id);
+                          return next;
+                        });
+                      }}
                     >
-                      <div>
+                      <input
+                        type="checkbox"
+                        readOnly
+                        checked={selectedStudentIds.has(student.id)}
+                        disabled={applyingSync}
+                        className="accent-primary w-4 h-4 shrink-0 pointer-events-none"
+                      />
+                      <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-700">{student.name}</p>
                         <p className="text-xs text-gray-400">{student.section_label}</p>
                       </div>
-                      <button
-                        onClick={() => handleToggleStudent(student)}
-                        disabled={togglingStudentId === student.id}
-                        className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                          student.is_assigned
-                            ? 'bg-green-50 text-green-700 hover:bg-red-50 hover:text-red-600'
-                            : 'bg-gray-100 text-gray-500 hover:bg-primary/10 hover:text-primary'
-                        }`}
-                      >
-                        {togglingStudentId === student.id
-                          ? '…'
-                          : student.is_assigned
-                          ? '✓ Assigned'
-                          : '+ Assign'}
-                      </button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-100 shrink-0">
+            <div className="px-6 py-4 border-t border-gray-100 shrink-0 flex gap-2">
               <Button
                 size="sm"
-                onClick={() => { setAssignStudentsHead(null); setStudentList([]); }}
-                className="w-full"
+                variant="ghost"
+                onClick={() => { setAssignStudentsHead(null); setStudentList([]); setSelectedStudentIds(new Set()); }}
+                className="flex-1"
+                disabled={applyingSync}
               >
-                Done
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1"
+                disabled={applyingSync || !studentPickerClassId}
+                onClick={async () => {
+                  if (!assignStudentsHead) return;
+                  setApplyingSync(true);
+                  setStudentPickerMsg('');
+                  try {
+                    await apiPost(
+                      `/api/v1/financial/fee-structures/${assignStudentsHead.structureId}/fee-heads/${assignStudentsHead.headId}/sync-students`,
+                      { student_ids: [...selectedStudentIds] },
+                      token
+                    );
+                    await loadStudentsForHead(studentPickerClassId, assignStudentsHead.headId);
+                    await loadStructures();
+                  } catch (err: unknown) {
+                    setStudentPickerMsg(err instanceof Error ? err.message : 'Failed to apply changes.');
+                  } finally {
+                    setApplyingSync(false);
+                  }
+                }}
+              >
+                {applyingSync ? 'Saving…' : 'Apply'}
               </Button>
             </div>
           </div>
@@ -1398,6 +1478,77 @@ export default function FeeStructuresPage() {
                 className="bg-amber-500 hover:bg-amber-600 text-white"
               >
                 {unassignLoading ? 'Removing…' : 'Unassign'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Restructure confirmation (nuclear) ──────────────────────────── */}
+      {restructureHead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border-2 border-red-200">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">⚠️</span>
+              <h2 className="font-bold text-red-700 text-lg">Restructure Fee Head</h2>
+            </div>
+            <p className="text-sm text-gray-700 mb-2">
+              You are about to restructure <strong>{restructureHead.headName}</strong>.
+            </p>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-xs text-red-700 space-y-1">
+              <p className="font-semibold">This will permanently delete:</p>
+              <p>• All payment records for this fee head</p>
+              <p>• All receipts linked to those payments</p>
+              <p>• All online payment proofs</p>
+              <p>• All student fee accounts for this fee head</p>
+              <p className="font-semibold mt-2">This cannot be undone.</p>
+            </div>
+            <p className="text-xs text-gray-600 mb-2">
+              Type <strong>RESTRUCTURE</strong> to confirm:
+            </p>
+            <input
+              className="w-full px-3 py-2 rounded-lg border border-red-300 text-sm font-mono mb-3 focus:outline-none focus:ring-2 focus:ring-red-400"
+              placeholder="RESTRUCTURE"
+              value={restructureConfirmText}
+              onChange={e => setRestructureConfirmText(e.target.value)}
+            />
+            {restructureError && (
+              <p className="text-xs text-red-500 mb-3">{restructureError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setRestructureHead(null); setRestructureConfirmText(''); setRestructureError(''); }}
+                disabled={restructureLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={restructureConfirmText !== 'RESTRUCTURE' || restructureLoading}
+                className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-40"
+                onClick={async () => {
+                  if (!restructureHead) return;
+                  setRestructureLoading(true);
+                  setRestructureError('');
+                  try {
+                    await apiPost(
+                      `/api/v1/financial/fee-structures/${restructureHead.structureId}/fee-heads/${restructureHead.headId}/restructure`,
+                      { confirm: 'RESTRUCTURE' },
+                      token
+                    );
+                    setRestructureHead(null);
+                    setRestructureConfirmText('');
+                    await loadStructures();
+                  } catch (err: unknown) {
+                    setRestructureError(err instanceof Error ? err.message : 'Restructure failed.');
+                  } finally {
+                    setRestructureLoading(false);
+                  }
+                }}
+              >
+                {restructureLoading ? 'Restructuring…' : 'Restructure'}
               </Button>
             </div>
           </div>

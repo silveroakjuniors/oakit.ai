@@ -23,7 +23,7 @@ import multer from 'multer';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard } from '../../middleware/auth';
 import { validateTerms, findMissingVariables } from '../../lib/templateSubstitution';
-import { generateOfferLetterPDFWithBranding, BrandingContext } from '../../lib/pdfService';
+import { generateOfferLetterPDFWithBranding, generateOfferLetterPDF, BrandingContext } from '../../lib/pdfService';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -51,6 +51,20 @@ async function uploadPdfBuffer(buffer: Buffer, storagePath: string): Promise<str
   } catch (err) {
     console.error('[uploadPdfBuffer]', err);
     return null;
+  }
+}
+
+/** Generate offer letter PDF — tries Puppeteer (rich text + letterhead), falls back to PDFKit. */
+async function generateOfferLetterPDFSafe(
+  data: Parameters<typeof generateOfferLetterPDFWithBranding>[0],
+  branding: BrandingContext,
+  ctx: Parameters<typeof generateOfferLetterPDF>[2],
+): Promise<Buffer> {
+  try {
+    return await generateOfferLetterPDFWithBranding(data, branding);
+  } catch (puppeteerErr) {
+    console.warn('[principal/hr] Puppeteer PDF failed, falling back to PDFKit:', (puppeteerErr as Error).message);
+    return generateOfferLetterPDF(data, branding, ctx);
   }
 }
 
@@ -218,9 +232,15 @@ router.post('/offer-letters/preview', async (req: Request, res: Response) => {
       school_name: branding.school_name,
     };
 
+    const ctx = {
+      generated_by_name: (req.user as any).name || 'System',
+      generated_by_role: req.user!.role,
+      generated_at: new Date(),
+    };
+
     let pdfBuffer: Buffer;
     try {
-      pdfBuffer = await generateOfferLetterPDFWithBranding(data, branding);
+      pdfBuffer = await generateOfferLetterPDFSafe(data, branding, ctx);
     } catch (pdfErr: any) {
       console.error('[principal/hr POST /offer-letters/preview] PDF generation failed:', pdfErr?.message || pdfErr);
       return res.status(500).json({ error: 'PDF generation failed', code: 'PDF_GENERATION_FAILED', detail: pdfErr?.message });
@@ -549,15 +569,15 @@ router.put('/settings', async (req: Request, res: Response) => {
   }
 });
 
-// ── POST /settings/letterhead — upload letterhead PDF or image ────────────────
+// ── POST /settings/letterhead — upload letterhead image ──────────────────────
 const letterheadUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf' || file.mimetype.startsWith('image/')) {
+    if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF or image files are allowed for letterhead'));
+      cb(new Error('Only image files (PNG, JPG) are allowed for letterhead. PDF letterheads are not supported.'));
     }
   },
 });
