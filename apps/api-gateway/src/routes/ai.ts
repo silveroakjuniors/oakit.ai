@@ -974,8 +974,9 @@ router.post('/hr-terms', async (req: Request, res: Response) => {
     if (!['principal', 'admin'].includes(role)) return res.status(403).json({ error: 'Forbidden' });
 
     const { school_name, designation, salary, context } = req.body;
-    if (!school_name || !designation || !salary)
-      return res.status(400).json({ error: 'school_name, designation, salary are required' });
+    // designation is required; school_name and salary are optional (template creation may not have them)
+    if (!designation || !String(designation).trim())
+      return res.status(400).json({ error: 'designation is required' });
 
     // Check and deduct credits
     const credit = await checkAndDeductCredits({
@@ -985,9 +986,12 @@ router.post('/hr-terms', async (req: Request, res: Response) => {
       return res.status(402).json({ error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' });
     }
 
+    const salaryPart = salary ? ` Monthly salary: ₹${salary}.` : '';
+    const schoolPart = school_name ? ` at ${school_name}` : '';
+
     try {
       const aiResp = await axios.post(`${AI()}/internal/query`, {
-        text: `Generate professional employment terms and conditions for a ${designation} position at ${school_name}. Monthly salary: ₹${salary}. ${context || ''} Write formal, clear terms covering probation period, notice period, working hours, leave policy, and code of conduct. Return only the terms text, no preamble.`,
+        text: `Generate professional employment terms and conditions for a ${designation} position${schoolPart}.${salaryPart} ${context || ''} Write formal, clear terms covering probation period, notice period, working hours, leave policy, and code of conduct. Return only the terms text, no preamble.`,
         teacher_id: user_id,
         school_id,
         role,

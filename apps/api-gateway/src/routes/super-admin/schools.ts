@@ -145,6 +145,35 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /:id/salary-pin — super_admin only: clear a school's salary PIN (lost PIN recovery)
+router.delete('/:id/salary-pin', async (req: Request, res: Response) => {
+  try {
+    const school = await pool.query('SELECT id, name FROM schools WHERE id = $1', [req.params.id]);
+    if (school.rows.length === 0) return res.status(404).json({ error: 'School not found' });
+
+    const result = await pool.query(
+      'DELETE FROM principal_pin WHERE school_id = $1 RETURNING school_id',
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No salary PIN is set for this school' });
+    }
+
+    // Also clear any active salary PIN sessions for users in this school
+    // (best-effort — Redis keys are per-user so we log the action instead)
+    console.log(`[super-admin] Salary PIN reset for school ${req.params.id} (${school.rows[0].name}) by super_admin ${req.user?.id}`);
+
+    return res.json({
+      success: true,
+      message: `Salary PIN cleared for ${school.rows[0].name}. The principal will be prompted to set a new PIN on next access.`,
+    });
+  } catch (err) {
+    console.error('[super-admin] DELETE salary-pin', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /:id/activate
 router.post('/:id/activate', async (req: Request, res: Response) => {
   try {

@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { uploadFile, deleteFile, getPublicUrl } from '../../lib/storage';
+import { assignFeeStructureToStudent } from '../../lib/feeAssignment';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
@@ -27,11 +28,13 @@ function normalise(s: string): string {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-// - POST /api/v1/admin/students ? create a single student -
+// - POST /api/v1/admin/students — create a single student -
 router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { name, class_id, section_id, father_name, mother_name, parent_contact, mother_contact } = req.body;
+    const { name, class_id, section_id, father_name, mother_name, parent_contact, mother_contact, fee_assignment } = req.body;
+    // fee_assignment?: { fee_structure_id: string; fee_type: 'term' | 'annual' }
+
     if (!name || !class_id || !section_id) {
       return res.status(400).json({ error: 'name, class_id, and section_id are required' });
     }
@@ -44,6 +47,68 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
     if (mother_contact && !/^\d{10}$/.test(mother_contact.trim())) {
       return res.status(400).json({ error: 'Mother mobile must be 10 digits' });
     }
+
+    // Require a tuition or admission fee head assigned to this class before onboarding
+    const feeCheck = await pool.query(
+      `SELECT fh.id
+       FROM fee_heads fh
+       WHERE fh.school_id = $1
+         AND fh.class_id = $2
+         AND fh.type IN ('tuition', 'admission')
+         AND fh.deleted_at IS NULL
+       LIMIT 1`,
+      [school_id, class_id]
+    );
+    if (feeCheck.rows.length === 0) {
+      return res.status(400).json({
+        error: 'Cannot onboard student: no tuition or annual fee has been assigned to this class. Please set up a fee structure for this class first.',
+      });
+    }
+
+    // When fee_assignment is provided, wrap everything in a transaction
+    if (fee_assignment) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const insertResult = await client.query(
+          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+          [school_id, class_id, section_id, name.trim(),
+           father_name?.trim() || null, mother_name?.trim() || null,
+           parent_contact?.trim() || null, mother_contact?.trim() || null]
+        );
+        const student = insertResult.rows[0];
+
+        let feeAccountsCreated = 0;
+        try {
+          const assignResult = await assignFeeStructureToStudent({
+            studentId: student.id,
+            schoolId: school_id,
+            feeStructureId: fee_assignment.fee_structure_id,
+            classId: class_id,
+            client,
+          });
+          feeAccountsCreated = assignResult.fee_accounts_created;
+        } catch (assignErr: any) {
+          await client.query('ROLLBACK');
+          if (assignErr.message === "Fee structure does not match the student's class") {
+            return res.status(400).json({ error: assignErr.message });
+          }
+          throw assignErr;
+        }
+
+        await client.query('COMMIT');
+        return res.status(201).json({ ...student, fee_accounts_created: feeAccountsCreated });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // No fee_assignment — keep existing simple pool.query approach
     const result = await pool.query(
       `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
@@ -58,11 +123,11 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   }
 });
 
-// - GET /api/v1/admin/students � list students
-router.get('/', roleGuard('admin'), async (req: Request, res: Response) => {
+// - GET /api/v1/admin/students � list students
+router.get('/', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { class_id, section_id, include_inactive, incomplete_parents } = req.query;
+    const { class_id, section_id, include_inactive, incomplete_parents, search } = req.query;
     let query = `
       SELECT s.id, s.name, s.father_name, s.mother_name,
              s.parent_contact, s.mother_contact,
@@ -85,6 +150,18 @@ router.get('/', roleGuard('admin'), async (req: Request, res: Response) => {
         s.parent_contact IS NULL OR s.parent_contact = '' OR
         s.mother_name IS NULL OR s.mother_name = '' OR
         s.mother_contact IS NULL OR s.mother_contact = ''
+      )`;
+    }
+    // Full-text search across name, parent names, and phone numbers
+    if (search) {
+      const searchTerm = `%${(search as string).toLowerCase()}%`;
+      params.push(searchTerm);
+      query += ` AND (
+        LOWER(s.name) LIKE $${params.length} OR
+        LOWER(COALESCE(s.father_name, '')) LIKE $${params.length} OR
+        LOWER(COALESCE(s.mother_name, '')) LIKE $${params.length} OR
+        COALESCE(s.parent_contact, '') LIKE $${params.length} OR
+        COALESCE(s.mother_contact, '') LIKE $${params.length}
       )`;
     }
     query += ' ORDER BY s.name';

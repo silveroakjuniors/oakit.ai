@@ -45,6 +45,19 @@ interface Payment {
   fee_head_name?: string;
 }
 
+interface PaymentProof {
+  id: string;
+  transaction_id: string;
+  amount: number;
+  payment_mode: string;
+  status: 'pending' | 'matched' | 'rejected';
+  submitted_at: string;
+  bank_statement_date?: string;
+  rejection_reason?: string;
+  fee_head_name: string;
+  receipt_url?: string;
+}
+
 interface SiblingFees {
   student_id: string;
   student_name: string;
@@ -66,15 +79,23 @@ function FeesContent() {
 
   // Payment modal
   const [showPayModal, setShowPayModal] = useState(false);
-  const [acknowledged, setAcknowledged] = useState(false);
+  const [payFeeHeadId, setPayFeeHeadId] = useState('');
+  const [payTransactionId, setPayTransactionId] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [payMode, setPayMode] = useState('upi');
+  const [payNotes, setPayNotes] = useState('');
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState('');
   const [paySuccess, setPaySuccess] = useState('');
+
+  // Payment proofs
+  const [proofs, setProofs] = useState<PaymentProof[]>([]);
 
   useEffect(() => {
     if (studentId) {
       loadInvoice(studentId);
       loadHistory(studentId);
+      loadProofs(studentId);
     }
     loadSiblings();
   }, [studentId]);
@@ -104,24 +125,37 @@ function FeesContent() {
     } catch { setSiblings([]); }
   }
 
-  async function handlePay() {
-    if (!acknowledged) { setPayError('Please acknowledge the non-refundable notice.'); return; }
+  async function loadProofs(sid: string) {
+    try {
+      const data = await apiGet<PaymentProof[]>(`/api/v1/parent/fees/payment-proofs/${sid}`, token);
+      setProofs(Array.isArray(data) ? data : []);
+    } catch { setProofs([]); }
+  }
+
+  async function handleSubmitPayment() {
     setPayError('');
+    if (!payFeeHeadId) { setPayError('Select a fee head.'); return; }
+    if (!payTransactionId.trim()) { setPayError('Enter your transaction / UTR ID.'); return; }
+    const amt = parseFloat(payAmount);
+    if (!amt || amt <= 0) { setPayError('Enter the amount you paid.'); return; }
     setPayLoading(true);
     try {
-      const result = await apiPost<{ payment_url?: string; message?: string }>(
-        `/api/v1/parent/fees/pay/${studentId}`,
-        { acknowledged: true },
-        token
-      );
-      if (result.payment_url) {
-        window.location.href = result.payment_url;
-      } else {
-        setPaySuccess(result.message || 'Payment initiated.');
-        setShowPayModal(false);
-      }
+      await apiPost('/api/v1/parent/fees/payment-proof', {
+        student_id: studentId,
+        fee_head_id: payFeeHeadId,
+        transaction_id: payTransactionId.trim(),
+        amount: amt,
+        payment_mode: payMode,
+        notes: payNotes.trim() || undefined,
+      }, token);
+      setPaySuccess('✓ Payment submitted for verification. Your receipt will be released once verified by the school.');
+      setShowPayModal(false);
+      setPayTransactionId('');
+      setPayAmount('');
+      setPayNotes('');
+      await loadProofs(studentId);
     } catch (err: unknown) {
-      setPayError(err instanceof Error ? err.message : 'Payment failed.');
+      setPayError(err instanceof Error ? err.message : 'Submission failed.');
     } finally {
       setPayLoading(false);
     }
@@ -231,8 +265,14 @@ function FeesContent() {
             {/* Pay button */}
             {invoice.net_payable > 0 && (
               <div className="mt-4">
-                <Button onClick={() => { setShowPayModal(true); setAcknowledged(false); setPayError(''); }}>
-                  Pay Online
+                <Button onClick={() => {
+                  setShowPayModal(true);
+                  setPayFeeHeadId(invoice.accounts.find(a => a.status !== 'paid')?.id || '');
+                  setPayAmount('');
+                  setPayTransactionId('');
+                  setPayError('');
+                }}>
+                  Submit Online Payment
                 </Button>
               </div>
             )}
@@ -247,7 +287,11 @@ function FeesContent() {
             ) : (
               <div className="space-y-2">
                 {history.map(p => (
-                  <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
+                  <div key={p.id} className={`flex items-center justify-between p-3 rounded-lg border ${
+                    (p as any).needs_reconciliation && !p.receipt_url
+                      ? 'bg-amber-50 border-amber-200'
+                      : 'bg-gray-50 border-gray-100'
+                  }`}>
                     <div>
                       <p className="text-sm font-medium text-gray-800">₹{p.amount.toLocaleString('en-IN')}</p>
                       <p className="text-xs text-gray-500">
@@ -257,10 +301,15 @@ function FeesContent() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-500 mb-1">#{p.receipt_number}</p>
-                      {p.receipt_url && (
+                      {p.receipt_url ? (
                         <a href={p.receipt_url} target="_blank" rel="noopener noreferrer"
                           className="text-xs text-blue-600 underline">Receipt</a>
-                      )}
+                      ) : (p as any).needs_reconciliation ? (
+                        <div>
+                          <span className="text-xs text-amber-600 font-medium">⏳ Reconciliation pending</span>
+                          <p className="text-xs text-amber-500 mt-0.5">Contact school admin</p>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -274,6 +323,50 @@ function FeesContent() {
       ) : (
         <Card>
           <p className="text-sm text-gray-400 py-6 text-center">No fee details found.</p>
+        </Card>
+      )}
+
+      {/* Payment submission status */}
+      {proofs.length > 0 && (
+        <Card className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">Submitted Payments</h2>
+          <div className="space-y-2">
+            {proofs.map(p => (
+              <div key={p.id} className={`flex items-start justify-between p-3 rounded-lg border ${
+                p.status === 'matched' ? 'bg-green-50 border-green-200' :
+                p.status === 'rejected' ? 'bg-red-50 border-red-200' :
+                'bg-amber-50 border-amber-200'
+              }`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-gray-800">{p.fee_head_name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      p.status === 'matched' ? 'bg-green-100 text-green-700' :
+                      p.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                      'bg-amber-100 text-amber-700'
+                    }`}>
+                      {p.status === 'matched' ? '✓ Verified' : p.status === 'rejected' ? '✗ Rejected' : '⏳ Pending verification'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    ₹{Number(p.amount).toLocaleString('en-IN')} · Txn: {p.transaction_id} · {p.payment_mode.toUpperCase()}
+                  </p>
+                  {p.status === 'rejected' && p.rejection_reason && (
+                    <p className="text-xs text-red-600 mt-1">Reason: {p.rejection_reason}</p>
+                  )}
+                  {p.status === 'matched' && p.bank_statement_date && (
+                    <p className="text-xs text-green-600 mt-1">
+                      Verified on {new Date(p.bank_statement_date).toLocaleDateString('en-IN')}
+                    </p>
+                  )}
+                </div>
+                {p.status === 'matched' && p.receipt_url && (
+                  <a href={p.receipt_url} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-blue-600 underline ml-3 shrink-0">Receipt</a>
+                )}
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
@@ -310,29 +403,61 @@ function FeesContent() {
       {/* Non-refundable notice modal */}
       {showPayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Online Payment</h2>
-            <div className="p-4 rounded-lg border-2 border-red-400 bg-red-50 mb-4">
-              <p className="text-sm font-semibold text-red-700 mb-2">⚠️ Non-Refundable Notice</p>
-              <p className="text-sm text-red-600">
-                Fees once paid cannot be refunded under any circumstances. Please ensure the amount is correct before proceeding.
-              </p>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-semibold text-gray-800 mb-1">Submit Online Payment</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              After paying via UPI or bank transfer, enter your transaction details below. The school will verify and release your receipt.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fee Head</label>
+                <select className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={payFeeHeadId} onChange={e => setPayFeeHeadId(e.target.value)}>
+                  <option value="">Select fee head…</option>
+                  {invoice?.accounts.filter(a => a.status !== 'paid').map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.fee_head_name} — ₹{Number(a.outstanding_balance).toLocaleString('en-IN')} due
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Payment Mode</label>
+                <select className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={payMode} onChange={e => setPayMode(e.target.value)}>
+                  <option value="upi">UPI</option>
+                  <option value="bank_transfer">Bank Transfer / NEFT / RTGS</option>
+                  <option value="online">Other Online</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Transaction / UTR / Reference ID
+                </label>
+                <input className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder="e.g. 123456789012 or UPI ref"
+                  value={payTransactionId} onChange={e => setPayTransactionId(e.target.value)} />
+                <p className="text-xs text-gray-400 mt-1">This must exactly match what appears in your bank statement</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Amount Paid (₹)</label>
+                <input type="number" min="1" className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder="0"
+                  value={payAmount} onChange={e => setPayAmount(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+                <input className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder="Any additional info for the school"
+                  value={payNotes} onChange={e => setPayNotes(e.target.value)} />
+              </div>
             </div>
-            <label className="flex items-start gap-3 cursor-pointer mb-4">
-              <input
-                type="checkbox"
-                checked={acknowledged}
-                onChange={e => setAcknowledged(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span className="text-sm text-gray-700">
-                I have read and understood the non-refundable policy and wish to proceed with the payment.
-              </span>
-            </label>
-            {payError && <p className="text-xs text-red-500 mb-3">{payError}</p>}
-            <div className="flex gap-3">
-              <Button onClick={handlePay} disabled={payLoading || !acknowledged}>
-                {payLoading ? 'Processing…' : 'Proceed to Pay'}
+
+            {payError && <p className="text-xs text-red-500 mt-3">{payError}</p>}
+            <div className="flex gap-3 mt-4">
+              <Button onClick={handleSubmitPayment} disabled={payLoading}>
+                {payLoading ? 'Submitting…' : 'Submit Payment'}
               </Button>
               <Button variant="ghost" onClick={() => setShowPayModal(false)}>Cancel</Button>
             </div>

@@ -218,7 +218,7 @@ const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
 ];
 
 function defaultChat(name?: string): ChatMsg[] {
-  return [{ role: 'ai', text: `Hi! I'm Oakie ?? Ask me anything about ${name ? name.split(' ')[0] : 'your child'} � what they studied today, attendance, or progress.`, ts: 0 }];
+  return [{ role: 'ai', text: `Hi! I'm Oakie - Ask me anything about ${name ? name.split(' ')[0] : 'your child'} � what they studied today, attendance, or progress.`, ts: 0 }];
 }
 
 function ChildAvatar({ child, size = 'md', token, onUploaded }: {
@@ -527,7 +527,11 @@ export default function ParentPage() {
           .catch(() => {});
       }
       apiGet<any>(`/api/v1/parent/fees/invoice/${childId}`, token)
-        .then(setInvoice).catch(() => {});
+        .then(setInvoice)
+        .catch((err) => {
+          console.error('[parent fees invoice]', err?.message || err);
+          setInvoice(null);
+        });
     } finally { setChildLoading(false); }
   }, [cache, token, children]);
 
@@ -3839,9 +3843,9 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
             {/* Feature list */}
             <div className="w-full space-y-2 my-1">
               {[
-                { icon: '??', label: 'Google Calendar & Apple Calendar sync' },
-                { icon: '??', label: 'Oakie AI reminders � smart nudges before deadlines' },
-                { icon: '??', label: 'Never miss a homework due date or school event' },
+                { icon: 'calendar', label: 'Google Calendar & Apple Calendar sync' },
+                { icon: 'bell', label: 'Oakie AI reminders � smart nudges before deadlines' },
+                { icon: 'clock', label: 'Never miss a homework due date or school event' },
               ].map(f => (
                 <div key={f.label} className="flex items-center gap-3 bg-white border border-purple-100 rounded-xl px-4 py-2.5 text-left">
                   <span className="text-lg shrink-0">{f.icon}</span>
@@ -3951,6 +3955,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
     </div>
   );
 }
+
 
 
 

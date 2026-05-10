@@ -1,20 +1,10 @@
 import { Router } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify } from '../../middleware/auth';
+import { verifyParentOwnsStudent } from '../../lib/parentAuth';
 
 const router = Router();
 router.use(jwtVerify);
-
-// Helper: verify parent owns the student
-async function verifyParentOwnsStudent(parentId: string, studentId: string, schoolId: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT 1 FROM parent_student_links sp
-     JOIN students s ON s.id = sp.student_id
-     WHERE sp.parent_id = $1 AND sp.student_id = $2 AND s.school_id = $3`,
-    [parentId, studentId, schoolId]
-  );
-  return result.rows.length > 0;
-}
 
 // ── GET /invoice/:studentId — Consolidated invoice ───────────────────────────
 router.get('/invoice/:studentId', async (req, res) => {
@@ -27,9 +17,14 @@ router.get('/invoice/:studentId', async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
 
     const accountsResult = await pool.query(
-      `SELECT sfa.*, fh.name AS fee_head_name, fh.type AS fee_head_type
+      `SELECT sfa.*,
+              fh.name AS fee_head_name, fh.type AS fee_head_type,
+              s.name AS student_name,
+              c.name AS class_name
        FROM student_fee_accounts sfa
        JOIN fee_heads fh ON fh.id = sfa.fee_head_id
+       JOIN students s ON s.id = sfa.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
        WHERE sfa.student_id = $1 AND sfa.school_id = $2 AND sfa.deleted_at IS NULL`,
       [studentId, schoolId]
     );
@@ -64,6 +59,8 @@ router.get('/invoice/:studentId', async (req, res) => {
 
     return res.json({
       student_id: studentId,
+      student_name: accountsResult.rows[0]?.student_name ?? '',
+      class_name: accountsResult.rows[0]?.class_name ?? '',
       accounts: accountsResult.rows,
       concessions: concessionsResult.rows,
       usage_charges: usageResult.rows,
@@ -177,8 +174,9 @@ router.get('/siblings', async (req, res) => {
     const schoolId = req.user!.school_id;
 
     const studentsResult = await pool.query(
-      `SELECT s.id, s.name FROM parent_student_links sp
+      `SELECT s.id, s.name, c.name AS class_name FROM parent_student_links sp
        JOIN students s ON s.id = sp.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
        WHERE sp.parent_id = $1 AND s.school_id = $2 AND s.is_active = true`,
       [parentId, schoolId]
     );
@@ -201,6 +199,7 @@ router.get('/siblings', async (req, res) => {
         return {
           student_id: student.id,
           student_name: student.name,
+          class_name: student.class_name ?? '',
           outstanding_balance: outstanding,
           credit_balance: credit,
           net_payable: Math.max(0, outstanding - credit),
@@ -216,54 +215,98 @@ router.get('/siblings', async (req, res) => {
   }
 });
 
-// ── POST /payment-proof — Parent submits transaction ID + optional screenshot ─
+// ── POST /payment-proof — Parent submits online transaction details ───────────
+// Parent provides: student_id, fee_head_id, transaction_id, amount, payment_mode
 router.post('/payment-proof', async (req, res) => {
   try {
     const parentId = req.user!.id;
     const schoolId = req.user!.school_id;
-    const { transaction_id, student_id } = req.body;
+    const { student_id, fee_head_id, transaction_id, amount, payment_mode = 'upi', notes } = req.body;
 
-    if (!transaction_id && !req.file) {
-      return res.status(400).json({ error: 'transaction_id or receipt file is required' });
+    if (!student_id || !fee_head_id || !transaction_id || !amount) {
+      return res.status(400).json({
+        error: 'student_id, fee_head_id, transaction_id, and amount are required',
+      });
+    }
+    if (parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'amount must be > 0' });
     }
 
-    // Verify parent owns the student if provided
-    if (student_id && !(await verifyParentOwnsStudent(parentId, student_id, schoolId))) {
+    // Verify parent owns the student
+    if (!(await verifyParentOwnsStudent(parentId, student_id, schoolId))) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Store the payment proof submission
-    await pool.query(
-      `INSERT INTO parent_payment_proofs
-         (school_id, parent_id, student_id, transaction_id, status, created_at)
-       VALUES ($1, $2, $3, $4, 'pending', now())
-       ON CONFLICT DO NOTHING`,
-      [schoolId, parentId, student_id || null, transaction_id || null]
-    ).catch(async () => {
-      // Table may not exist yet — create it and retry
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS parent_payment_proofs (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
-          parent_id UUID NOT NULL,
-          student_id UUID,
-          transaction_id TEXT,
-          status TEXT NOT NULL DEFAULT 'pending',
-          admin_note TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          reviewed_at TIMESTAMPTZ
-        )
-      `);
-      await pool.query(
-        `INSERT INTO parent_payment_proofs (school_id, parent_id, student_id, transaction_id, status, created_at)
-         VALUES ($1, $2, $3, $4, 'pending', now())`,
-        [schoolId, parentId, student_id || null, transaction_id || null]
-      );
-    });
+    // Verify fee head belongs to this student's school
+    const feeHeadCheck = await pool.query(
+      `SELECT id FROM fee_heads WHERE id = $1 AND school_id = $2 AND deleted_at IS NULL`,
+      [fee_head_id, schoolId]
+    );
+    if (feeHeadCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Fee head not found' });
+    }
 
-    return res.json({ ok: true, message: 'Payment proof submitted. Admin will verify and update your fee status.' });
+    // Check for duplicate transaction ID for this school
+    const dupCheck = await pool.query(
+      `SELECT id FROM online_payment_proofs
+       WHERE school_id = $1 AND transaction_id = $2 AND status != 'rejected'`,
+      [schoolId, transaction_id.trim()]
+    );
+    if (dupCheck.rows.length > 0) {
+      return res.status(409).json({
+        error: 'This transaction ID has already been submitted. Contact the school if this is an error.',
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO online_payment_proofs
+         (school_id, student_id, fee_head_id, parent_id, transaction_id, amount, payment_mode, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, status, submitted_at`,
+      [schoolId, student_id, fee_head_id, parentId,
+       transaction_id.trim(), parseFloat(amount), payment_mode, notes || null]
+    );
+
+    return res.status(201).json({
+      ok: true,
+      proof_id: result.rows[0].id,
+      message: 'Payment submitted for verification. Your receipt will be released once verified.',
+    });
   } catch (err) {
     console.error('[parent/fees POST /payment-proof]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /payment-proofs/:studentId — Parent views their submitted proofs ──────
+router.get('/payment-proofs/:studentId', async (req, res) => {
+  try {
+    const parentId = req.user!.id;
+    const schoolId = req.user!.school_id;
+    const { studentId } = req.params;
+
+    if (!(await verifyParentOwnsStudent(parentId, studentId, schoolId))) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         opp.id, opp.transaction_id, opp.amount, opp.payment_mode,
+         opp.status, opp.submitted_at, opp.bank_statement_date,
+         opp.rejection_reason, opp.notes,
+         fh.name AS fee_head_name,
+         fp.receipt_url
+       FROM online_payment_proofs opp
+       JOIN fee_heads fh ON fh.id = opp.fee_head_id
+       LEFT JOIN fee_payments fp ON fp.id = opp.fee_payment_id
+       WHERE opp.student_id = $1 AND opp.school_id = $2
+       ORDER BY opp.submitted_at DESC`,
+      [studentId, schoolId]
+    );
+
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[parent/fees GET /payment-proofs/:studentId]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

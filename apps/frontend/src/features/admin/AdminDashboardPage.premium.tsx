@@ -19,6 +19,7 @@ import { apiGet, apiPost } from '@/lib/api';
 import { ChevronDown, X, Send, TrendingUp, Users, BookOpen, CheckSquare, AlertTriangle, Brain, Cake, Megaphone, Clock, Zap } from 'lucide-react';
 import StatDrillModal from '@/features/admin/components/StatDrillModal';
 import BirthdayWishModal from '@/features/admin/components/BirthdayWishModal';
+import FeeSummaryCard from '@/features/admin/fees/FeeSummaryCard';
 
 /* ÔöÇÔöÇÔöÇ Local types ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 interface Announcement { id: string; title: string; body: string; target_audience: string; created_at: string; author_name: string; }
@@ -342,7 +343,10 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
-        {/* ÔöÇÔöÇ PENDING + BIRTHDAYS ÔöÇÔöÇ */}
+        {/* ── FEE SUMMARY ── */}
+        <FeeSummaryCard token={token} />
+
+        {/* ── PENDING + BIRTHDAYS ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Pending Today ÔÇö only shown when there are pending items */}
           {todaySnap && (pendingAtt > 0 || pendingPlan > 0) && (
