@@ -8,6 +8,7 @@ import { RawPlanModal } from '@/UIComponents/teacher/RawPlanModal';
 import { TopicsChecklist } from '@/UIComponents/teacher/TopicsChecklist';
 import HomeworkModal from '@/components/HomeworkModal';
 import PendingWorkList from '@/components/ui/PendingWorkList';
+import PhotoSuggestions from '@/components/PhotoSuggestions';
 import OakitLogo from '@/components/OakitLogo';
 import { useSessionManager } from '@/hooks/useSessionManager';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -802,18 +803,9 @@ export default function TeacherPlanner() {
               );
             })()}
 
-            {/* Photo tip */}
+            {/* Photo Suggestions */}
             {!todayCompleted && plan?.chunks?.length > 0 && (
-              <button onClick={() => router.push('/teacher/feed')}
-                className="flex items-center gap-3 px-3 py-3 rounded-2xl border border-pink-100 bg-pink-50/60 hover:bg-pink-100 hover:border-pink-200 transition-colors text-left w-full">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shrink-0">
-                  <Play className="w-4 h-4 text-white" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-pink-800">Capture today's moments</p>
-                  <p className="text-[10px] text-pink-600 mt-0.5">Take a photo during activities and share it to the class feed — parents love seeing their child in action!</p>
-                </div>
-              </button>
+              <PhotoSuggestions token={token} sectionId={sectionId} planDate={today} />
             )}
 
             {/* Quick help chips */}
