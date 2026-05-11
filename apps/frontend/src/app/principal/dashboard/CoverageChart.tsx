@@ -110,7 +110,7 @@ function CoverageDrillDown({
                         <XAxis dataKey="name" tick={{ fontSize: 9 }} />
                         <YAxis tick={{ fontSize: 9 }} />
                         <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                          formatter={(v: any, name: string, p: any) => [
+                          formatter={(v: any, name: any, p: any) => [
                             `${v} topics (${p.payload.pct}%)`,
                             name === 'covered' ? '✓ Covered' : '○ Remaining',
                           ]} />
