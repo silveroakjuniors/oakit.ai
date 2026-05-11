@@ -266,7 +266,7 @@ export default function InsightsPanel({ token }: { token: string }) {
               {d.map((e, i) => <Cell key={i} fill={e.color} />)}
             </Pie>
             <Tooltip contentStyle={{ fontSize: 10, borderRadius: 8 }}
-              formatter={(v: any, name: string) => [v, name]} />
+              formatter={(v: any, name: any) => [v, name]} />
           </PieChart>
         </ResponsiveContainer>
       </div>

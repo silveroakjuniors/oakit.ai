@@ -226,7 +226,7 @@ export default function FinanceCharts({ token }: { token: string }) {
                   tickFormatter={v => v.length > 6 ? v.slice(0, 6) : v} />
                 <YAxis tick={{ fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}K` : v} />
                 <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                  formatter={(v: any, name: string) => [fmt(v), name === 'total_collected' ? 'Collected' : 'Pending']} />
+                  formatter={(v: any, name: any) => [fmt(v), name === 'total_collected' ? 'Collected' : 'Pending']} />
                 <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
                 <Bar dataKey="total_collected" name="Collected" fill="#10b981" radius={[3,3,0,0]} />
                 <Bar dataKey="total_pending" name="Pending" fill="#fbbf24" radius={[3,3,0,0]} />

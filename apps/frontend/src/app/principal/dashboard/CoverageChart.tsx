@@ -260,7 +260,7 @@ export default function CoverageChart({ sections, byClass }: Props) {
                   {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
                 </Pie>
                 <Tooltip contentStyle={{ fontSize: 10, borderRadius: 8 }}
-                  formatter={(v: any, name: string) => [`${v} sections`, name]} />
+                  formatter={(v: any, name: any) => [`${v} sections`, name]} />
               </PieChart>
             </ResponsiveContainer>
           </div>

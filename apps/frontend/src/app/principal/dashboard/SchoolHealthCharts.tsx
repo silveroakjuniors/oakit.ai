@@ -64,7 +64,7 @@ function AttendanceDrillDown({
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} />
                 <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                  formatter={(v: any, name: string, p: any) => [
+                  formatter={(v: any, name: any, p: any) => [
                     `${v} students (${p.payload.full})`,
                     name === 'present' ? 'Present' : 'Absent',
                   ]} />

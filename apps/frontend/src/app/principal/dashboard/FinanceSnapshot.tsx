@@ -199,7 +199,7 @@ export default function FinanceSnapshot({ token }: Props) {
                     <XAxis dataKey="name" tick={{ fontSize: 9 }} />
                     <YAxis tick={{ fontSize: 9 }} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}K` : v} />
                     <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                      formatter={(v: any, name: string) => [fmt(v), name === 'collected' ? 'Collected' : 'Pending']} />
+                      formatter={(v: any, name: any) => [fmt(v), name === 'collected' ? 'Collected' : 'Pending']} />
                     <Bar dataKey="collected" fill="#10b981" radius={[3, 3, 0, 0]} />
                     <Bar dataKey="pending"   fill="#f87171" radius={[3, 3, 0, 0]} />
                   </BarChart>

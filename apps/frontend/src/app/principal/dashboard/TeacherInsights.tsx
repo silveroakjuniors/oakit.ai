@@ -251,7 +251,7 @@ export default function TeacherInsights({ engagement, streaks, schoolDays30d }: 
                     {donutData.map((e, i) => <Cell key={i} fill={e.color} />)}
                   </Pie>
                   <Tooltip contentStyle={{ fontSize: 10, borderRadius: 8 }}
-                    formatter={(v: any, name: string) => [`${v} teachers`, name]} />
+                    formatter={(v: any, name: any) => [`${v} teachers`, name]} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
