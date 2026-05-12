@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { API_BASE } from '@/lib/api';
 
 const SCHOOL_CODE = 'sojs';
 const CLASS_OPTIONS = ['Play Group', 'Nursery', 'LKG', 'UKG', '1st STD', '2nd STD', '3rd STD'];
@@ -73,8 +72,13 @@ export default function UniformSizingPage() {
     setApiError('');
     if (!validate()) return;
     setLoading(true);
+
+    // Resolve API base at call time so it always uses the correct production URL
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '')
+      || 'https://oakit-api-gateway.onrender.com';
+
     try {
-      const res = await fetch(`${API_BASE}/api/v1/public/uniform`, {
+      const res = await fetch(`${apiBase}/api/v1/public/uniform`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
