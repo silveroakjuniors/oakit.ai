@@ -330,7 +330,7 @@ export default function TeacherPlanner() {
         settling_total: res.settling_total, already_completed: res.already_completed,
       }]);
     } catch { /* ignore */ } finally { setAiLoading(false); }
-  }  }
+  }  
 
   async function loadContext(): Promise<string> {
     try {
