@@ -795,18 +795,41 @@ async def format_observation(req: FormatObservationRequest):
     """Format a raw teacher observation into a warm, professional report-ready note."""
     from query_pipeline import _call_llm
 
-    first_name = req.student_name.split()[0] if req.student_name else "the student"
-    category_hint = f" for the '{req.category}' category" if req.category else ""
+    first_name = req.student_name.split()[0] if req.student_name and req.student_name != "the student" else "the student"
 
-    system = (
-        f"You are helping a teacher write a professional child observation note{category_hint}.\n"
-        "Output plain text only — no markdown, no bullet symbols, no headers.\n"
-        f"Always refer to the child by their first name: {first_name}.\n"
-        "Write 2-3 warm, specific, professional sentences suitable for a school report.\n"
-        "Expand on the observation with concrete, positive language. Do not invent facts."
-    )
-    prompt = f"""Teacher's raw observation about {first_name}:
-\"{req.text}\"
+    # Detect if category is a milestone description (long text) vs a short category label
+    is_milestone = req.category and len(req.category) > 30
+
+    if is_milestone:
+        system = (
+            f"You are helping a teacher write a milestone achievement note for a school report.\n"
+            f"The milestone being achieved is: \"{req.category}\"\n"
+            "Output plain text only — no markdown, no bullet symbols, no headers.\n"
+            f"Always refer to the child by their first name: {first_name}.\n"
+            "Write 2-3 warm, specific, professional sentences that:\n"
+            "1. Confirm the child has achieved this milestone\n"
+            "2. Describe HOW they demonstrated it (using the teacher's note)\n"
+            "3. End with a positive, encouraging observation\n"
+            "Do not invent facts beyond what the teacher wrote."
+        )
+        prompt = f"""Milestone: "{req.category}"
+
+Teacher's note about how {first_name} achieved this:
+"{req.text}"
+
+Rewrite as a polished 2-3 sentence milestone achievement note for a school report.
+Use {first_name}'s name naturally. Reference the milestone and how it was demonstrated."""
+    else:
+        category_hint = f" for the '{req.category}' category" if req.category else ""
+        system = (
+            f"You are helping a teacher write a professional child observation note{category_hint}.\n"
+            "Output plain text only — no markdown, no bullet symbols, no headers.\n"
+            f"Always refer to the child by their first name: {first_name}.\n"
+            "Write 2-3 warm, specific, professional sentences suitable for a school report.\n"
+            "Expand on the observation with concrete, positive language. Do not invent facts."
+        )
+        prompt = f"""Teacher's raw observation about {first_name}:
+"{req.text}"
 
 Rewrite this as a polished 2-3 sentence observation note for a school report.
 Use {first_name}'s name naturally. Be warm, specific, and professional."""
