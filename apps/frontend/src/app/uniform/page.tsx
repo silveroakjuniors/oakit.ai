@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { API_BASE } from '@/lib/api';
 
 const SCHOOL_CODE = 'sojs';
@@ -36,6 +36,17 @@ export default function UniformSizingPage() {
   const [submitted, setSubmitted] = useState(false);
   const [apiError, setApiError] = useState('');
   const [showGuide, setShowGuide] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Lock body scroll when lightbox is open
+  useEffect(() => {
+    if (lightboxOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [lightboxOpen]);
 
   function set(field: keyof FormState, value: string) {
     setForm(p => ({ ...p, [field]: value }));
@@ -274,17 +285,32 @@ export default function UniformSizingPage() {
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-4">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Measurements</p>
 
-                {/* Reference image — always visible */}
+                {/* Reference image — always visible, tap to enlarge */}
                 <div className="rounded-xl overflow-hidden border border-emerald-100">
-                  <div className="bg-emerald-600 px-3 py-2">
-                    <p className="text-white font-bold text-xs">Measurement Reference</p>
-                    <p className="text-emerald-100 text-[10px] mt-0.5">Use this chart to take accurate measurements</p>
+                  <div className="bg-emerald-600 px-3 py-2 flex items-center justify-between">
+                    <div>
+                      <p className="text-white font-bold text-xs">Measurement Reference</p>
+                      <p className="text-emerald-100 text-[10px] mt-0.5">Tap image to enlarge</p>
+                    </div>
+                    <span className="text-emerald-200 text-[10px] flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+                      </svg>
+                      Zoom
+                    </span>
                   </div>
-                  <img
-                    src="/uniform-size-chart.png"
-                    alt="Uniform measurement reference chart"
-                    className="w-full h-auto"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setLightboxOpen(true)}
+                    className="w-full block focus:outline-none active:opacity-80 cursor-zoom-in"
+                    aria-label="Tap to enlarge measurement reference chart"
+                  >
+                    <img
+                      src="/uniform-size-chart.png"
+                      alt="Uniform measurement reference chart"
+                      className="w-full h-auto"
+                    />
+                  </button>
                 </div>
 
                 <p className="text-xs text-gray-500">Height, chest, and lengths in inches (in). Weight in kilograms (kg). Height or chest is required.</p>
@@ -362,6 +388,43 @@ export default function UniformSizingPage() {
           </>
         )}
       </main>
+
+      {/* ── Lightbox ── */}
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setLightboxOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Enlarged measurement reference chart"
+        >
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Image — stops click propagation so only backdrop closes */}
+          <div
+            className="relative w-full max-w-2xl max-h-[90dvh] overflow-auto rounded-2xl shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <img
+              src="/uniform-size-chart.png"
+              alt="Uniform measurement reference chart — enlarged"
+              className="w-full h-auto rounded-2xl"
+            />
+            <p className="text-center text-white/60 text-xs mt-3 pb-1">Tap outside to close</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
