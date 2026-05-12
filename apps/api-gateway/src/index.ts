@@ -84,6 +84,7 @@ import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
 import publicEnquiriesRouter from './routes/public/enquiries';
+import publicUniformRouter from './routes/public/uniform';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
 import { piiGuard } from './middleware/piiGuard';
 import { chunkGuard } from './middleware/chunkGuard';
@@ -236,6 +237,7 @@ app.get('/health/ai', async (_req, res) => {
 
 // Public routes — no authentication required
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
+app.use('/api/v1/public/uniform', publicUniformRouter);
 
 // Shared (any authenticated role)
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
