@@ -262,32 +262,69 @@ export default function TeacherPlanner() {
   }
 
   async function autoShowDailyPlan(effectiveToday: string) {
+    // ── Local storage cache key: unique per teacher + date ──────────────────
+    const cacheKey = `oakit_plan_${token.slice(-16)}_${effectiveToday}`;
+
     try {
       setAiLoading(true);
-      const res = await apiPost<any>('/api/v1/ai/query', { text: "what is my plan for today" }, token);
 
-      // Fetch photo suggestions in parallel — append to plan response
-      let planText = res.response || '';
-      if (res.chunk_ids?.length > 0) {
+      // 1. Try cache first
+      let res: any = null;
+      let fromCache = false;
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          res = JSON.parse(cached);
+          fromCache = true;
+        }
+      } catch { /* ignore parse errors */ }
+
+      // 2. Only call AI if not cached
+      if (!res) {
+        res = await apiPost<any>('/api/v1/ai/query', { text: "what is my plan for today" }, token);
+        // Save to localStorage — expires naturally when date changes (different key tomorrow)
         try {
-          const photoData = await apiGet<{ suggestions: { emoji: string; title: string; description: string }[] }>(
-            '/api/v1/teacher/plan/photo-suggestions', token
-          );
-          if (photoData.suggestions?.length > 0) {
-            const photoBlock = [
-              '',
-              '---',
-              '📸 **Photo Suggestions for Today\'s Feed**',
-              '_Capture these moments and share with parents:_',
-              '',
-              ...photoData.suggestions.map((s, i) => `${i + 1}. ${s.emoji} **${s.title}** — ${s.description}`),
-            ].join('\n');
-            planText = planText + photoBlock;
+          localStorage.setItem(cacheKey, JSON.stringify(res));
+          // Clean up yesterday's cache entries to avoid localStorage bloat
+          const prefix = `oakit_plan_${token.slice(-16)}_`;
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(prefix) && k !== cacheKey) {
+              localStorage.removeItem(k);
+            }
           }
-        } catch { /* non-critical — don't block plan display */ }
+        } catch { /* storage full — ignore */ }
       }
 
-      if (res.chunk_ids?.length > 0) setOakiePlanText(res.response);
+      // 3. Build plan text with photo suggestions
+      let planText = res.response || '';
+      if (res.chunk_ids?.length > 0) {
+        // Only fetch photo suggestions if not from cache (they're already in cached planText)
+        if (!fromCache) {
+          try {
+            const photoData = await apiGet<{ suggestions: { emoji: string; title: string; description: string }[] }>(
+              '/api/v1/teacher/plan/photo-suggestions', token
+            );
+            if (photoData.suggestions?.length > 0) {
+              const photoBlock = [
+                '',
+                '---',
+                '📸 **Photo Suggestions for Today\'s Feed**',
+                '_Capture these moments and share with parents:_',
+                '',
+                ...photoData.suggestions.map((s, i) => `${i + 1}. ${s.emoji} **${s.title}** — ${s.description}`),
+              ].join('\n');
+              planText = planText + photoBlock;
+              // Update cache with photo suggestions included
+              try {
+                const updatedRes = { ...res, response: planText };
+                localStorage.setItem(cacheKey, JSON.stringify(updatedRes));
+              } catch { /* ignore */ }
+            }
+          } catch { /* non-critical */ }
+        }
+        setOakiePlanText(res.response);
+      }
 
       setMessages(prev => [...prev, {
         role: 'assistant', text: planText,
@@ -298,7 +335,7 @@ export default function TeacherPlanner() {
         settling_total: res.settling_total, already_completed: res.already_completed,
       }]);
     } catch { /* ignore */ } finally { setAiLoading(false); }
-  }
+  }  }
 
   async function loadContext(): Promise<string> {
     try {
