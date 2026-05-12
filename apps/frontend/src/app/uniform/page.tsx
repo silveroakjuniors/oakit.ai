@@ -8,17 +8,6 @@ const CLASS_OPTIONS = ['Play Group', 'Nursery', 'LKG', 'UKG', '1st STD', '2nd ST
 
 const SIZES = ['20', '22', '24', '26', '28', '30', '32'];
 
-// Indian kids size guide shown to parents
-const SIZE_GUIDE = [
-  { size: '20', age: '3–4 yrs', height: '95–105 cm', chest: '48–52 cm' },
-  { size: '22', age: '4–5 yrs', height: '106–115 cm', chest: '53–57 cm' },
-  { size: '24', age: '5–6 yrs', height: '116–125 cm', chest: '58–62 cm' },
-  { size: '26', age: '6–7 yrs', height: '126–135 cm', chest: '63–67 cm' },
-  { size: '28', age: '7–8 yrs', height: '136–145 cm', chest: '68–72 cm' },
-  { size: '30', age: '8–9 yrs', height: '146–155 cm', chest: '73–77 cm' },
-  { size: '32', age: '9–10 yrs', height: '156–165 cm', chest: '78–82 cm' },
-];
-
 interface FormState {
   child_name: string;
   class_name: string;
@@ -138,27 +127,12 @@ export default function UniformSizingPage() {
               <p className="text-white font-bold text-sm">Indian Kids Uniform Size Chart</p>
               <p className="text-emerald-100 text-xs mt-0.5">Standard sizes 20–32 based on chest & height</p>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-emerald-50">
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Size</th>
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Age</th>
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Height</th>
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Chest</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SIZE_GUIDE.map((row, i) => (
-                    <tr key={row.size} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-3 py-2 font-bold text-emerald-700">{row.size}</td>
-                      <td className="px-3 py-2 text-gray-600">{row.age}</td>
-                      <td className="px-3 py-2 text-gray-600">{row.height}</td>
-                      <td className="px-3 py-2 text-gray-600">{row.chest}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="p-3">
+              <img
+                src="/uniform-size-chart.png"
+                alt="Indian Kids Uniform Size Chart — sizes 20 to 32"
+                className="w-full h-auto rounded-xl"
+              />
             </div>
           </div>
         )}
