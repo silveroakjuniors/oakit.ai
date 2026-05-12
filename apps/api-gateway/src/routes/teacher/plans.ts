@@ -105,31 +105,20 @@ router.get('/today', async (req: Request, res: Response) => {
 });
 
 // GET /api/v1/teacher/plan/photo-suggestions
-// Returns 5 photo ideas based on today's lesson topics — unique per section
+// Must be before /:date to avoid being caught as a date param
 router.get('/photo-suggestions', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
     const today = await getToday(school_id);
     const section_id = await resolveSection(user_id, school_id, req.query.section_id as string);
+    if (!section_id) return res.json({ suggestions: [], plan_date: today });
 
-    if (!section_id) {
-      return res.json({ suggestions: [], plan_date: today });
-    }
-
-    // Fetch today's plan chunks
     const result = await pool.query(PLAN_QUERY, [section_id, today, school_id]);
-    if (result.rows.length === 0) {
-      return res.json({ suggestions: [], plan_date: today });
-    }
+    if (result.rows.length === 0) return res.json({ suggestions: [], plan_date: today });
 
-    const row = result.rows[0];
-    const chunks: { topic_label: string; content: string }[] = row.chunks || [];
+    const chunks: { topic_label: string; content: string }[] = result.rows[0].chunks || [];
+    if (chunks.length === 0) return res.json({ suggestions: [], plan_date: today });
 
-    if (chunks.length === 0) {
-      return res.json({ suggestions: [], plan_date: today });
-    }
-
-    // Also fetch supplementary activities for richer context
     const suppResult = await pool.query(
       `SELECT a.title AS activity_title, a.description AS activity_description, ap.name AS pool_name
        FROM supplementary_plans sp
@@ -139,118 +128,81 @@ router.get('/photo-suggestions', async (req: Request, res: Response) => {
        WHERE sp.section_id = $1 AND sp.plan_date = $2`,
       [section_id, today]
     );
-    const suppActivities: { activity_title: string; activity_description: string; pool_name: string }[] = suppResult.rows;
 
-    // Build photo suggestions from topics + activities
-    const suggestions = generatePhotoSuggestions(chunks, suppActivities, section_id);
-
+    const suggestions = buildPhotoSuggestions(chunks, suppResult.rows, section_id);
     return res.json({ suggestions, plan_date: today });
   } catch (err) {
-    console.error('[PhotoSuggestions] error:', err);
+    console.error('[PhotoSuggestions]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ── Photo suggestion generator ────────────────────────────────────────────────
-// Generates 5 unique, activity-specific photo ideas from today's chunks.
-// Uses section_id as a seed so different sections get different suggestions.
-function generatePhotoSuggestions(
+function buildPhotoSuggestions(
   chunks: { topic_label: string; content: string }[],
   suppActivities: { activity_title: string; activity_description: string; pool_name: string }[],
   sectionId: string
 ): { emoji: string; title: string; description: string; subject: string }[] {
-
-  // Extract subject → topic pairs from chunks
-  const subjectTopics: { subject: string; topic: string; content: string }[] = [];
-
-  for (const chunk of chunks) {
-    const label = chunk.topic_label || '';
-    const content = chunk.content || '';
-
-    // Try to extract subject from topic label (e.g. "English - Letter B" → "English")
-    const subjectMatch = label.match(/^([A-Za-z\s]+?)(?:\s*[-–:]\s*|\s+\d)/);
-    const subject = subjectMatch ? subjectMatch[1].trim() : label.split(' ').slice(0, 2).join(' ');
-
-    // Extract first meaningful activity line from content
-    const activityLine = content.split('\n')
-      .map(l => l.replace(/^[-•*]\s*/, '').trim())
-      .find(l => l.length > 10 && !/^(topic|subject|page|chapter|unit|section):/i.test(l)) || label;
-
-    subjectTopics.push({ subject, topic: label, content: activityLine });
-  }
-
-  // Add supplementary activities as additional context
-  for (const act of suppActivities) {
-    subjectTopics.push({
-      subject: act.pool_name || 'Activity',
-      topic: act.activity_title,
-      content: act.activity_description || act.activity_title,
-    });
-  }
-
-  // Photo idea templates keyed by subject keywords
-  const photoTemplates: Record<string, { emoji: string; templates: string[] }> = {
-    math:       { emoji: '🔢', templates: ['Children counting {topic} with manipulatives on their desks', 'Students showing their {topic} work on mini whiteboards', 'Group solving {topic} problems together on the floor'] },
-    english:    { emoji: '📖', templates: ['Students reading aloud during {topic} session', 'Children writing {topic} on their notebooks — close-up of their work', 'Class doing a phonics activity for {topic} with letter cards'] },
-    art:        { emoji: '🎨', templates: ['Students creating their {topic} artwork — hands and brushes in action', 'Finished {topic} art pieces displayed on desks', 'Children mixing colours for {topic} project'] },
-    science:    { emoji: '🔬', templates: ['Students observing {topic} experiment up close', 'Children recording {topic} observations in their journals', 'Group discussion around {topic} materials on the table'] },
-    evs:        { emoji: '🌿', templates: ['Students exploring {topic} outdoors or with nature materials', 'Children drawing {topic} observations in their books', 'Class discussion about {topic} with visual aids'] },
-    music:      { emoji: '🎵', templates: ['Students clapping rhythms during {topic} activity', 'Children singing together for {topic} session', 'Group playing instruments for {topic}'] },
-    pe:         { emoji: '⚽', templates: ['Students doing {topic} warm-up exercises', 'Children playing {topic} game in the yard', 'Class stretching after {topic} activity'] },
-    hindi:      { emoji: '🔤', templates: ['Students writing {topic} in their Hindi notebooks', 'Children reading {topic} aloud from the board', 'Group activity practising {topic} vocabulary'] },
-    gk:         { emoji: '🌍', templates: ['Students discussing {topic} with a map or chart', 'Children answering {topic} quiz questions', 'Class exploring {topic} with visual flashcards'] },
-    circle:     { emoji: '🪑', templates: ['Morning circle time — children sharing about {topic}', 'Students sitting in a circle discussing {topic}', 'Group show-and-tell related to {topic}'] },
-    story:      { emoji: '📚', templates: ['Teacher reading {topic} story to attentive students', 'Children acting out scenes from {topic}', 'Students drawing their favourite part of {topic}'] },
-    default:    { emoji: '📸', templates: ['Students engaged in {topic} activity at their desks', 'Children collaborating on {topic} task', 'Class working on {topic} — candid learning moment'] },
+  const templates: Record<string, { emoji: string; ideas: string[] }> = {
+    math:    { emoji: '🔢', ideas: ['Children counting {topic} with manipulatives on their desks', 'Students showing {topic} work on mini whiteboards', 'Group solving {topic} problems together'] },
+    english: { emoji: '📖', ideas: ['Students reading aloud during {topic}', 'Children writing {topic} in their notebooks — close-up', 'Class doing phonics activity for {topic} with letter cards'] },
+    art:     { emoji: '🎨', ideas: ['Students creating {topic} artwork — hands and brushes in action', 'Finished {topic} pieces displayed on desks', 'Children mixing colours for {topic}'] },
+    science: { emoji: '🔬', ideas: ['Students observing {topic} experiment up close', 'Children recording {topic} in their journals', 'Group discussion around {topic} materials'] },
+    evs:     { emoji: '🌿', ideas: ['Students exploring {topic} with nature materials', 'Children drawing {topic} observations', 'Class discussion about {topic} with visual aids'] },
+    music:   { emoji: '🎵', ideas: ['Students clapping rhythms during {topic}', 'Children singing together for {topic}', 'Group playing instruments for {topic}'] },
+    pe:      { emoji: '⚽', ideas: ['Students doing {topic} warm-up exercises', 'Children playing {topic} game in the yard', 'Class stretching after {topic}'] },
+    hindi:   { emoji: '🔤', ideas: ['Students writing {topic} in Hindi notebooks', 'Children reading {topic} aloud from the board', 'Group practising {topic} vocabulary'] },
+    gk:      { emoji: '🌍', ideas: ['Students discussing {topic} with a chart', 'Children answering {topic} quiz questions', 'Class exploring {topic} with flashcards'] },
+    circle:  { emoji: '🪑', ideas: ['Morning circle — children sharing about {topic}', 'Students sitting in a circle discussing {topic}', 'Group show-and-tell related to {topic}'] },
+    story:   { emoji: '📚', ideas: ['Teacher reading {topic} story to attentive students', 'Children acting out scenes from {topic}', 'Students drawing their favourite part of {topic}'] },
+    default: { emoji: '📸', ideas: ['Students engaged in {topic} at their desks', 'Children collaborating on {topic}', 'Class working on {topic} — candid learning moment'] },
   };
 
-  function getTemplate(subject: string, topic: string): { emoji: string; title: string; description: string } {
-    const key = Object.keys(photoTemplates).find(k =>
-      subject.toLowerCase().includes(k) || topic.toLowerCase().includes(k)
-    ) || 'default';
-    const tmpl = photoTemplates[key];
+  const hash = sectionId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
 
-    // Use section_id hash to pick a different template per section
-    const hash = sectionId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    const idx = hash % tmpl.templates.length;
-    const templateStr = tmpl.templates[idx];
-
-    const shortTopic = topic.replace(/^[A-Za-z\s]+[-–:]\s*/, '').trim() || topic;
-    const description = templateStr.replace('{topic}', shortTopic);
-
-    return {
-      emoji: tmpl.emoji,
-      title: `${subject} — ${shortTopic}`,
-      description,
-    };
+  const subjectTopics: { subject: string; topic: string }[] = [];
+  for (const chunk of chunks) {
+    const label = chunk.topic_label || '';
+    const subjectMatch = label.match(/^([A-Za-z\s]+?)(?:\s*[-–:]\s*|\s+\d)/);
+    const subject = subjectMatch ? subjectMatch[1].trim() : label.split(' ').slice(0, 2).join(' ');
+    subjectTopics.push({ subject, topic: label });
+  }
+  for (const act of suppActivities) {
+    subjectTopics.push({ subject: act.pool_name || 'Activity', topic: act.activity_title });
   }
 
-  // Pick up to 5 unique subjects
   const seen = new Set<string>();
   const result: { emoji: string; title: string; description: string; subject: string }[] = [];
 
   for (const st of subjectTopics) {
     if (result.length >= 5) break;
-    const subjectKey = st.subject.toLowerCase().split(' ')[0];
-    if (seen.has(subjectKey)) continue;
-    seen.add(subjectKey);
-    const tmpl = getTemplate(st.subject, st.topic);
-    result.push({ ...tmpl, subject: st.subject });
+    const key = st.subject.toLowerCase().split(' ')[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const tmplKey = Object.keys(templates).find(k =>
+      st.subject.toLowerCase().includes(k) || st.topic.toLowerCase().includes(k)
+    ) || 'default';
+    const tmpl = templates[tmplKey];
+    const idea = tmpl.ideas[hash % tmpl.ideas.length];
+    const shortTopic = st.topic.replace(/^[A-Za-z\s]+[-–:]\s*/, '').trim() || st.topic;
+
+    result.push({
+      emoji: tmpl.emoji,
+      title: `${st.subject}${shortTopic && shortTopic !== st.subject ? ` — ${shortTopic}` : ''}`,
+      description: idea.replace('{topic}', shortTopic || st.subject),
+      subject: st.subject,
+    });
   }
 
-  // If fewer than 5, pad with generic class moment suggestions
-  const genericSuggestions = [
+  const generic = [
     { emoji: '😊', title: 'Happy learners', description: 'Candid shot of students smiling and engaged during class', subject: 'General' },
-    { emoji: '🤝', title: 'Teamwork moment', description: 'Children helping each other with today\'s activity', subject: 'General' },
-    { emoji: '✋', title: 'Hands up!', description: 'Students raising hands to answer a question — energy in the classroom', subject: 'General' },
-    { emoji: '📝', title: 'Deep focus', description: 'Close-up of a student\'s notebook showing today\'s work', subject: 'General' },
-    { emoji: '🌟', title: 'Star of the moment', description: 'A student proudly showing their completed work to the camera', subject: 'General' },
+    { emoji: '🤝', title: 'Teamwork moment', description: "Children helping each other with today's activity", subject: 'General' },
+    { emoji: '✋', title: 'Hands up!', description: 'Students raising hands to answer — energy in the classroom', subject: 'General' },
+    { emoji: '📝', title: 'Deep focus', description: "Close-up of a student's notebook showing today's work", subject: 'General' },
+    { emoji: '🌟', title: 'Star of the moment', description: 'A student proudly showing their completed work', subject: 'General' },
   ];
-
   let gi = 0;
-  while (result.length < 5 && gi < genericSuggestions.length) {
-    result.push(genericSuggestions[gi++]);
-  }
+  while (result.length < 5 && gi < generic.length) result.push(generic[gi++]);
 
   return result;
 }
