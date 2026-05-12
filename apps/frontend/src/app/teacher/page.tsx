@@ -265,12 +265,32 @@ export default function TeacherPlanner() {
     try {
       setAiLoading(true);
       const res = await apiPost<any>('/api/v1/ai/query', { text: "what is my plan for today" }, token);
-      // Capture the plan text for PDF export (only the plan response, not chat messages)
-      if (res.response && res.chunk_ids?.length > 0) {
-        setOakiePlanText(res.response);
+
+      // Fetch photo suggestions in parallel — append to plan response
+      let planText = res.response || '';
+      if (res.chunk_ids?.length > 0) {
+        try {
+          const photoData = await apiGet<{ suggestions: { emoji: string; title: string; description: string }[] }>(
+            '/api/v1/teacher/plan/photo-suggestions', token
+          );
+          if (photoData.suggestions?.length > 0) {
+            const photoBlock = [
+              '',
+              '---',
+              '📸 **Photo Suggestions for Today\'s Feed**',
+              '_Capture these moments and share with parents:_',
+              '',
+              ...photoData.suggestions.map((s, i) => `${i + 1}. ${s.emoji} **${s.title}** — ${s.description}`),
+            ].join('\n');
+            planText = planText + photoBlock;
+          }
+        } catch { /* non-critical — don't block plan display */ }
       }
+
+      if (res.chunk_ids?.length > 0) setOakiePlanText(res.response);
+
       setMessages(prev => [...prev, {
-        role: 'assistant', text: res.response,
+        role: 'assistant', text: planText,
         chunk_ids: res.chunk_ids, covered_chunk_ids: res.covered_chunk_ids,
         activity_ids: res.activity_ids, completion_date: res.plan_date || effectiveToday,
         settling_gate: res.settling_gate, gate_date: res.gate_date,
