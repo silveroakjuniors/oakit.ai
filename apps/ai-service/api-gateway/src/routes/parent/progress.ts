@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, forceResetGuard, schoolScope, roleGuard } from '../../middleware/auth';
+import { getToday } from '../../lib/today';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('parent'));
@@ -10,16 +11,26 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
 
-    // Get current academic year date range
+    // Use time-machine-aware today
+    const today = await getToday(school_id);
+
+    // Get current academic year date range (use time-machine today, fall back to most recent)
     const calRow = await pool.query(
       `SELECT start_date, end_date, academic_year
        FROM school_calendar
-       WHERE school_id = $1 AND now()::date BETWEEN start_date AND end_date
+       WHERE school_id = $1 AND $2::date BETWEEN start_date AND end_date
        LIMIT 1`,
-      [school_id]
+      [school_id, today]
     );
-    const yearStart = calRow.rows[0]?.start_date ?? null;
-    const yearEnd = calRow.rows[0]?.end_date ?? null;
+    // Fallback: most recent calendar if today is outside all ranges
+    const calFallback = calRow.rows.length === 0 ? await pool.query(
+      `SELECT start_date, end_date, academic_year FROM school_calendar
+       WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1`,
+      [school_id]
+    ) : null;
+    const cal = calRow.rows[0] ?? calFallback?.rows[0] ?? null;
+    const yearStart = cal?.start_date ?? null;
+    const yearEnd = cal?.end_date ?? null;
 
     // Get linked children with their sections
     const links = await pool.query(
