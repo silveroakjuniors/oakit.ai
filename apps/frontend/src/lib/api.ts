@@ -11,7 +11,7 @@ function resolveApiBase(): string {
   // Production fallback to hosted API when env is missing/misconfigured.
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    if (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app') || host.endsWith('.railway.app')) {
+    if (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app') || host.endsWith('.onrender.com')) {
       return 'https://oakit-api-gateway.onrender.com';
     }
   }
