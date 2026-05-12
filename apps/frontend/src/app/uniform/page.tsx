@@ -72,11 +72,12 @@ export default function UniformSizingPage() {
           class_name: form.class_name,
           parent_name: form.parent_name.trim(),
           contact_number: form.contact_number.replace(/\D/g, ''),
-          height_cm: form.height_cm ? Number(form.height_cm) : undefined,
+          // Convert inches → cm for the API (1 inch = 2.54 cm); weight stays in kg
+          height_cm: form.height_cm ? Math.round(Number(form.height_cm) * 2.54) : undefined,
           weight_kg: form.weight_kg ? Number(form.weight_kg) : undefined,
-          chest_cm: form.chest_cm ? Number(form.chest_cm) : undefined,
-          shirt_length_cm: form.shirt_length_cm ? Number(form.shirt_length_cm) : undefined,
-          pant_length_cm: form.pant_length_cm ? Number(form.pant_length_cm) : undefined,
+          chest_cm: form.chest_cm ? Math.round(Number(form.chest_cm) * 2.54 * 10) / 10 : undefined,
+          shirt_length_cm: form.shirt_length_cm ? Math.round(Number(form.shirt_length_cm) * 2.54 * 10) / 10 : undefined,
+          pant_length_cm: form.pant_length_cm ? Math.round(Number(form.pant_length_cm) * 2.54 * 10) / 10 : undefined,
         }),
       });
       const data = await res.json();
@@ -271,46 +272,54 @@ export default function UniformSizingPage() {
 
               {/* Measurements */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Measurements</p>
-                  <button type="button" onClick={() => setShowGuide(g => !g)}
-                    className="text-xs text-emerald-600 font-semibold hover:underline">
-                    View size chart
-                  </button>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Measurements</p>
+
+                {/* Reference image — always visible */}
+                <div className="rounded-xl overflow-hidden border border-emerald-100">
+                  <div className="bg-emerald-600 px-3 py-2">
+                    <p className="text-white font-bold text-xs">Measurement Reference</p>
+                    <p className="text-emerald-100 text-[10px] mt-0.5">Use this chart to take accurate measurements</p>
+                  </div>
+                  <img
+                    src="/uniform-size-chart.png"
+                    alt="Uniform measurement reference chart"
+                    className="w-full h-auto"
+                  />
                 </div>
-                <p className="text-xs text-gray-500 -mt-2">All measurements in centimetres (cm) and kilograms (kg). Height or chest is required.</p>
+
+                <p className="text-xs text-gray-500">Height, chest, and lengths in inches (in). Weight in kilograms (kg). Height or chest is required.</p>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                      Height (cm) <span className="text-red-400">*</span>
+                      Height (in) <span className="text-red-400">*</span>
                     </label>
-                    <input type="number" placeholder="e.g. 110" min="60" max="180" value={form.height_cm}
+                    <input type="number" placeholder="e.g. 43" min="24" max="71" step="0.1" value={form.height_cm}
                       onChange={e => set('height_cm', e.target.value)} className={inputClass('height_cm')} />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">Weight (kg)</label>
-                    <input type="number" placeholder="e.g. 18" min="5" max="80" value={form.weight_kg}
+                    <input type="number" placeholder="e.g. 18" min="5" max="80" step="0.1" value={form.weight_kg}
                       onChange={e => set('weight_kg', e.target.value)} className={inputClass('weight_kg')} />
                   </div>
                 </div>
                 {errors.height_cm && <p className="text-xs text-red-500 -mt-2">{errors.height_cm}</p>}
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Chest (cm)</label>
-                  <input type="number" placeholder="Measure around the fullest part of chest" min="40" max="100"
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Chest (in)</label>
+                  <input type="number" placeholder="Measure around the fullest part of chest" min="16" max="40" step="0.1"
                     value={form.chest_cm} onChange={e => set('chest_cm', e.target.value)} className={inputClass('chest_cm')} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Shirt Length (cm)</label>
-                    <input type="number" placeholder="Shoulder to hip" min="30" max="80" value={form.shirt_length_cm}
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Shirt Length (in)</label>
+                    <input type="number" placeholder="Shoulder to hip" min="12" max="32" step="0.1" value={form.shirt_length_cm}
                       onChange={e => set('shirt_length_cm', e.target.value)} className={inputClass('shirt_length_cm')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pant Length (cm)</label>
-                    <input type="number" placeholder="Waist to ankle" min="30" max="100" value={form.pant_length_cm}
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pant Length (in)</label>
+                    <input type="number" placeholder="Waist to ankle" min="12" max="40" step="0.1" value={form.pant_length_cm}
                       onChange={e => set('pant_length_cm', e.target.value)} className={inputClass('pant_length_cm')} />
                   </div>
                 </div>
@@ -320,10 +329,10 @@ export default function UniformSizingPage() {
               <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3">
                 <p className="text-xs font-semibold text-blue-800 mb-1">📐 How to measure</p>
                 <ul className="text-xs text-blue-700 space-y-1 leading-relaxed">
-                  <li><strong>Height:</strong> Stand straight against a wall, measure from floor to top of head</li>
-                  <li><strong>Chest:</strong> Measure around the fullest part of the chest, keep tape snug but not tight</li>
-                  <li><strong>Shirt length:</strong> From the base of the neck/shoulder down to the hip</li>
-                  <li><strong>Pant length:</strong> From the waist down to the ankle bone</li>
+                  <li><strong>Height:</strong> Stand straight against a wall, measure from floor to top of head (in inches)</li>
+                  <li><strong>Chest:</strong> Measure around the fullest part of the chest, keep tape snug but not tight (in inches)</li>
+                  <li><strong>Shirt length:</strong> From the base of the neck/shoulder down to the hip (in inches)</li>
+                  <li><strong>Pant length:</strong> From the waist down to the ankle bone (in inches)</li>
                 </ul>
               </div>
 
