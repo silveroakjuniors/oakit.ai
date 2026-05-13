@@ -53,6 +53,13 @@ const navItems: NavItem[] = [
   { href: '/admin/reports',          label: 'Reports',          icon: '📊',  group: 'insights' },
   { href: '/admin/announcements',    label: 'Announcements',    icon: '📢',  group: 'insights' },
   { href: '/admin/audit',            label: 'Audit Log',        icon: '🔍',  group: 'insights' },
+  { href: '/admin/smart-alerts',     label: 'Smart Alerts',     icon: '🚨',  group: 'insights' },
+  { href: '/admin/ai-usage',         label: 'Oakie Usage',      icon: '🤖',  group: 'insights' },
+  { href: '/admin/homework',         label: 'Homework',         icon: '📝',  group: 'school' },
+  { href: '/admin/quizzes',          label: 'Quizzes',          icon: '🧪',  group: 'school' },
+  { href: '/admin/uniform',          label: 'Uniform Sizing',   icon: '👕',  group: 'school' },
+  { href: '/admin/student-portal',   label: 'Student Portal',   icon: '🎓',  group: 'system' },
+  { href: '/admin/hr',               label: 'HR',               icon: '👔',  group: 'system' },
   { href: '/admin/setup',            label: 'Setup Wizard',     icon: '🧭',  group: 'system' },
   { href: '/admin/settings',         label: 'Settings',         icon: '⚙️', group: 'system' },
 ];
