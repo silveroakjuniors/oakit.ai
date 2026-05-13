@@ -12,6 +12,7 @@ const navItems = [
   { href: '/super-admin/franchises', label: 'Franchises',  icon: '🏢' },
   { href: '/super-admin/billing',    label: 'AI Billing',  icon: '🤖' },
   { href: '/super-admin/finance',    label: 'Finance',     icon: '💰' },
+  { href: '/super-admin/stats',      label: 'Analytics',   icon: '📊' },
 ];
 
 export default function SuperAdminLayout({ children }: { children: ReactNode }) {
