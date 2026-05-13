@@ -7,9 +7,11 @@ import OakitLogo from '@/components/OakitLogo';
 import { clearToken } from '@/lib/auth';
 
 const navItems = [
-  { href: '/super-admin',         label: 'Dashboard', icon: '⊞' },
-  { href: '/super-admin/schools', label: 'Schools',   icon: '🏫' },
-  { href: '/super-admin/finance', label: 'Finance',   icon: '💰' },
+  { href: '/super-admin',            label: 'Dashboard',   icon: '⊞' },
+  { href: '/super-admin/schools',    label: 'Schools',     icon: '🏫' },
+  { href: '/super-admin/franchises', label: 'Franchises',  icon: '🏢' },
+  { href: '/super-admin/billing',    label: 'AI Billing',  icon: '🤖' },
+  { href: '/super-admin/finance',    label: 'Finance',     icon: '💰' },
 ];
 
 export default function SuperAdminLayout({ children }: { children: ReactNode }) {
