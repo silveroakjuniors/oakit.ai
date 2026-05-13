@@ -50,7 +50,7 @@ export default function SchoolDetailPage() {
   const [planForm, setPlanForm] = useState({ plan_type: '', billing_status: '' });
 
   // User creation
-  const [userForm, setUserForm] = useState({ name: '', mobile: '', email: '', password: '' });
+  const [userForm, setUserForm] = useState({ name: '', mobile: '', email: '', role: 'admin' });
   const [creatingUser, setCreatingUser] = useState(false);
 
   const isImpersonating = typeof window !== 'undefined' && !!localStorage.getItem('oakit_impersonation_token');
@@ -160,21 +160,16 @@ export default function SchoolDetailPage() {
 
   async function handleCreateUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!token || !userForm.name) return;
+    if (!token || !userForm.name || !userForm.mobile) return;
     setCreatingUser(true);
     try {
-      // Get a role_id for admin role in this school
-      const roles = await apiGet<{ id: string; name: string }[]>(`/api/v1/admin/users/roles`, token).catch(() => []);
-      const adminRole = (roles as any[]).find((r: any) => r.name === 'admin');
-      await apiPost(`/api/v1/super-admin/schools/${id}/users`, {
-        name: userForm.name,
-        mobile: userForm.mobile || undefined,
-        email: userForm.email || undefined,
-        role: 'admin',
-        role_id: adminRole?.id,
-      }, token);
-      flash('✓ Admin user created. They can log in with their mobile number.');
-      setUserForm({ name: '', mobile: '', email: '', password: '' });
+      const result = await apiPost<{ initial_password: string; role: string }>(
+        `/api/v1/super-admin/schools/${id}/users`,
+        { name: userForm.name, mobile: userForm.mobile, email: userForm.email || undefined, role: userForm.role },
+        token
+      );
+      flash(`✓ ${result.role} user created. Initial password: ${result.initial_password}`);
+      setUserForm({ name: '', mobile: '', email: '', role: 'admin' });
       loadUsers();
     } catch (e: any) { flash(e.message, true); }
     finally { setCreatingUser(false); }
@@ -313,20 +308,28 @@ export default function SchoolDetailPage() {
         <div className="space-y-4">
           {/* Create admin user */}
           <form onSubmit={handleCreateUser} className="rounded-2xl p-4 space-y-3" style={DARK}>
-            <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Create Admin User</p>
+            <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Create User</p>
             <div className="grid grid-cols-2 gap-3">
               <input type="text" placeholder="Full name *" value={userForm.name}
                 onChange={e => setUserForm(p => ({ ...p, name: e.target.value }))} className={inp} />
-              <input type="tel" placeholder="Mobile number" value={userForm.mobile}
+              <input type="tel" placeholder="Mobile number *" value={userForm.mobile}
                 onChange={e => setUserForm(p => ({ ...p, mobile: e.target.value }))} className={inp} />
               <input type="email" placeholder="Email (optional)" value={userForm.email}
                 onChange={e => setUserForm(p => ({ ...p, email: e.target.value }))} className={inp} />
+              <select value={userForm.role} onChange={e => setUserForm(p => ({ ...p, role: e.target.value }))}
+                className={`${inp} appearance-none`}>
+                <option value="admin">Admin</option>
+                <option value="principal">Principal</option>
+                <option value="teacher">Teacher</option>
+                <option value="staff">Staff</option>
+                <option value="accountant">Accountant</option>
+              </select>
             </div>
-            <p className="text-xs text-white/30">Initial password = mobile number. User must change on first login.</p>
-            <button type="submit" disabled={creatingUser || !userForm.name}
+            <p className="text-xs text-white/30">Initial password = mobile number. User will be prompted to change on first login.</p>
+            <button type="submit" disabled={creatingUser || !userForm.name || !userForm.mobile}
               className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
               style={{ background: 'linear-gradient(135deg,#10B981,#059669)' }}>
-              {creatingUser ? 'Creating...' : 'Create Admin'}
+              {creatingUser ? 'Creating...' : `Create ${userForm.role.charAt(0).toUpperCase() + userForm.role.slice(1)}`}
             </button>
           </form>
 

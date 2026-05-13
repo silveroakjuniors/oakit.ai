@@ -10,6 +10,7 @@ interface School {
   id: string;
   name: string;
   subdomain: string;
+  school_code: string;
   status: 'active' | 'inactive';
   plan_type: string;
   created_at: string;
