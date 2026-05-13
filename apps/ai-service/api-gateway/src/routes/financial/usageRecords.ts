@@ -51,20 +51,24 @@ router.get('/student/:studentId', permissionGuard('VIEW_FEES'), async (req, res)
     const { studentId } = req.params;
     const { from, to, service_type } = req.query as Record<string, string>;
 
-    let query = `SELECT ur.*, fh.name AS fee_head_name
-                 FROM usage_records ur
-                 LEFT JOIN fee_heads fh ON fh.id = ur.fee_head_id
-                 WHERE ur.student_id = $1 AND ur.school_id = $2`;
     const params: any[] = [studentId, schoolId];
     let idx = 3;
+    let filters = '';
 
-    if (from)         { query += ` AND ur.date >= $${idx++}`;          params.push(from); }
-    if (to)           { query += ` AND ur.date <= $${idx++}`;          params.push(to); }
-    if (service_type) { query += ` AND ur.service_type = $${idx++}`;   params.push(service_type); }
+    if (from)         { filters += ` AND ur.date >= $${idx++}`;         params.push(from); }
+    if (to)           { filters += ` AND ur.date <= $${idx++}`;         params.push(to); }
+    if (service_type) { filters += ` AND ur.service_type = $${idx++}`;  params.push(service_type); }
 
-    query += ` ORDER BY ur.date DESC`;
-
-    const result = await pool.query(query, params);
+    const result = await pool.query(
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY ur.date DESC) AS sl_no,
+         ur.*, fh.name AS fee_head_name
+       FROM usage_records ur
+       LEFT JOIN fee_heads fh ON fh.id = ur.fee_head_id
+       WHERE ur.student_id = $1 AND ur.school_id = $2${filters}
+       ORDER BY ur.date DESC`,
+      params
+    );
     return res.json(result.rows);
   } catch (err) {
     console.error('[usageRecords GET /student/:id]', err);
@@ -79,9 +83,11 @@ router.get('/billing-summary/:year/:month', permissionGuard('VIEW_FEES'), async 
     const { year, month } = req.params;
 
     const result = await pool.query(
-      `SELECT ur.student_id, s.name AS student_name, ur.fee_head_id, fh.name AS fee_head_name,
-              ur.service_type, SUM(ur.quantity) AS total_quantity,
-              fh.rate, SUM(ur.quantity) * COALESCE(fh.rate, 0) AS total_charge
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY s.name ASC) AS sl_no,
+         ur.student_id, s.name AS student_name, ur.fee_head_id, fh.name AS fee_head_name,
+         ur.service_type, SUM(ur.quantity) AS total_quantity,
+         fh.rate, SUM(ur.quantity) * COALESCE(fh.rate, 0) AS total_charge
        FROM usage_records ur
        JOIN students s ON s.id = ur.student_id
        JOIN fee_heads fh ON fh.id = ur.fee_head_id

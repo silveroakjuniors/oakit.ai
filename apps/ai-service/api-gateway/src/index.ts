@@ -9,6 +9,7 @@ import adminClassesRouter from './routes/admin/classes';
 import adminClassTeacherRouter from './routes/admin/classTeacher';
 import adminCurriculumRouter from './routes/admin/curriculum';
 import adminCalendarRouter from './routes/admin/calendar';
+import adminTermsRouter from './routes/admin/terms';
 import adminStudentsRouter from './routes/admin/students';
 import adminSupplementaryRouter from './routes/admin/supplementary';
 import adminSettingsRouter from './routes/admin/settings';
@@ -84,6 +85,7 @@ import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
 import publicEnquiriesRouter from './routes/public/enquiries';
+import publicUniformRouter from './routes/public/uniform';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
 import { piiGuard } from './middleware/piiGuard';
 import { chunkGuard } from './middleware/chunkGuard';
@@ -104,6 +106,7 @@ import financialSalaryRecordsRouter from './routes/financial/salary/records';
 import financialUsageRecordsRouter from './routes/financial/usageRecords';
 import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
+import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
@@ -236,6 +239,7 @@ app.get('/health/ai', async (_req, res) => {
 
 // Public routes — no authentication required
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
+app.use('/api/v1/public/uniform', publicUniformRouter);
 
 // Shared (any authenticated role)
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
@@ -252,6 +256,7 @@ app.use('/api/v1/admin/classes', adminClassesRouter);
 app.use('/api/v1/admin/classes', adminClassTeacherRouter);
 app.use('/api/v1/admin/curriculum', adminCurriculumRouter);
 app.use('/api/v1/admin/calendar', adminCalendarRouter);
+app.use('/api/v1/admin/terms', adminTermsRouter);
 app.use('/api/v1/admin/students', adminStudentsRouter);
 app.use('/api/v1/admin/supplementary', adminSupplementaryRouter);
 app.use('/api/v1/admin/settings', adminSettingsRouter);
@@ -395,6 +400,7 @@ app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalar
 app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalaryRecordsRouter);
 app.use('/api/v1/financial/usage-records',  financialModuleGuard, financialUsageRecordsRouter);
 app.use('/api/v1/financial/reports',        financialModuleGuard, financialReportsRouter);
+app.use('/api/v1/financial/reminders',      financialModuleGuard, financialRemindersRouter);
 app.use('/api/v1/financial',                financialModuleGuard, financialInsightsRouter);
 
 // Parent fees (guarded by financialModuleGuard)

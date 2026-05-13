@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { auditMessage } from '../../lib/storage';
+import { verifyParentOwnsStudent } from '../../lib/parentAuth';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('parent'));
@@ -61,15 +62,8 @@ router.post('/:teacherId/:studentId/reply', async (req: Request, res: Response) 
     if (body.length > 1000) return res.status(400).json({ error: 'Message must be 1000 characters or less' });
 
     // Verify parent has a child linked to this student
-    const authRow = await pool.query(
-      `SELECT 1 FROM parent_student_links psl
-       JOIN students s ON s.id = psl.student_id
-       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3 LIMIT 1`,
-      [user_id, req.params.studentId, school_id]
-    );
-    if (authRow.rows.length === 0) {
+    if (!(await verifyParentOwnsStudent(user_id, req.params.studentId, school_id)))
       return res.status(403).json({ error: 'Not authorized for this student' });
-    }
 
     const result = await pool.query(
       `INSERT INTO messages (school_id, teacher_id, parent_id, student_id, sender_role, body)

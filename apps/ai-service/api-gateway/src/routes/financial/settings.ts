@@ -102,30 +102,42 @@ router.put(
 
 // ── GET /api/v1/financial/permissions ────────────────────────────────────────
 // Returns the current user's effective financial permissions.
+// Merges JWT perms + role defaults (so principal always gets VIEW_SALARY even
+// if the JWT was issued before financial permissions were added to the payload),
+// then applies per-user DB overrides on top.
 router.get('/permissions', async (req, res) => {
   try {
     const userId = req.user!.id;
+    const role: string = req.user!.role || '';
 
-    const result = await pool.query(
-      `SELECT financial_permissions FROM users WHERE id = $1`,
-      [userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    // Principal always gets all permissions — no DB lookup needed
+    if (role === 'principal' || role === 'super_admin') {
+      const allPerms = Object.values(DEFAULT_ROLE_PERMISSIONS['principal'] || []);
+      return res.json({ permissions: allPerms, overrides: {} });
     }
 
-    const overrides: Record<string, boolean> = result.rows[0].financial_permissions || {};
+    // Fetch per-user overrides — gracefully handle missing column
+    let overrides: Record<string, boolean> = {};
+    try {
+      const result = await pool.query(
+        `SELECT financial_permissions FROM users WHERE id = $1`,
+        [userId]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      overrides = result.rows[0].financial_permissions || {};
+    } catch {
+      // financial_permissions column may not exist in older DB schemas — ignore
+    }
+
     const jwtPerms: string[] = (req.user as any).permissions || [];
-    const role: string = (req.user as any).role || '';
     const roleDefaults: string[] = DEFAULT_ROLE_PERMISSIONS[role] || [];
 
-    // Merge JWT perms + role defaults
+    // Merge: JWT perms + role defaults
     const merged = new Set([...jwtPerms, ...roleDefaults]);
 
     // Per-user DB overrides only apply to non-privileged roles.
-    // principal, admin, and super_admin have role-defined permissions that
-    // cannot be reduced by per-user overrides — only additions are allowed.
     const PRIVILEGED_ROLES = new Set(['principal', 'admin', 'super_admin']);
     Object.entries(overrides).forEach(([perm, granted]) => {
       if (granted) {
@@ -139,7 +151,10 @@ router.get('/permissions', async (req, res) => {
     return res.json({ permissions: effectivePerms, overrides });
   } catch (err) {
     console.error('[financial/permissions GET]', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    // Last resort: return role defaults so the page doesn't break
+    const role: string = (req.user as any)?.role || '';
+    const fallback = DEFAULT_ROLE_PERMISSIONS[role] || [];
+    return res.json({ permissions: fallback, overrides: {} });
   }
 });
 
