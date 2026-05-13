@@ -118,7 +118,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT s.id, s.name, s.subdomain, s.status, s.plan_type, s.billing_status, s.plan_updated_at, s.contact, s.created_at,
+      `SELECT s.id, s.name, s.subdomain, s.school_code, s.status, s.plan_type, s.billing_status, s.plan_updated_at, s.contact, s.created_at,
               COALESCE(ss.translation_enabled, true) as translation_enabled
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
@@ -153,26 +153,35 @@ router.patch('/:id/features', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /:id — update status, plan_type, billing_status
+// PATCH /:id — update status, plan_type, billing_status, school_code
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const { status, plan_type, billing_status } = req.body;
-    const current = await pool.query('SELECT plan_type FROM schools WHERE id = $1', [req.params.id]);
+    const { status, plan_type, billing_status, school_code } = req.body;
+    const current = await pool.query('SELECT plan_type, school_code FROM schools WHERE id = $1', [req.params.id]);
     if (current.rows.length === 0) return res.status(404).json({ error: 'School not found' });
+
+    // Check school_code uniqueness if changing
+    if (school_code && school_code !== current.rows[0].school_code) {
+      const dup = await pool.query('SELECT id FROM schools WHERE school_code = $1 AND id != $2', [school_code, req.params.id]);
+      if (dup.rows.length > 0) return res.status(409).json({ error: 'School code already in use' });
+    }
 
     const planChanged = plan_type && plan_type !== current.rows[0].plan_type;
     const result = await pool.query(
       `UPDATE schools SET
-        status = COALESCE($1, status),
-        plan_type = COALESCE($2, plan_type),
+        status       = COALESCE($1, status),
+        plan_type    = COALESCE($2, plan_type),
         billing_status = COALESCE($3, billing_status),
-        plan_updated_at = CASE WHEN $4 THEN now() ELSE plan_updated_at END
-       WHERE id = $5
-       RETURNING id, name, status, plan_type, billing_status, plan_updated_at`,
-      [status ?? null, plan_type ?? null, billing_status ?? null, planChanged, req.params.id]
+        school_code  = COALESCE($4, school_code),
+        subdomain    = COALESCE($4, subdomain),
+        plan_updated_at = CASE WHEN $5 THEN now() ELSE plan_updated_at END
+       WHERE id = $6
+       RETURNING id, name, subdomain, school_code, status, plan_type, billing_status, plan_updated_at`,
+      [status ?? null, plan_type ?? null, billing_status ?? null, school_code ?? null, planChanged, req.params.id]
     );
     return res.json(result.rows[0]);
   } catch (err) {
+    console.error('[super-admin PATCH /:id]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

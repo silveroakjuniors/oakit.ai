@@ -54,6 +54,7 @@ import superAdminStatsRouter from './routes/super-admin/stats';
 import superAdminImpersonateRouter from './routes/super-admin/impersonate';
 import superAdminBillingRouter from './routes/super-admin/billing';
 import superAdminFranchisesRouter from './routes/super-admin/franchises';
+import platformBillingRouter from './routes/super-admin/platformBilling';
 import adminAiUsageRouter from './routes/admin/aiUsage';
 import franchiseDashboardRouter from './routes/franchise/dashboard';
 import franchiseCurriculumRouter from './routes/franchise/curriculum';
@@ -312,6 +313,7 @@ app.use('/api/v1/super-admin/stats', superAdminStatsRouter);
 app.use('/api/v1/super-admin/impersonate', superAdminImpersonateRouter);
 app.use('/api/v1/super-admin/billing', superAdminBillingRouter);
 app.use('/api/v1/super-admin/franchises', superAdminFranchisesRouter);
+app.use('/api/v1/super-admin/platform-billing', platformBillingRouter);
 
 // Admin AI usage (admin + principal)
 app.use('/api/v1/admin/ai-usage', adminAiUsageRouter);

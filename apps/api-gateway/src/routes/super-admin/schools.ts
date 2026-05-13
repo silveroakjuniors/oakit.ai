@@ -118,7 +118,9 @@ router.post('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT s.id, s.name, s.subdomain, s.school_code, s.status, s.plan_type, s.billing_status, s.plan_updated_at, s.contact, s.created_at,
+      `SELECT s.id, s.name, s.subdomain,
+              COALESCE(s.school_code, s.subdomain) as school_code,
+              s.status, s.plan_type, s.billing_status, s.plan_updated_at, s.contact, s.created_at,
               COALESCE(ss.translation_enabled, true) as translation_enabled
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
@@ -172,11 +174,9 @@ router.patch('/:id', async (req: Request, res: Response) => {
         status       = COALESCE($1, status),
         plan_type    = COALESCE($2, plan_type),
         billing_status = COALESCE($3, billing_status),
-        school_code  = COALESCE($4, school_code),
-        subdomain    = COALESCE($4, subdomain),
         plan_updated_at = CASE WHEN $5 THEN now() ELSE plan_updated_at END
        WHERE id = $6
-       RETURNING id, name, subdomain, school_code, status, plan_type, billing_status, plan_updated_at`,
+       RETURNING id, name, subdomain, COALESCE(school_code, subdomain) as school_code, status, plan_type, billing_status, plan_updated_at`,
       [status ?? null, plan_type ?? null, billing_status ?? null, school_code ?? null, planChanged, req.params.id]
     );
     return res.json(result.rows[0]);
