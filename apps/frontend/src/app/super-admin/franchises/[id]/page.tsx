@@ -8,6 +8,7 @@ import { getToken } from '@/lib/auth';
 interface FranchiseDetail {
   id: string;
   name: string;
+  status?: string;
   contact: Record<string, string> | null;
   wallet_balance_inr: string;
   lifetime_used_inr: string;
@@ -111,9 +112,22 @@ export default function FranchiseDetailPage() {
           <h1 className="text-2xl font-bold text-white">{data.name}</h1>
           {data.contact?.email && <p className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>{data.contact.email}</p>}
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-bold text-emerald-400">₹{data.wallet_balance_inr}</p>
-          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>wallet balance</p>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-2xl font-bold text-emerald-400">₹{data.wallet_balance_inr}</p>
+            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>wallet balance</p>
+          </div>
+          {data.status !== 'inactive' ? (
+            <button onClick={async () => { if (!token || !confirm('Deactivate this franchise?')) return; try { await apiPost(`/api/v1/super-admin/franchises/${id}/deactivate`, {}, token); setData(d => d ? { ...d, status: 'inactive' } : d); setMsg('✓ Franchise deactivated'); } catch (e: any) { setError(e.message); } }}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-red-300 border border-red-700/50 hover:bg-red-900/30">
+              Deactivate
+            </button>
+          ) : (
+            <button onClick={async () => { if (!token) return; try { await apiPost(`/api/v1/super-admin/franchises/${id}/activate`, {}, token); setData(d => d ? { ...d, status: 'active' } : d); setMsg('✓ Franchise activated'); } catch (e: any) { setError(e.message); } }}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-300 border border-emerald-700/50 hover:bg-emerald-900/30">
+              Activate
+            </button>
+          )}
         </div>
       </div>
 

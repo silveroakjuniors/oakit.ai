@@ -42,6 +42,8 @@ export default function BillingPage() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<SchoolWallet | null>(null);
+  const [schoolDetail, setSchoolDetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState('');
   const [rechargeNote, setRechargeNote] = useState('');
   const [recharging, setRecharging] = useState(false);

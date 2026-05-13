@@ -50,14 +50,46 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Generate subdomain from name
     const subdomain = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    // school_code = same as subdomain (used for login)
+    const school_code = subdomain;
+
+    // Check subdomain/school_code uniqueness
+    const subDup = await pool.query('SELECT id FROM schools WHERE subdomain = $1 OR school_code = $1', [subdomain]);
+    if (subDup.rows.length > 0) {
+      // Append a short random suffix to make it unique
+      const suffix = Math.floor(Math.random() * 900 + 100);
+      const uniqueCode = `${subdomain}-${suffix}`;
+      const result2 = await pool.query(
+        `INSERT INTO schools (name, subdomain, school_code, plan_type, status, contact)
+         VALUES ($1, $2, $3, $4, 'active', $5)
+         RETURNING id, name, subdomain, school_code, status, plan_type, billing_status, created_at`,
+        [name, uniqueCode, uniqueCode, plan_type, contact ? JSON.stringify(contact) : null]
+      );
+      const schoolId2 = result2.rows[0].id;
+      await pool.query(`INSERT INTO school_ai_wallet (school_id, balance_paise, lifetime_recharged_paise) VALUES ($1, 200000, 200000) ON CONFLICT DO NOTHING`, [schoolId2]).catch(() => {});
+      await pool.query(`INSERT INTO school_settings (school_id, notes_expiry_days) VALUES ($1, 14) ON CONFLICT DO NOTHING`, [schoolId2]).catch(() => {});
+      return res.status(201).json(result2.rows[0]);
+    }
 
     const result = await pool.query(
-      `INSERT INTO schools (name, subdomain, plan_type, status, contact)
-       VALUES ($1, $2, $3, 'active', $4)
-       RETURNING id, name, subdomain, status, plan_type, billing_status, created_at`,
-      [name, subdomain, plan_type, contact ? JSON.stringify(contact) : null]
+      `INSERT INTO schools (name, subdomain, school_code, plan_type, status, contact)
+       VALUES ($1, $2, $3, $4, 'active', $5)
+       RETURNING id, name, subdomain, school_code, status, plan_type, billing_status, created_at`,
+      [name, subdomain, school_code, plan_type, contact ? JSON.stringify(contact) : null]
     );
     const schoolId = result.rows[0].id;
+
+    // ── Seed default roles for the new school ────────────────────────────────
+    await pool.query(`
+      INSERT INTO roles (school_id, name, permissions, portal_access) VALUES
+        ($1, 'admin',      '["read:all","write:all","manage:users","manage:classes","manage:curriculum","manage:calendar","manage:finance","manage:hr"]', 'admin'),
+        ($1, 'principal',  '["read:all","read:dashboard","query:ai","manage:hr","manage:finance"]', 'principal'),
+        ($1, 'teacher',    '["read:own","write:own","query:ai"]', 'teacher'),
+        ($1, 'parent',     '["read:own"]', 'parent'),
+        ($1, 'staff',      '["read:own","write:own"]', 'staff'),
+        ($1, 'accountant', '["read:all","manage:finance","view:salary"]', 'admin')
+      ON CONFLICT DO NOTHING
+    `, [schoolId]).catch(e => console.error('[school create] roles seed', e));
 
     // Seed default AI credits (₹2,000 = 200,000 paise) and school settings
     await pool.query(
@@ -217,17 +249,40 @@ router.get('/:id/users', async (req: Request, res: Response) => {
 // POST /:id/users — create user scoped to school
 router.post('/:id/users', async (req: Request, res: Response) => {
   try {
-    const { name, email, mobile, role, role_id } = req.body;
-    if (!name || !role) return res.status(400).json({ error: 'name and role are required' });
-    const result = await pool.query(
-      `INSERT INTO users (school_id, name, email, mobile, role, role_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, name, email, mobile, role, is_active, created_at`,
-      [req.params.id, name, email ?? null, mobile ?? null, role, role_id ?? null]
+    const { name, email, mobile, role } = req.body;
+    const userRole = role || 'admin';
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    if (!mobile && !email) return res.status(400).json({ error: 'mobile or email is required' });
+
+    // Look up the role_id for this school
+    const roleRow = await pool.query(
+      `SELECT id FROM roles WHERE school_id = $1 AND name = $2 LIMIT 1`,
+      [req.params.id, userRole]
     );
-    return res.status(201).json(result.rows[0]);
+    if (roleRow.rows.length === 0) {
+      return res.status(400).json({ error: `Role '${userRole}' not found for this school. Run the setup wizard first.` });
+    }
+    const role_id = roleRow.rows[0].id;
+
+    // Hash password = mobile number (or a default)
+    const bcrypt = await import('bcryptjs');
+    const password = mobile || 'Admin@1234';
+    const password_hash = await bcrypt.default.hash(password, 12);
+
+    const result = await pool.query(
+      `INSERT INTO users (school_id, name, email, mobile, role_id, password_hash, is_active, force_password_reset)
+       VALUES ($1, $2, $3, $4, $5, $6, true, true)
+       RETURNING id, name, email, mobile, is_active, created_at`,
+      [req.params.id, name, email ?? null, mobile ?? null, role_id, password_hash]
+    );
+    return res.status(201).json({
+      ...result.rows[0],
+      role: userRole,
+      initial_password: password,
+      note: 'User will be prompted to change password on first login',
+    });
   } catch (err) {
-    console.error(err);
+    console.error('[super-admin POST /:id/users]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

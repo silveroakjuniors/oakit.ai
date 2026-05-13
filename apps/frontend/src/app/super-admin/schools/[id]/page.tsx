@@ -9,6 +9,7 @@ interface SchoolDetail {
   id: string;
   name: string;
   subdomain: string;
+  school_code: string;
   status: 'active' | 'inactive';
   plan_type: string;
   billing_status: string;
@@ -32,6 +33,8 @@ type Tab = 'overview' | 'users' | 'features' | 'danger';
 
 const DARK = { bg: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' };
 const inp = 'w-full px-3 py-2 rounded-xl border border-white/10 text-sm bg-white/5 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-emerald-400';
+const sel = 'w-full px-3 py-2 rounded-xl border border-white/10 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-400 appearance-none' as const;
+const selStyle = { background: '#1a2a1f' } as const;
 
 export default function SchoolDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -47,7 +50,7 @@ export default function SchoolDetailPage() {
 
   // Plan edit
   const [editPlan, setEditPlan] = useState(false);
-  const [planForm, setPlanForm] = useState({ plan_type: '', billing_status: '' });
+  const [planForm, setPlanForm] = useState({ plan_type: '', billing_status: '', school_code: '' });
 
   // User creation
   const [userForm, setUserForm] = useState({ name: '', mobile: '', email: '', role: 'admin' });
@@ -64,7 +67,7 @@ export default function SchoolDetailPage() {
   function loadSchool() {
     if (!token) return;
     apiGet<SchoolDetail>(`/api/v1/super-admin/schools/${id}`, token)
-      .then(s => { setSchool(s); setPlanForm({ plan_type: s.plan_type, billing_status: s.billing_status }); })
+      .then(s => { setSchool(s); setPlanForm({ plan_type: s.plan_type, billing_status: s.billing_status, school_code: s.school_code || s.subdomain }); })
       .catch(() => flash('Failed to load school', true))
       .finally(() => setLoading(false));
   }
@@ -260,9 +263,15 @@ export default function SchoolDetailPage() {
               <form onSubmit={handleSavePlan} className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
+                    <label className="text-xs text-white/40 mb-1 block">School Code (login code)</label>
+                    <input type="text" value={planForm.school_code}
+                      onChange={e => setPlanForm(p => ({ ...p, school_code: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                      className={inp} placeholder="e.g. sojs" />
+                  </div>
+                  <div>
                     <label className="text-xs text-white/40 mb-1 block">Plan Type</label>
                     <select value={planForm.plan_type} onChange={e => setPlanForm(p => ({ ...p, plan_type: e.target.value }))}
-                      className={`${inp} appearance-none`}>
+                      className={sel} style={selStyle}>
                       <option value="premium">Premium</option>
                       <option value="basic">Basic</option>
                       <option value="trial">Trial</option>
@@ -271,7 +280,7 @@ export default function SchoolDetailPage() {
                   <div>
                     <label className="text-xs text-white/40 mb-1 block">Billing Status</label>
                     <select value={planForm.billing_status} onChange={e => setPlanForm(p => ({ ...p, billing_status: e.target.value }))}
-                      className={`${inp} appearance-none`}>
+                      className={sel} style={selStyle}>
                       <option value="active">Active</option>
                       <option value="trial">Trial</option>
                       <option value="overdue">Overdue</option>
@@ -287,6 +296,7 @@ export default function SchoolDetailPage() {
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 {[
+                  { label: 'School Code', value: school.school_code || school.subdomain },
                   { label: 'Plan', value: school.plan_type },
                   { label: 'Billing', value: school.billing_status },
                   { label: 'Contact', value: school.contact?.email || school.contact?.phone || '—' },
