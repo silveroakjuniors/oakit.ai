@@ -1476,9 +1476,9 @@ router.post('/:year/special-days', async (req: Request, res: Response) => {
           ? `${inserted.length} day(s) added. ${impacted} section plan(s) carried forward.`
           : `${inserted.length} day(s) added.`,
     });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err: any) {
+    console.error('[special-days POST]', err?.message, err?.detail, err?.code);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
   }
 });
 
