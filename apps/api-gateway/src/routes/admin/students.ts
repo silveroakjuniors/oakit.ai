@@ -215,16 +215,37 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
     ws.getRow(1).eachCell((cell, colNum) => { headers[colNum - 1] = String(cell.value || ''); });
 
     const colMap: Record<string, number> = {};
-    headers.forEach((h, i) => {
-      const n = normalise(h);
-      if (n.includes('studentname') || n === 'studentname' || n === 'name') colMap.student_name = i;
-      else if (n.includes('fathername') || n === 'fathername') colMap.father_name = i;
-      else if (n.includes('mothername') || n === 'mothername') colMap.mother_name = i;
-      else if (n === 'section') colMap.section = i;
-      else if (n === 'class' || n === 'classname') colMap.class = i;
-      else if (n.includes('parentcontact') || n.includes('fathercontact') || n.includes('contactnumber')) colMap.parent_contact = i;
-      else if (n.includes('mothercontact')) colMap.mother_contact = i;
-    });
+headers.forEach((h, i) => {
+  const n = normalise(h);
+
+  if (n === 'studentname') {
+    colMap.student_name = i;
+  }
+
+  else if (n === 'fathername') {
+    colMap.father_name = i;
+  }
+
+  else if (n === 'mothername') {
+    colMap.mother_name = i;
+  }
+
+  else if (n === 'section') {
+    colMap.section = i;
+  }
+
+  else if (n === 'class') {
+    colMap.class = i;
+  }
+
+  else if (n === 'parentcontactnumber') {
+    colMap.parent_contact = i;
+  }
+
+  else if (n === 'mothercontactnumber') {
+    colMap.mother_contact = i;
+  }
+});
 
     if (colMap.student_name === undefined) return res.status(400).json({ error: 'Column "student name" not found in file' });
     if (colMap.class === undefined) return res.status(400).json({ error: 'Column "class" not found in file' });
@@ -269,21 +290,276 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
       );
       if (sectionRow.rows.length === 0) { skipped.push({ studentName, reason: `Section '${sectionLabel}' not found in class '${className}'` }); continue; }
 
-      try {
-        await pool.query(
-          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [school_id, classRow.rows[0].id, sectionRow.rows[0].id, studentName,
-           fatherName || null, motherName || null, parentContact || null, motherContact || null]
-        );
-        created++;
-      } catch (err: any) { skipped.push({ studentName, reason: err.message }); }
+try {
+  // Check if student already exists
+  const existingStudent = await pool.query(
+    `SELECT id
+     FROM students
+     WHERE school_id = $1
+       AND LOWER(name) = LOWER($2)
+       AND class_id = $3
+       AND section_id = $4
+     LIMIT 1`,
+    [
+      school_id,
+      studentName,
+      classRow.rows[0].id,
+      sectionRow.rows[0].id
+    ]
+  );
+
+  if (existingStudent.rows.length > 0) {
+    // UPDATE existing student
+    await pool.query(
+      `UPDATE students
+       SET father_name = $1,
+           mother_name = $2,
+           parent_contact = $3,
+           mother_contact = $4
+       WHERE id = $5`,
+      [
+        fatherName || null,
+        motherName || null,
+        parentContact || null,
+        motherContact || null,
+        existingStudent.rows[0].id
+      ]
+    );
+  } else {
+    // INSERT new student
+    await pool.query(
+      `INSERT INTO students
+       (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        school_id,
+        classRow.rows[0].id,
+        sectionRow.rows[0].id,
+        studentName,
+        fatherName || null,
+        motherName || null,
+        parentContact || null,
+        motherContact || null
+      ]
+    );
+  }
+
+  created++;
+
+} catch (err: any) {
+  skipped.push({ studentName, reason: err.message });
+}
     }
 
     return res.json({ created, skipped });
   } catch (err: unknown) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// --- Bulk Activate Parent Logins -------------------------------------------
+
+// POST /api/v1/admin/students/bulk-activate-parents
+// Activates parent logins for a list of students using their stored
+// parent_contact (father) and/or mother_contact numbers.
+// Skips students that have no contact numbers on file.
+router.post('/bulk-activate-parents', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const { school_id } = req.user!;
+    const { student_ids, relation } = req.body as {
+      student_ids: string[];
+      relation: 'father' | 'mother' | 'both';
+    };
+
+    if (!Array.isArray(student_ids) || student_ids.length === 0) {
+      return res.status(400).json({ error: 'student_ids array is required' });
+    }
+    if (!['father', 'mother', 'both'].includes(relation)) {
+      return res.status(400).json({ error: 'relation must be "father", "mother", or "both"' });
+    }
+
+    const bcrypt = require('bcryptjs');
+
+    // Fetch all requested students in one query
+    const studentsResult = await client.query(
+      `SELECT id, name, father_name, mother_name, parent_contact, mother_contact
+       FROM students
+       WHERE id = ANY($1::uuid[]) AND school_id = $2 AND is_active = true`,
+      [student_ids, school_id]
+    );
+
+    await client.query('BEGIN');
+
+    const activated: { student_name: string; mobile: string; relation: string }[] = [];
+    const skipped:   { student_name: string; reason: string }[] = [];
+
+    async function activateOne(
+      studentId: string,
+      studentName: string,
+      mobile: string,
+      parentName: string | null,
+      rel: 'father' | 'mother' | 'guardian',
+    ) {
+      if (!mobile || !/^\d{10}$/.test(mobile.trim())) {
+        skipped.push({ student_name: studentName, reason: `${rel} mobile "${mobile}" is not a valid 10-digit number` });
+        return;
+      }
+      const m = mobile.trim();
+      const hash = await bcrypt.hash(m, 12);
+
+      // Upsert parent_users
+      const existing = await client.query(
+        'SELECT id FROM parent_users WHERE mobile = $1 AND school_id = $2',
+        [m, school_id]
+      );
+      let parentId: string;
+      if (existing.rows.length === 0) {
+        const ins = await client.query(
+          `INSERT INTO parent_users (school_id, mobile, name, password_hash, force_password_reset, is_active)
+           VALUES ($1, $2, $3, $4, true, true) RETURNING id`,
+          [school_id, m, parentName || null, hash]
+        );
+        parentId = ins.rows[0].id;
+      } else {
+        parentId = existing.rows[0].id;
+        await client.query(
+          `UPDATE parent_users SET password_hash = $1, force_password_reset = true, is_active = true WHERE id = $2`,
+          [hash, parentId]
+        );
+      }
+
+      // Link to student
+      await client.query(
+        `INSERT INTO parent_student_links (parent_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [parentId, studentId]
+      );
+
+      activated.push({ student_name: studentName, mobile: m, relation: rel });
+    }
+
+    for (const student of studentsResult.rows) {
+      const hasFather = student.parent_contact && /^\d{10}$/.test(student.parent_contact.trim());
+      const hasMother = student.mother_contact && /^\d{10}$/.test(student.mother_contact.trim());
+
+      if (relation === 'father' || relation === 'both') {
+        if (hasFather) {
+          await activateOne(student.id, student.name, student.parent_contact, student.father_name, 'father');
+        } else if (relation === 'father') {
+          skipped.push({ student_name: student.name, reason: 'No valid father mobile on file' });
+        }
+      }
+
+      if (relation === 'mother' || relation === 'both') {
+        if (hasMother) {
+          await activateOne(student.id, student.name, student.mother_contact, student.mother_name, 'mother');
+        } else if (relation === 'mother') {
+          skipped.push({ student_name: student.name, reason: 'No valid mother mobile on file' });
+        }
+      }
+
+      // If "both" and neither contact exists, add a single skip entry
+      if (relation === 'both' && !hasFather && !hasMother) {
+        skipped.push({ student_name: student.name, reason: 'No valid parent contacts on file' });
+      }
+    }
+
+    // Students in the request that weren't found / inactive
+    const foundIds = new Set(studentsResult.rows.map((r: any) => r.id));
+    for (const id of student_ids) {
+      if (!foundIds.has(id)) {
+        skipped.push({ student_name: id, reason: 'Student not found or inactive' });
+      }
+    }
+
+    await client.query('COMMIT');
+
+    return res.json({
+      activated: activated.length,
+      skipped:   skipped.length,
+      details:   { activated, skipped },
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[bulk-activate-parents]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  } finally {
+    client.release();
+  }
+});
+
+// --- Student Dashboard (counts by class) -------------------------------------
+
+// GET /api/v1/admin/students/dashboard
+router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+
+    // 1. Total active students
+    const totalRow = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM students WHERE school_id = $1 AND is_active = true`,
+      [school_id]
+    );
+
+    // 2. Per-class counts + contact completeness
+    const byClassRow = await pool.query(
+      `SELECT
+         c.id   AS class_id,
+         c.name AS class_name,
+         COUNT(s.id)::int AS total_students,
+         COUNT(s.id) FILTER (WHERE s.father_name    IS NOT NULL AND s.father_name    <> '')::int AS with_father,
+         COUNT(s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
+         COUNT(s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
+         COUNT(s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact
+       FROM classes c
+       LEFT JOIN students s
+         ON s.class_id = c.id AND s.school_id = c.school_id AND s.is_active = true
+       WHERE c.school_id = $1
+       GROUP BY c.id, c.name
+       ORDER BY c.name`,
+      [school_id]
+    );
+
+    // 3. Per-section counts (separate query — avoids json_agg complexity)
+    const bySectionRow = await pool.query(
+      `SELECT
+         sec.class_id,
+         sec.id    AS section_id,
+         sec.label AS section_label,
+         COUNT(s.id)::int AS count
+       FROM sections sec
+       LEFT JOIN students s
+         ON s.section_id = sec.id AND s.school_id = sec.school_id AND s.is_active = true
+       WHERE sec.school_id = $1
+       GROUP BY sec.class_id, sec.id, sec.label
+       ORDER BY sec.label`,
+      [school_id]
+    );
+
+    // Group sections by class_id
+    const sectionsByClass: Record<string, { section_id: string; section_label: string; count: number }[]> = {};
+    for (const row of bySectionRow.rows) {
+      if (!sectionsByClass[row.class_id]) sectionsByClass[row.class_id] = [];
+      sectionsByClass[row.class_id].push({
+        section_id:    row.section_id,
+        section_label: row.section_label,
+        count:         row.count,
+      });
+    }
+
+    const byClass = byClassRow.rows.map((r: any) => ({
+      ...r,
+      sections: sectionsByClass[r.class_id] || [],
+    }));
+
+    return res.json({
+      total_students: totalRow.rows[0].total,
+      by_class: byClass,
+    });
+  } catch (err: any) {
+    console.error('[students/dashboard]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
   }
 });
 

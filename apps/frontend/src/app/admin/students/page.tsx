@@ -464,6 +464,228 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
   );
 }
 
+// --- Bulk Activate Parents Modal ------------------------------------------
+type BulkActivateRelation = 'father' | 'mother' | 'both';
+
+interface BulkActivateResult {
+  activated: number;
+  skipped: number;
+  details: {
+    activated: { student_name: string; mobile: string; relation: string }[];
+    skipped:   { student_name: string; reason: string }[];
+  };
+}
+
+function BulkActivateParentsModal({
+  students, token, onClose, onDone,
+}: {
+  students: Student[];
+  token: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [relation, setRelation] = useState<BulkActivateRelation>('both');
+  const [saving, setSaving]     = useState(false);
+  const [result, setResult]     = useState<BulkActivateResult | null>(null);
+  const [error, setError]       = useState('');
+
+  // Students that have at least one contact number
+  const withFather = students.filter(s => s.parent_contact && /^\d{10}$/.test(s.parent_contact));
+  const withMother = students.filter(s => s.mother_contact && /^\d{10}$/.test(s.mother_contact));
+  const eligible = relation === 'father' ? withFather
+                 : relation === 'mother' ? withMother
+                 : students.filter(s =>
+                     (s.parent_contact && /^\d{10}$/.test(s.parent_contact)) ||
+                     (s.mother_contact && /^\d{10}$/.test(s.mother_contact))
+                   );
+
+  async function submit() {
+    setSaving(true); setError('');
+    try {
+      const data = await apiPost<BulkActivateResult>(
+        '/api/v1/admin/students/bulk-activate-parents',
+        { student_ids: students.map(s => s.id), relation },
+        token,
+      );
+      setResult(data);
+      onDone();
+    } catch (e: any) {
+      setError(e.message || 'Failed to activate parents');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        {/* Header */}
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Bulk Activate Parent Logins</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{students.length} student{students.length !== 1 ? 's' : ''} selected</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-4">
+          {!result ? (
+            <>
+              {/* Info banner */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 text-xs text-blue-800 leading-relaxed">
+                <p className="font-semibold mb-0.5">How it works</p>
+                <p>Parent accounts are created using the mobile numbers already saved on each student. The initial password is set to their mobile number and they must change it on first login.</p>
+              </div>
+
+              {/* Relation selector */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Activate logins for</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['father', 'mother', 'both'] as BulkActivateRelation[]).map(r => (
+                    <button
+                      key={r}
+                      onClick={() => setRelation(r)}
+                      className={`py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                        relation === r
+                          ? 'bg-primary-600 text-white border-primary-600'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
+                      }`}
+                    >
+                      {r === 'father' ? '👨 Father' : r === 'mother' ? '👩 Mother' : '👨‍👩 Both'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Coverage summary */}
+              <div className="bg-gray-50 rounded-xl px-4 py-3 flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-gray-600">Coverage preview</p>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Students with valid father mobile</span>
+                  <span className="font-semibold text-gray-800">{withFather.length} / {students.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Students with valid mother mobile</span>
+                  <span className="font-semibold text-gray-800">{withMother.length} / {students.length}</span>
+                </div>
+                <div className="h-px bg-gray-200 my-0.5" />
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-700 font-medium">Will be activated</span>
+                  <span className={`font-bold ${eligible.length > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {eligible.length} student{eligible.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {students.length - eligible.length > 0 && (
+                  <p className="text-[11px] text-amber-600 mt-0.5">
+                    ⚠ {students.length - eligible.length} student{students.length - eligible.length !== 1 ? 's' : ''} will be skipped (missing contact numbers)
+                  </p>
+                )}
+              </div>
+
+              {/* Student list preview */}
+              <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
+                {students.map(s => {
+                  const fOk = s.parent_contact && /^\d{10}$/.test(s.parent_contact);
+                  const mOk = s.mother_contact && /^\d{10}$/.test(s.mother_contact);
+                  const willActivate = relation === 'father' ? fOk
+                                     : relation === 'mother' ? mOk
+                                     : fOk || mOk;
+                  return (
+                    <div key={s.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <p className="text-xs font-medium text-gray-700">{s.name}</p>
+                        <p className="text-[11px] text-gray-400">{s.class_name} {s.section_label}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        {(relation === 'father' || relation === 'both') && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${fOk ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-600'}`}>
+                            👨 {fOk ? s.parent_contact : 'missing'}
+                          </span>
+                        )}
+                        {(relation === 'mother' || relation === 'both') && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${mOk ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-600'}`}>
+                            👩 {mOk ? s.mother_contact : 'missing'}
+                          </span>
+                        )}
+                        {!willActivate && (
+                          <span className="text-[10px] text-gray-400 italic">will skip</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+
+              <div className="flex gap-2 pb-2">
+                <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={submit}
+                  loading={saving}
+                  disabled={eligible.length === 0}
+                  className="flex-1"
+                >
+                  Activate {eligible.length > 0 ? `${eligible.length} Login${eligible.length !== 1 ? 's' : ''}` : ''}
+                </Button>
+              </div>
+            </>
+          ) : (
+            /* Results screen */
+            <>
+              <div className="flex flex-col items-center gap-2 py-2">
+                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-2xl">✅</div>
+                <p className="text-base font-bold text-gray-900">Done!</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-center">
+                  <p className="text-2xl font-black text-emerald-700">{result.activated}</p>
+                  <p className="text-xs text-emerald-600 font-medium mt-0.5">Activated</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-center">
+                  <p className="text-2xl font-black text-amber-700">{result.skipped}</p>
+                  <p className="text-xs text-amber-600 font-medium mt-0.5">Skipped</p>
+                </div>
+              </div>
+
+              {result.details.activated.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Activated</p>
+                  <div className="max-h-32 overflow-y-auto flex flex-col gap-1">
+                    {result.details.activated.map((a, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-emerald-50 rounded-lg">
+                        <span className="text-xs text-gray-700 font-medium">{a.student_name}</span>
+                        <span className="text-[11px] text-emerald-700 font-mono">{a.mobile}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result.details.skipped.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skipped</p>
+                  <div className="max-h-28 overflow-y-auto flex flex-col gap-1">
+                    {result.details.skipped.map((s, i) => (
+                      <div key={i} className="flex items-start justify-between px-3 py-1.5 bg-amber-50 rounded-lg gap-2">
+                        <span className="text-xs text-gray-700 font-medium shrink-0">{s.student_name}</span>
+                        <span className="text-[11px] text-amber-700 text-right">{s.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <Button onClick={onClose} className="w-full">Close</Button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Import Modal ----------------------------------------------------------
 function ImportModal({ token, onClose, onImported }: { token: string; onClose: () => void; onImported: () => void }) {
   const [file, setFile] = useState<File | null>(null);
@@ -912,6 +1134,7 @@ export default function StudentsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showBulkPromote, setShowBulkPromote] = useState(false);
   const [showBulkTerminate, setShowBulkTerminate] = useState(false);
+  const [showBulkActivateParents, setShowBulkActivateParents] = useState(false);
   const [changingClassStudent, setChangingClassStudent] = useState<Student | null>(null);
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
 
@@ -1052,6 +1275,10 @@ export default function StudentsPage() {
           <button onClick={() => setShowBulkPromote(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
             🎓 Promote
+          </button>
+          <button onClick={() => setShowBulkActivateParents(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            👨‍👩 Parent Logins
           </button>
           <button onClick={() => setShowBulkTerminate(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">
@@ -1267,6 +1494,13 @@ export default function StudentsPage() {
         <BulkTerminateModal
           students={selectedStudents} token={token}
           onClose={() => setShowBulkTerminate(false)}
+          onDone={() => { setSelected(new Set()); load(); }}
+        />
+      )}
+      {showBulkActivateParents && selectedStudents.length > 0 && (
+        <BulkActivateParentsModal
+          students={selectedStudents} token={token}
+          onClose={() => setShowBulkActivateParents(false)}
           onDone={() => { setSelected(new Set()); load(); }}
         />
       )}
