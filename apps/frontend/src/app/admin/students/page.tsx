@@ -752,6 +752,130 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
   );
 }
 
+// --- Bulk Change Section Modal --------------------------------------------
+function BulkChangeSectionModal({
+  students, classes, token, onClose, onDone,
+}: {
+  students: Student[]; classes: Class[]; token: string; onClose: () => void; onDone: () => void;
+}) {
+  const [classId, setClassId]     = useState('');
+  const [sectionId, setSectionId] = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
+  const [result, setResult]       = useState<{ updated: number; class_name: string; section_label: string } | null>(null);
+
+  const selectedClass = classes.find(c => c.id === classId);
+
+  async function submit() {
+    if (!classId || !sectionId) { setError('Select a class and section'); return; }
+    setSaving(true); setError('');
+    try {
+      const data = await apiPost<{ updated: number; class_name: string; section_label: string }>(
+        '/api/v1/admin/students/bulk-change-section',
+        { student_ids: students.map(s => s.id), class_id: classId, section_id: sectionId },
+        token,
+      );
+      setResult(data);
+      onDone();
+    } catch (e: any) {
+      setError(e.message || 'Failed to update section');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        {/* Header */}
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Bulk Change Section</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{students.length} student{students.length !== 1 ? 's' : ''} selected</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-4">
+          {!result ? (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-800">
+                ⚠️ This moves all selected students to the chosen class and section immediately.
+              </div>
+
+              {/* Class picker */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-600">Target Class</label>
+                <select
+                  value={classId}
+                  onChange={e => { setClassId(e.target.value); setSectionId(''); }}
+                  className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40"
+                >
+                  <option value="">Select class</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+
+              {/* Section picker */}
+              {selectedClass && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-gray-600">Target Section</label>
+                  <select
+                    value={sectionId}
+                    onChange={e => setSectionId(e.target.value)}
+                    className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40"
+                  >
+                    <option value="">Select section</option>
+                    {selectedClass.sections.map(s => (
+                      <option key={s.id} value={s.id}>Section {s.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Student preview */}
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                {students.map(s => (
+                  <div key={s.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs font-medium text-gray-700">{s.name}</p>
+                    <span className="text-[11px] text-gray-400">{s.class_name} {s.section_label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+
+              <div className="flex gap-2 pb-2">
+                <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={submit}
+                  loading={saving}
+                  disabled={!classId || !sectionId}
+                  className="flex-1"
+                >
+                  Move {students.length} Student{students.length !== 1 ? 's' : ''}
+                </Button>
+              </div>
+            </>
+          ) : (
+            /* Result screen */
+            <div className="flex flex-col items-center gap-4 py-4">
+              <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center text-2xl">✅</div>
+              <div className="text-center">
+                <p className="text-base font-bold text-gray-900">{result.updated} student{result.updated !== 1 ? 's' : ''} moved</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  → {result.class_name} Section {result.section_label}
+                </p>
+              </div>
+              <Button onClick={onClose} className="w-full">Done</Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Change Class Modal ---------------------------------------------------
 function ChangeClassModal({ student, classes, token, onClose, onSaved }: {
   student: Student; classes: Class[]; token: string; onClose: () => void; onSaved: () => void;
@@ -1135,6 +1259,7 @@ export default function StudentsPage() {
   const [showBulkPromote, setShowBulkPromote] = useState(false);
   const [showBulkTerminate, setShowBulkTerminate] = useState(false);
   const [showBulkActivateParents, setShowBulkActivateParents] = useState(false);
+  const [showBulkChangeSection, setShowBulkChangeSection] = useState(false);
   const [changingClassStudent, setChangingClassStudent] = useState<Student | null>(null);
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
 
@@ -1275,6 +1400,10 @@ export default function StudentsPage() {
           <button onClick={() => setShowBulkPromote(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
             🎓 Promote
+          </button>
+          <button onClick={() => setShowBulkChangeSection(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+            🏫 Change Section
           </button>
           <button onClick={() => setShowBulkActivateParents(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">
@@ -1501,6 +1630,13 @@ export default function StudentsPage() {
         <BulkActivateParentsModal
           students={selectedStudents} token={token}
           onClose={() => setShowBulkActivateParents(false)}
+          onDone={() => { setSelected(new Set()); load(); }}
+        />
+      )}
+      {showBulkChangeSection && selectedStudents.length > 0 && (
+        <BulkChangeSectionModal
+          students={selectedStudents} classes={classes} token={token}
+          onClose={() => setShowBulkChangeSection(false)}
           onDone={() => { setSelected(new Set()); load(); }}
         />
       )}

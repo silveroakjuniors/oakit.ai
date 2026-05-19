@@ -1160,6 +1160,66 @@ router.put('/:id/change-class', roleGuard('admin'), async (req: Request, res: Re
   }
 });
 
+// --- Bulk Change Section --------------------------------------------------
+
+// POST /api/v1/admin/students/bulk-change-section
+// Moves all selected students to a new class + section in one shot.
+router.post('/bulk-change-section', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const { school_id } = req.user!;
+    const { student_ids, class_id, section_id } = req.body as {
+      student_ids: string[];
+      class_id: string;
+      section_id: string;
+    };
+
+    if (!Array.isArray(student_ids) || student_ids.length === 0) {
+      return res.status(400).json({ error: 'student_ids array is required' });
+    }
+    if (!class_id || !section_id) {
+      return res.status(400).json({ error: 'class_id and section_id are required' });
+    }
+
+    // Verify the section belongs to the class and this school
+    const secRow = await client.query(
+      `SELECT sec.id, sec.label, c.name AS class_name
+       FROM sections sec JOIN classes c ON c.id = sec.class_id
+       WHERE sec.id = $1 AND sec.class_id = $2 AND sec.school_id = $3`,
+      [section_id, class_id, school_id]
+    );
+    if (secRow.rows.length === 0) {
+      return res.status(400).json({ error: 'Section not found in the specified class' });
+    }
+
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `UPDATE students
+       SET class_id = $1, section_id = $2
+       WHERE id = ANY($3::uuid[]) AND school_id = $4 AND is_active = true
+       RETURNING id, name`,
+      [class_id, section_id, student_ids, school_id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      updated: result.rows.length,
+      class_name: secRow.rows[0].class_name,
+      section_label: secRow.rows[0].label,
+      students: result.rows.map((r: any) => r.name),
+      message: `${result.rows.length} student(s) moved to ${secRow.rows[0].class_name} Section ${secRow.rows[0].label}`,
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[bulk-change-section]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  } finally {
+    client.release();
+  }
+});
+
 //  Bulk Promote 
 
 // POST /api/v1/admin/students/bulk-promote
