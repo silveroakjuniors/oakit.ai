@@ -88,8 +88,9 @@ export default function LoginPage() {
         if (s.ok) { const sd = await s.json(); if (sd.primary_color) applyBrandColor(sd.primary_color); if (sd.tagline !== undefined) saveTagline(sd.tagline || ''); }
       } catch { /* non-critical */ }
       if (data.force_password_reset) { router.push('/auth/change-password'); return; }
-      // Wake the AI service in the background — fire and forget, no UI shown
-      fetch(`${API_BASE}/health/ai`, { cache: 'no-store' }).catch(() => {});
+      // Wake the AI service directly — bypasses the gateway so it works even when gateway is cold
+      const aiServiceUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'https://oakit-ai-service.onrender.com';
+      fetch(`${aiServiceUrl}/health`, { cache: 'no-store' }).catch(() => {});
       router.push(getRoleRedirect(data.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid credentials');
