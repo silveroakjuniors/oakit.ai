@@ -503,41 +503,36 @@ function PlanGenerator({ classId, className, hasCurriculum, onClose }: {
                 </div>
               </div>
               {conflict && (
-                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex flex-col gap-3">
+                <div className="bg-red-50 border border-red-300 rounded-xl p-4 flex flex-col gap-3">
                   <div className="flex items-start gap-2">
-                    <span className="text-xl shrink-0">⚠️</span>
+                    <span className="text-xl shrink-0">🚫</span>
                     <div>
-                      <p className="text-sm font-semibold text-amber-900">Plans already exist for {conflict.month ? `${MONTHS_FULL[conflict.month - 1]} ${conflict.year}` : 'this period'}</p>
-                      <p className="text-xs text-amber-700 mt-0.5">Regenerating will delete existing plans and teacher completion records for this month.</p>
+                      <p className="text-sm font-semibold text-red-900">
+                        Plans already exist for {conflict.month ? `${MONTHS_FULL[conflict.month - 1]} ${conflict.year}` : 'this period'}
+                      </p>
+                      <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                        You cannot generate plans for a month that already has plans. To regenerate, first delete the existing plans using the <strong>🗑 Delete All Plans</strong> button below, then generate again.
+                      </p>
                     </div>
                   </div>
-                  <div className="bg-white border border-amber-200 rounded-lg px-3 py-2.5 flex flex-col gap-1.5 text-xs">
+                  <div className="bg-white border border-red-200 rounded-lg px-3 py-2.5 flex flex-col gap-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-neutral-600">Existing teacher completions</span>
+                      <span className="font-semibold text-red-600">Will be lost on delete</span>
+                    </div>
                     <div className="flex items-center justify-between">
                       <span className="text-neutral-600">Holidays in this month</span>
                       <span className={`font-semibold ${(conflict.holidayCount ?? 0) > 0 ? 'text-emerald-700' : 'text-neutral-400'}`}>
-                        {(conflict.holidayCount ?? 0) > 0 ? `✓ ${conflict.holidayCount} holiday${conflict.holidayCount !== 1 ? 's' : ''} will be considered` : 'None configured'}
+                        {(conflict.holidayCount ?? 0) > 0
+                          ? `✓ ${conflict.holidayCount} holiday${conflict.holidayCount !== 1 ? 's' : ''} configured`
+                          : 'None configured'}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-600">Teacher completions</span>
-                      <span className="font-semibold text-red-600">Will be deleted</span>
-                    </div>
                   </div>
-                  {(conflict.holidayCount ?? 0) === 0 && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
-                      💡 No holidays configured for this month. Go to <strong>Calendar → Holidays</strong> to add them before regenerating.
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <button onClick={() => setConflict(null)}
-                      className="flex-1 py-2.5 text-sm border border-neutral-200 rounded-xl hover:bg-neutral-50 transition-colors font-medium">
-                      Cancel
-                    </button>
-                    <button onClick={() => { setConflict(null); generate(true); }}
-                      className="flex-1 py-2.5 text-sm bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors font-semibold">
-                      Regenerate Plans
-                    </button>
-                  </div>
+                  <button onClick={() => setConflict(null)}
+                    className="w-full py-2.5 text-sm border border-neutral-200 rounded-xl hover:bg-neutral-50 transition-colors font-medium">
+                    OK, got it
+                  </button>
                 </div>
               )}
             </>

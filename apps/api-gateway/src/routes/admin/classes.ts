@@ -155,6 +155,51 @@ router.post('/:id/sections', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/v1/admin/classes/sections/:id — delete a section
+// Blocked if the section has active students or completion records
+router.delete('/sections/:id', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const sectionId = req.params.id;
+
+    // Verify section belongs to this school
+    const secRow = await pool.query(
+      `SELECT sec.id, sec.label, c.name AS class_name
+       FROM sections sec JOIN classes c ON c.id = sec.class_id
+       WHERE sec.id = $1 AND sec.school_id = $2`,
+      [sectionId, school_id]
+    );
+    if (secRow.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+
+    // Block if active students are enrolled
+    const students = await pool.query(
+      'SELECT COUNT(*)::int AS cnt FROM students WHERE section_id = $1 AND is_active = true',
+      [sectionId]
+    );
+    if (students.rows[0].cnt > 0) {
+      return res.status(409).json({
+        error: `Cannot delete Section ${secRow.rows[0].label} — it has ${students.rows[0].cnt} active student(s). Move or terminate them first.`,
+      });
+    }
+
+    // Delete in safe order: day_plans → daily_completions → teacher_sections → section
+    await pool.query('DELETE FROM day_plans WHERE section_id = $1', [sectionId]);
+    await pool.query('DELETE FROM daily_completions WHERE section_id = $1', [sectionId]);
+    await pool.query('DELETE FROM teacher_sections WHERE section_id = $1', [sectionId]);
+    await pool.query('DELETE FROM sections WHERE id = $1 AND school_id = $2', [sectionId, school_id]);
+
+    return res.json({
+      message: `Section ${secRow.rows[0].label} deleted`,
+      class_name: secRow.rows[0].class_name,
+    });
+  } catch (err: any) {
+    console.error('[delete-section]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  }
+});
+
 // POST /api/v1/admin/sections/:id/teachers
 router.post('/sections/:id/teachers', async (req: Request, res: Response) => {
   try {
