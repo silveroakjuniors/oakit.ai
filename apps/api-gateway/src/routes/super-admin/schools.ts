@@ -135,6 +135,124 @@ router.patch('/:id', async (req: Request, res: Response) => {
   } catch (err) { console.error('[super-admin PATCH /:id]', err); return res.status(500).json({ error: 'Internal server error' }); }
 });
 
+// POST /:id/demo-reset
+// Wipes all teacher/student activity data for a school while preserving setup:
+// keeps: school, users, classes, sections, curriculum, day_plans, calendar, students, fee setup
+// wipes: attendance, completions, homework, observations, milestones, messages, feed, quizzes, streaks, notes, announcements, AI logs
+router.post('/:id/demo-reset', async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const schoolId = req.params.id;
+    const { confirm_name } = req.body as { confirm_name: string };
+
+    const school = await pool.query('SELECT id, name FROM schools WHERE id = $1', [schoolId]);
+    if (school.rows.length === 0) return res.status(404).json({ error: 'School not found' });
+
+    if (confirm_name?.trim().toLowerCase() !== school.rows[0].name.trim().toLowerCase()) {
+      return res.status(400).json({ error: 'School name confirmation does not match' });
+    }
+
+    await client.query('BEGIN');
+
+    const deleted: Record<string, number> = {};
+
+    async function wipe(table: string, extraWhere = '') {
+      try {
+        const r = await client.query(
+          `DELETE FROM ${table} WHERE school_id = $1 ${extraWhere} RETURNING 1`,
+          [schoolId]
+        );
+        deleted[table] = r.rowCount ?? 0;
+      } catch (e: any) {
+        // Table may not exist in all deployments — skip gracefully
+        console.warn(`[demo-reset] skipping ${table}: ${e.message}`);
+        deleted[table] = 0;
+      }
+    }
+
+    // ── Activity data — wipe in dependency order ──────────────────────────
+
+    // Attendance
+    await wipe('attendance_records');
+
+    // Daily completions (teacher marks topics done)
+    await wipe('daily_completions');
+
+    // Missed topic tasks (parent portal)
+    await wipe('missed_topic_tasks');
+
+    // Teacher homework + submissions
+    await wipe('homework_submissions');
+    await wipe('teacher_homework');
+
+    // Teacher notes
+    await wipe('teacher_notes');
+
+    // Teacher streaks
+    await wipe('teacher_streaks');
+
+    // Observations & milestones
+    await wipe('student_observations');
+    await wipe('student_milestones');
+
+    // Messages (teacher ↔ parent)
+    await wipe('messages');
+
+    // Feed posts (images + likes cascade via FK)
+    await wipe('feed_posts');
+
+    // Announcements
+    await wipe('announcements');
+
+    // Quiz attempts + answers (answers cascade via FK)
+    await wipe('quiz_attempts');
+
+    // Quizzes created by teachers
+    await wipe('quizzes');
+
+    // AI query audit logs
+    await client.query(
+      `DELETE FROM audit_logs WHERE school_id = $1 AND action = 'ai_query'`,
+      [schoolId]
+    ).catch(() => {});
+
+    // Safety alerts
+    await client.query(
+      `DELETE FROM safety_alerts WHERE school_id = $1`,
+      [schoolId]
+    ).catch(() => {});
+
+    // Reset time machine back to real date
+    await client.query(
+      `DELETE FROM time_machine WHERE school_id = $1`,
+      [schoolId]
+    ).catch(() => {});
+
+    // Reset parent force_password_reset so they can log in fresh
+    await client.query(
+      `UPDATE parent_users SET force_password_reset = true WHERE school_id = $1`,
+      [schoolId]
+    ).catch(() => {});
+
+    await client.query('COMMIT');
+
+    console.log(`[demo-reset] school ${schoolId} (${school.rows[0].name}) reset by super_admin`, deleted);
+
+    return res.json({
+      success: true,
+      school_name: school.rows[0].name,
+      deleted,
+      message: `Demo reset complete for ${school.rows[0].name}. All activity data wiped. Setup (curriculum, plans, students, calendar) preserved.`,
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[demo-reset]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  } finally {
+    client.release();
+  }
+});
+
 // DELETE /:id/salary-pin
 router.delete('/:id/salary-pin', async (req: Request, res: Response) => {
   try {

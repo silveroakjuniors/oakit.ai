@@ -36,6 +36,204 @@ const inp = 'w-full px-3 py-2 rounded-xl border border-white/10 text-sm bg-white
 const sel = 'w-full px-3 py-2 rounded-xl border border-white/10 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-400 appearance-none' as const;
 const selStyle = { background: '#1a2a1f' } as const;
 
+// ── Danger Tab ────────────────────────────────────────────────────────────────
+function DangerTab({
+  school,
+  onMsg,
+  onError,
+  onReload,
+}: {
+  school: SchoolDetail;
+  onMsg: (m: string) => void;
+  onError: (m: string) => void;
+  onReload: () => void;
+}) {
+  const token = getToken();
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Demo reset state
+  const [showReset, setShowReset]         = useState(false);
+  const [resetConfirm, setResetConfirm]   = useState('');
+  const [resetting, setResetting]         = useState(false);
+  const [resetResult, setResetResult]     = useState<{
+    deleted: Record<string, number>;
+    message: string;
+  } | null>(null);
+
+  async function handleResetSalaryPin() {
+    if (!token || !confirm('This will clear the salary PIN for this school. The principal will need to set a new one. Continue?')) return;
+    try {
+      await apiDelete(`/api/v1/super-admin/schools/${school.id}/salary-pin`, token);
+      onMsg('✓ Salary PIN cleared');
+    } catch (e: any) { onError(e.message); }
+  }
+
+  async function handleActivate() {
+    if (!token) return;
+    setActionLoading(true);
+    try {
+      await apiPost(`/api/v1/super-admin/schools/${school.id}/activate`, {}, token);
+      onMsg('✓ School activated');
+      onReload();
+    } catch (e: any) { onError(e.message); }
+    finally { setActionLoading(false); }
+  }
+
+  async function handleDeactivate() {
+    if (!token || !confirm('Deactivate this school? All users will lose access.')) return;
+    setActionLoading(true);
+    try {
+      await apiPost(`/api/v1/super-admin/schools/${school.id}/deactivate`, {}, token);
+      onMsg('✓ School deactivated');
+      onReload();
+    } catch (e: any) { onError(e.message); }
+    finally { setActionLoading(false); }
+  }
+
+  async function handleDemoReset() {
+    if (!token) return;
+    setResetting(true);
+    try {
+      const data = await apiPost<{ deleted: Record<string, number>; message: string }>(
+        `/api/v1/super-admin/schools/${school.id}/demo-reset`,
+        { confirm_name: resetConfirm },
+        token,
+      );
+      setResetResult(data);
+      setResetConfirm('');
+    } catch (e: any) { onError(e.message); }
+    finally { setResetting(false); }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl p-5 space-y-1" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+        <p className="text-xs font-bold text-red-400 uppercase tracking-widest mb-4">Danger Zone</p>
+
+        {/* Reset Salary PIN */}
+        <div className="flex items-center justify-between py-3 border-b border-red-900/30">
+          <div>
+            <p className="text-sm font-semibold text-white">Reset Salary PIN</p>
+            <p className="text-xs text-white/40 mt-0.5">Clears the principal's salary PIN. They'll be prompted to set a new one.</p>
+          </div>
+          <button onClick={handleResetSalaryPin}
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-red-300 border border-red-700/50 hover:bg-red-900/30">
+            Reset PIN
+          </button>
+        </div>
+
+        {/* Activate / Deactivate */}
+        <div className="flex items-center justify-between py-3 border-b border-red-900/30">
+          <div>
+            <p className="text-sm font-semibold text-white">{school.status === 'active' ? 'Deactivate School' : 'Activate School'}</p>
+            <p className="text-xs text-white/40 mt-0.5">
+              {school.status === 'active' ? 'All users will lose access immediately.' : 'Restore access for all users.'}
+            </p>
+          </div>
+          {school.status === 'active' ? (
+            <button onClick={handleDeactivate} disabled={actionLoading}
+              className="px-4 py-2 rounded-xl text-sm font-semibold text-red-300 border border-red-700/50 hover:bg-red-900/30 disabled:opacity-40">
+              Deactivate
+            </button>
+          ) : (
+            <button onClick={handleActivate} disabled={actionLoading}
+              className="px-4 py-2 rounded-xl text-sm font-semibold text-emerald-300 border border-emerald-700/50 hover:bg-emerald-900/30 disabled:opacity-40">
+              Activate
+            </button>
+          )}
+        </div>
+
+        {/* Demo Reset */}
+        <div className="py-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white">🔄 Demo Reset</p>
+              <p className="text-xs text-white/40 mt-0.5 max-w-sm leading-relaxed">
+                Wipes all teacher activity (attendance, completions, homework, observations, feed, quizzes) while keeping setup — curriculum, plans, students, calendar, and fee structure are preserved.
+              </p>
+            </div>
+            {!showReset && (
+              <button onClick={() => setShowReset(true)}
+                className="ml-4 shrink-0 px-4 py-2 rounded-xl text-sm font-semibold text-orange-300 border border-orange-700/50 hover:bg-orange-900/30">
+                Reset Demo
+              </button>
+            )}
+          </div>
+
+          {showReset && !resetResult && (
+            <div className="mt-4 rounded-xl p-4 space-y-3" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(239,68,68,0.3)' }}>
+              <p className="text-xs text-red-300 font-semibold">⚠️ This cannot be undone. All teacher activity data will be permanently deleted.</p>
+              <p className="text-xs text-white/50">What will be wiped:</p>
+              <ul className="text-xs text-white/40 space-y-0.5 list-disc list-inside">
+                <li>Attendance records</li>
+                <li>Daily completions &amp; teacher streaks</li>
+                <li>Homework sent &amp; submissions</li>
+                <li>Observations &amp; milestones</li>
+                <li>Messages, feed posts, announcements</li>
+                <li>Quiz attempts</li>
+                <li>Time machine (reset to real date)</li>
+              </ul>
+              <p className="text-xs text-white/50">What will be kept:</p>
+              <ul className="text-xs text-emerald-400/70 space-y-0.5 list-disc list-inside">
+                <li>School setup, users, classes, sections</li>
+                <li>Curriculum &amp; day plans</li>
+                <li>Students &amp; parent accounts</li>
+                <li>Calendar, holidays, special days</li>
+                <li>Fee structures &amp; payment history</li>
+              </ul>
+              <div>
+                <label className="text-xs text-white/50 block mb-1">
+                  Type <strong className="text-white">{school.name}</strong> to confirm
+                </label>
+                <input
+                  value={resetConfirm}
+                  onChange={e => setResetConfirm(e.target.value)}
+                  placeholder={school.name}
+                  className="w-full px-3 py-2 rounded-xl border border-red-700/50 text-sm bg-black/30 text-white placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-red-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setShowReset(false); setResetConfirm(''); }}
+                  className="flex-1 py-2 rounded-xl text-sm border border-white/10 text-white/50 hover:bg-white/5">
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDemoReset}
+                  disabled={resetting || resetConfirm.trim().toLowerCase() !== school.name.trim().toLowerCase()}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold text-white bg-red-700 hover:bg-red-600 disabled:opacity-40 transition-colors"
+                >
+                  {resetting ? 'Resetting…' : 'Confirm Reset'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {resetResult && (
+            <div className="mt-4 rounded-xl p-4 space-y-3" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
+              <p className="text-sm font-semibold text-emerald-300">✅ Demo reset complete</p>
+              <p className="text-xs text-white/50">{resetResult.message}</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {Object.entries(resetResult.deleted)
+                  .filter(([, count]) => count > 0)
+                  .map(([table, count]) => (
+                    <div key={table} className="flex justify-between text-xs px-2 py-1 rounded-lg bg-white/5">
+                      <span className="text-white/40">{table.replace(/_/g, ' ')}</span>
+                      <span className="text-white/70 font-semibold">{count}</span>
+                    </div>
+                  ))}
+              </div>
+              <button onClick={() => { setResetResult(null); setShowReset(false); }}
+                className="w-full py-2 rounded-xl text-sm border border-white/10 text-white/50 hover:bg-white/5">
+                Done
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SchoolDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -407,42 +605,7 @@ export default function SchoolDetailPage() {
 
       {/* Danger zone tab */}
       {tab === 'danger' && (
-        <div className="space-y-3">
-          <div className="rounded-2xl p-5" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
-            <p className="text-xs font-bold text-red-400 uppercase tracking-widest mb-4">Danger Zone</p>
-
-            <div className="flex items-center justify-between py-3 border-b border-red-900/30">
-              <div>
-                <p className="text-sm font-semibold text-white">Reset Salary PIN</p>
-                <p className="text-xs text-white/40 mt-0.5">Clears the principal's salary PIN. They'll be prompted to set a new one.</p>
-              </div>
-              <button onClick={handleResetSalaryPin}
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-red-300 border border-red-700/50 hover:bg-red-900/30">
-                Reset PIN
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between py-3">
-              <div>
-                <p className="text-sm font-semibold text-white">{school.status === 'active' ? 'Deactivate School' : 'Activate School'}</p>
-                <p className="text-xs text-white/40 mt-0.5">
-                  {school.status === 'active' ? 'All users will lose access immediately.' : 'Restore access for all users.'}
-                </p>
-              </div>
-              {school.status === 'active' ? (
-                <button onClick={handleDeactivate} disabled={actionLoading}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold text-red-300 border border-red-700/50 hover:bg-red-900/30 disabled:opacity-40">
-                  Deactivate
-                </button>
-              ) : (
-                <button onClick={handleActivate} disabled={actionLoading}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold text-emerald-300 border border-emerald-700/50 hover:bg-emerald-900/30 disabled:opacity-40">
-                  Activate
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <DangerTab school={school} onMsg={setMsg} onError={setError} onReload={() => loadSchool()} />
       )}
     </div>
   );
