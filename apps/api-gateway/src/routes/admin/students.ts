@@ -831,26 +831,96 @@ router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   }
 });
 
-// - POST /api/v1/admin/students/:id/terminate ? soft-delete a student -
+// - POST /api/v1/admin/students/:id/terminate — soft-delete a student -
 router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
-    const { school_id } = req.user!;
+    const { school_id, user_id } = req.user!;
     const studentId = req.params.id;
 
-    // 1. Deactivate the student
-    await pool.query(
-      'UPDATE students SET is_active = false WHERE id = $1 AND school_id = $2',
+    // Fetch student details before terminating (needed for history)
+    const studentRow = await client.query(
+      `SELECT s.id, s.name, s.class_id, s.section_id,
+              c.name AS class_name, sec.label AS section_label
+       FROM students s
+       JOIN classes c ON c.id = s.class_id
+       JOIN sections sec ON sec.id = s.section_id
+       WHERE s.id = $1 AND s.school_id = $2 AND s.is_active = true`,
+      [studentId, school_id]
+    );
+    if (studentRow.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found or already terminated' });
+    }
+    const student = studentRow.rows[0];
+
+    await client.query('BEGIN');
+
+    // 1. Soft-terminate the student
+    await client.query(
+      `UPDATE students
+       SET is_active = false, terminated_at = now(), terminated_by = $1
+       WHERE id = $2 AND school_id = $3`,
+      [user_id, studentId, school_id]
+    );
+
+    // 2. Save academic history record
+    // Determine current academic year from school settings (fall back to current calendar year)
+    const ayRow = await client.query(
+      `SELECT label FROM academic_years
+       WHERE school_id = $1 AND is_current = true LIMIT 1`,
+      [school_id]
+    );
+    const academicYear = ayRow.rows[0]?.label ||
+      `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(2)}`;
+
+    await client.query(
+      `INSERT INTO student_academic_history
+         (school_id, student_id, academic_year, class_id, section_id,
+          class_name, section_label, outcome, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'terminated',$8)
+       ON CONFLICT (student_id, academic_year)
+       DO UPDATE SET outcome = 'terminated', created_by = EXCLUDED.created_by`,
+      [school_id, studentId, academicYear,
+       student.class_id, student.section_id,
+       student.class_name, student.section_label, user_id]
+    );
+
+    // 3. Mark outstanding fee accounts as status='terminated'
+    //    Preserves payment history but flags the account so it's excluded from
+    //    active collection reports. Outstanding balance is kept for audit purposes.
+    await client.query(
+      `UPDATE student_fee_accounts
+       SET status = 'terminated', updated_at = now()
+       WHERE student_id = $1 AND school_id = $2
+         AND deleted_at IS NULL AND status != 'paid'`,
       [studentId, school_id]
     );
 
-    // 2. Delete student portal account
-    await pool.query(
+    // 4. Cancel any pending fee reminders for this student
+    await client.query(
+      `UPDATE fee_reminders
+       SET status = 'cancelled'
+       WHERE student_id = $1 AND school_id = $2 AND status = 'pending'`,
+      [studentId, school_id]
+    ).catch(() => { /* fee_reminders table may not exist in all deployments */ });
+
+    // 5. Abandon any in-progress quiz attempts
+    await client.query(
+      `UPDATE quiz_attempts
+       SET status = 'abandoned'
+       WHERE student_id = $1 AND school_id = $2 AND status = 'in_progress'`,
+      [studentId, school_id]
+    ).catch(() => { /* ignore if table doesn't exist */ });
+
+    // 6. Delete student portal account
+    await client.query(
       'DELETE FROM student_accounts WHERE student_id = $1 AND school_id = $2',
       [studentId, school_id]
     );
 
-    // 3. Deactivate parent accounts linked ONLY to this student (not to any other active student)
-    const orphaned = await pool.query(
+    // 7. Deactivate parent accounts linked ONLY to this student
+    //    (parents with other active children keep their accounts)
+    const orphaned = await client.query(
       `SELECT DISTINCT psl.parent_id
        FROM parent_student_links psl
        WHERE psl.student_id = $1
@@ -863,32 +933,96 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
          )`,
       [studentId]
     );
+
+    let parentsDeactivated = 0;
     if (orphaned.rows.length > 0) {
       const parentIds = orphaned.rows.map((r: any) => r.parent_id);
-      await pool.query(
+      await client.query(
         'UPDATE parent_users SET is_active = false WHERE id = ANY($1::uuid[]) AND school_id = $2',
         [parentIds, school_id]
       );
+      parentsDeactivated = parentIds.length;
     }
 
-    return res.json({ message: 'Student terminated' });
+    await client.query('COMMIT');
+    return res.json({
+      message: 'Student terminated',
+      student_name: student.name,
+      parents_deactivated: parentsDeactivated,
+      academic_year: academicYear,
+    });
   } catch (err) {
-    console.error(err);
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[terminate]', err);
     return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
-// - POST /api/v1/admin/students/:id/reactivate ? restore a terminated student -
+// - POST /api/v1/admin/students/:id/reactivate — restore a terminated student -
 router.post('/:id/reactivate', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const { school_id } = req.user!;
-    await pool.query(
-      'UPDATE students SET is_active = true WHERE id = $1 AND school_id = $2',
-      [req.params.id, school_id]
+    const studentId = req.params.id;
+
+    await client.query('BEGIN');
+
+    // 1. Reactivate the student
+    const result = await client.query(
+      `UPDATE students
+       SET is_active = true, terminated_at = null, terminated_by = null
+       WHERE id = $1 AND school_id = $2
+       RETURNING name`,
+      [studentId, school_id]
     );
-    return res.json({ message: 'Student reactivated' });
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // 2. Restore fee accounts from 'terminated' back to 'active'
+    //    (only those that weren't already paid)
+    await client.query(
+      `UPDATE student_fee_accounts
+       SET status = 'active', updated_at = now()
+       WHERE student_id = $1 AND school_id = $2
+         AND deleted_at IS NULL AND status = 'terminated'`,
+      [studentId, school_id]
+    );
+
+    // 3. Reactivate parent accounts that were deactivated because of this student
+    //    (any parent linked to this student who is currently inactive)
+    const linkedParents = await client.query(
+      `SELECT psl.parent_id
+       FROM parent_student_links psl
+       JOIN parent_users pu ON pu.id = psl.parent_id
+       WHERE psl.student_id = $1 AND pu.school_id = $2 AND pu.is_active = false`,
+      [studentId, school_id]
+    );
+    let parentsReactivated = 0;
+    if (linkedParents.rows.length > 0) {
+      const parentIds = linkedParents.rows.map((r: any) => r.parent_id);
+      await client.query(
+        'UPDATE parent_users SET is_active = true WHERE id = ANY($1::uuid[]) AND school_id = $2',
+        [parentIds, school_id]
+      );
+      parentsReactivated = parentIds.length;
+    }
+
+    await client.query('COMMIT');
+    return res.json({
+      message: 'Student reactivated',
+      student_name: result.rows[0].name,
+      parents_reactivated: parentsReactivated,
+    });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[reactivate]', err);
     return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1203,7 +1337,30 @@ router.post('/bulk-terminate', roleGuard('admin'), async (req: Request, res: Res
       [student_ids, school_id]
     );
 
-    // 4. Deactivate orphaned parents
+    // 4. Mark outstanding fee accounts as 'terminated'
+    await client.query(
+      `UPDATE student_fee_accounts
+       SET status = 'terminated', updated_at = now()
+       WHERE student_id = ANY($1::uuid[]) AND school_id = $2
+         AND deleted_at IS NULL AND status != 'paid'`,
+      [student_ids, school_id]
+    );
+
+    // 5. Cancel pending fee reminders
+    await client.query(
+      `UPDATE fee_reminders SET status = 'cancelled'
+       WHERE student_id = ANY($1::uuid[]) AND school_id = $2 AND status = 'pending'`,
+      [student_ids, school_id]
+    ).catch(() => {});
+
+    // 6. Abandon in-progress quiz attempts
+    await client.query(
+      `UPDATE quiz_attempts SET status = 'abandoned'
+       WHERE student_id = ANY($1::uuid[]) AND school_id = $2 AND status = 'in_progress'`,
+      [student_ids, school_id]
+    ).catch(() => {});
+
+    // 7. Deactivate orphaned parents (linked only to terminated students)
     const orphaned = await client.query(
       `SELECT DISTINCT psl.parent_id
        FROM parent_student_links psl
