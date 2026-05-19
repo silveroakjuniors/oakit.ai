@@ -8,6 +8,7 @@ import { getToday } from '../lib/today';
 import { jwtVerify, schoolScope, roleGuard } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/rateLimit';
 import { checkAndDeductCredits } from '../lib/aiCredits';
+import { handleDataQuery } from '../lib/oakieDataQueries';
 import crypto from 'crypto';
 
 const router = Router();
@@ -332,6 +333,14 @@ router.post('/query', async (req: Request, res: Response) => {
     if (isOffTopic(cleanText)) {
       await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: cleanText, outcome: 'blocked_offtopic' });
       return res.json({ response: OFF_TOPIC_RESPONSE, chunk_ids: [], covered_chunk_ids: [], activity_ids: [] });
+    }
+
+    // 4. Structured data queries — answer directly from DB (fees, attendance, students, etc.)
+    //    Works for principal, admin, finance_manager. No AI service call needed.
+    const dataResult = await handleDataQuery(cleanText, school_id, role);
+    if (dataResult) {
+      await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: cleanText, outcome: 'allowed' });
+      return res.json(dataResult);
     }
 
     // ── Question limit (teachers only, activity questions only) ──────────
