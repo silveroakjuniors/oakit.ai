@@ -125,11 +125,13 @@ function fallbackTeacherResponse(errorDetail?: string): {
   covered_chunk_ids: string[];
   activity_ids: string[];
 } {
-  const detail = errorDetail ? ` (${errorDetail})` : '';
+  // Don't leak raw HTTP error details to the user
+  const isWakingUp = errorDetail?.includes('429') || errorDetail?.includes('503') || errorDetail?.includes('ECONNREFUSED') || errorDetail?.includes('ETIMEDOUT');
+  const userMessage = isWakingUp
+    ? `Oakie is starting up — this usually takes about 20 seconds on the first request of the day. Please try again in a moment. 🌱\n\nIn the meantime, you can still use your plan and mark activities as completed.`
+    : `Oakie is temporarily unavailable. Please try again in 1-2 minutes.\n\nIn the meantime, you can still use your plan and mark activities as completed.`;
   return {
-    response:
-      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
-      `In the meantime, you can still use your plan and mark activities as completed.`,
+    response: userMessage,
     chunk_ids: [],
     covered_chunk_ids: [],
     activity_ids: [],
@@ -137,18 +139,39 @@ function fallbackTeacherResponse(errorDetail?: string): {
 }
 
 function fallbackParentResponse(errorDetail?: string): { response: string } {
-  const detail = errorDetail ? ` (${errorDetail})` : '';
-  return {
-    response:
-      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
-      `You can still check attendance, homework, and notes on this page.`,
-  };
+  const isWakingUp = errorDetail?.includes('429') || errorDetail?.includes('503') || errorDetail?.includes('ECONNREFUSED') || errorDetail?.includes('ETIMEDOUT');
+  const userMessage = isWakingUp
+    ? `Oakie is starting up — this usually takes about 20 seconds on the first request of the day. Please try again in a moment. 🌱\n\nYou can still check attendance, homework, and notes on this page.`
+    : `Oakie is temporarily unavailable. Please try again in 1-2 minutes.\n\nYou can still check attendance, homework, and notes on this page.`;
+  return { response: userMessage };
 }
 
 function getAiErrorMessage(err: unknown): string {
   if (!axios.isAxiosError(err)) return 'AI service unavailable';
   const detail = (err.response?.data as any)?.detail;
   return detail || err.message || 'AI service unavailable';
+}
+
+/** Call the AI service with one automatic retry on 429/503 (Render cold-start) */
+async function callAiWithRetry(
+  endpoint: string,
+  payload: object,
+  timeoutMs: number,
+): Promise<import('axios').AxiosResponse> {
+  try {
+    return await axios.post(endpoint, payload, { timeout: timeoutMs });
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const status = err.response?.status;
+      // Render free tier returns 429 or 503 while the service is waking up
+      if (status === 429 || status === 503 || !status) {
+        // Wait 5 seconds then try once more
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return axios.post(endpoint, payload, { timeout: timeoutMs });
+      }
+    }
+    throw err;
+  }
 }
 
 /** Detect and neutralize prompt injection attempts */
@@ -345,9 +368,9 @@ router.post('/query', async (req: Request, res: Response) => {
           return res.json(parsed);
         }
         try {
-          const aiResp = await axios.post(`${AI()}/internal/query`, {
+          const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
             teacher_id: user_id, school_id, text: cleanText, query_date: today, role,
-          }, { timeout: AI_TIMEOUT_MS });
+          }, AI_TIMEOUT_MS);
           const data = aiResp.data;
           data.response += `\n\n---\n💬 You've asked ${NUDGE_AT} questions today. When you're ready, mark your activities as completed using the checkboxes below.`;
           await redis.setEx(cacheKey, 10, JSON.stringify(data));
@@ -360,7 +383,7 @@ router.post('/query', async (req: Request, res: Response) => {
             endpoint: `${AI()}/internal/query`,
             message: errMsg,
           });
-          return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
+          return res.json(fallbackTeacherResponse(errMsg));
         }
       }
     }
@@ -387,7 +410,7 @@ router.post('/query', async (req: Request, res: Response) => {
     if (cached) return res.json(JSON.parse(cached));
 
     try {
-      const aiResp = await axios.post(`${AI()}/internal/query`, {
+      const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
         teacher_id: user_id,
         school_id,
         text: cleanText,
@@ -395,7 +418,7 @@ router.post('/query', async (req: Request, res: Response) => {
         role,
         history: Array.isArray(history) ? history.slice(-3) : [],
         ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
-      }, { timeout: AI_TIMEOUT_MS });
+      }, AI_TIMEOUT_MS);
 
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
       return res.json(aiResp.data);
@@ -408,7 +431,7 @@ router.post('/query', async (req: Request, res: Response) => {
         ai_service_url: AI(),
         message: errMsg,
       });
-      return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
+      return res.json(fallbackTeacherResponse(errMsg));
     }
 
   } catch (err: unknown) {
@@ -618,14 +641,14 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         if (nameRow.rows[0]?.name) studentFirstName = nameRow.rows[0].name.split(' ')[0];
       }
 
-      const aiResp = await axios.post(`${AI()}/internal/query`, {
+      const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
         teacher_id: section_teacher_id,
         school_id,
         text: cleanText,
         query_date: today,
         role: 'parent',
         context: `You are answering a parent's question about their child ${studentFirstName}.\nAlways use the child's name (${studentFirstName}) in your response — never say "your child".\nBe warm, reassuring, and specific. Keep the response under 100 words.\nIf the parent asks about absence, tell them exactly which subjects were covered that day and suggest they can help ${studentFirstName} catch up at home.\n\n${context}`,
-      }, { timeout: AI_TIMEOUT_MS });
+      }, AI_TIMEOUT_MS);
       await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
       return res.json(aiResp.data);
     } catch (err: unknown) {
@@ -636,7 +659,7 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         endpoint: `${AI()}/internal/query`,
         message: getAiErrorMessage(err),
       });
-      return res.json(fallbackParentResponse());
+      return res.json(fallbackParentResponse(getAiErrorMessage(err)));
     }
 
   } catch (err: unknown) {
