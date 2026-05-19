@@ -207,12 +207,17 @@ class PlanRequest(BaseModel):
 
 @app.post("/internal/generate-plans")
 async def generate_plans(req: PlanRequest):
-    from planner_service import generate_plans
-    count = await generate_plans(
-        req.class_id, req.section_id, req.school_id, req.academic_year,
-        month=req.month, plan_year=req.plan_year
-    )
-    return {"plans_created": count}
+    import traceback
+    try:
+        from planner_service import generate_plans as _generate_plans
+        count = await _generate_plans(
+            req.class_id, req.section_id, req.school_id, req.academic_year,
+            month=req.month, plan_year=req.plan_year
+        )
+        return {"plans_created": count}
+    except Exception as e:
+        print(f"[generate-plans] ERROR section={req.section_id}: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Coverage analysis ---
