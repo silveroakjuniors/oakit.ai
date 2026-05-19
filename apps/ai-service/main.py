@@ -136,7 +136,45 @@ async def _run_ingest(document_id: str):
         result = await ingest_document(document_id)
         print(f"Ingestion complete for {document_id}: {result}")
     except Exception as e:
-        print(f"Ingestion failed for {document_id}: {e}")
+        import traceback
+        print(f"Ingestion failed for {document_id}: {e}\n{traceback.format_exc()}")
+        # Always mark as failed so the document doesn't stay stuck in 'processing'
+        try:
+            from db import get_pool
+            from uuid import UUID
+            pool = await get_pool()
+            await pool.execute(
+                "UPDATE curriculum_documents SET status = 'failed', ingestion_stage = 'failed' WHERE id = $1",
+                UUID(document_id)
+            )
+        except Exception as db_err:
+            print(f"Failed to update status to failed for {document_id}: {db_err}")
+
+
+# POST /internal/retry-ingest — re-trigger ingestion for a stuck/failed document
+class RetryIngestRequest(BaseModel):
+    document_id: str
+
+@app.post("/internal/retry-ingest")
+async def retry_ingest(req: RetryIngestRequest, background_tasks: BackgroundTasks):
+    """Re-trigger ingestion for a document stuck in processing or failed state."""
+    try:
+        from db import get_pool
+        from uuid import UUID
+        pool = await get_pool()
+        # Reset status back to pending so it can be re-processed
+        result = await pool.fetchrow(
+            "UPDATE curriculum_documents SET status = 'pending', ingestion_stage = 'queued' WHERE id = $1 RETURNING id, file_path",
+            UUID(req.document_id)
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail="Document not found")
+        background_tasks.add_task(_run_ingest, req.document_id)
+        return {"message": "Re-ingestion started", "document_id": req.document_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Query ---

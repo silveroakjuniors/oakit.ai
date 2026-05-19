@@ -18,12 +18,26 @@ interface School {
 
 interface CreateForm {
   name: string;
+  school_type: string;
   plan_type: string;
   contact_email: string;
   contact_phone: string;
 }
 
-const EMPTY_FORM: CreateForm = { name: '', plan_type: 'premium', contact_email: '', contact_phone: '' };
+const SCHOOL_TYPES = [
+  { value: 'preschool', label: 'Preschool / Playschool' },
+  { value: 'primary', label: 'Primary School (K-5)' },
+  { value: 'elementary', label: 'Elementary School' },
+  { value: 'middle', label: 'Middle School' },
+  { value: 'high', label: 'High School' },
+  { value: 'k12', label: 'K-12 School' },
+  { value: 'college', label: 'College / Junior College' },
+  { value: 'university', label: 'University' },
+  { value: 'coaching', label: 'Coaching / Tuition Centre' },
+  { value: 'other', label: 'Other' },
+];
+
+const EMPTY_FORM: CreateForm = { name: '', school_type: 'preschool', plan_type: 'premium', contact_email: '', contact_phone: '' };
 
 export default function SchoolListPage() {
   const [schools, setSchools] = useState<School[]>([]);
@@ -62,6 +76,7 @@ export default function SchoolListPage() {
       if (form.contact_phone) contact.phone = form.contact_phone;
       await apiPost('/api/v1/super-admin/schools', {
         name: form.name.trim(),
+        school_type: form.school_type,
         plan_type: form.plan_type,
         contact: Object.keys(contact).length ? contact : undefined,
       }, token);
@@ -152,6 +167,13 @@ export default function SchoolListPage() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">School Name <span className="text-red-400">*</span></label>
                 <input type="text" placeholder="e.g. Silver Oak Juniors" value={form.name}
                   onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inp} />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">School Type <span className="text-red-400">*</span></label>
+                <select value={form.school_type} onChange={e => setForm(p => ({ ...p, school_type: e.target.value }))}
+                  className={`${inp} appearance-none`}>
+                  {SCHOOL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Plan Type</label>

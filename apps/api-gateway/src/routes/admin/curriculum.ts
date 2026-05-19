@@ -278,4 +278,40 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/admin/curriculum/:doc_id/retry — re-trigger ingestion for stuck/failed documents
+router.post('/:doc_id/retry', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { doc_id } = req.params;
+
+    // Verify document belongs to this school and is in a retryable state
+    const doc = await pool.query(
+      `SELECT id, status, file_path FROM curriculum_documents
+       WHERE id = $1 AND school_id = $2`,
+      [doc_id, school_id]
+    );
+    if (doc.rows.length === 0) return res.status(404).json({ error: 'Document not found' });
+
+    const { status, file_path } = doc.rows[0];
+    if (status === 'ready') return res.status(400).json({ error: 'Document already processed successfully' });
+
+    // Reset to pending
+    await pool.query(
+      `UPDATE curriculum_documents SET status = 'pending', ingestion_stage = 'queued' WHERE id = $1`,
+      [doc_id]
+    );
+
+    // Re-trigger ingestion on AI service
+    const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    axios.post(`${AI_SERVICE_URL}/internal/retry-ingest`, { document_id: doc_id }).catch(err =>
+      console.error('Retry ingestion trigger failed:', err.message)
+    );
+
+    return res.json({ message: 'Re-ingestion started', document_id: doc_id });
+  } catch (err) {
+    console.error('[curriculum retry]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

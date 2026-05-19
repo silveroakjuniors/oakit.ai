@@ -50,7 +50,7 @@ export default function SchoolDetailPage() {
 
   // Plan edit
   const [editPlan, setEditPlan] = useState(false);
-  const [planForm, setPlanForm] = useState({ plan_type: '', billing_status: '', school_code: '' });
+  const [planForm, setPlanForm] = useState({ name: '', plan_type: '', billing_status: '', school_code: '' });
 
   // User creation
   const [userForm, setUserForm] = useState({ name: '', mobile: '', email: '', role: 'admin' });
@@ -67,7 +67,7 @@ export default function SchoolDetailPage() {
   function loadSchool() {
     if (!token) return;
     apiGet<SchoolDetail>(`/api/v1/super-admin/schools/${id}`, token)
-      .then(s => { setSchool(s); setPlanForm({ plan_type: s.plan_type, billing_status: s.billing_status, school_code: s.school_code || s.subdomain }); })
+      .then(s => { setSchool(s); setPlanForm({ name: s.name, plan_type: s.plan_type, billing_status: s.billing_status, school_code: s.school_code || s.subdomain }); })
       .catch(() => flash('Failed to load school', true))
       .finally(() => setLoading(false));
   }
@@ -262,6 +262,12 @@ export default function SchoolDetailPage() {
             {editPlan ? (
               <form onSubmit={handleSavePlan} className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs text-white/40 mb-1 block">School Name</label>
+                    <input type="text" value={planForm.name}
+                      onChange={e => setPlanForm(p => ({ ...p, name: e.target.value }))}
+                      className={inp} placeholder="School name" />
+                  </div>
                   <div>
                     <label className="text-xs text-white/40 mb-1 block">School Code (login code)</label>
                     <input type="text" value={planForm.school_code}
@@ -296,6 +302,7 @@ export default function SchoolDetailPage() {
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 {[
+                  { label: 'School Name', value: school.name },
                   { label: 'School Code', value: school.school_code || school.subdomain },
                   { label: 'Plan', value: school.plan_type },
                   { label: 'Billing', value: school.billing_status },

@@ -26,10 +26,13 @@ interface BillingStats {
 
 function inr(p: number) { return (p / 100).toFixed(2); }
 
+const DARK = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' };
+
 export default function PlatformStatsPage() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [billing, setBilling] = useState<BillingStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const token = getToken();
 
   useEffect(() => {
@@ -38,19 +41,24 @@ export default function PlatformStatsPage() {
       apiGet<PlatformStats>('/api/v1/super-admin/stats', token),
       apiGet<BillingStats>('/api/v1/super-admin/billing/platform-stats', token),
     ]).then(([s, b]) => { setStats(s); setBilling(b); })
-      .catch(console.error).finally(() => setLoading(false));
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
   }, [token]);
 
-  const DARK = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' };
-
-  if (loading) return <div className="p-8 text-white/40 text-sm">Loading...</div>;
+  if (loading) return <div className="p-8 text-white/40 text-sm">Loading analytics...</div>;
 
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Platform Analytics</h1>
-        <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>Real-time stats across all schools</p>
+        <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>Real-time stats across all schools on Oakit.ai</p>
       </div>
+
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded-2xl text-sm text-red-300" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+          {error}
+        </div>
+      )}
 
       {/* School stats */}
       {stats && (
@@ -87,7 +95,7 @@ export default function PlatformStatsPage() {
             ))}
           </div>
 
-          {/* Daily usage chart (simple bar) */}
+          {/* Daily usage table */}
           {billing.daily_usage.length > 0 && (
             <div className="rounded-2xl p-5" style={DARK}>
               <p className="text-xs font-bold text-white/40 uppercase tracking-widest mb-4">Daily AI Usage — Last 30 Days</p>

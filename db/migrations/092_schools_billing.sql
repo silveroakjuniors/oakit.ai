@@ -2,7 +2,10 @@
 -- school_code = the short code parents/teachers use to log in (e.g. "sojs")
 -- Backfill from subdomain for existing schools
 
--- 1. Add school_code to schools
+-- Add school_type to schools table
+ALTER TABLE schools
+  ADD COLUMN IF NOT EXISTS school_type TEXT NOT NULL DEFAULT 'preschool'
+  CHECK (school_type IN ('preschool','primary','elementary','middle','high','k12','college','university','coaching','other'));
 ALTER TABLE schools
   ADD COLUMN IF NOT EXISTS school_code TEXT;
 
@@ -15,7 +18,7 @@ ALTER TABLE schools
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_school_code ON schools(school_code);
 
--- 2. Platform billing config per school
+-- 1. Add school_code to schools
 -- Tracks per-student charges, setup fees, GST settings
 CREATE TABLE IF NOT EXISTS platform_billing_config (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),

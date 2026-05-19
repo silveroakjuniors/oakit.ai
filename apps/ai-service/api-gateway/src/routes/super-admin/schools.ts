@@ -37,7 +37,7 @@ router.get('/', async (req: Request, res: Response) => {
 // POST / — create school
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, plan_type, contact } = req.body;
+    const { name, plan_type, contact, school_type } = req.body;
     if (!name || !plan_type) {
       return res.status(400).json({ error: 'name and plan_type are required' });
     }
@@ -72,10 +72,10 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO schools (name, subdomain, school_code, plan_type, status, contact)
-       VALUES ($1, $2, $3, $4, 'active', $5)
-       RETURNING id, name, subdomain, school_code, status, plan_type, billing_status, created_at`,
-      [name, subdomain, school_code, plan_type, contact ? JSON.stringify(contact) : null]
+      `INSERT INTO schools (name, subdomain, school_code, school_type, plan_type, status, contact)
+       VALUES ($1, $2, $3, $4, $5, 'active', $6)
+       RETURNING id, name, subdomain, school_code, school_type, status, plan_type, billing_status, created_at`,
+      [name, subdomain, school_code, school_type || 'preschool', plan_type, contact ? JSON.stringify(contact) : null]
     );
     const schoolId = result.rows[0].id;
 
@@ -118,7 +118,9 @@ router.post('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT s.id, s.name, s.subdomain, s.school_code, s.status, s.plan_type, s.billing_status, s.plan_updated_at, s.contact, s.created_at,
+      `SELECT s.id, s.name, s.subdomain,
+              COALESCE(s.school_code, s.subdomain) as school_code,
+              s.status, s.plan_type, s.billing_status, s.plan_updated_at, s.contact, s.created_at,
               COALESCE(ss.translation_enabled, true) as translation_enabled
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
@@ -167,18 +169,33 @@ router.patch('/:id', async (req: Request, res: Response) => {
     }
 
     const planChanged = plan_type && plan_type !== current.rows[0].plan_type;
+
+    // Build dynamic update — only include school_code if the column exists (migration 092)
+    // Use explicit TEXT cast to avoid "could not determine data type" error
     const result = await pool.query(
       `UPDATE schools SET
-        status       = COALESCE($1, status),
-        plan_type    = COALESCE($2, plan_type),
-        billing_status = COALESCE($3, billing_status),
-        school_code  = COALESCE($4, school_code),
-        subdomain    = COALESCE($4, subdomain),
-        plan_updated_at = CASE WHEN $5 THEN now() ELSE plan_updated_at END
-       WHERE id = $6
-       RETURNING id, name, subdomain, school_code, status, plan_type, billing_status, plan_updated_at`,
-      [status ?? null, plan_type ?? null, billing_status ?? null, school_code ?? null, planChanged, req.params.id]
+        status         = COALESCE($1::text, status),
+        plan_type      = COALESCE($2::text, plan_type),
+        billing_status = COALESCE($3::text, billing_status),
+        plan_updated_at = CASE WHEN $4::boolean THEN now() ELSE plan_updated_at END
+       WHERE id = $5
+       RETURNING id, name, subdomain, COALESCE(school_code, subdomain) as school_code, status, plan_type, billing_status, plan_updated_at`,
+      [status ?? null, plan_type ?? null, billing_status ?? null, planChanged, req.params.id]
     );
+
+    // Update school_code separately if provided (handles case where column may not exist yet)
+    if (school_code && result.rows.length > 0) {
+      try {
+        await pool.query(
+          `UPDATE schools SET school_code = $1::text, subdomain = $1::text WHERE id = $2`,
+          [school_code, req.params.id]
+        );
+        result.rows[0].school_code = school_code;
+      } catch (scErr: any) {
+        // Column doesn't exist yet — migration 092 not run, ignore silently
+        console.warn('[super-admin PATCH] school_code update skipped:', scErr.message);
+      }
+    }
     return res.json(result.rows[0]);
   } catch (err) {
     console.error('[super-admin PATCH /:id]', err);
@@ -263,13 +280,33 @@ router.post('/:id/users', async (req: Request, res: Response) => {
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (!mobile && !email) return res.status(400).json({ error: 'mobile or email is required' });
 
-    // Look up the role_id for this school
-    const roleRow = await pool.query(
+    // Look up the role_id for this school — auto-create if missing
+    let roleRow = await pool.query(
       `SELECT id FROM roles WHERE school_id = $1 AND name = $2 LIMIT 1`,
       [req.params.id, userRole]
     );
+
     if (roleRow.rows.length === 0) {
-      return res.status(400).json({ error: `Role '${userRole}' not found for this school. Run the setup wizard first.` });
+      // Auto-seed all default roles for this school (handles schools created before role-seeding was added)
+      await pool.query(`
+        INSERT INTO roles (school_id, name, permissions, portal_access) VALUES
+          ($1, 'admin',      '["read:all","write:all","manage:users","manage:classes","manage:curriculum","manage:calendar","manage:finance","manage:hr"]', 'admin'),
+          ($1, 'principal',  '["read:all","read:dashboard","query:ai","manage:hr","manage:finance"]', 'principal'),
+          ($1, 'teacher',    '["read:own","write:own","query:ai"]', 'teacher'),
+          ($1, 'parent',     '["read:own"]', 'parent'),
+          ($1, 'staff',      '["read:own","write:own"]', 'staff'),
+          ($1, 'accountant', '["read:all","manage:finance","view:salary"]', 'admin')
+        ON CONFLICT DO NOTHING
+      `, [req.params.id]);
+
+      roleRow = await pool.query(
+        `SELECT id FROM roles WHERE school_id = $1 AND name = $2 LIMIT 1`,
+        [req.params.id, userRole]
+      );
+    }
+
+    if (roleRow.rows.length === 0) {
+      return res.status(400).json({ error: `Role '${userRole}' could not be created for this school.` });
     }
     const role_id = roleRow.rows[0].id;
 

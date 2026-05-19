@@ -287,6 +287,164 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
   }
 });
 
+// --- Student Dashboard (counts by class) -------------------------------------
+
+// GET /api/v1/admin/students/dashboard
+router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+
+    // 1. Total active students
+    const totalRow = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM students WHERE school_id = $1 AND is_active = true`,
+      [school_id]
+    );
+
+    // 2. Per-class counts + contact completeness
+    const byClassRow = await pool.query(
+      `SELECT
+         c.id   AS class_id,
+         c.name AS class_name,
+         COUNT(s.id)::int AS total_students,
+         COUNT(s.id) FILTER (WHERE s.father_name    IS NOT NULL AND s.father_name    <> '')::int AS with_father,
+         COUNT(s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
+         COUNT(s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
+         COUNT(s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact
+       FROM classes c
+       LEFT JOIN students s
+         ON s.class_id = c.id AND s.school_id = c.school_id AND s.is_active = true
+       WHERE c.school_id = $1
+       GROUP BY c.id, c.name
+       ORDER BY c.name`,
+      [school_id]
+    );
+
+    // 3. Per-section counts (separate query — avoids json_agg complexity)
+    const bySectionRow = await pool.query(
+      `SELECT
+         sec.class_id,
+         sec.id    AS section_id,
+         sec.label AS section_label,
+         COUNT(s.id)::int AS count
+       FROM sections sec
+       LEFT JOIN students s
+         ON s.section_id = sec.id AND s.school_id = sec.school_id AND s.is_active = true
+       WHERE sec.school_id = $1
+       GROUP BY sec.class_id, sec.id, sec.label
+       ORDER BY sec.label`,
+      [school_id]
+    );
+
+    // Group sections by class_id
+    const sectionsByClass: Record<string, { section_id: string; section_label: string; count: number }[]> = {};
+    for (const row of bySectionRow.rows) {
+      if (!sectionsByClass[row.class_id]) sectionsByClass[row.class_id] = [];
+      sectionsByClass[row.class_id].push({
+        section_id:    row.section_id,
+        section_label: row.section_label,
+        count:         row.count,
+      });
+    }
+
+    const byClass = byClassRow.rows.map((r: any) => ({
+      ...r,
+      sections: sectionsByClass[r.class_id] || [],
+    }));
+
+    return res.json({
+      total_students: totalRow.rows[0].total,
+      by_class: byClass,
+    });
+  } catch (err: any) {
+    console.error('[students/dashboard]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  }
+});
+
+// --- Student Export (Excel) --------------------------------------------------
+
+// GET /api/v1/admin/students/export?class_id=&section_id=
+router.get('/export', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, section_id } = req.query;
+
+    let query = `
+      SELECT
+        s.name            AS "Student Name",
+        s.father_name     AS "Father Name",
+        s.mother_name     AS "Mother Name",
+        s.parent_contact  AS "Father Contact",
+        s.mother_contact  AS "Mother Contact",
+        c.name            AS "Class",
+        sec.label         AS "Section"
+      FROM students s
+      JOIN classes  c   ON c.id   = s.class_id
+      JOIN sections sec ON sec.id = s.section_id
+      WHERE s.school_id = $1 AND s.is_active = true`;
+    const params: any[] = [school_id];
+
+    if (class_id)   { params.push(class_id);   query += ` AND s.class_id   = $${params.length}`; }
+    if (section_id) { params.push(section_id); query += ` AND s.section_id = $${params.length}`; }
+    query += ' ORDER BY c.name, sec.label, s.name';
+
+    const result = await pool.query(query, params);
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Oakit';
+    const ws = wb.addWorksheet('Students');
+
+    ws.columns = [
+      { header: 'Student Name',    key: 'Student Name',    width: 28 },
+      { header: 'Father Name',     key: 'Father Name',     width: 22 },
+      { header: 'Mother Name',     key: 'Mother Name',     width: 22 },
+      { header: 'Father Contact',  key: 'Father Contact',  width: 18 },
+      { header: 'Mother Contact',  key: 'Mother Contact',  width: 18 },
+      { header: 'Class',           key: 'Class',           width: 14 },
+      { header: 'Section',         key: 'Section',         width: 10 },
+    ];
+
+    // Style header row
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B4332' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+
+    for (const row of result.rows) {
+      ws.addRow({
+        'Student Name':   row['Student Name']   || '',
+        'Father Name':    row['Father Name']    || '',
+        'Mother Name':    row['Mother Name']    || '',
+        'Father Contact': row['Father Contact'] || '',
+        'Mother Contact': row['Mother Contact'] || '',
+        'Class':          row['Class']          || '',
+        'Section':        row['Section']        || '',
+      });
+    }
+
+    // Zebra striping
+    ws.eachRow((row, rowNum) => {
+      if (rowNum === 1) return;
+      if (rowNum % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4F1' } };
+      }
+    });
+
+    // Auto-filter
+    ws.autoFilter = { from: 'A1', to: 'G1' };
+
+    const filename = `students_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const buf = await wb.xlsx.writeBuffer();
+    return res.send(buf);
+  } catch (err) {
+    console.error('[students/export]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // - GET /api/v1/admin/students/:id -
 router.get('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
