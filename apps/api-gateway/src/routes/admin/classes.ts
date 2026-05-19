@@ -10,7 +10,7 @@ router.use(jwtVerify, schoolScope, roleGuard('admin'));
  * into the new section. Used when a new section is added or a teacher is assigned
  * to a section that has no plans yet.
  */
-async function _copyPlansToSection(school_id: string, class_id: string, new_section_id: string, teacher_id: string): Promise<number> {
+async function _copyPlansToSection(school_id: string, class_id: string, new_section_id: string, _teacher_id: string): Promise<number> {
   // Find a sibling section that already has plans
   const sibling = await pool.query(
     `SELECT dp.plan_date, dp.chunk_ids, dp.status
@@ -25,10 +25,10 @@ async function _copyPlansToSection(school_id: string, class_id: string, new_sect
   let copied = 0;
   for (const plan of sibling.rows) {
     await pool.query(
-      `INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
-       VALUES ($1, $2, $3, $4, $5::uuid[], $6)
+      `INSERT INTO day_plans (school_id, section_id, plan_date, chunk_ids, status)
+       VALUES ($1, $2, $3, $4::uuid[], $5)
        ON CONFLICT (section_id, plan_date) DO NOTHING`,
-      [school_id, new_section_id, teacher_id, plan.plan_date, plan.chunk_ids, plan.status]
+      [school_id, new_section_id, plan.plan_date, plan.chunk_ids, plan.status]
     );
     copied++;
   }

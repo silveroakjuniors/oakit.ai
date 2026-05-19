@@ -40,16 +40,10 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
     if not cal:
         raise ValueError("School calendar not configured")
 
-    teacher = await pool.fetchrow(
-        """SELECT COALESCE(ts.teacher_id, s.class_teacher_id) as teacher_id
-           FROM sections s
-           LEFT JOIN teacher_sections ts ON ts.section_id = s.id
-           WHERE s.id = $1
-           LIMIT 1""",
-        UUID(section_id)
-    )
-    if not teacher or not teacher["teacher_id"]:
-        raise ValueError("No teacher assigned to section")
+    # Plans belong to the section, not the teacher.
+    # teacher_id is stored as NULL — plans are always looked up by section_id.
+    # This means plans survive teacher changes with no data migration needed.
+    teacher_id = None
 
     chunks = await pool.fetch(
         "SELECT id FROM curriculum_chunks WHERE class_id = $1 ORDER BY chunk_index",
