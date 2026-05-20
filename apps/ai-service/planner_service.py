@@ -159,7 +159,7 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
                     """INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
                        VALUES ($1, $2, $3, $4, '{}', $5)
                        ON CONFLICT (section_id, plan_date) DO UPDATE SET chunk_ids = '{}', status = EXCLUDED.status""",
-                    UUID(school_id), UUID(section_id), teacher["teacher_id"], day, day_type
+                    UUID(school_id), UUID(section_id), teacher_id, day, day_type
                 )
         return 0
 
@@ -223,7 +223,7 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
                    ON CONFLICT (section_id, plan_date) DO UPDATE
                    SET chunk_ids = EXCLUDED.chunk_ids, status = 'scheduled',
                        carry_forward_fragment = EXCLUDED.carry_forward_fragment""",
-                UUID(school_id), UUID(section_id), teacher["teacher_id"], day,
+                UUID(school_id), UUID(section_id), teacher_id, day,
                 day_chunk_ids, combined_first
             )
             plans_created += 1
@@ -259,7 +259,7 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
                        ON CONFLICT (section_id, plan_date) DO UPDATE
                        SET chunk_ids = EXCLUDED.chunk_ids, status = 'scheduled',
                            carry_forward_fragment = EXCLUDED.carry_forward_fragment""",
-                    UUID(school_id), UUID(section_id), teacher["teacher_id"], day,
+                    UUID(school_id), UUID(section_id), teacher_id, day,
                     day_chunk_ids, carry_in
                 )
             else:
@@ -268,7 +268,7 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
                        VALUES ($1, $2, $3, $4, $5::uuid[], 'scheduled')
                        ON CONFLICT (section_id, plan_date) DO UPDATE
                        SET chunk_ids = EXCLUDED.chunk_ids, status = 'scheduled'""",
-                    UUID(school_id), UUID(section_id), teacher["teacher_id"], day, day_chunk_ids
+                    UUID(school_id), UUID(section_id), teacher_id, day, day_chunk_ids
                 )
             plans_created += 1
 
@@ -285,7 +285,7 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
                 """INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
                    VALUES ($1, $2, $3, $4, '{}', $5)
                    ON CONFLICT (section_id, plan_date) DO UPDATE SET chunk_ids = '{}', status = EXCLUDED.status""",
-                UUID(school_id), UUID(section_id), teacher["teacher_id"], day, day_type
+                UUID(school_id), UUID(section_id), teacher_id, day, day_type
             )
 
     return plans_created
