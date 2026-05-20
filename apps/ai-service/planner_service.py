@@ -41,9 +41,46 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
         raise ValueError("School calendar not configured")
 
     # Plans belong to the section, not the teacher.
-    # teacher_id is stored as NULL — plans are always looked up by section_id.
-    # This means plans survive teacher changes with no data migration needed.
+    # teacher_id is stored as NULL when the column allows it.
+    # Fall back to fetching a real teacher_id if the DB column is still NOT NULL
+    # (i.e. migration 097 hasn't been run yet).
     teacher_id = None
+    try:
+        # Try to detect if teacher_id is still NOT NULL by checking the column constraint
+        col_check = await pool.fetchrow(
+            """SELECT is_nullable FROM information_schema.columns
+               WHERE table_name = 'day_plans' AND column_name = 'teacher_id'""",
+        )
+        if col_check and col_check["is_nullable"] == "NO":
+            # Column is still NOT NULL — fetch a teacher to satisfy the constraint
+            teacher_row = await pool.fetchrow(
+                """SELECT COALESCE(s.class_teacher_id, ts.teacher_id) as teacher_id
+                   FROM sections s
+                   LEFT JOIN teacher_sections ts ON ts.section_id = s.id
+                   WHERE s.id = $1
+                   LIMIT 1""",
+                UUID(section_id)
+            )
+            if teacher_row and teacher_row["teacher_id"]:
+                teacher_id = teacher_row["teacher_id"]
+            else:
+                # No teacher and column is NOT NULL — find any teacher in the school
+                any_teacher = await pool.fetchrow(
+                    "SELECT id FROM users WHERE school_id = $1 AND is_active = true LIMIT 1",
+                    UUID(school_id)
+                )
+                if any_teacher:
+                    teacher_id = any_teacher["id"]
+                else:
+                    raise ValueError(
+                        "Cannot generate plans: teacher_id column is NOT NULL but no teacher exists. "
+                        "Please run migration 097 in Supabase: "
+                        "ALTER TABLE day_plans ALTER COLUMN teacher_id DROP NOT NULL;"
+                    )
+    except Exception as e:
+        if "day_plans" in str(e) or "teacher_id" in str(e):
+            raise
+        # information_schema query failed — assume column is nullable, proceed with NULL
 
     chunks = await pool.fetch(
         "SELECT id FROM curriculum_chunks WHERE class_id = $1 ORDER BY chunk_index",
