@@ -168,6 +168,7 @@ export default function TeacherPlanner() {
   const [input, setInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [sectionId, setSectionId] = useState('');
+  const [allSections, setAllSections] = useState<{ section_id: string; section_label: string; class_name: string; role: string }[]>([]);
   const [pendingWork, setPendingWork] = useState<PendingDay[]>([]);
   const [selectedChunks, setSelectedChunks] = useState<string[]>([]);
   const [submittingCompletion, setSubmittingCompletion] = useState(false);
@@ -208,6 +209,7 @@ export default function TeacherPlanner() {
   const [detailedPlanText, setDetailedPlanText] = useState<string | null>(null);
   const [fetchingDetailedPlan, setFetchingDetailedPlan] = useState(false);
   const [showRawPlanModal, setShowRawPlanModal] = useState(false);
+  const [showWeeklyPlanModal, setShowWeeklyPlanModal] = useState(false);
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
   const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
@@ -332,12 +334,17 @@ export default function TeacherPlanner() {
     } catch { /* ignore */ } finally { setAiLoading(false); }
   }  
 
-  async function loadContext(): Promise<string> {
+  async function loadContext(switchToSectionId?: string): Promise<string> {
     try {
-      const data = await apiGet<any>('/api/v1/teacher/context', token);
+      const url = switchToSectionId
+        ? `/api/v1/teacher/context?section_id=${switchToSectionId}`
+        : '/api/v1/teacher/context';
+      const data = await apiGet<any>(url, token);
       setAttendancePrompt(data.attendance_prompt);
       setGreeting(data.greeting);
       if (data.class_name) setClassName(data.class_name);
+      if (data.section_id) setSectionId(data.section_id);
+      if (data.all_sections?.length) setAllSections(data.all_sections);
       setTodayCompleted(data.today_completed || false);
       todayCompletedRef.current = data.today_completed || false;
       setTomorrowPlan(data.tomorrow_plan || null);
@@ -350,6 +357,20 @@ export default function TeacherPlanner() {
       setMessages([{ role: 'assistant', text: "Hi! Ask me about today's plan or any classroom situation." }]);
       return new Date().toISOString().split('T')[0];
     }
+  }
+
+  // Switch to a different section — reload context + plan for that section
+  async function switchSection(newSectionId: string) {
+    setSectionId(newSectionId);
+    setPlan(null);
+    setSelectedChunks([]);
+    setCompletionMsg('');
+    const effectiveToday = await loadContext(newSectionId);
+    await Promise.all([
+      loadPlan(effectiveToday, newSectionId),
+      loadPending(newSectionId),
+      loadHomeworkAndNotes(newSectionId),
+    ]);
   }
 
   async function loadPlan(effectiveToday?: string) {

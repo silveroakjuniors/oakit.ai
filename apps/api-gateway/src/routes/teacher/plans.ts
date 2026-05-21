@@ -104,6 +104,113 @@ router.get('/today', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/teacher/plan/week?from=YYYY-MM-DD&section_id=...
+// Returns plans for a 5-day working week starting from `from` (defaults to current week Monday)
+router.get('/week', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const today = await getToday(school_id);
+
+    const section_id = await resolveSection(user_id, school_id, req.query.section_id as string);
+    if (!section_id) return res.json({ days: [], week_label: '' });
+
+    // Determine week start (Monday of the requested or current week)
+    let weekStart: Date;
+    if (req.query.from) {
+      weekStart = new Date((req.query.from as string) + 'T12:00:00');
+    } else {
+      weekStart = new Date(today + 'T12:00:00');
+      const dow = weekStart.getDay(); // 0=Sun
+      const diff = dow === 0 ? -6 : 1 - dow; // go back to Monday
+      weekStart.setDate(weekStart.getDate() + diff);
+    }
+
+    // Build 7-day range (Mon–Sun), filter to working days
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(d.getDate() + i);
+      const iso = d.toISOString().split('T')[0];
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) days.push(iso); // skip weekends
+    }
+
+    if (days.length === 0) return res.json({ days: [], week_label: '' });
+
+    // Fetch plans for all days in one query
+    const result = await pool.query(
+      `SELECT dp.plan_date::text AS plan_date, dp.status, dp.chunk_ids,
+              dp.admin_note, dp.chunk_label_overrides,
+              COALESCE(json_agg(json_build_object(
+                'id', cc.id,
+                'chunk_index', cc.chunk_index,
+                'topic_label', COALESCE((dp.chunk_label_overrides->>(cc.id::text)), cc.topic_label),
+                'content', cc.content,
+                'activity_ids', cc.activity_ids
+              ) ORDER BY cc.chunk_index) FILTER (WHERE cc.id IS NOT NULL), '[]') AS chunks
+       FROM day_plans dp
+       LEFT JOIN curriculum_chunks cc ON cc.id = ANY(dp.chunk_ids)
+       WHERE dp.section_id = $1 AND dp.plan_date = ANY($2::date[]) AND dp.school_id = $3
+       GROUP BY dp.plan_date, dp.status, dp.chunk_ids, dp.admin_note, dp.chunk_label_overrides
+       ORDER BY dp.plan_date`,
+      [section_id, days, school_id]
+    );
+
+    // Fetch special days for the week
+    const specialResult = await pool.query(
+      `SELECT day_date::text AS date, label, day_type
+       FROM special_days
+       WHERE school_id = $1 AND day_date = ANY($2::date[])`,
+      [school_id, days]
+    );
+    const specialMap = new Map(specialResult.rows.map((r: any) => [r.date, r]));
+
+    // Fetch holidays for the week
+    const holidayResult = await pool.query(
+      `SELECT holiday_date::text AS date, event_name AS label
+       FROM holidays h
+       JOIN school_calendar sc ON sc.school_id = h.school_id AND sc.academic_year = h.academic_year
+       WHERE h.school_id = $1 AND h.holiday_date = ANY($2::date[])`,
+      [school_id, days]
+    );
+    const holidayMap = new Map(holidayResult.rows.map((r: any) => [r.date, r.label]));
+
+    const planMap = new Map(result.rows.map((r: any) => [r.plan_date, r]));
+
+    // Build response — one entry per working day
+    const weekDays = days.map(date => {
+      const plan = planMap.get(date);
+      const special = specialMap.get(date);
+      const holiday = holidayMap.get(date);
+      const d = new Date(date + 'T12:00:00');
+      return {
+        date,
+        day_name: d.toLocaleDateString('en-IN', { weekday: 'long' }),
+        day_short: d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }),
+        is_today: date === today,
+        is_past: date < today,
+        holiday_label: holiday || null,
+        special_label: special?.label || null,
+        special_type: special?.day_type || null,
+        status: plan?.status || (holiday ? 'holiday' : special ? special.day_type : 'no_plan'),
+        chunks: plan?.chunks || [],
+        admin_note: plan?.admin_note || null,
+      };
+    });
+
+    // Week label e.g. "Mon 2 Jun – Fri 6 Jun"
+    const first = new Date(days[0] + 'T12:00:00');
+    const last  = new Date(days[days.length - 1] + 'T12:00:00');
+    const fmt = (d: Date) => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    const week_label = `${fmt(first)} – ${fmt(last)}`;
+
+    return res.json({ days: weekDays, week_label, section_id });
+  } catch (err) {
+    console.error('[Plans/week]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/v1/teacher/plan/photo-suggestions
 // Must be before /:date to avoid being caught as a date param
 router.get('/photo-suggestions', async (req: Request, res: Response) => {

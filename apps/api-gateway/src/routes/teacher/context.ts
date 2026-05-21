@@ -20,9 +20,36 @@ router.get('/', async (req: Request, res: Response) => {
     const userRow = await pool.query('SELECT name FROM users WHERE id = $1', [user_id]);
     const teacher_name = userRow.rows[0]?.name || 'Teacher';
 
-    // Resolve sections using unified helper (class teacher + supporting)
+    // Resolve ALL sections for this teacher (class teacher + supporting)
     const sections = await getTeacherSections(user_id, school_id);
-    const section_id = sections[0]?.section_id || null;
+
+    // Honour ?section_id= param so teacher can switch between their sections
+    const requestedSectionId = req.query.section_id as string | undefined;
+    let section_id: string | null = null;
+    if (requestedSectionId && sections.some(s => s.section_id === requestedSectionId)) {
+      section_id = requestedSectionId;
+    } else {
+      section_id = sections[0]?.section_id || null;
+    }
+
+    // Build all_sections list with class names for the switcher UI
+    let all_sections: { section_id: string; section_label: string; class_name: string; role: string }[] = [];
+    if (sections.length > 0) {
+      const sectionIds = sections.map(s => s.section_id);
+      const secRows = await pool.query(
+        `SELECT s.id, s.label, c.name AS class_name
+         FROM sections s JOIN classes c ON c.id = s.class_id
+         WHERE s.id = ANY($1::uuid[])`,
+        [sectionIds]
+      );
+      const secMap = new Map(secRows.rows.map((r: any) => [r.id, { label: r.label, class_name: r.class_name }]));
+      all_sections = sections.map(s => ({
+        section_id: s.section_id,
+        section_label: secMap.get(s.section_id)?.label ?? '',
+        class_name: secMap.get(s.section_id)?.class_name ?? '',
+        role: s.role,
+      }));
+    }
 
     // Check attendance for today (time machine aware)
     const today = await getToday(school_id);
@@ -127,7 +154,7 @@ router.get('/', async (req: Request, res: Response) => {
       } catch { /* non-critical */ }
     }
 
-    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count });
+    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count, all_sections });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
