@@ -939,6 +939,7 @@ export default function TeacherPlanner() {
         {/* Quick action cards */}
         <div className="grid grid-cols-2 gap-2 mt-1">
           {[
+            { label: 'Attendance', sub: attendancePrompt ? '⚠ Not marked yet' : 'View & update', icon: Users, gradient: attendancePrompt ? 'from-amber-500 to-orange-600' : 'from-blue-500 to-cyan-600', hover: attendancePrompt ? 'hover:border-amber-200 hover:bg-amber-50/40' : 'hover:border-blue-200 hover:bg-blue-50/40', path: '/teacher/attendance' },
             { label: 'Homework & Notes', sub: 'Send to parents', icon: BookOpen, gradient: 'from-primary-500 to-primary-700', hover: 'hover:border-primary-200 hover:bg-primary-50/40', path: '/teacher/homework' },
             { label: 'Child Journey', sub: 'Daily highlights', icon: BookOpen, gradient: 'from-emerald-500 to-teal-600', hover: 'hover:border-emerald-200 hover:bg-emerald-50/40', path: '/teacher/journey' },
             { label: 'Report Cards', sub: 'Generate for students', icon: ClipboardList, gradient: 'from-purple-500 to-indigo-600', hover: 'hover:border-purple-200 hover:bg-purple-50/40', path: '/teacher/reports' },
