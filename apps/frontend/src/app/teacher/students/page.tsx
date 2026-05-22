@@ -95,14 +95,22 @@ function BarChart({ data, height = 140 }: { data: { label: string; value: number
 
   return (
     <div className="flex items-end justify-center gap-1" style={{ height }}>
-      {data.map((d, i) => (
-        <div key={i} className="flex flex-col items-center gap-1" style={{ width: barWidth }}>
-          <span className="text-[9px] font-bold text-neutral-600">{d.value}/{d.max}</span>
-          <div className="w-full rounded-t-md relative" style={{ height: `${Math.max((d.value / maxVal) * (height - 40), 4)}px`, background: d.color, opacity: 0.85 }} />
-          <div className="w-full rounded-t-md absolute bottom-0" style={{ height: `${Math.max((d.max / maxVal) * (height - 40), 4)}px`, background: d.color, opacity: 0.15 }} />
-          <span className="text-[8px] text-neutral-500 truncate w-full text-center">{d.label.slice(0, 6)}</span>
-        </div>
-      ))}
+      {data.map((d, i) => {
+        const achievedH = Math.max((d.value / maxVal) * (height - 40), 4);
+        const maxH = Math.max((d.max / maxVal) * (height - 40), 4);
+        return (
+          <div key={i} className="flex flex-col items-center gap-1" style={{ width: barWidth }}>
+            <span className="text-[9px] font-bold text-neutral-600">{d.value}/{d.max}</span>
+            <div className="w-full relative" style={{ height: `${maxH}px` }}>
+              {/* Max bar (background) */}
+              <div className="absolute inset-0 rounded-t-md" style={{ background: d.color, opacity: 0.15 }} />
+              {/* Achieved bar (foreground) */}
+              <div className="absolute bottom-0 left-0 right-0 rounded-t-md" style={{ height: `${achievedH}px`, background: d.color, opacity: 0.85 }} />
+            </div>
+            <span className="text-[8px] text-neutral-500 truncate w-full text-center">{d.label.slice(0, 6)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -759,7 +767,7 @@ export default function TeacherStudentsPage() {
 
       {/* Student list + class insights */}
       {!activeStudent ? (
-        <div className="p-4 max-w-2xl mx-auto w-full flex flex-col gap-4 bg-neutral-50 relative z-10">
+        <div className="p-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
           {sections.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {sections.map(s => (
