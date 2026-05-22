@@ -44,7 +44,7 @@ interface Message {
   already_completed?: boolean;
   question_limit_reached?: boolean;
 }
-interface PendingDay { plan_date: string; chunks: { id: string; topic_label: string }[]; }
+interface PendingDay { plan_date: string; chunks: { id: string; topic_label: string }[]; is_special_day?: boolean; special_day_label?: string; special_day_type?: string; }
 
 type Tab = 'plan' | 'chat' | 'help';
 
@@ -494,6 +494,19 @@ export default function TeacherPlanner() {
       await loadPending();
     } catch (err: unknown) { setCompletionMsg(err instanceof Error ? err.message : 'Failed'); }
     finally { setSubmittingCompletion(false); }
+  }
+
+  async function markSpecialDayComplete(planDate: string) {
+    try {
+      await apiPost('/api/v1/teacher/completion', {
+        covered_chunk_ids: [],
+        completion_date: planDate,
+        settling_day_note: 'Special day / event completed',
+        ...(sectionId ? { section_id: sectionId } : {}),
+      }, token);
+      setCompletionMsg('✅ Special day marked as completed.');
+      await loadPending();
+    } catch (err: unknown) { setCompletionMsg(err instanceof Error ? err.message : 'Failed'); }
   }
 
   async function askSuggested(question: string) {
@@ -978,9 +991,9 @@ export default function TeacherPlanner() {
                 <Clock className="w-3.5 h-3.5 text-amber-600" />
               </div>
               <h2 className="text-sm font-semibold text-neutral-800 flex-1">Pending from previous days</h2>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{pendingWork.reduce((s, d) => s + d.chunks.length, 0)}</span>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{pendingWork.reduce((s, d) => s + (d.is_special_day ? 1 : d.chunks.length), 0)}</span>
             </div>
-            <PendingWorkList items={pendingWork} selectedChunks={selectedChunks} onToggleChunk={toggleChunk} />
+            <PendingWorkList items={pendingWork} selectedChunks={selectedChunks} onToggleChunk={toggleChunk} onMarkSpecialDayComplete={markSpecialDayComplete} />
             {selectedChunks.length > 0 && (
               <div className="mt-3 pt-3 border-t border-neutral-100">
                 {completionMsg && <p className="text-xs text-primary-600 mb-2 font-medium">{completionMsg}</p>}

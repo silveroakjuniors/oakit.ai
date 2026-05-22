@@ -208,15 +208,16 @@ router.get('/pending', async (req: Request, res: Response) => {
     }
     const { section_id } = resolved;
 
-    // Get all past day plans that have chunk_ids
+    // Get all past day plans (including special days without chunks)
     const plans = await pool.query(
-      `SELECT dp.id, dp.plan_date::text AS plan_date, dp.chunk_ids
+      `SELECT dp.id, dp.plan_date::text AS plan_date, dp.chunk_ids, dp.status,
+              sd.label as special_day_label, sd.day_type as special_day_type
        FROM day_plans dp
+       LEFT JOIN special_days sd ON sd.school_id = $3 AND sd.day_date = dp.plan_date
        WHERE dp.section_id = $1 AND dp.plan_date < $2::date
          AND dp.status NOT IN ('holiday', 'weekend')
-         AND dp.chunk_ids IS NOT NULL AND dp.chunk_ids != '{}'
        ORDER BY dp.plan_date ASC`,
-      [section_id, today]
+      [section_id, today, school_id]
     );
 
     if (plans.rows.length === 0) return res.json([]);
@@ -238,16 +239,31 @@ router.get('/pending', async (req: Request, res: Response) => {
       const planDate = (plan.plan_date || '').split('T')[0];
       if (completedDates.has(planDate)) continue;
 
-      const chunkIds: string[] = Array.isArray(plan.chunk_ids) ? plan.chunk_ids : [];
-      const uncovered = chunkIds.filter((id: string) => !coveredIds.has(id));
-      if (uncovered.length === 0) continue;
+      const chunkIds: string[] = Array.isArray(plan.chunk_ids) ? plan.chunk_ids.filter(Boolean) : [];
 
-      const chunks = await pool.query(
-        'SELECT id, topic_label, content FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
-        [uncovered]
-      );
-      if (chunks.rows.length > 0) {
-        pending.push({ plan_date: planDate, chunks: chunks.rows });
+      if (chunkIds.length > 0) {
+        // Normal day with curriculum chunks — show uncovered chunks
+        const uncovered = chunkIds.filter((id: string) => !coveredIds.has(id));
+        if (uncovered.length === 0) continue;
+
+        const chunks = await pool.query(
+          'SELECT id, topic_label, content FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
+          [uncovered]
+        );
+        if (chunks.rows.length > 0) {
+          pending.push({ plan_date: planDate, chunks: chunks.rows });
+        }
+      } else {
+        // Special day / event / settling day — no chunks but still needs completion
+        const label = plan.special_day_label || plan.status || 'Special Day';
+        pending.push({
+          plan_date: planDate,
+          is_special_day: true,
+          special_day_label: label,
+          special_day_type: plan.special_day_type || plan.status,
+          chunks: [],
+        });
+      }
       }
     }
 
