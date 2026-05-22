@@ -64,7 +64,27 @@ router.get('/', async (req: Request, res: Response) => {
       );
       const mockActive = !!(await redis.get(`time_machine:${school_id}`));
       const hour = mockActive ? 9 : new Date().getHours();
-      attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17;
+
+      // Check if today is a working day before showing attendance prompt
+      let isWorkingDay = true;
+      try {
+        const calCheck = await pool.query(
+          `SELECT working_days, holidays FROM school_calendar
+           WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+          [school_id, today]
+        );
+        if (calCheck.rows.length > 0) {
+          const cal = calCheck.rows[0];
+          const todayDate = new Date(today + 'T12:00:00');
+          const dayOfWeek = todayDate.getDay();
+          const workingDays: number[] = cal.working_days || [1, 2, 3, 4, 5];
+          if (!workingDays.includes(dayOfWeek)) isWorkingDay = false;
+          const holidays: string[] = (cal.holidays || []).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+          if (holidays.includes(today)) isWorkingDay = false;
+        }
+      } catch { /* non-critical */ }
+
+      attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17 && isWorkingDay;
 
       // Check if today is already completed
       const completionRow = await pool.query(
