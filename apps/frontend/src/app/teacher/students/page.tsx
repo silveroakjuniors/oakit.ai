@@ -158,25 +158,25 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
   const attendanceTrend = insights.attendance_trend.map(d => d.present);
 
   return (
-    <div className="flex flex-col gap-4" style={{ isolation: 'isolate' }}>
-      {/* Stat cards row */}
-      <div className="grid grid-cols-2 gap-3" style={{ containIntrinsicSize: 'auto', contain: 'paint' }}>
-        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #1B4332, #0f2e23)' }}>
+    <div className="flex flex-col gap-4">
+      {/* Stat cards row — solid colors, no gradients */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-[#1B4332] rounded-2xl p-4 text-white">
           <Users className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.total_students}</p>
           <p className="text-xs opacity-80">Total Students</p>
         </div>
-        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
+        <div className="bg-[#059669] rounded-2xl p-4 text-white">
           <TrendingUp className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.attendance.avg_attendance_pct}%</p>
           <p className="text-xs opacity-80">Avg Attendance</p>
         </div>
-        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #4338ca, #3730a3)' }}>
+        <div className="bg-[#4338ca] rounded-2xl p-4 text-white">
           <Award className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.milestones_by_domain.reduce((s, m) => s + m.achieved, 0)}</p>
           <p className="text-xs opacity-80">Milestones Achieved</p>
         </div>
-        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #d97706, #b45309)' }}>
+        <div className="bg-[#d97706] rounded-2xl p-4 text-white">
           <BookOpen className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.journal.total_entries}</p>
           <p className="text-xs opacity-80">Journal Entries</p>
@@ -759,7 +759,7 @@ export default function TeacherStudentsPage() {
 
       {/* Student list + class insights */}
       {!activeStudent ? (
-        <div className="p-4 max-w-2xl mx-auto w-full flex flex-col gap-4">
+        <div className="p-4 max-w-2xl mx-auto w-full flex flex-col gap-4 bg-neutral-50 relative z-10">
           {sections.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {sections.map(s => (
