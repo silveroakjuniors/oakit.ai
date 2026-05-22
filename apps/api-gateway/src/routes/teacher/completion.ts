@@ -7,6 +7,40 @@ import { getToday } from '../../lib/today';
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
 
+/** Update a teacher's streak — called for both the submitting teacher and all co-assigned teachers */
+async function updateTeacherStreak(teacherId: string, schoolId: string, today: string) {
+  const existing = await pool.query(
+    `SELECT current_streak, best_streak, last_completed_date FROM teacher_streaks WHERE teacher_id = $1 AND school_id = $2`,
+    [teacherId, schoolId]
+  );
+  const prev = existing.rows[0];
+  if (prev) {
+    if (prev.last_completed_date === today) return; // already counted today
+    const lastDate = prev.last_completed_date ? new Date(prev.last_completed_date) : null;
+    const todayDate = new Date(today);
+    const diffDays = lastDate ? Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000) : 999;
+    const current = diffDays <= 3 ? prev.current_streak + 1 : 1;
+    const best = Math.max(prev.best_streak, current);
+    await pool.query(
+      `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (teacher_id, school_id) DO UPDATE
+       SET current_streak = $3, best_streak = $4, last_completed_date = $5, updated_at = now()`,
+      [teacherId, schoolId, current, best, today]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
+       VALUES ($1, $2, 1, 1, $3, now()) ON CONFLICT DO NOTHING`,
+      [teacherId, schoolId, today]
+    );
+  }
+  try {
+    const { redis } = await import('../../lib/redis');
+    await redis.del(`streak:${teacherId}`);
+  } catch { /* ignore */ }
+}
+
 async function resolveSection(
   sections: { section_id: string }[],
   querySectionId?: string
@@ -92,39 +126,24 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Update teacher streak (fire-and-forget — non-critical)
     if (date === today) {
+      // Update streak for the submitting teacher
       try {
-        const existing = await pool.query(
-          `SELECT current_streak, best_streak, last_completed_date FROM teacher_streaks WHERE teacher_id = $1 AND school_id = $2`,
-          [user_id, school_id]
+        await updateTeacherStreak(user_id, school_id, today);
+      } catch { /* non-critical */ }
+
+      // Also update streaks for supporting teachers (and class teacher if submitted by supporting)
+      try {
+        // Get all teachers assigned to this section
+        const allTeachers = await pool.query(
+          `SELECT DISTINCT teacher_id FROM (
+            SELECT class_teacher_id AS teacher_id FROM sections WHERE id = $1 AND class_teacher_id IS NOT NULL
+            UNION
+            SELECT teacher_id FROM teacher_sections WHERE section_id = $1
+          ) t WHERE teacher_id != $2`,
+          [section_id, user_id]
         );
-        const prev = existing.rows[0];
-        let current = 1;
-        let best = 1;
-        if (prev) {
-          if (prev.last_completed_date === today) {
-            // already counted today
-          } else {
-            const lastDate = prev.last_completed_date ? new Date(prev.last_completed_date) : null;
-            const todayDate = new Date(today);
-            const diffDays = lastDate ? Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000) : 999;
-            current = diffDays <= 3 ? prev.current_streak + 1 : 1;
-            best = Math.max(prev.best_streak, current);
-            await pool.query(
-              `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
-               VALUES ($1, $2, $3, $4, $5, now())
-               ON CONFLICT (teacher_id, school_id) DO UPDATE
-               SET current_streak = $3, best_streak = $4, last_completed_date = $5, updated_at = now()`,
-              [user_id, school_id, current, best, today]
-            );
-            const { redis } = await import('../../lib/redis');
-            await redis.del(`streak:${user_id}`);
-          }
-        } else {
-          await pool.query(
-            `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
-             VALUES ($1, $2, 1, 1, $3, now()) ON CONFLICT DO NOTHING`,
-            [user_id, school_id, today]
-          );
+        for (const row of allTeachers.rows) {
+          await updateTeacherStreak(row.teacher_id, school_id, today);
         }
       } catch { /* non-critical */ }
     }
