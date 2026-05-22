@@ -158,25 +158,25 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
   const attendanceTrend = insights.attendance_trend.map(d => d.present);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" style={{ isolation: 'isolate' }}>
       {/* Stat cards row */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-gradient-to-br from-primary-600 to-primary-800 rounded-2xl p-4 text-white">
+      <div className="grid grid-cols-2 gap-3" style={{ containIntrinsicSize: 'auto', contain: 'paint' }}>
+        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #1B4332, #0f2e23)' }}>
           <Users className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.total_students}</p>
           <p className="text-xs opacity-80">Total Students</p>
         </div>
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl p-4 text-white">
+        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
           <TrendingUp className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.attendance.avg_attendance_pct}%</p>
           <p className="text-xs opacity-80">Avg Attendance</p>
         </div>
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-4 text-white">
+        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #4338ca, #3730a3)' }}>
           <Award className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.milestones_by_domain.reduce((s, m) => s + m.achieved, 0)}</p>
           <p className="text-xs opacity-80">Milestones Achieved</p>
         </div>
-        <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl p-4 text-white">
+        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #d97706, #b45309)' }}>
           <BookOpen className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.journal.total_entries}</p>
           <p className="text-xs opacity-80">Journal Entries</p>
