@@ -539,7 +539,7 @@ export default function ClassPerformancePage() {
           <p className="text-3xl mb-2">📊</p>
           <p className="text-sm font-semibold text-neutral-600">No data available</p>
         </div>
-      )}}
+      )}
 
       {/* ── Parent Drill-Down Modal ── */}
       {showParentDrill && data && (
