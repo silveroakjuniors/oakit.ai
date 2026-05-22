@@ -142,14 +142,17 @@ function MiniProgressRing({ pct, size = 44, color = '#1B4332' }: { pct: number; 
 
 // ── Class Insights Dashboard ──────────────────────────────────────────────────
 function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
-  const obsDonutData = insights.observations_by_category.slice(0, 8).map(o => {
+  // Generate distinct colors for observation categories that may not be in CATEGORY_CONFIG
+  const CHART_COLORS = ['#4338ca', '#059669', '#be185d', '#d97706', '#1d4ed8', '#7c3aed', '#ea580c', '#0d9488', '#ca8a04', '#6366f1', '#dc2626', '#16a34a'];
+  
+  const obsDonutData = insights.observations_by_category.slice(0, 8).map((o, i) => {
     const cat = CATEGORY_CONFIG.find(c => c.id === o.category);
-    return { label: o.category, value: o.count, color: cat?.chartColor || '#525252' };
+    return { label: o.category, value: o.count, color: cat?.chartColor || CHART_COLORS[i % CHART_COLORS.length] };
   });
 
-  const milestoneBarData = insights.milestones_by_domain.map(m => ({
+  const milestoneBarData = insights.milestones_by_domain.map((m, i) => ({
     label: m.domain, value: m.achieved, max: m.total,
-    color: DOMAIN_COLORS[m.domain] || '#525252',
+    color: DOMAIN_COLORS[m.domain] || CHART_COLORS[i % CHART_COLORS.length],
   }));
 
   const attendanceTrend = insights.attendance_trend.map(d => d.present);
@@ -159,23 +162,23 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
   return (
     <div className="flex flex-col gap-4">
       {/* Stat cards row */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-gradient-to-br from-primary-600 to-primary-800 rounded-2xl p-4 text-white shadow-lg">
+      <div className="grid grid-cols-2 gap-3 isolate">
+        <div className="bg-gradient-to-br from-primary-600 to-primary-800 rounded-2xl p-4 text-white shadow-lg overflow-hidden">
           <Users className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.total_students}</p>
           <p className="text-xs opacity-80">Total Students</p>
         </div>
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl p-4 text-white shadow-lg">
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl p-4 text-white shadow-lg overflow-hidden">
           <TrendingUp className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.attendance.avg_attendance_pct}%</p>
           <p className="text-xs opacity-80">Avg Attendance</p>
         </div>
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-4 text-white shadow-lg">
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-4 text-white shadow-lg overflow-hidden">
           <Award className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.milestones_by_domain.reduce((s, m) => s + m.achieved, 0)}</p>
           <p className="text-xs opacity-80">Milestones Achieved</p>
         </div>
-        <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl p-4 text-white shadow-lg">
+        <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl p-4 text-white shadow-lg overflow-hidden">
           <BookOpen className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.journal.total_entries}</p>
           <p className="text-xs opacity-80">Journal Entries</p>
@@ -211,7 +214,7 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
           <div className="flex flex-wrap gap-2 mt-3">
             {milestoneBarData.map(d => (
               <span key={d.label} className="flex items-center gap-1 text-[9px] text-neutral-600">
-                <span className="w-2 h-2 rounded-full" style={{ background: d.color }} />
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
                 {d.label}
               </span>
             ))}
@@ -231,7 +234,7 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
             <div className="flex flex-col gap-1.5 flex-1">
               {obsDonutData.map(d => (
                 <div key={d.label} className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.color }} />
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                   <span className="text-[10px] text-neutral-600 flex-1 truncate">{d.label}</span>
                   <span className="text-[10px] font-bold text-neutral-800">{d.value}</span>
                 </div>
@@ -243,7 +246,7 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
 
       {/* Top performers */}
       {topPerformers.length > 0 && (
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100 overflow-hidden">
           <p className="text-sm font-bold text-neutral-800 mb-3">🏆 Top Milestone Achievers</p>
           <div className="flex flex-col gap-2">
             {topPerformers.map((s, i) => (
@@ -261,7 +264,7 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
 
       {/* Needs attention */}
       {needsAttention.length > 0 && needsAttention[0].achieved_count < topPerformers[0]?.achieved_count && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 overflow-hidden">
           <p className="text-sm font-bold text-amber-800 mb-2">💡 May Need Extra Support</p>
           <div className="flex flex-col gap-1.5">
             {needsAttention.map(s => (
@@ -362,7 +365,7 @@ function StudentInsightsPanel({ insights }: { insights: StudentInsights }) {
                   <span className="text-xs w-16 truncate text-neutral-600">{DOMAIN_ICONS[m.domain] || '📌'} {m.domain}</span>
                   <div className="flex-1 bg-neutral-100 rounded-full h-2.5 overflow-hidden">
                     <div className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%`, background: DOMAIN_COLORS[m.domain] || '#525252' }} />
+                      style={{ width: `${pct}%`, backgroundColor: DOMAIN_COLORS[m.domain] || '#4338ca' }} />
                   </div>
                   <span className="text-[10px] font-bold text-neutral-600 w-10 text-right">{m.achieved}/{m.total}</span>
                 </div>
@@ -381,7 +384,7 @@ function StudentInsightsPanel({ insights }: { insights: StudentInsights }) {
             <div className="flex flex-col gap-1 flex-1">
               {obsDonut.slice(0, 5).map(d => (
                 <div key={d.label} className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                   <span className="text-[9px] text-neutral-600 flex-1 truncate">{d.label}</span>
                   <span className="text-[9px] font-bold text-neutral-700">{d.value}</span>
                 </div>
