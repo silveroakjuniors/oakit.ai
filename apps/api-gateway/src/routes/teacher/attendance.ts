@@ -83,7 +83,8 @@ router.post('/today', async (req: Request, res: Response) => {
     const { records, confirm_holiday } = req.body;
     if (!Array.isArray(records)) return res.status(400).json({ error: 'records array is required' });
 
-    // Check if today is a holiday
+    // Check if today is a holiday — show as informational note only, never block submission
+    let holiday_note: string | null = null;
     const calRow = await pool.query(
       `SELECT sc.academic_year FROM school_calendar sc
        WHERE sc.school_id = $1 AND sc.start_date <= $2 AND sc.end_date >= $2 LIMIT 1`,
@@ -94,11 +95,8 @@ router.post('/today', async (req: Request, res: Response) => {
         'SELECT event_name FROM holidays WHERE school_id = $1 AND academic_year = $2 AND holiday_date = $3',
         [school_id, calRow.rows[0].academic_year, today]
       );
-      if (holidayRow.rows.length > 0 && !confirm_holiday) {
-        return res.status(409).json({
-          warning: 'Date is a holiday',
-          holiday_name: holidayRow.rows[0].event_name,
-        });
+      if (holidayRow.rows.length > 0) {
+        holiday_note = `Today is ${holidayRow.rows[0].event_name}. Attendance is still being recorded.`;
       }
     }
 
@@ -117,6 +115,8 @@ router.post('/today', async (req: Request, res: Response) => {
       : null;
 
     // Upsert attendance records
+    // Rule: once a student is marked present, they cannot be moved back to absent.
+    // Only absent → present transitions are allowed after initial submission.
     for (const rec of records) {
       const { student_id, status } = rec;
       if (!student_id || !['present', 'absent'].includes(status)) continue;
@@ -125,12 +125,17 @@ router.post('/today', async (req: Request, res: Response) => {
            (school_id, section_id, student_id, teacher_id, attend_date, status, submitted_at, first_submitted_at)
          VALUES ($1, $2, $3, $4, $5, $6, now(), now())
          ON CONFLICT (section_id, student_id, attend_date) DO UPDATE
-           SET status = EXCLUDED.status, submitted_at = now()`,
+           SET status = CASE
+                 -- Never move present → absent once submitted
+                 WHEN attendance_records.status = 'present' THEN 'present'
+                 ELSE EXCLUDED.status
+               END,
+               submitted_at = now()`,
         [school_id, section_id, student_id, user_id, today, status]
       );
     }
 
-    return res.json({ message: 'Attendance submitted', date: today, late_marking_warning });
+    return res.json({ message: 'Attendance submitted', date: today, late_marking_warning, holiday_note });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -154,6 +159,19 @@ router.patch('/today/:student_id', async (req: Request, res: Response) => {
     const resolved = await resolveSection(sections, req.query.section_id as string | undefined);
     if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
     const { section_id } = resolved;
+
+    // Rule: once a student is marked present, they cannot be moved back to absent
+    if (status === 'absent') {
+      const currentRow = await pool.query(
+        'SELECT status FROM attendance_records WHERE student_id = $1 AND attend_date = $2 AND section_id = $3',
+        [student_id, today, section_id]
+      );
+      if (currentRow.rows[0]?.status === 'present') {
+        return res.status(400).json({
+          error: 'Cannot mark a present student as absent. Attendance can only be updated from absent to present (late arrival).',
+        });
+      }
+    }
 
     // Verify student belongs to this section
     const studentRow = await pool.query(
