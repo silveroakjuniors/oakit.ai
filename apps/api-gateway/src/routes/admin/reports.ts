@@ -848,11 +848,18 @@ router.get('/class-coverage', async (req: Request, res: Response) => {
       supporting_teachers: sec.supporting_teachers,
       from_date: fromDate,
       to_date: toDate,
-      completions: completions.rows.map((r: any) => ({
-        date: r.completion_date,
-        teacher: r.teacher_name,
-        topics_covered: r.covered_chunk_ids?.length ?? 0,
-      })),
+      completions: completions.rows.map((r: any) => {
+        const chunkCount = Array.isArray(r.covered_chunk_ids) ? r.covered_chunk_ids.filter(Boolean).length : 0;
+        // Check if this date is a special day
+        const specialDay = specialDays.rows.find((sd: any) => sd.day_date === r.completion_date);
+        return {
+          date: r.completion_date,
+          teacher: r.teacher_name,
+          topics_covered: chunkCount,
+          is_special_day: chunkCount === 0 && !!specialDay,
+          special_day_label: specialDay?.label || (chunkCount === 0 ? 'Special Day / Event' : null),
+        };
+      }),
       covered_topics: groupedTopics,
       covered_topics_raw: coveredChunks.map((c: any) => ({
         label: c.topic_label || `Topic ${c.chunk_index + 1}`,
