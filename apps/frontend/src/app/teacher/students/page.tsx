@@ -156,8 +156,6 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
   }));
 
   const attendanceTrend = insights.attendance_trend.map(d => d.present);
-  const topPerformers = insights.student_milestone_ranking.slice(0, 5);
-  const needsAttention = [...insights.student_milestone_ranking].reverse().slice(0, 3);
 
   return (
     <div className="flex flex-col gap-4">
@@ -244,38 +242,6 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
         </div>
       )}
 
-      {/* Top performers */}
-      {topPerformers.length > 0 && (
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
-          <p className="text-sm font-bold text-neutral-800 mb-3">🏆 Top Milestone Achievers</p>
-          <div className="flex flex-col gap-2">
-            {topPerformers.map((s, i) => (
-              <div key={s.id} className="flex items-center gap-3">
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                  i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-neutral-200 text-neutral-600' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-neutral-100 text-neutral-500'
-                }`}>{i + 1}</span>
-                <span className="text-sm text-neutral-700 flex-1">{s.name}</span>
-                <span className="text-xs font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-full">{s.achieved_count} ✓</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Needs attention */}
-      {needsAttention.length > 0 && needsAttention[0].achieved_count < topPerformers[0]?.achieved_count && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-          <p className="text-sm font-bold text-amber-800 mb-2">💡 May Need Extra Support</p>
-          <div className="flex flex-col gap-1.5">
-            {needsAttention.map(s => (
-              <div key={s.id} className="flex items-center gap-2">
-                <span className="text-xs text-amber-700 flex-1">{s.name}</span>
-                <span className="text-[10px] text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">{s.achieved_count} milestones</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
