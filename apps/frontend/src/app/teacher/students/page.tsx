@@ -599,7 +599,7 @@ function MilestoneFormModal({ classLevel, existing, token, onClose, onSaved }: {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TeacherStudentsPage() {
   const router = useRouter();
-  const token = getToken() || '';
+  const [token, setToken] = useState('');
   const [sections, setSections] = useState<Section[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [activeSection, setActiveSection] = useState('');
@@ -628,7 +628,16 @@ export default function TeacherStudentsPage() {
   const [unachieving, setUnachieving] = useState<string | null>(null);
   const [milestoneTermFilter, setMilestoneTermFilter] = useState<string>('all');
 
-  useEffect(() => { if (!token) { router.push('/login'); return; } loadSections(); }, []);
+  useEffect(() => { 
+    const t = getToken() || '';
+    if (!t) { router.push('/login'); return; }
+    setToken(t);
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    loadSections();
+  }, [token]);
 
   async function loadSections() {
     try {

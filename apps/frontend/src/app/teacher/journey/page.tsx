@@ -72,7 +72,7 @@ function groupByDate(entries: JourneyEntry[]): Record<string, JourneyEntry[]> {
 
 export default function ChildJourneyPage() {
   const router = useRouter();
-  const token = getToken() || '';
+  const [token, setToken] = useState('');
 
   const [students, setStudents] = useState<Student[]>([]);
   const [sectionId, setSectionId] = useState('');
@@ -134,9 +134,15 @@ export default function ChildJourneyPage() {
   const [modalError, setModalError] = useState('');
 
   useEffect(() => {
-    if (!token) { router.push('/login'); return; }
-    loadStudents();
+    const t = getToken() || '';
+    if (!t) { router.push('/login'); return; }
+    setToken(t);
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    loadStudents();
+  }, [token]);
 
   async function loadStudents() {
     try {
