@@ -604,7 +604,7 @@ export default function TeacherStudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [activeSection, setActiveSection] = useState('');
   const [activeStudent, setActiveStudent] = useState<Student | null>(null);
-  const [studentTab, setStudentTab] = useState<'insights' | 'observations' | 'milestones'>('insights');
+  const [studentTab, setStudentTab] = useState<'insights' | 'observations' | 'milestones'>('observations');
 
   // Class insights
   const [classInsights, setClassInsights] = useState<ClassInsights | null>(null);
@@ -615,6 +615,10 @@ export default function TeacherStudentsPage() {
 
   // Observations
   const [observations, setObservations] = useState<Observation[]>([]);
+  const [editingObsId, setEditingObsId] = useState<string | null>(null);
+  const [editObsText, setEditObsText] = useState('');
+  const [editObsSaving, setEditObsSaving] = useState(false);
+  const [deletingObsId, setDeletingObsId] = useState<string | null>(null);
 
   // Milestones
   const [milestoneData, setMilestoneData] = useState<MilestoneData | null>(null);
@@ -645,24 +649,33 @@ export default function TeacherStudentsPage() {
   async function loadClassInsights() {
     setLoadingInsights(true);
     try { setClassInsights(await apiGet<ClassInsights>('/api/v1/teacher/insights/class-summary', token)); }
-    catch { /* ignore */ }
+    catch { setClassInsights(null); }
     finally { setLoadingInsights(false); }
   }
 
   async function openStudent(student: Student) {
     setActiveStudent(student);
-    setStudentTab('insights');
+    setStudentTab('observations');
     setAchieveModal(null);
-    await Promise.all([
-      loadStudentInsights(student.id),
-      loadObservations(student.id),
-      loadMilestones(student.id),
-    ]);
+    loadObservations(student.id);
+    loadMilestones(student.id);
+    loadStudentInsights(student.id);
   }
 
   async function loadStudentInsights(studentId: string) {
     try { setStudentInsights(await apiGet<StudentInsights>(`/api/v1/teacher/insights/student/${studentId}`, token)); }
-    catch { setStudentInsights(null); }
+    catch { 
+      // If insights fail, set a minimal fallback so the page doesn't stay stuck
+      setStudentInsights({
+        student: { id: studentId, name: '', date_of_birth: '', photo_url: '', class_name: '', section_label: '' },
+        attendance: { present: 0, absent: 0, late: 0, total_days: 0, pct: 0 },
+        attendance_trend: [],
+        milestones_by_domain: [],
+        milestone_summary: { total: 0, achieved: 0, pct: 0 },
+        observations_by_category: [],
+        journal_entries_count: 0,
+      });
+    }
   }
 
   async function loadObservations(studentId: string) {
@@ -671,6 +684,41 @@ export default function TeacherStudentsPage() {
 
   async function loadMilestones(studentId: string) {
     try { setMilestoneData(await apiGet<MilestoneData>(`/api/v1/teacher/milestones/${studentId}`, token)); } catch {}
+  }
+
+  // ── Observation edit/delete ──
+  function startEditObs(obs: Observation) {
+    setEditingObsId(obs.id);
+    setEditObsText(obs.obs_text || '');
+  }
+
+  async function saveEditObs(obs: Observation) {
+    if (!editObsText.trim()) return;
+    setEditObsSaving(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/teacher/observations/${obs.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ obs_text: editObsText.trim() }),
+      }).then(r => r.json());
+      if (r.error) throw new Error(r.error);
+      setObservations(prev => prev.map(o => o.id === obs.id ? { ...o, obs_text: editObsText.trim() } : o));
+      setEditingObsId(null);
+    } catch (e: any) { alert(e.message || 'Failed to update'); }
+    finally { setEditObsSaving(false); }
+  }
+
+  async function deleteObs(obsId: string) {
+    if (!confirm('Delete this observation? This cannot be undone.')) return;
+    setDeletingObsId(obsId);
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/teacher/observations/${obsId}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      }).then(r => r.json());
+      if (r.error) throw new Error(r.error);
+      setObservations(prev => prev.filter(o => o.id !== obsId));
+    } catch (e: any) { alert(e.message || 'Failed to delete'); }
+    finally { setDeletingObsId(null); }
   }
 
   async function unachieveMilestone(milestoneId: string) {
@@ -813,7 +861,10 @@ export default function TeacherStudentsPage() {
             {/* ── INSIGHTS TAB ── */}
             {studentTab === 'insights' && (
               studentInsights ? <StudentInsightsPanel insights={studentInsights} /> : (
-                <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary-500" /></div>
+                <div className="flex flex-col items-center justify-center py-12 gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+                  <p className="text-xs text-neutral-400">Loading insights…</p>
+                </div>
               )
             )}
 
@@ -855,6 +906,7 @@ export default function TeacherStudentsPage() {
                     <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">All Observations ({observations.length})</p>
                     {observations.map(obs => {
                       const catConfig = CATEGORY_CONFIG.find(c => obs.categories.includes(c.id));
+                      const isEditing = editingObsId === obs.id;
                       return (
                         <div key={obs.id} className={`bg-white rounded-2xl p-4 shadow-sm border ${catConfig?.border || 'border-neutral-100'}`}>
                           <div className="flex items-start gap-2 mb-2">
@@ -868,8 +920,36 @@ export default function TeacherStudentsPage() {
                                   })}
                                 </div>
                               )}
-                              {obs.obs_text && <p className="text-sm text-neutral-700 leading-relaxed">{obs.obs_text}</p>}
+                              {isEditing ? (
+                                <div className="flex flex-col gap-2">
+                                  <textarea value={editObsText} onChange={e => setEditObsText(e.target.value)} rows={3}
+                                    className="w-full px-3 py-2 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none" autoFocus />
+                                  <div className="flex gap-2">
+                                    <button onClick={() => setEditingObsId(null)} className="px-3 py-1.5 text-xs border border-neutral-200 rounded-lg text-neutral-600 hover:bg-neutral-50">Cancel</button>
+                                    <button onClick={() => saveEditObs(obs)} disabled={editObsSaving || !editObsText.trim()}
+                                      className="px-3 py-1.5 text-xs bg-primary-600 text-white rounded-lg font-medium disabled:opacity-40 flex items-center gap-1">
+                                      {editObsSaving ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />} Save
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                obs.obs_text && <p className="text-sm text-neutral-700 leading-relaxed">{obs.obs_text}</p>
+                              )}
                             </div>
+                            {!isEditing && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button onClick={() => startEditObs(obs)}
+                                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-primary-50 hover:text-primary-600 flex items-center justify-center text-neutral-400 transition-colors"
+                                  title="Edit observation">
+                                  <Pencil size={12} />
+                                </button>
+                                <button onClick={() => deleteObs(obs.id)} disabled={deletingObsId === obs.id}
+                                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-red-50 hover:text-red-600 flex items-center justify-center text-neutral-400 transition-colors disabled:opacity-40"
+                                  title="Delete observation">
+                                  {deletingObsId === obs.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <p className="text-xs text-neutral-400">{obs.obs_date} · {obs.teacher_name} {obs.share_with_parent ? '· 👁 Shared' : ''}</p>
                         </div>

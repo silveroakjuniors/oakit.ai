@@ -57,20 +57,30 @@ router.get('/class-summary', async (req: Request, res: Response) => {
     );
 
     // Milestone progress per domain (for bar chart)
-    const milestoneResult = await pool.query(
-      `SELECT m.domain,
-         COUNT(DISTINCT m.id)::int as total,
-         COUNT(DISTINCT sm.milestone_id)::int as achieved
-       FROM milestones m
-       JOIN students s ON s.class_id = (SELECT class_id FROM sections WHERE id = ANY($1::uuid[]) LIMIT 1)
-       LEFT JOIN student_milestones sm ON sm.milestone_id = m.id
-         AND sm.student_id IN (SELECT id FROM students WHERE section_id = ANY($1::uuid[]) AND school_id = $2)
-       WHERE (m.school_id IS NULL OR m.school_id = $2)
-         AND m.class_level = (SELECT c.name FROM classes c JOIN sections sec ON sec.class_id = c.id WHERE sec.id = ANY($1::uuid[]) LIMIT 1)
-       GROUP BY m.domain
-       ORDER BY m.domain`,
-      [sectionIds, school_id]
+    // Get class level first
+    const classRow = await pool.query(
+      `SELECT c.name FROM classes c JOIN sections sec ON sec.class_id = c.id WHERE sec.id = ANY($1::uuid[]) LIMIT 1`,
+      [sectionIds]
     );
+    const classLevel = classRow.rows[0]?.name;
+
+    let milestoneRows: any[] = [];
+    if (classLevel) {
+      const milestoneResult = await pool.query(
+        `SELECT m.domain,
+           COUNT(DISTINCT m.id)::int as total,
+           COUNT(DISTINCT sm.milestone_id)::int as achieved
+         FROM milestones m
+         LEFT JOIN student_milestones sm ON sm.milestone_id = m.id
+           AND sm.student_id IN (SELECT id FROM students WHERE section_id = ANY($1::uuid[]) AND school_id = $2)
+         WHERE (m.school_id IS NULL OR m.school_id = $2)
+           AND m.class_level = $3
+         GROUP BY m.domain
+         ORDER BY m.domain`,
+        [sectionIds, school_id, classLevel]
+      );
+      milestoneRows = milestoneResult.rows;
+    }
 
     // Observation coverage per category (for donut chart)
     const obsResult = await pool.query(
@@ -118,7 +128,7 @@ router.get('/class-summary', async (req: Request, res: Response) => {
           : 0,
       },
       attendance_trend: weeklyAttResult.rows,
-      milestones_by_domain: milestoneResult.rows,
+      milestones_by_domain: milestoneRows,
       observations_by_category: obsResult.rows,
       student_milestone_ranking: studentMilestoneRank.rows,
       journal: {
