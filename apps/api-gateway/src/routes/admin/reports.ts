@@ -827,6 +827,19 @@ router.get('/class-coverage', async (req: Request, res: Response) => {
     // School name
     const schoolRow = await pool.query('SELECT name FROM schools WHERE id = $1', [school_id]);
 
+    // Total planned working days in range (for day-based completion rate)
+    const plannedDaysRow = await pool.query(
+      `SELECT COUNT(*)::int as total_planned_days
+       FROM day_plans dp
+       WHERE dp.section_id = $1 AND dp.school_id = $2
+         AND dp.plan_date BETWEEN $3 AND $4
+         AND dp.status NOT IN ('holiday', 'weekend')`,
+      [section_id, school_id, fromDate, toDate]
+    );
+    const totalPlannedDays = plannedDaysRow.rows[0]?.total_planned_days || 0;
+    const totalDaysCompleted = completions.rows.length;
+    const dayCompletionPct = totalPlannedDays > 0 ? Math.round((totalDaysCompleted / totalPlannedDays) * 100) : 0;
+
     return res.json({
       school_name: schoolRow.rows[0]?.name ?? 'School',
       class_name: sec.class_name,
@@ -848,7 +861,9 @@ router.get('/class-coverage', async (req: Request, res: Response) => {
       special_days: specialDays.rows,
       holidays: holidays.rows,
       attendance: attRow.rows[0],
-      total_days_completed: completions.rows.length,
+      total_days_completed: totalDaysCompleted,
+      total_planned_days: totalPlannedDays,
+      day_completion_pct: dayCompletionPct,
       total_topics_covered: allCoveredIds.length,
     });
   } catch (err) {
@@ -865,7 +880,7 @@ router.get('/school-overview', async (req: Request, res: Response) => {
     const [schoolRow, classStats, upcomingSpecial, upcomingHolidays, teacherStats] = await Promise.all([
       pool.query('SELECT name FROM schools WHERE id = $1', [school_id]),
 
-      // Per-class: students, coverage, teachers
+      // Per-class: students, coverage (day-based), teachers
       pool.query(`
         SELECT
           c.id as class_id, c.name as class_name,
@@ -874,8 +889,8 @@ router.get('/school-overview', async (req: Request, res: Response) => {
           COUNT(DISTINCT sec.class_teacher_id)::int as class_teachers,
           COUNT(DISTINCT ts.teacher_id)::int as supporting_teachers,
           COALESCE(AVG(
-            CASE WHEN cc_total.total > 0
-              THEN ROUND((cc_covered.covered::numeric / cc_total.total) * 100)
+            CASE WHEN planned.total_days > 0
+              THEN ROUND((completed.days_done::numeric / planned.total_days) * 100)
               ELSE NULL END
           )::int, 0) as avg_coverage_pct
         FROM classes c
@@ -883,17 +898,17 @@ router.get('/school-overview', async (req: Request, res: Response) => {
         LEFT JOIN students s ON s.section_id = sec.id AND s.is_active = true
         LEFT JOIN teacher_sections ts ON ts.section_id = sec.id
         LEFT JOIN LATERAL (
-          SELECT COUNT(DISTINCT cc.id) as total
-          FROM curriculum_documents cd
-          JOIN curriculum_chunks cc ON cc.document_id = cd.id
-          WHERE cd.class_id = c.id AND cd.school_id = $1
-        ) cc_total ON true
+          SELECT COUNT(*)::int as total_days
+          FROM day_plans dp
+          WHERE dp.section_id = sec.id AND dp.school_id = $1
+            AND dp.status NOT IN ('holiday', 'weekend')
+            AND dp.plan_date <= CURRENT_DATE
+        ) planned ON true
         LEFT JOIN LATERAL (
-          SELECT COUNT(DISTINCT dc_u.chunk_id) as covered
+          SELECT COUNT(*)::int as days_done
           FROM daily_completions dc
-          JOIN LATERAL unnest(dc.covered_chunk_ids) AS dc_u(chunk_id) ON true
           WHERE dc.section_id = sec.id AND dc.school_id = $1
-        ) cc_covered ON true
+        ) completed ON true
         WHERE c.school_id = $1
         GROUP BY c.id, c.name
         ORDER BY c.name`,

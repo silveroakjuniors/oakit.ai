@@ -33,6 +33,7 @@ interface ReportData {
   special_days: SpecialDay[]; holidays: Holiday[];
   attendance: { days_marked: number; total_present: number; total_absent: number };
   total_days_completed: number; total_topics_covered: number;
+  total_planned_days?: number; day_completion_pct?: number;
 }
 
 // ── Mini donut chart (SVG, no deps) ──────────────────────────
@@ -130,7 +131,7 @@ export default function PrincipalOverviewPage() {
       `Generated: ${new Date().toLocaleDateString('en-IN')}`,
       ``,
       `SUMMARY`,
-      `Days with completion logged: ${reportData.total_days_completed}`,
+      `Days completed: ${reportData.total_days_completed} / ${reportData.total_planned_days ?? '?'} planned (${reportData.day_completion_pct ?? 0}%)`,
       `Total topics covered: ${reportData.total_topics_covered}`,
       `Attendance days marked: ${reportData.attendance?.days_marked ?? 0}`,
       ``,
@@ -350,7 +351,7 @@ export default function PrincipalOverviewPage() {
                 {/* Summary stats */}
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: 'Days logged', value: reportData.total_days_completed },
+                    { label: 'Days completed', value: `${reportData.total_days_completed}/${reportData.total_planned_days ?? '?'}` },
                     { label: 'Subjects covered', value: reportData.covered_topics.length },
                     { label: 'Att. days', value: reportData.attendance?.days_marked ?? 0 },
                   ].map((s, i) => (
