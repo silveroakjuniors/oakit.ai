@@ -1292,12 +1292,15 @@ export default function TeacherPlanner() {
                         </Button>
                       </div>
                     )}
-                    {/* Settling complete button ? only for today or past */}
+                    {/* Settling complete button — only for today or past */}
                     {msg.is_settling && !msg.settling_gate && !msg.already_completed &&
                      !completedSettlingDates.has(msg.completion_date || '') &&
                      msg.completion_date && msg.completion_date <= today && (
                       <div className="border-t border-green-100 px-4 py-3 bg-green-50/60">
                         <p className="text-xs text-green-700 mb-2">When you're done with today's settling activities:</p>
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
+                          <p className="text-[11px] text-amber-800 font-medium">📌 Special Day — all activities must be completed together. Individual activities cannot be marked separately and will not carry forward to the next day.</p>
+                        </div>
                         <div className="flex gap-2">
                           <Button size="sm" onClick={() => markSettlingComplete(msg.completion_date || today)} className="flex-1 bg-green-600 hover:bg-green-700 text-white border-0">
                              Mark Today as Completed

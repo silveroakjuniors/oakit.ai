@@ -35,18 +35,23 @@ export default function PendingWorkList({ items, selectedChunks, onToggleChunk, 
           </p>
 
           {day.is_special_day ? (
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-purple-600">
-                {day.special_day_label || 'Special Day'} — mark as completed
+            <div className="flex flex-col gap-2">
+              <p className="text-[11px] text-purple-700 bg-purple-100 border border-purple-200 rounded-lg px-3 py-1.5 font-medium">
+                📌 All activities must be completed together. No individual marking or carry-forward.
               </p>
-              {onMarkSpecialDayComplete && (
-                <button
-                  onClick={() => onMarkSpecialDayComplete(day.plan_date)}
-                  className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-colors"
-                >
-                  ✓ Done
-                </button>
-              )}
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-purple-600">
+                  {day.special_day_label || 'Special Day'} — mark as completed
+                </p>
+                {onMarkSpecialDayComplete && (
+                  <button
+                    onClick={() => onMarkSpecialDayComplete(day.plan_date)}
+                    className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-colors"
+                  >
+                    ✓ Done
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-2">
