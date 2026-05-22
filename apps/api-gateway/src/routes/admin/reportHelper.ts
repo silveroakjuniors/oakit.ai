@@ -170,20 +170,21 @@ ATTENDANCE: ${att.present}/${att.total} days (${att_pct}%)${att.absent > 0 ? ` �
 MILESTONES: ${mil.achieved} of ${mil.total} achieved
 
 ━━━ WHAT WAS TAUGHT THIS PERIOD ━━━
-${detailedLearning || learningCompact || 'General classroom activities'}
+${detailedLearning || learningCompact || 'No curriculum topics were covered in this period (only special days/events were completed).'}
 
 ━━━ TEACHER JOURNAL ENTRIES (daily observations & highlights) ━━━
-${allJournalEntries || 'No journal entries recorded'}
+${allJournalEntries || 'No journal entries recorded for this period.'}
 
 ━━━ TEACHER REPORT READINESS OBSERVATIONS (structured by category) ━━━
-${categoryBlocks || obsText || 'No structured observations recorded'}
+${categoryBlocks || obsText || 'No structured observations recorded for this period.'}
 ${missedSubjects.length > 0 ? `\n━━━ TOPICS MISSED DUE TO ABSENCE ━━━\n${missedSubjects.join(', ')}` : ''}
 
 ━━━ INSTRUCTIONS ━━━
-Write a complete, descriptive, personalised report card using ALL the teacher inputs above.
+Write a complete, descriptive, personalised report card using ONLY the teacher inputs above.
+CRITICAL: Do NOT invent or assume any activities, subjects, or observations that are not explicitly listed above. If a section has no data, write "Observations for this area will be added as the term progresses." instead of making up content.
 Write in flowing paragraphs — NO bullet points, NO asterisks, NO bold markdown.
-Each section must be 3-5 sentences. Reference specific activities, subjects, and teacher observations.
-The report must feel personal and specific — not generic.
+Each section must be 3-5 sentences. Reference ONLY specific activities, subjects, and teacher observations that appear in the data above.
+The report must feel personal and specific — not generic. If data is limited, keep sections shorter rather than inventing content.
 
 ## 🧠 Cognitive & Academic Development
 ## 🗣️ Language & Communication

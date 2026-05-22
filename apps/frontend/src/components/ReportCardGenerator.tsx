@@ -104,6 +104,73 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
 
   const canGenerate = !!(fixedStudentId || selectedStudent);
 
+  function downloadReportText(reportText: string, meta: any, fromDate: string, toDate: string) {
+    const lines = [
+      `PROGRESS REPORT CARD`,
+      `Student: ${meta.student_name}`,
+      `School: ${meta.school_name}`,
+      `Class: ${meta.class_name} · Section ${meta.section_label}`,
+      `Teacher: ${meta.teacher_name || '—'}`,
+      `Period: ${fromDate} to ${toDate}`,
+      `Attendance: ${meta.attendance?.present ?? 0}/${meta.attendance?.total ?? 0} days (${meta.attendance?.pct ?? 0}%)`,
+      `Milestones: ${meta.milestones?.achieved ?? 0}/${meta.milestones?.total ?? 0}`,
+      ``,
+      reportText.replace(/^## /gm, '\n━━━ ').replace(/^# /gm, '\n═══ '),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `report_card_${meta.student_name.replace(/\s+/g, '_')}_${fromDate}_${toDate}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadReportPdf(reportText: string, meta: any, fromDate: string, toDate: string) {
+    // Create a printable HTML document and trigger print-to-PDF
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Report Card - ${meta.student_name}</title>
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 700px; margin: 0 auto; padding: 40px 30px; color: #1a1a1a; line-height: 1.6; }
+  .header { background: linear-gradient(135deg, #1B4332, #2d6a4f); color: white; padding: 24px; border-radius: 12px; margin-bottom: 24px; }
+  .header h1 { margin: 0; font-size: 20px; } .header p { margin: 4px 0 0; opacity: 0.85; font-size: 12px; }
+  .stats { display: flex; gap: 16px; margin-bottom: 24px; }
+  .stat { flex: 1; text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px; }
+  .stat .value { font-size: 18px; font-weight: 700; color: #1B4332; } .stat .label { font-size: 10px; color: #666; }
+  h2 { font-size: 14px; color: #1B4332; margin-top: 20px; margin-bottom: 8px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+  p { font-size: 12px; margin: 0 0 12px; }
+  .footer { margin-top: 30px; padding-top: 16px; border-top: 2px solid #1B4332; font-size: 11px; color: #666; }
+  @media print { body { padding: 20px; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<div class="header">
+  <h1>${meta.student_name}</h1>
+  <p>${meta.school_name} · ${meta.class_name} · Section ${meta.section_label}</p>
+  <p>Period: ${fromDate} to ${toDate} · Teacher: ${meta.teacher_name || '—'}</p>
+</div>
+<div class="stats">
+  <div class="stat"><div class="value">${meta.attendance?.pct ?? 0}%</div><div class="label">Attendance (${meta.attendance?.present ?? 0}/${meta.attendance?.total ?? 0} days)</div></div>
+  <div class="stat"><div class="value">${meta.curriculum?.covered ?? 0}</div><div class="label">Subjects Covered</div></div>
+  <div class="stat"><div class="value">${meta.milestones?.achieved ?? 0}/${meta.milestones?.total ?? 0}</div><div class="label">Milestones</div></div>
+</div>
+${reportText.split('\n').map(line => {
+      if (line.startsWith('## ')) return '<h2>' + line.replace(/^## /, '').replace(/[🧠🗣️🤝💪🎨🌟🏫📅📝🌱👨‍👩‍👧💡🚀]/g, '').trim() + '</h2>';
+      if (line.trim()) return '<p>' + line.trim() + '</p>';
+      return '';
+    }).join('\n')}
+<div class="footer">
+  <p>Class Teacher: ${meta.teacher_name || '—'}</p>
+  <p>Generated on: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+</div>
+</body></html>`;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+      setTimeout(() => printWindow.print(), 500);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Student selection — teacher sees flat list, admin/principal sees class→section→student */}
@@ -205,6 +272,17 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
               <p className="text-xs text-gray-400 pt-3">Class Teacher: <span className="font-semibold text-gray-600">{reportMeta.teacher_name}</span></p>
             </div>
           )}
+          {/* Download as PDF */}
+          <div className="px-5 pb-5 border-t border-gray-100 pt-3 flex gap-2">
+            <button onClick={() => downloadReportPdf(report, reportMeta, from, to)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-bold transition-colors">
+              📄 Download PDF
+            </button>
+            <button onClick={() => downloadReportText(report, reportMeta, from, to)}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
+              📋 Text
+            </button>
+          </div>
         </div>
       )}
     </div>
