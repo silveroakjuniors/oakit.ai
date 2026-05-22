@@ -217,7 +217,7 @@ export default function ChildJourneyPage() {
     finally { setBulkFormatting(prev => ({ ...prev, [studentId]: false })); }
   }
 
-  async function saveBulk() {
+  async function saveBulk(sendToParent = false) {
     const toSave = students.filter(s => (bulkTexts[s.id] || '').trim());
     if (!toSave.length) return;
     setSavingBulk(true); setBulkMsg('');
@@ -227,13 +227,14 @@ export default function ChildJourneyPage() {
           student_id: student.id,
           entry_type: entryType,
           raw_text: bulkTexts[student.id].trim(),
-          send_to_parent: false,
+          send_to_parent: sendToParent,
         }, token),
       ));
       const newSaved = new Set(savedIds);
       toSave.forEach(s => newSaved.add(s.id));
       setSavedIds(newSaved);
-      setBulkMsg(`✓ Saved entries for ${toSave.length} student${toSave.length > 1 ? 's' : ''} — visible in History tab`);
+      const action = sendToParent ? 'Saved & sent to parents' : 'Saved';
+      setBulkMsg(`✓ ${action} for ${toSave.length} student${toSave.length > 1 ? 's' : ''}${sendToParent ? '' : ' — visible in History tab'}`);
       setBulkTexts({});
       setBulkFormatted({});
       if (sectionId) loadAllEntries(sectionId);
@@ -301,6 +302,36 @@ export default function ChildJourneyPage() {
       setAllEntries(prev => prev.filter(e => e.id !== id));
     } catch (e: any) { alert(e.message || 'Failed to delete'); }
     finally { setDeletingEntryId(null); }
+  }
+
+  async function sendToParent(entry: JourneyEntry) {
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/teacher/child-journey/${entry.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ raw_text: entry.raw_text, send_to_parent: true }),
+      }).then(r => r.json());
+      if (r.error) throw new Error(r.error);
+      setAllEntries(prev => prev.map(e => e.id === entry.id ? { ...e, is_sent_to_parent: true, sent_at: new Date().toISOString() } : e));
+    } catch (e: any) { alert(e.message || 'Failed to send'); }
+  }
+
+  async function sendAllForDate(date: string) {
+    const entries = allEntries.filter(e => (e.entry_date || '').startsWith(date) && !e.is_sent_to_parent);
+    if (entries.length === 0) return;
+    if (!confirm(`Send ${entries.length} entries to parents?`)) return;
+    try {
+      await Promise.all(entries.map(entry =>
+        fetch(`${API_BASE}/api/v1/teacher/child-journey/${entry.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ raw_text: entry.raw_text, send_to_parent: true }),
+        }).then(r => r.json())
+      ));
+      setAllEntries(prev => prev.map(e =>
+        (e.entry_date || '').startsWith(date) ? { ...e, is_sent_to_parent: true, sent_at: new Date().toISOString() } : e
+      ));
+    } catch (e: any) { alert(e.message || 'Failed to send'); }
   }
 
   // ── Observations ──
@@ -724,15 +755,26 @@ export default function ChildJourneyPage() {
                 </p>
               )}
 
-              <button
-                onClick={saveBulk}
-                disabled={savingBulk || !students.some(s => (bulkTexts[s.id] || '').trim())}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 mt-3"
-              >
-                {savingBulk
-                  ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-                  : <><CheckCircle2 className="w-4 h-4" />Save All Entries</>}
-              </button>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => saveBulk(false)}
+                  disabled={savingBulk || !students.some(s => (bulkTexts[s.id] || '').trim())}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-neutral-800 hover:bg-neutral-900 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  {savingBulk
+                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
+                    : <><CheckCircle2 className="w-4 h-4" />Save Only</>}
+                </button>
+                <button
+                  onClick={() => saveBulk(true)}
+                  disabled={savingBulk || !students.some(s => (bulkTexts[s.id] || '').trim())}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  {savingBulk
+                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending…</>
+                    : <><Send className="w-4 h-4" />Save & Send Now</>}
+                </button>
+              </div>
             </div>
 
             {/* Generic class note */}
@@ -828,7 +870,20 @@ export default function ChildJourneyPage() {
 
                       {/* Entries for this date */}
                       {isExpanded && (
-                        <div className="border-t border-neutral-100 divide-y divide-neutral-50">
+                        <div className="border-t border-neutral-100">
+                          {/* Send All button for unsent entries */}
+                          {dayEntries.some(e => !e.is_sent_to_parent) && (
+                            <div className="px-4 py-2 bg-primary-50/50 border-b border-neutral-100 flex items-center justify-between">
+                              <span className="text-[10px] text-primary-700 font-medium">
+                                {dayEntries.filter(e => !e.is_sent_to_parent).length} unsent {dayEntries.filter(e => !e.is_sent_to_parent).length === 1 ? 'entry' : 'entries'}
+                              </span>
+                              <button onClick={() => sendAllForDate(date)}
+                                className="flex items-center gap-1 text-[11px] px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors">
+                                <Send size={11} /> Send All to Parents
+                              </button>
+                            </div>
+                          )}
+                          <div className="divide-y divide-neutral-50">
                           {dayEntries.map(entry => (
                             <div key={entry.id} className="px-4 py-3">
                               <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -853,6 +908,13 @@ export default function ChildJourneyPage() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
+                                  {!entry.is_sent_to_parent && (
+                                    <button onClick={() => sendToParent(entry)}
+                                      className="w-7 h-7 rounded-lg bg-primary-50 hover:bg-primary-100 text-primary-600 flex items-center justify-center transition-colors"
+                                      title="Send to parent">
+                                      <Send size={12} />
+                                    </button>
+                                  )}
                                   <button onClick={() => startEditEntry(entry)}
                                     className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-primary-50 hover:text-primary-600 flex items-center justify-center text-neutral-500 transition-colors"
                                     title="Edit entry">
@@ -871,6 +933,7 @@ export default function ChildJourneyPage() {
                               </p>
                             </div>
                           ))}
+                          </div>
                         </div>
                       )}
                     </div>
