@@ -162,23 +162,23 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
   return (
     <div className="flex flex-col gap-4">
       {/* Stat cards row */}
-      <div className="grid grid-cols-2 gap-3 relative z-0">
-        <div className="bg-gradient-to-br from-primary-600 to-primary-800 rounded-2xl p-4 text-white shadow-md overflow-hidden">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-gradient-to-br from-primary-600 to-primary-800 rounded-2xl p-4 text-white">
           <Users className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.total_students}</p>
           <p className="text-xs opacity-80">Total Students</p>
         </div>
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl p-4 text-white shadow-md overflow-hidden">
+        <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl p-4 text-white">
           <TrendingUp className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.attendance.avg_attendance_pct}%</p>
           <p className="text-xs opacity-80">Avg Attendance</p>
         </div>
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-4 text-white shadow-md overflow-hidden">
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl p-4 text-white">
           <Award className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.milestones_by_domain.reduce((s, m) => s + m.achieved, 0)}</p>
           <p className="text-xs opacity-80">Milestones Achieved</p>
         </div>
-        <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl p-4 text-white shadow-md overflow-hidden">
+        <div className="bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl p-4 text-white">
           <BookOpen className="w-5 h-5 opacity-70 mb-1" />
           <p className="text-2xl font-bold">{insights.journal.total_entries}</p>
           <p className="text-xs opacity-80">Journal Entries</p>
@@ -246,7 +246,7 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
 
       {/* Top performers */}
       {topPerformers.length > 0 && (
-        <div className="relative z-10 bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-neutral-100">
           <p className="text-sm font-bold text-neutral-800 mb-3">🏆 Top Milestone Achievers</p>
           <div className="flex flex-col gap-2">
             {topPerformers.map((s, i) => (
@@ -264,7 +264,7 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
 
       {/* Needs attention */}
       {needsAttention.length > 0 && needsAttention[0].achieved_count < topPerformers[0]?.achieved_count && (
-        <div className="relative z-10 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <p className="text-sm font-bold text-amber-800 mb-2">💡 May Need Extra Support</p>
           <div className="flex flex-col gap-1.5">
             {needsAttention.map(s => (
