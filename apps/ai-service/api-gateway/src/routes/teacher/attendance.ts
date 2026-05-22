@@ -83,20 +83,80 @@ router.post('/today', async (req: Request, res: Response) => {
     const { records, confirm_holiday } = req.body;
     if (!Array.isArray(records)) return res.status(400).json({ error: 'records array is required' });
 
-    // Check if today is a holiday — show as informational note only, never block submission
-    let holiday_note: string | null = null;
+    // ── Validate against school calendar ──
     const calRow = await pool.query(
-      `SELECT sc.academic_year FROM school_calendar sc
+      `SELECT sc.working_days, sc.start_date, sc.end_date, sc.holidays, sc.academic_year
+       FROM school_calendar sc
        WHERE sc.school_id = $1 AND sc.start_date <= $2 AND sc.end_date >= $2 LIMIT 1`,
       [school_id, today]
     );
+
     if (calRow.rows.length > 0) {
+      const cal = calRow.rows[0];
+      const todayDate = new Date(today + 'T12:00:00');
+      const dayOfWeek = todayDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+      // Check if today is a working day (working_days is an array like [1,2,3,4,5])
+      const workingDays: number[] = cal.working_days || [1, 2, 3, 4, 5];
+      if (!workingDays.includes(dayOfWeek)) {
+        return res.status(400).json({
+          error: 'Today is not a working day. Attendance cannot be marked on weekends/off days.',
+          reason: 'non_working_day',
+          day: dayOfWeek,
+        });
+      }
+
+      // Check if today is a holiday
+      const holidays: string[] = (cal.holidays || []).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+      if (holidays.includes(today)) {
+        // Allow if teacher explicitly confirms (confirm_holiday flag)
+        if (!confirm_holiday) {
+          // Check holidays table for the name
+          const holidayRow = await pool.query(
+            'SELECT event_name FROM holidays WHERE school_id = $1 AND academic_year = $2 AND holiday_date = $3',
+            [school_id, cal.academic_year, today]
+          );
+          const holidayName = holidayRow.rows[0]?.event_name || 'a scheduled holiday';
+          return res.status(400).json({
+            error: `Today is ${holidayName}. Are you sure you want to mark attendance?`,
+            reason: 'holiday',
+            holiday_name: holidayName,
+            confirm_required: true,
+          });
+        }
+      }
+    } else {
+      // No calendar found — check if today is before any academic year starts
+      const anyCalRow = await pool.query(
+        `SELECT start_date, end_date FROM school_calendar WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1`,
+        [school_id]
+      );
+      if (anyCalRow.rows.length > 0) {
+        const { start_date, end_date } = anyCalRow.rows[0];
+        if (today < start_date) {
+          return res.status(400).json({
+            error: `Academic year hasn't started yet. It begins on ${start_date}.`,
+            reason: 'before_academic_year',
+          });
+        }
+        if (today > end_date) {
+          return res.status(400).json({
+            error: `Academic year has ended (${end_date}). Please contact admin to update the calendar.`,
+            reason: 'after_academic_year',
+          });
+        }
+      }
+    }
+
+    // Check if today is a holiday (informational note for confirmed submissions)
+    let holiday_note: string | null = null;
+    if (calRow.rows.length > 0 && confirm_holiday) {
       const holidayRow = await pool.query(
         'SELECT event_name FROM holidays WHERE school_id = $1 AND academic_year = $2 AND holiday_date = $3',
         [school_id, calRow.rows[0].academic_year, today]
       );
       if (holidayRow.rows.length > 0) {
-        holiday_note = `Today is ${holidayRow.rows[0].event_name}. Attendance is still being recorded.`;
+        holiday_note = `Today is ${holidayRow.rows[0].event_name}. Attendance recorded as requested.`;
       }
     }
 
