@@ -264,7 +264,6 @@ router.get('/pending', async (req: Request, res: Response) => {
           chunks: [],
         });
       }
-      }
     }
 
     return res.json(pending);
