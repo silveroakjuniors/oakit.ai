@@ -374,9 +374,12 @@ export default function TeacherPlanner() {
     ]);
   }
 
-  async function loadPlan(effectiveToday?: string) {
+  async function loadPlan(effectiveToday?: string, overrideSectionId?: string) {
     try {
-      const data = await apiGet<DayPlan & { section_id?: string }>('/api/v1/teacher/plan/today', token);
+      const planUrl = overrideSectionId
+        ? `/api/v1/teacher/plan/today?section_id=${overrideSectionId}`
+        : '/api/v1/teacher/plan/today';
+      const data = await apiGet<DayPlan & { section_id?: string }>(planUrl, token);
       setPlan(data);
       if (data.section_id) setSectionId(data.section_id);
       // Load per-chunk homework state (Req 1.2)
@@ -434,15 +437,21 @@ export default function TeacherPlanner() {
     }
   }
 
-  async function loadPending() {
-    try { setPendingWork(await apiGet<PendingDay[]>('/api/v1/teacher/completion/pending', token)); } catch { /* ignore */ }
+  async function loadPending(overrideSectionId?: string) {
+    try {
+      const url = overrideSectionId
+        ? `/api/v1/teacher/completion/pending?section_id=${overrideSectionId}`
+        : '/api/v1/teacher/completion/pending';
+      setPendingWork(await apiGet<PendingDay[]>(url, token));
+    } catch { /* ignore */ }
   }
 
-  async function loadHomeworkAndNotes() {
+  async function loadHomeworkAndNotes(overrideSectionId?: string) {
     try {
+      const suffix = overrideSectionId ? `?section_id=${overrideSectionId}` : '';
       const [hw, ns] = await Promise.all([
-        apiGet<any>(`/api/v1/teacher/notes/homework`, token).catch(() => null),
-        apiGet<any[]>(`/api/v1/teacher/notes`, token).catch(() => []),
+        apiGet<any>(`/api/v1/teacher/notes/homework${suffix}`, token).catch(() => null),
+        apiGet<any[]>(`/api/v1/teacher/notes${suffix}`, token).catch(() => []),
       ]);
       if (hw) { setExistingHomework(hw); setHomeworkText(hw.raw_text || ''); }
       setNotes(ns || []);
