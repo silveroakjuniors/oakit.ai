@@ -46,7 +46,10 @@ router.get('/overview', async (_req: Request, res: Response) => {
       setup_fee_inr: (r.setup_fee_paise / 100).toFixed(2),
       outstanding_inr: (r.outstanding_paise / 100).toFixed(2),
       total_paid_inr: (r.total_paid_paise / 100).toFixed(2),
+      // Revenue per billing cycle (monthly=1x, quarterly=3x, annual=12x)
+      cycle_multiplier: r.billing_cycle === 'annual' ? 12 : r.billing_cycle === 'quarterly' ? 3 : 1,
       monthly_revenue_inr: ((r.per_student_paise * r.active_students) / 100).toFixed(2),
+      cycle_revenue_inr: ((r.per_student_paise * r.active_students * (r.billing_cycle === 'annual' ? 12 : r.billing_cycle === 'quarterly' ? 3 : 1)) / 100).toFixed(2),
     })));
   } catch (err) {
     console.error('[platform-billing overview]', err);
@@ -144,7 +147,23 @@ router.get('/:schoolId/invoices', async (req: Request, res: Response) => {
       `SELECT * FROM platform_invoices WHERE school_id = $1 ORDER BY created_at DESC`,
       [req.params.schoolId]
     );
-    return res.json(result.rows);
+    // Convert paise → rupees for display
+    return res.json(result.rows.map((r: any) => ({
+      ...r,
+      subtotal: r.subtotal_paise / 100,
+      discount: 0, // legacy invoices have no discount
+      discount_type: null,
+      discount_description: null,
+      gst_amount: r.gst_paise / 100,
+      total: r.total_paise / 100,
+      // line_items stored as rupees in new invoices, paise in old — detect by checking amounts
+      line_items: (r.line_items || []).map((li: any) => ({
+        ...li,
+        // If amount_paise exists (old format), convert; if amount exists (new format), use directly
+        amount: li.amount !== undefined ? li.amount : (li.amount_paise || 0) / 100,
+        unit_price: li.unit_price !== undefined ? li.unit_price : (li.unit_price_paise || 0) / 100,
+      })),
+    })));
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -154,7 +173,11 @@ router.get('/:schoolId/invoices', async (req: Request, res: Response) => {
 router.post('/:schoolId/invoices', async (req: Request, res: Response) => {
   try {
     const { schoolId } = req.params;
-    const { period_from, period_to, notes, include_setup_fee, include_ai_credits } = req.body;
+    const {
+      period_from, period_to, notes,
+      include_setup_fee, include_ai_credits,
+      discount_type, discount_value, discount_description,
+    } = req.body;
 
     if (!period_from || !period_to) {
       return res.status(400).json({ error: 'period_from and period_to are required' });
@@ -176,53 +199,77 @@ router.post('/:schoolId/invoices', async (req: Request, res: Response) => {
     const config = configRow.rows[0] || {
       per_student_paise: 0, setup_fee_paise: 0, ai_credits_included_paise: 200000,
       gst_enabled: false, gst_percentage: 18, school_gstin: null, platform_gstin: null,
+      billing_cycle: 'monthly',
     };
 
+    // Convert paise config to rupees for invoice
+    const perStudentRs = config.per_student_paise / 100;
+    const setupFeeRs = config.setup_fee_paise / 100;
+    const aiCreditsRs = config.ai_credits_included_paise / 100;
+
     const studentCount = school.rows[0].active_students;
+    const cycleMultiplier = config.billing_cycle === 'annual' ? 12
+      : config.billing_cycle === 'quarterly' ? 3 : 1;
+    const cycleLabel = config.billing_cycle === 'annual' ? 'Annual'
+      : config.billing_cycle === 'quarterly' ? 'Quarterly' : 'Monthly';
+
+    // Build line items (all amounts in rupees)
     const lineItems: any[] = [];
     let subtotal = 0;
 
-    // Per-student charge
-    if (config.per_student_paise > 0) {
-      const amount = config.per_student_paise * studentCount;
+    if (perStudentRs > 0) {
+      const unitPrice = perStudentRs * cycleMultiplier;
+      const amount = unitPrice * studentCount;
       lineItems.push({
-        description: `Per-student charge (${studentCount} students × ₹${(config.per_student_paise / 100).toFixed(2)})`,
+        description: `${cycleLabel} per-student charge (${studentCount} students × ₹${perStudentRs.toFixed(2)}/month × ${cycleMultiplier} months)`,
         quantity: studentCount,
-        unit_price_paise: config.per_student_paise,
-        amount_paise: amount,
+        unit_price: unitPrice,
+        amount,
       });
       subtotal += amount;
     }
 
-    // Setup fee (one-time)
-    if (include_setup_fee && config.setup_fee_paise > 0) {
+    if (include_setup_fee && setupFeeRs > 0) {
       lineItems.push({
         description: 'One-time setup fee',
         quantity: 1,
-        unit_price_paise: config.setup_fee_paise,
-        amount_paise: config.setup_fee_paise,
+        unit_price: setupFeeRs,
+        amount: setupFeeRs,
       });
-      subtotal += config.setup_fee_paise;
+      subtotal += setupFeeRs;
     }
 
-    // AI credits
-    if (include_ai_credits && config.ai_credits_included_paise > 0) {
+    if (include_ai_credits && aiCreditsRs > 0) {
       lineItems.push({
-        description: `Oakie AI credits (₹${(config.ai_credits_included_paise / 100).toFixed(2)})`,
+        description: `Oakie AI credits (₹${aiCreditsRs.toFixed(2)})`,
         quantity: 1,
-        unit_price_paise: config.ai_credits_included_paise,
-        amount_paise: config.ai_credits_included_paise,
+        unit_price: aiCreditsRs,
+        amount: aiCreditsRs,
       });
-      subtotal += config.ai_credits_included_paise;
+      subtotal += aiCreditsRs;
     }
 
-    // GST
-    const gstPaise = config.gst_enabled
-      ? Math.round(subtotal * (config.gst_percentage / 100))
-      : 0;
-    const total = subtotal + gstPaise;
+    // Calculate discount (in rupees)
+    let discountRs = 0;
+    if (discount_type && discount_type !== 'none' && discount_value > 0) {
+      if (discount_type === 'percentage') {
+        discountRs = Math.round((subtotal * discount_value / 100) * 100) / 100;
+      } else if (discount_type === 'flat') {
+        discountRs = Math.min(Number(discount_value), subtotal);
+      } else if (discount_type === 'months') {
+        // Free months = N months of per-student charge
+        discountRs = Math.round(perStudentRs * studentCount * Number(discount_value) * 100) / 100;
+        discountRs = Math.min(discountRs, subtotal);
+      }
+    }
 
-    // Generate invoice number: INV-YYYYMM-XXXX
+    const afterDiscount = subtotal - discountRs;
+    const gstAmount = config.gst_enabled
+      ? Math.round(afterDiscount * (config.gst_percentage / 100) * 100) / 100
+      : 0;
+    const total = Math.round((afterDiscount + gstAmount) * 100) / 100;
+
+    // Invoice number: INV-YYYYMM-XXXX
     const invoiceSeq = await pool.query(
       `SELECT COUNT(*)::int + 1 as seq FROM platform_invoices WHERE school_id = $1`,
       [schoolId]
@@ -239,15 +286,51 @@ router.post('/:schoolId/invoices', async (req: Request, res: Response) => {
           student_count, notes, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'draft')
        RETURNING *`,
-      [schoolId, invoiceNumber, period_from, period_to, JSON.stringify(lineItems),
-       subtotal, gstPaise, total,
-       config.gst_enabled, config.gst_percentage, config.school_gstin, config.platform_gstin,
-       studentCount, notes || null]
+      [
+        schoolId, invoiceNumber, period_from, period_to,
+        JSON.stringify(lineItems),
+        // Store as rupees * 100 = paise for DB compatibility, but we return rupees to frontend
+        Math.round(subtotal * 100),
+        Math.round(gstAmount * 100),
+        Math.round(total * 100),
+        config.gst_enabled, config.gst_percentage,
+        config.school_gstin, config.platform_gstin,
+        studentCount, notes || null,
+      ]
     );
 
-    return res.status(201).json(result.rows[0]);
+    const row = result.rows[0];
+    // Return amounts in rupees for frontend display
+    return res.status(201).json({
+      ...row,
+      line_items: lineItems, // already in rupees
+      subtotal,
+      discount: discountRs,
+      discount_type: discount_type || null,
+      discount_description: discount_description || null,
+      gst_amount: gstAmount,
+      total,
+    });
   } catch (err) {
     console.error('[platform-billing invoice POST]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── Delete invoice ────────────────────────────────────────────────────────────
+router.delete('/invoices/:id', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM platform_invoices WHERE id = $1 AND status IN ('draft','cancelled')
+       RETURNING id, invoice_number`,
+      [req.params.id]
+    );
+    if (!result.rows.length) {
+      return res.status(400).json({ error: 'Only draft or cancelled invoices can be deleted' });
+    }
+    return res.json({ success: true, deleted: result.rows[0].invoice_number });
+  } catch (err) {
+    console.error('[platform-billing DELETE invoice]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

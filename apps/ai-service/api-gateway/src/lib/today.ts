@@ -73,6 +73,7 @@ export async function getTimeMachineStatus(schoolId: string): Promise<{ active: 
 /**
  * Returns today's date as YYYY-MM-DD.
  * If a time machine mock date is set for this school, returns that instead.
+ * Uses IST (Asia/Kolkata) timezone for real date since all schools are in India.
  */
 export async function getToday(schoolId: string): Promise<string> {
   const status = await getTimeMachineStatus(schoolId);
@@ -80,5 +81,11 @@ export async function getToday(schoolId: string): Promise<string> {
     console.log(`[TimeMachine] school=${schoolId} using mock date: ${status.mock_date}`);
     return status.mock_date;
   }
-  return new Date().toISOString().split('T')[0];
+  // Use IST timezone to get the correct local date
+  const now = new Date();
+  const istDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const y = istDate.getFullYear();
+  const m = String(istDate.getMonth() + 1).padStart(2, '0');
+  const d = String(istDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }

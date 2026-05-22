@@ -261,7 +261,7 @@ export default function ClassPerformancePage() {
                         tickFormatter={v => fmtTime(Number(v))} />
                       <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }}
                         labelFormatter={v => new Date(v + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
-                        formatter={(v: any, name: string) => [v ? fmtTime(v) : '—', name === 'att_time' ? 'Attendance' : 'Completion']} />
+                        formatter={(v: any, name: any) => [v ? fmtTime(v) : '—', name === 'att_time' ? 'Attendance' : 'Completion']} />
                       <Line type="monotone" dataKey="att_time" stroke="#6366f1" strokeWidth={2}
                         dot={{ fill: '#6366f1', r: 3 }} connectNulls name="att_time" />
                       <Line type="monotone" dataKey="comp_time" stroke="#10b981" strokeWidth={2}

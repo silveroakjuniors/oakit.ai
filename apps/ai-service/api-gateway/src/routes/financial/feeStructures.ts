@@ -347,7 +347,7 @@ router.get('/fee-wizard/terms', async (req, res) => {
 
     const result = await pool.query(
       `SELECT term_name, start_date, end_date
-       FROM academic_terms
+       FROM school_terms
        WHERE school_id = $1
          ${academic_year ? 'AND academic_year = $2' : ''}
        ORDER BY start_date ASC`,

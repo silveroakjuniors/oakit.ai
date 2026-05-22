@@ -148,18 +148,29 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         } catch { /* ignore */ }
       }
 
+      // Check if this staff user also has a parent account (dual-role)
+      let also_parent = false;
+      try {
+        const parentCheck = await pool.query(
+          'SELECT id FROM parent_users WHERE mobile = $1 AND school_id = $2 AND is_active = true',
+          [user.mobile, school_id]
+        );
+        also_parent = parentCheck.rows.length > 0;
+      } catch { /* ignore */ }
+
       return res.json({
         token,
         role: user.portal_role,
         display_role: user.role,
         force_password_reset: user.force_password_reset,
         attendance_prompt,
+        also_parent,
       });
     }
 
     // Fallback: try parent_users table
     const parentResult = await pool.query(
-      `SELECT id, password_hash, is_active, force_password_reset
+      `SELECT id, password_hash, is_active, force_password_reset, mobile
        FROM parent_users WHERE mobile = $1 AND school_id = $2`,
       [identifier, school_id]
     );
@@ -172,6 +183,17 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
     const parentValid = await bcrypt.compare(password, parent.password_hash);
     if (!parentValid) return res.status(401).json({ error: 'Invalid credentials' });
 
+    // Check if this parent also has a staff account (dual-role)
+    let also_staff_role: string | null = null;
+    try {
+      const staffCheck = await pool.query(
+        `SELECT r.name as role FROM users u JOIN roles r ON r.id = u.role_id
+         WHERE u.mobile = $1 AND u.school_id = $2 AND u.is_active = true`,
+        [parent.mobile, school_id]
+      );
+      if (staffCheck.rows.length > 0) also_staff_role = staffCheck.rows[0].role;
+    } catch { /* ignore */ }
+
     const parentToken = signToken({
       user_id: parent.id,
       school_id,
@@ -181,7 +203,7 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
     } as any);
     const { verifyToken: vt4 } = await import('../lib/jwt');
     const p4 = vt4(parentToken); await registerSession(parent.id, p4.sid!);
-    return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset });
+    return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset, also_staff_role });
 
   } catch (err) {
     console.error('Login error:', err);
@@ -543,6 +565,64 @@ router.post('/setup', async (req: Request, res: Response) => {
 
     return res.json({ message: 'Password set successfully' });
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/auth/switch-role — switch between teacher and parent portals (dual-role users)
+router.post('/switch-role', async (req: Request, res: Response) => {
+  try {
+    const { token: currentToken, target_role } = req.body;
+    if (!currentToken || !target_role) {
+      return res.status(400).json({ error: 'token and target_role are required' });
+    }
+
+    const { verifyToken } = await import('../lib/jwt');
+    let payload: any;
+    try { payload = verifyToken(currentToken); }
+    catch { return res.status(401).json({ error: 'Invalid token' }); }
+
+    const { school_id } = payload;
+
+    if (target_role === 'parent') {
+      // Current user is staff, switch to parent portal
+      // Find their mobile from users table
+      const userRow = await pool.query('SELECT mobile FROM users WHERE id = $1 AND school_id = $2', [payload.user_id, school_id]);
+      if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+      const mobile = userRow.rows[0].mobile;
+
+      const parentRow = await pool.query(
+        'SELECT id, force_password_reset FROM parent_users WHERE mobile = $1 AND school_id = $2 AND is_active = true',
+        [mobile, school_id]
+      );
+      if (parentRow.rows.length === 0) return res.status(404).json({ error: 'No parent account linked to this mobile' });
+
+      const parent = parentRow.rows[0];
+      const newToken = signToken({ user_id: parent.id, school_id, role: 'parent', permissions: [], force_password_reset: parent.force_password_reset } as any);
+      const p = verifyToken(newToken); await registerSession(parent.id, p.sid!);
+      return res.json({ token: newToken, role: 'parent' });
+
+    } else {
+      // Current user is parent, switch to staff portal
+      const parentRow = await pool.query('SELECT mobile FROM parent_users WHERE id = $1 AND school_id = $2', [payload.user_id, school_id]);
+      if (parentRow.rows.length === 0) return res.status(404).json({ error: 'Parent not found' });
+      const mobile = parentRow.rows[0].mobile;
+
+      const staffRow = await pool.query(
+        `SELECT u.id, r.name as role, COALESCE(r.portal_access, r.name) as portal_role, r.permissions, u.force_password_reset
+         FROM users u JOIN roles r ON r.id = u.role_id
+         WHERE u.mobile = $1 AND u.school_id = $2 AND u.is_active = true`,
+        [mobile, school_id]
+      );
+      if (staffRow.rows.length === 0) return res.status(404).json({ error: 'No staff account linked to this mobile' });
+
+      const staff = staffRow.rows[0];
+      const newToken = signToken({ user_id: staff.id, school_id, role: staff.portal_role, permissions: staff.permissions || [], force_password_reset: staff.force_password_reset } as any);
+      const p = verifyToken(newToken); await registerSession(staff.id, p.sid!);
+      return res.json({ token: newToken, role: staff.portal_role, display_role: staff.role });
+    }
+  } catch (err) {
+    console.error('[switch-role]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
