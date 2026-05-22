@@ -209,6 +209,7 @@ router.get('/', async (req: Request, res: Response) => {
        FROM attendance_records ar
        WHERE ar.section_id = $1 AND ar.school_id = $2 AND ar.attend_date >= $3
          AND ar.submitted_at IS NOT NULL
+         AND EXTRACT(DOW FROM ar.attend_date::timestamp) NOT IN (0, 6)
        GROUP BY ar.attend_date
        ORDER BY ar.attend_date`,
       [section_id, school_id, thirtyDaysAgo]
@@ -217,9 +218,10 @@ router.get('/', async (req: Request, res: Response) => {
     const dailyCompTime = await safeQuery(
       `SELECT
          dc.completion_date AS date,
-         EXTRACT(HOUR FROM dc.created_at) * 60 + EXTRACT(MINUTE FROM dc.created_at)::int AS time_minutes
+         (EXTRACT(HOUR FROM dc.created_at) * 60 + EXTRACT(MINUTE FROM dc.created_at))::int AS time_minutes
        FROM daily_completions dc
        WHERE dc.section_id = $1 AND dc.school_id = $2 AND dc.completion_date >= $3
+         AND EXTRACT(DOW FROM dc.completion_date::timestamp) NOT IN (0, 6)
        ORDER BY dc.completion_date`,
       [section_id, school_id, thirtyDaysAgo]
     );
