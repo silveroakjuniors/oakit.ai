@@ -72,27 +72,24 @@ router.get('/', async (req: Request, res: Response) => {
     );
     const completedSectionIds = new Set(completionResult.rows.map((r: any) => r.section_id));
 
-    // Curriculum coverage per section (last 30 days)
+    // Day-based completion coverage per section
     const coverageResult = await pool.query(
       `SELECT
          sec.id as section_id,
-         COUNT(DISTINCT cc.id)::int as total_chunks,
-         COUNT(DISTINCT dc_chunks.chunk_id)::int as covered_chunks
+         (SELECT COUNT(*)::int FROM day_plans dp
+          WHERE dp.section_id = sec.id AND dp.school_id = $1
+            AND dp.status NOT IN ('holiday', 'weekend')
+            AND dp.plan_date <= CURRENT_DATE) as total_planned,
+         (SELECT COUNT(*)::int FROM daily_completions dc
+          WHERE dc.section_id = sec.id AND dc.school_id = $1) as days_completed
        FROM sections sec
-       LEFT JOIN curriculum_documents cd ON cd.class_id = sec.class_id AND cd.school_id = $1
-       LEFT JOIN curriculum_chunks cc ON cc.document_id = cd.id
-       LEFT JOIN (
-         SELECT unnest(covered_chunk_ids) as chunk_id, section_id
-         FROM daily_completions WHERE school_id = $1
-       ) dc_chunks ON dc_chunks.chunk_id = cc.id AND dc_chunks.section_id = sec.id
-       WHERE sec.school_id = $1
-       GROUP BY sec.id`,
+       WHERE sec.school_id = $1`,
       [school_id]
     );
     const coverageMap: Record<string, { total: number; covered: number; pct: number }> = {};
     for (const r of coverageResult.rows) {
-      const pct = r.total_chunks > 0 ? Math.round((r.covered_chunks / r.total_chunks) * 100) : 0;
-      coverageMap[r.section_id] = { total: r.total_chunks, covered: r.covered_chunks, pct };
+      const pct = r.total_planned > 0 ? Math.round((r.days_completed / r.total_planned) * 100) : 0;
+      coverageMap[r.section_id] = { total: r.total_planned, covered: r.days_completed, pct };
     }
 
     // Teacher streaks
