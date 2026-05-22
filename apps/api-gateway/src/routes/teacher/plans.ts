@@ -3,6 +3,7 @@ import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard } from '../../middleware/auth';
 import { getTeacherSections } from '../../lib/teacherSection';
 import { getToday } from '../../lib/today';
+import PDFDocument from 'pdfkit';
 
 const router = Router();
 router.use(jwtVerify, schoolScope, roleGuard('teacher', 'principal'));
@@ -104,8 +105,8 @@ router.get('/today', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/teacher/plan/week?from=YYYY-MM-DD&section_id=...
-// Returns plans for a 5-day working week starting from `from` (defaults to current week Monday)
+// GET /api/v1/teacher/plan/week?from=YYYY-MM-DD&to=YYYY-MM-DD&section_id=...
+// Returns plans for a date range. If `to` is omitted, returns the 5-day working week from `from`.
 router.get('/week', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
@@ -114,25 +115,33 @@ router.get('/week', async (req: Request, res: Response) => {
     const section_id = await resolveSection(user_id, school_id, req.query.section_id as string);
     if (!section_id) return res.json({ days: [], week_label: '' });
 
-    // Determine week start (Monday of the requested or current week)
-    let weekStart: Date;
+    // Determine date range
+    let rangeStart: Date;
+    let rangeEnd: Date;
+
     if (req.query.from) {
-      weekStart = new Date((req.query.from as string) + 'T12:00:00');
+      rangeStart = new Date((req.query.from as string) + 'T12:00:00');
     } else {
-      weekStart = new Date(today + 'T12:00:00');
-      const dow = weekStart.getDay(); // 0=Sun
-      const diff = dow === 0 ? -6 : 1 - dow; // go back to Monday
-      weekStart.setDate(weekStart.getDate() + diff);
+      // Default: Monday of current week
+      rangeStart = new Date(today + 'T12:00:00');
+      const dow = rangeStart.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow;
+      rangeStart.setDate(rangeStart.getDate() + diff);
     }
 
-    // Build 7-day range (Mon–Sun), filter to working days
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(weekStart);
-      d.setDate(d.getDate() + i);
-      const iso = d.toISOString().split('T')[0];
+    if (req.query.to) {
+      rangeEnd = new Date((req.query.to as string) + 'T12:00:00');
+    } else {
+      // Default: Friday of the same week (5 working days)
+      rangeEnd = new Date(rangeStart);
+      rangeEnd.setDate(rangeEnd.getDate() + 6); // Mon+6 = Sun, then filter weekends below
+    }
+
+    // Build all dates in range, filter weekends
+    const days: string[] = [];
+    for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
       const dow = d.getDay();
-      if (dow !== 0 && dow !== 6) days.push(iso); // skip weekends
+      if (dow !== 0 && dow !== 6) days.push(d.toISOString().split('T')[0]);
     }
 
     if (days.length === 0) return res.json({ days: [], week_label: '' });
@@ -156,18 +165,18 @@ router.get('/week', async (req: Request, res: Response) => {
       [section_id, days, school_id]
     );
 
-    // Fetch special days for the week
+    // Fetch special days for the range
     const specialResult = await pool.query(
-      `SELECT day_date::text AS date, label, day_type
+      `SELECT day_date::text AS date, label, day_type, activity_note
        FROM special_days
        WHERE school_id = $1 AND day_date = ANY($2::date[])`,
       [school_id, days]
     );
     const specialMap = new Map(specialResult.rows.map((r: any) => [r.date, r]));
 
-    // Fetch holidays for the week
+    // Fetch holidays for the range
     const holidayResult = await pool.query(
-      `SELECT holiday_date::text AS date, event_name AS label
+      `SELECT h.holiday_date::text AS date, h.event_name AS label
        FROM holidays h
        JOIN school_calendar sc ON sc.school_id = h.school_id AND sc.academic_year = h.academic_year
        WHERE h.school_id = $1 AND h.holiday_date = ANY($2::date[])`,
@@ -177,7 +186,6 @@ router.get('/week', async (req: Request, res: Response) => {
 
     const planMap = new Map(result.rows.map((r: any) => [r.plan_date, r]));
 
-    // Build response — one entry per working day
     const weekDays = days.map(date => {
       const plan = planMap.get(date);
       const special = specialMap.get(date);
@@ -192,13 +200,13 @@ router.get('/week', async (req: Request, res: Response) => {
         holiday_label: holiday || null,
         special_label: special?.label || null,
         special_type: special?.day_type || null,
+        activity_note: special?.activity_note || null,
         status: plan?.status || (holiday ? 'holiday' : special ? special.day_type : 'no_plan'),
         chunks: plan?.chunks || [],
         admin_note: plan?.admin_note || null,
       };
     });
 
-    // Week label e.g. "Mon 2 Jun – Fri 6 Jun"
     const first = new Date(days[0] + 'T12:00:00');
     const last  = new Date(days[days.length - 1] + 'T12:00:00');
     const fmt = (d: Date) => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -208,6 +216,207 @@ router.get('/week', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Plans/week]', err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/teacher/plan/week/pdf?from=YYYY-MM-DD&to=YYYY-MM-DD&section_id=...
+// Generates and downloads a PDF of the weekly/range plan
+router.get('/week/pdf', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const today = await getToday(school_id);
+
+    const section_id = await resolveSection(user_id, school_id, req.query.section_id as string);
+    if (!section_id) return res.status(404).json({ error: 'No section assigned' });
+
+    // Determine date range (same logic as /week GET)
+    let rangeStart: Date;
+    let rangeEnd: Date;
+    if (req.query.from) {
+      rangeStart = new Date((req.query.from as string) + 'T12:00:00');
+    } else {
+      rangeStart = new Date(today + 'T12:00:00');
+      const dow = rangeStart.getDay();
+      rangeStart.setDate(rangeStart.getDate() + (dow === 0 ? -6 : 1 - dow));
+    }
+    if (req.query.to) {
+      rangeEnd = new Date((req.query.to as string) + 'T12:00:00');
+    } else {
+      rangeEnd = new Date(rangeStart);
+      rangeEnd.setDate(rangeEnd.getDate() + 6);
+    }
+
+    const days: string[] = [];
+    for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) days.push(d.toISOString().split('T')[0]);
+    }
+    if (days.length === 0) return res.status(400).json({ error: 'No working days in range' });
+
+    // Fetch section + teacher info
+    const secRow = await pool.query(
+      `SELECT s.label, c.name AS class_name, u.name AS teacher_name
+       FROM sections s JOIN classes c ON c.id = s.class_id
+       LEFT JOIN users u ON u.id = $2
+       WHERE s.id = $1`,
+      [section_id, user_id]
+    );
+    const sec = secRow.rows[0] || { label: '', class_name: '', teacher_name: '' };
+
+    // Fetch plans
+    const planResult = await pool.query(
+      `SELECT dp.plan_date::text AS plan_date, dp.status, dp.admin_note,
+              COALESCE(json_agg(json_build_object(
+                'topic_label', COALESCE((dp.chunk_label_overrides->>(cc.id::text)), cc.topic_label),
+                'content', cc.content,
+                'activity_ids', cc.activity_ids
+              ) ORDER BY cc.chunk_index) FILTER (WHERE cc.id IS NOT NULL), '[]') AS chunks
+       FROM day_plans dp
+       LEFT JOIN curriculum_chunks cc ON cc.id = ANY(dp.chunk_ids)
+       WHERE dp.section_id = $1 AND dp.plan_date = ANY($2::date[]) AND dp.school_id = $3
+       GROUP BY dp.plan_date, dp.status, dp.admin_note, dp.chunk_label_overrides
+       ORDER BY dp.plan_date`,
+      [section_id, days, school_id]
+    );
+    const planMap = new Map(planResult.rows.map((r: any) => [r.plan_date, r]));
+
+    // Fetch holidays + special days
+    const holidayResult = await pool.query(
+      `SELECT h.holiday_date::text AS date, h.event_name AS label
+       FROM holidays h JOIN school_calendar sc ON sc.school_id = h.school_id AND sc.academic_year = h.academic_year
+       WHERE h.school_id = $1 AND h.holiday_date = ANY($2::date[])`,
+      [school_id, days]
+    );
+    const holidayMap = new Map(holidayResult.rows.map((r: any) => [r.date, r.label]));
+
+    const specialResult = await pool.query(
+      `SELECT day_date::text AS date, label, day_type, activity_note
+       FROM special_days WHERE school_id = $1 AND day_date = ANY($2::date[])`,
+      [school_id, days]
+    );
+    const specialMap = new Map(specialResult.rows.map((r: any) => [r.date, r]));
+
+    // Build PDF using pdfkit
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+
+    const GREEN = '#1B4332';
+    const LIGHT_GREEN = '#D1FAE5';
+    const GRAY = '#6B7280';
+    const LIGHT_GRAY = '#F9FAFB';
+
+    // Header
+    doc.rect(0, 0, doc.page.width, 70).fill(GREEN);
+    doc.fillColor('white').fontSize(16).font('Helvetica-Bold')
+      .text('Weekly Plan', 40, 20);
+    doc.fontSize(10).font('Helvetica')
+      .text(`${sec.class_name} · Section ${sec.label}`, 40, 42);
+    const first = new Date(days[0] + 'T12:00:00');
+    const last  = new Date(days[days.length - 1] + 'T12:00:00');
+    const fmtD = (d: Date) => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    doc.text(`${fmtD(first)} – ${fmtD(last)}`, 40, 56);
+    doc.fillColor(GRAY).fontSize(9).text(`Generated ${new Date().toLocaleDateString('en-IN')}`, doc.page.width - 160, 56);
+
+    let y = 90;
+    const pageH = doc.page.height - 60;
+    const leftM = 40;
+    const rightM = doc.page.width - 40;
+    const colW = rightM - leftM;
+
+    function checkPage(needed: number) {
+      if (y + needed > pageH) {
+        doc.addPage();
+        y = 40;
+      }
+    }
+
+    for (const date of days) {
+      const plan = planMap.get(date);
+      const holiday = holidayMap.get(date);
+      const special = specialMap.get(date);
+      const d = new Date(date + 'T12:00:00');
+      const dayLabel = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+      const isToday = date === today;
+
+      checkPage(40);
+
+      // Day header bar
+      const headerBg = holiday ? '#FEE2E2' : special ? '#DBEAFE' : isToday ? LIGHT_GREEN : LIGHT_GRAY;
+      const headerText = holiday ? '#991B1B' : special ? '#1E40AF' : isToday ? GREEN : '#111827';
+      doc.rect(leftM, y, colW, 24).fill(headerBg);
+      doc.fillColor(headerText).fontSize(11).font('Helvetica-Bold')
+        .text(dayLabel, leftM + 8, y + 6, { width: colW - 16 });
+      y += 28;
+
+      if (holiday) {
+        checkPage(20);
+        doc.fillColor('#DC2626').fontSize(9).font('Helvetica-Oblique')
+          .text(`🎉 Holiday: ${holiday}`, leftM + 8, y);
+        y += 18;
+        continue;
+      }
+
+      if (special) {
+        checkPage(20);
+        doc.fillColor('#1D4ED8').fontSize(9).font('Helvetica-Oblique')
+          .text(`📌 ${special.day_type?.replace(/_/g, ' ')}: ${special.label}${special.activity_note ? ' — ' + special.activity_note : ''}`, leftM + 8, y, { width: colW - 16 });
+        y += 18;
+      }
+
+      if (plan?.admin_note) {
+        checkPage(20);
+        doc.fillColor('#92400E').fontSize(9).font('Helvetica-Oblique')
+          .text(`📌 Note: ${plan.admin_note}`, leftM + 8, y, { width: colW - 16 });
+        y += 16;
+      }
+
+      const planChunks: any[] = plan?.chunks || [];
+      if (planChunks.length === 0) {
+        checkPage(18);
+        doc.fillColor(GRAY).fontSize(9).font('Helvetica-Oblique')
+          .text('No curriculum plan for this day', leftM + 8, y);
+        y += 18;
+      } else {
+        for (const chunk of planChunks) {
+          checkPage(30);
+          // Topic label
+          doc.fillColor('#111827').fontSize(10).font('Helvetica-Bold')
+            .text(`• ${chunk.topic_label || 'Topic'}`, leftM + 8, y, { width: colW - 16 });
+          y += 14;
+          if (chunk.content) {
+            const lines = chunk.content.split('\n').filter((l: string) => l.trim());
+            for (const line of lines) {
+              checkPage(14);
+              doc.fillColor(GRAY).fontSize(8.5).font('Helvetica')
+                .text(line.trim(), leftM + 18, y, { width: colW - 26 });
+              y += 12;
+            }
+          }
+          if (chunk.activity_ids?.length) {
+            checkPage(14);
+            doc.fillColor('#065F46').fontSize(8).font('Helvetica-Oblique')
+              .text(`📎 ${chunk.activity_ids.join(', ')}`, leftM + 18, y, { width: colW - 26 });
+            y += 12;
+          }
+          y += 4;
+        }
+      }
+      y += 10; // gap between days
+    }
+
+    doc.end();
+
+    await new Promise<void>(resolve => doc.on('end', resolve));
+    const pdfBuffer = Buffer.concat(chunks);
+
+    const fromStr = days[0];
+    const toStr = days[days.length - 1];
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="weekly-plan-${fromStr}-to-${toStr}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('[Plans/week/pdf]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
   }
 });
 

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button, Card, Badge, Alert, GlassCard } from '@/UIComponents';
 import { OakieMessageText } from '@/UIComponents/teacher/OakieMessage';
 import { RawPlanModal } from '@/UIComponents/teacher/RawPlanModal';
+import WeeklyPlanModal from '@/components/WeeklyPlanModal';
 import { TopicsChecklist } from '@/UIComponents/teacher/TopicsChecklist';
 import HomeworkModal from '@/components/HomeworkModal';
 import PendingWorkList from '@/components/ui/PendingWorkList';
@@ -1012,6 +1013,14 @@ export default function TeacherPlanner() {
               <CalendarDays className="w-3.5 h-3.5" />
               Raw Plan
             </button>
+            {/* Weekly Plan */}
+            <button
+              onClick={() => setShowWeeklyPlanModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 border border-primary-200 bg-primary-50 rounded-lg text-xs text-primary-700 hover:bg-primary-100 transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Week Plan
+            </button>
             {/* Export Oakie's plan */}
             {oakiePlanText && (
               <button
@@ -1042,6 +1051,15 @@ export default function TeacherPlanner() {
             exportPdf(today, rawText);
             setShowRawPlanModal(false);
           }}
+        />
+
+        {/* Weekly Plan Modal */}
+        <WeeklyPlanModal
+          open={showWeeklyPlanModal}
+          onClose={() => setShowWeeklyPlanModal(false)}
+          token={token}
+          sectionId={sectionId}
+          today={today}
         />
 
         {/* Session Recorder Modal */}
