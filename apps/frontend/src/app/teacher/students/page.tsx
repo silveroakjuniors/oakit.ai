@@ -88,26 +88,26 @@ function DonutChart({ data, size = 120, strokeWidth = 18 }: { data: { label: str
   );
 }
 
-function BarChart({ data, height = 140 }: { data: { label: string; value: number; max: number; color: string }[]; height?: number }) {
+function BarChart({ data, height = 180 }: { data: { label: string; value: number; max: number; color: string }[]; height?: number }) {
   if (data.length === 0) return null;
   const maxVal = Math.max(...data.map(d => d.max), 1);
-  const barWidth = Math.min(32, Math.floor(280 / data.length));
 
   return (
-    <div className="flex items-end justify-center gap-1" style={{ height }}>
+    <div className="flex items-end gap-2 w-full" style={{ height }}>
       {data.map((d, i) => {
-        const achievedH = Math.max((d.value / maxVal) * (height - 40), 4);
-        const maxH = Math.max((d.max / maxVal) * (height - 40), 4);
+        const achievedH = Math.max((d.value / maxVal) * (height - 50), 4);
+        const maxH = Math.max((d.max / maxVal) * (height - 50), 8);
+        const pct = d.max > 0 ? Math.round((d.value / d.max) * 100) : 0;
         return (
-          <div key={i} className="flex flex-col items-center gap-1" style={{ width: barWidth }}>
-            <span className="text-[9px] font-bold text-neutral-600">{d.value}/{d.max}</span>
-            <div className="w-full relative" style={{ height: `${maxH}px` }}>
+          <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
+            <span className="text-[10px] font-bold text-neutral-700">{d.value}/{d.max}</span>
+            <div className="w-full relative rounded-lg overflow-hidden" style={{ height: `${maxH}px` }}>
               {/* Max bar (background) */}
-              <div className="absolute inset-0 rounded-t-md" style={{ background: d.color, opacity: 0.15 }} />
+              <div className="absolute inset-0 rounded-lg" style={{ background: d.color, opacity: 0.15 }} />
               {/* Achieved bar (foreground) */}
-              <div className="absolute bottom-0 left-0 right-0 rounded-t-md" style={{ height: `${achievedH}px`, background: d.color, opacity: 0.85 }} />
+              <div className="absolute bottom-0 left-0 right-0 rounded-lg transition-all duration-500" style={{ height: `${achievedH}px`, background: d.color }} />
             </div>
-            <span className="text-[8px] text-neutral-500 truncate w-full text-center">{d.label.slice(0, 6)}</span>
+            <span className="text-[10px] text-neutral-600 font-medium text-center leading-tight">{d.label}</span>
           </div>
         );
       })}
@@ -217,14 +217,6 @@ function ClassInsightsDashboard({ insights }: { insights: ClassInsights }) {
             <p className="text-sm font-bold text-neutral-800">Milestones by Domain</p>
           </div>
           <BarChart data={milestoneBarData} />
-          <div className="flex flex-wrap gap-2 mt-3">
-            {milestoneBarData.map(d => (
-              <span key={d.label} className="flex items-center gap-1 text-[9px] text-neutral-600">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
-                {d.label}
-              </span>
-            ))}
-          </div>
         </div>
       )}
 
