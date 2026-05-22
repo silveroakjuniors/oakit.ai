@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { API_BASE, apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost, apiPut } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import {
   ChevronLeft, Send, BookOpen, ClipboardList, CheckCircle2, AlertCircle,
@@ -222,7 +222,7 @@ export default function ChildJourneyPage() {
     if (!toSave.length) return;
     setSavingBulk(true); setBulkMsg('');
     try {
-      await Promise.all(toSave.map(student =>
+      const results = await Promise.allSettled(toSave.map(student =>
         apiPost('/api/v1/teacher/child-journey', {
           student_id: student.id,
           entry_type: entryType,
@@ -230,13 +230,27 @@ export default function ChildJourneyPage() {
           send_to_parent: sendToParent,
         }, token),
       ));
-      const newSaved = new Set(savedIds);
-      toSave.forEach(s => newSaved.add(s.id));
-      setSavedIds(newSaved);
-      const action = sendToParent ? 'Saved & sent to parents' : 'Saved';
-      setBulkMsg(`✓ ${action} for ${toSave.length} student${toSave.length > 1 ? 's' : ''}${sendToParent ? '' : ' — visible in History tab'}`);
-      setBulkTexts({});
-      setBulkFormatted({});
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (succeeded > 0) {
+        const newSaved = new Set(savedIds);
+        toSave.forEach(s => newSaved.add(s.id));
+        setSavedIds(newSaved);
+        setBulkTexts({});
+        setBulkFormatted({});
+      }
+      if (failed === 0) {
+        const action = sendToParent ? 'Saved & sent to parents' : 'Saved';
+        setBulkMsg(`✓ ${action} for ${toSave.length} student${toSave.length > 1 ? 's' : ''}${sendToParent ? '' : ' — visible in History tab'}`);
+      } else if (succeeded > 0) {
+        setBulkMsg(`✓ Saved for ${succeeded} students, ${failed} failed`);
+      } else {
+        const firstErr = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+        setBulkMsg(firstErr?.reason?.message || 'Failed to save');
+      }
+      // Clear history filters and reload
+      setHistoryDate('');
+      setHistoryStudent('');
       if (sectionId) loadAllEntries(sectionId);
     } catch (e: any) { setBulkMsg(e.message || 'Failed to save'); }
     finally { setSavingBulk(false); }
@@ -250,18 +264,32 @@ export default function ChildJourneyPage() {
     finally { setClassNoteFormatting(false); }
   }
 
-  async function saveClassNote() {
+  async function saveClassNote(sendToParent = false) {
     if (!classNoteText.trim() || students.length === 0) return;
     setSavingClassNote(true); setClassNoteMsg('');
     try {
-      await Promise.all(students.map(student =>
+      const results = await Promise.allSettled(students.map(student =>
         apiPost('/api/v1/teacher/child-journey', {
           student_id: student.id, entry_type: entryType,
-          raw_text: classNoteText.trim(), send_to_parent: false,
+          raw_text: classNoteText.trim(), send_to_parent: sendToParent,
         }, token)
       ));
-      setClassNoteMsg(`✓ Note saved for all ${students.length} students — visible in History tab`);
-      setClassNoteText('');
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed === 0) {
+        const action = sendToParent ? 'Saved & sent to parents' : 'Note saved';
+        setClassNoteMsg(`✓ ${action} for all ${students.length} students${sendToParent ? '' : ' — visible in History tab'}`);
+        setClassNoteText('');
+      } else if (succeeded > 0) {
+        setClassNoteMsg(`✓ Saved for ${succeeded} students, ${failed} failed. Check History tab.`);
+        setClassNoteText('');
+      } else {
+        const firstErr = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+        setClassNoteMsg(firstErr?.reason?.message || 'Failed to save');
+      }
+      // Clear history filters and reload so new entries are visible
+      setHistoryDate('');
+      setHistoryStudent('');
       if (sectionId) loadAllEntries(sectionId);
     } catch (e: any) { setClassNoteMsg(e.message || 'Failed to save'); }
     finally { setSavingClassNote(false); }
@@ -306,12 +334,7 @@ export default function ChildJourneyPage() {
 
   async function sendToParent(entry: JourneyEntry) {
     try {
-      const r = await fetch(`${API_BASE}/api/v1/teacher/child-journey/${entry.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ raw_text: entry.raw_text, send_to_parent: true }),
-      }).then(r => r.json());
-      if (r.error) throw new Error(r.error);
+      const r = await apiPut<any>(`/api/v1/teacher/child-journey/${entry.id}`, { raw_text: entry.raw_text, send_to_parent: true }, token!);
       setAllEntries(prev => prev.map(e => e.id === entry.id ? { ...e, is_sent_to_parent: true, sent_at: new Date().toISOString() } : e));
     } catch (e: any) { alert(e.message || 'Failed to send'); }
   }
@@ -322,11 +345,7 @@ export default function ChildJourneyPage() {
     if (!confirm(`Send ${entries.length} entries to parents?`)) return;
     try {
       await Promise.all(entries.map(entry =>
-        fetch(`${API_BASE}/api/v1/teacher/child-journey/${entry.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ raw_text: entry.raw_text, send_to_parent: true }),
-        }).then(r => r.json())
+        apiPut<any>(`/api/v1/teacher/child-journey/${entry.id}`, { raw_text: entry.raw_text, send_to_parent: true }, token!)
       ));
       setAllEntries(prev => prev.map(e =>
         (e.entry_date || '').startsWith(date) ? { ...e, is_sent_to_parent: true, sent_at: new Date().toISOString() } : e
@@ -800,12 +819,20 @@ export default function ChildJourneyPage() {
               {classNoteMsg && (
                 <p className={`text-xs font-medium mt-2 ${classNoteMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{classNoteMsg}</p>
               )}
-              <button onClick={saveClassNote} disabled={savingClassNote || !classNoteText.trim() || students.length === 0}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-neutral-800 hover:bg-neutral-900 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 mt-3">
-                {savingClassNote
-                  ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-                  : <><Send className="w-4 h-4" />Save for All Students</>}
-              </button>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => saveClassNote(false)} disabled={savingClassNote || !classNoteText.trim() || students.length === 0}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-neutral-800 hover:bg-neutral-900 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50">
+                  {savingClassNote
+                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
+                    : <><CheckCircle2 className="w-4 h-4" />Save for All</>}
+                </button>
+                <button onClick={() => saveClassNote(true)} disabled={savingClassNote || !classNoteText.trim() || students.length === 0}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50">
+                  {savingClassNote
+                    ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending…</>
+                    : <><Send className="w-4 h-4" />Save & Send All</>}
+                </button>
+              </div>
             </div>
           </>
         )}

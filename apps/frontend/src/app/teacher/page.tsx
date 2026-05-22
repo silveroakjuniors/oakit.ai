@@ -163,7 +163,7 @@ export default function TeacherPlanner() {
   const router = useRouter();
   const token = getToken() || '';
   useSessionManager();
-  const [today, setToday] = useState(new Date().toISOString().split('T')[0]);
+  const [today, setToday] = useState('');
   const [plan, setPlan] = useState<DayPlan | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -969,6 +969,7 @@ export default function TeacherPlanner() {
             { label: 'Class Feed', sub: 'Post photos', icon: Play, gradient: 'from-pink-500 to-rose-600', hover: 'hover:border-pink-200 hover:bg-pink-50/40', path: '/teacher/feed' },
             { label: 'Students', sub: 'Profiles & milestones', icon: Users, gradient: 'from-violet-500 to-purple-600', hover: 'hover:border-violet-200 hover:bg-violet-50/40', path: '/teacher/students' },
             { label: 'My HR', sub: 'Salary · Leave · Offer letter', icon: Wallet, gradient: 'from-teal-500 to-cyan-600', hover: 'hover:border-teal-200 hover:bg-teal-50/40', path: '/teacher/hr' },
+            { label: 'Class Performance', sub: 'Stats & insights', icon: TrendingUp, gradient: 'from-indigo-500 to-blue-600', hover: 'hover:border-indigo-200 hover:bg-indigo-50/40', path: '/teacher/class-performance' },
           ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
             <button key={path} onClick={() => router.push(path)}
               className={`flex items-center gap-3 p-3.5 bg-white border border-neutral-100 rounded-2xl transition-all shadow-sm group ${hover}`}>
@@ -1504,11 +1505,18 @@ export default function TeacherPlanner() {
         {/* Animated background blob */}
         <div className="absolute -top-8 right-1/3 w-32 h-32 rounded-full pointer-events-none opacity-20"
           style={{ background: 'radial-gradient(circle, #86efac, transparent)', animation: 'pulse 5s ease-in-out infinite' }} />
-        <div className="relative flex items-center gap-3">
+        <div className="relative flex flex-col gap-0.5">
           {greeting && (
-            <span className="text-sm text-white/90 font-medium truncate max-w-[200px] lg:max-w-xs animate-fade-in">
-              {greeting}
-            </span>
+            <>
+              <span className="text-sm text-white font-semibold truncate max-w-[220px] lg:max-w-xs animate-fade-in">
+                {greeting.split('\n')[0]}
+              </span>
+              {greeting.split('\n')[1] && (
+                <span className="text-[11px] text-white/70 font-normal truncate max-w-[220px] lg:max-w-sm">
+                  {greeting.split('\n')[1]}
+                </span>
+              )}
+            </>
           )}
         </div>
         <div className="relative flex items-center gap-2">
@@ -1549,6 +1557,13 @@ export default function TeacherPlanner() {
               <CheckCircle2 className="w-3 h-3" /> Done
             </span>
           )}
+          <button
+            onClick={() => router.push('/teacher/class-performance')}
+            className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white/80 hover:text-white transition-colors active:scale-95 border border-white/20"
+            title="Class Performance"
+          >
+            <TrendingUp className="w-3.5 h-3.5" />
+          </button>
           <span className="text-xs text-white/70 hidden sm:block font-medium">{dateLabel}</span>
           <button
             onClick={() => { signOut().then(() => router.push('/login')); }}

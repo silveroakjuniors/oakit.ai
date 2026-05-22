@@ -761,7 +761,7 @@ async def export_pdf(req: ExportPdfRequest):
 # --- Greeting ---
 
 @app.get("/internal/greeting")
-async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
+async def greeting(teacher_name: str = "Teacher", teacher_id: str = "", class_name: str = "", student_count: int = 0):
     now = datetime.now()
     hour = now.hour
 
@@ -773,6 +773,23 @@ async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
         salutation = "Good evening"
 
     greeting_text = f"{salutation}, {teacher_name}!"
+
+    # Add meaningful subtitle with class info and student count
+    if student_count > 0 and class_name:
+        # Rotate subtitle phrases by date for variety
+        date_seed = now.strftime('%Y-%m-%d') + teacher_id
+        subtitle_idx = int(hashlib.md5(date_seed.encode()).hexdigest(), 16) % 6
+        subtitles = [
+            f"You're shaping {student_count} young minds in {class_name} today ✨",
+            f"Your {student_count} little stars in {class_name} are waiting for you 🌟",
+            f"{student_count} curious learners in {class_name} — let's make today count!",
+            f"Rooted fearlessly — nurturing {student_count} futures in {class_name} 🌱",
+            f"Today's mission: inspire {student_count} hearts in {class_name} 💚",
+            f"{student_count} bright minds in {class_name} are ready to grow with you 🌿",
+        ]
+        greeting_text += f"\n{subtitles[subtitle_idx]}"
+    elif student_count > 0:
+        greeting_text += f"\n{student_count} little learners are counting on you today 🌟"
 
     # Early arrival (before 7am)
     if hour < 7:

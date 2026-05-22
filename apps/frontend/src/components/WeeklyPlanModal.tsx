@@ -29,7 +29,9 @@ interface Props {
 
 // Get Monday of the week containing a given date
 function getMondayOf(dateStr: string): string {
+  if (!dateStr) return new Date().toISOString().split('T')[0];
   const d = new Date(dateStr + 'T12:00:00');
+  if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
   const dow = d.getDay(); // 0=Sun
   const diff = dow === 0 ? -6 : 1 - dow;
   d.setDate(d.getDate() + diff);
@@ -37,7 +39,9 @@ function getMondayOf(dateStr: string): string {
 }
 
 function addDays(dateStr: string, n: number): string {
+  if (!dateStr) return new Date().toISOString().split('T')[0];
   const d = new Date(dateStr + 'T12:00:00');
+  if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0];
   d.setDate(d.getDate() + n);
   return d.toISOString().split('T')[0];
 }

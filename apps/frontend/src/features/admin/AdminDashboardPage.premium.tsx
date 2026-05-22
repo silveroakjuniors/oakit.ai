@@ -16,7 +16,7 @@ import {
 } from '@/features/admin/types';
 import { getToken, signOut } from '@/lib/auth';
 import { apiGet, apiPost } from '@/lib/api';
-import { ChevronDown, X, Send, TrendingUp, Users, BookOpen, CheckSquare, AlertTriangle, Brain, Cake, Megaphone, Clock, Zap } from 'lucide-react';
+import { ChevronDown, X, Send, TrendingUp, Users, BookOpen, CheckSquare, AlertTriangle, Brain, Cake, Megaphone, Clock, Zap, GraduationCap, School, FileText, Music, CalendarDays, ClipboardList, Wand2, BarChart3, ScrollText } from 'lucide-react';
 import StatDrillModal from '@/features/admin/components/StatDrillModal';
 import BirthdayWishModal from '@/features/admin/components/BirthdayWishModal';
 import FeeSummaryCard from '@/features/admin/fees/FeeSummaryCard';

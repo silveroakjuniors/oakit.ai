@@ -22,44 +22,36 @@ function getSpeechRecognition() {
 }
 
 export default function InlineMicButton({ onTranscript, disabled, className = '' }: Props) {
-  const [state, setState] = useState<'idle' | 'recording' | 'unsupported'>('idle');
+  const [state, setState] = useState<'idle' | 'recording'>('idle');
   const [secondsLeft, setSecondsLeft] = useState(60);
+  const [supported, setSupported] = useState<boolean | null>(null);
   const recognitionRef = useRef<any>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const SR = getSpeechRecognition();
+  // Check browser support after mount to avoid hydration mismatch
+  useEffect(() => {
+    setSupported(!!getSpeechRecognition());
+  }, []);
 
-  // If not supported, show a static disabled button with tooltip
-  if (!SR) {
-    return (
-      <div className={`flex flex-col items-center gap-0.5 ${className}`}>
-        <div
-          title="Voice input works on: Chrome (Android/Desktop), Safari (iPhone/iPad/Mac)"
-          className="w-7 h-7 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center cursor-not-allowed">
-          <MicOff size={13} className="text-neutral-400" />
-        </div>
-        <span className="text-[9px] text-neutral-300 text-center leading-tight max-w-[44px]">Not supported</span>
-      </div>
-    );
-  }
-
-  const clearTimers = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
-  };
+  const clearTimers = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (stopTimeoutRef.current) { clearTimeout(stopTimeoutRef.current); stopTimeoutRef.current = null; }
+  }, []);
 
   const stop = useCallback(() => {
     clearTimers();
     recognitionRef.current?.stop();
-  }, []);
+  }, [clearTimers]);
 
   const start = useCallback(() => {
     if (disabled) return;
+    const SR = getSpeechRecognition();
+    if (!SR) return;
 
     const recognition = new SR();
     recognition.continuous = true;
-    recognition.interimResults = false; // only fire on final results
+    recognition.interimResults = false;
     recognition.lang = 'en-IN';
     recognitionRef.current = recognition;
 
@@ -80,7 +72,6 @@ export default function InlineMicButton({ onTranscript, disabled, className = ''
       if (event.error === 'not-allowed') {
         alert('Microphone permission denied. Please allow microphone access in your browser settings.');
       }
-      // other errors (no-speech, aborted) — silently reset
     };
 
     recognition.onend = () => {
@@ -94,7 +85,6 @@ export default function InlineMicButton({ onTranscript, disabled, className = ''
       setState('recording');
       setSecondsLeft(60);
 
-      // Countdown
       timerRef.current = setInterval(() => {
         setSecondsLeft(s => {
           if (s <= 1) { stop(); return 0; }
@@ -102,18 +92,42 @@ export default function InlineMicButton({ onTranscript, disabled, className = ''
         });
       }, 1000);
 
-      // Hard stop at 60s
       stopTimeoutRef.current = setTimeout(stop, MAX_MS);
     } catch {
       setState('idle');
     }
-  }, [disabled, onTranscript, stop]);
+  }, [disabled, onTranscript, stop, clearTimers]);
 
   // Cleanup on unmount
   useEffect(() => () => {
     clearTimers();
     recognitionRef.current?.abort();
-  }, []);
+  }, [clearTimers]);
+
+  // Before hydration completes, render a neutral placeholder
+  if (supported === null) {
+    return (
+      <div className={`flex flex-col items-center gap-0.5 ${className}`}>
+        <div className="w-7 h-7 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center">
+          <Mic size={13} className="text-neutral-300" />
+        </div>
+      </div>
+    );
+  }
+
+  // If not supported, show a static disabled indicator
+  if (!supported) {
+    return (
+      <div className={`flex flex-col items-center gap-0.5 ${className}`}>
+        <div
+          title="Voice input works on: Chrome (Android/Desktop), Safari (iPhone/iPad/Mac)"
+          className="w-7 h-7 rounded-full bg-neutral-100 border border-neutral-200 flex items-center justify-center cursor-not-allowed">
+          <MicOff size={13} className="text-neutral-400" />
+        </div>
+        <span className="text-[9px] text-neutral-300 text-center leading-tight max-w-[44px]">Not supported</span>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col items-center gap-0.5 ${className}`}>

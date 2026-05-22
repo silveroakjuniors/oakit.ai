@@ -117,24 +117,32 @@ router.get('/', async (req: Request, res: Response) => {
     // Get greeting from AI service
     let greeting = `Good morning, ${teacher_name}!`;
     let thought_for_day = 'Every day is a new opportunity to inspire a young mind.';
-    try {
-      const aiResp = await axios.get(`${AI()}/internal/greeting`, {
-        params: { teacher_name, teacher_id: user_id },
-        timeout: 5000,
-      });
-      greeting = aiResp.data.greeting || greeting;
-      thought_for_day = aiResp.data.thought_for_day || thought_for_day;
-    } catch { /* use defaults */ }
 
-    // Get class name for the teacher's primary section
+    // Get class name and student count for the greeting
     let class_name = '';
+    let student_count = 0;
     if (section_id) {
       const classRow = await pool.query(
         `SELECT c.name FROM sections s JOIN classes c ON c.id = s.class_id WHERE s.id = $1`,
         [section_id]
       );
       class_name = classRow.rows[0]?.name || '';
+
+      const countRow = await pool.query(
+        `SELECT COUNT(*)::int AS cnt FROM students WHERE section_id = $1 AND is_active = true`,
+        [section_id]
+      );
+      student_count = countRow.rows[0]?.cnt || 0;
     }
+
+    try {
+      const aiResp = await axios.get(`${AI()}/internal/greeting`, {
+        params: { teacher_name, teacher_id: user_id, class_name, student_count },
+        timeout: 5000,
+      });
+      greeting = aiResp.data.greeting || greeting;
+      thought_for_day = aiResp.data.thought_for_day || thought_for_day;
+    } catch { /* use defaults */ }
 
     // Check report readiness reminder — if any student in section has 0 observations
     let readiness_reminder = false;

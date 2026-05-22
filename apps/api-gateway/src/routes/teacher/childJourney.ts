@@ -47,26 +47,39 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
 
     const date = entry_date || today;
 
-    // Upsert ÔÇö one entry per student per date per type
-    const r = await pool.query(
-      `INSERT INTO child_journey_entries
-         (school_id, student_id, section_id, teacher_id, entry_date, entry_type, raw_text, beautified_text, is_sent_to_parent, sent_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (student_id, entry_date, entry_type)
-       DO UPDATE SET raw_text = EXCLUDED.raw_text, beautified_text = EXCLUDED.beautified_text,
-                     is_sent_to_parent = EXCLUDED.is_sent_to_parent, sent_at = EXCLUDED.sent_at,
-                     updated_at = now()
-       RETURNING *`,
-      [school_id, student_id, student.section_id, user_id, date, entry_type, raw_text, beautified_text,
-       send_to_parent, send_to_parent ? new Date() : null]
-    );
+    // Upsert — one entry per student per date per type
+    let r;
+    try {
+      r = await pool.query(
+        `INSERT INTO child_journey_entries
+           (school_id, student_id, section_id, teacher_id, entry_date, entry_type, raw_text, beautified_text, is_sent_to_parent, sent_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (student_id, entry_date, entry_type)
+         DO UPDATE SET raw_text = EXCLUDED.raw_text, beautified_text = EXCLUDED.beautified_text,
+                       is_sent_to_parent = EXCLUDED.is_sent_to_parent, sent_at = EXCLUDED.sent_at,
+                       updated_at = now()
+         RETURNING *`,
+        [school_id, student_id, student.section_id, user_id, date, entry_type, raw_text, beautified_text,
+         send_to_parent, send_to_parent ? new Date() : null]
+      );
+    } catch (upsertErr: any) {
+      if (upsertErr.code === '23505') {
+        // Unique constraint mismatch — fallback to manual update
+        r = await pool.query(
+          `UPDATE child_journey_entries
+           SET raw_text = $1, beautified_text = $2, is_sent_to_parent = $3, sent_at = $4, updated_at = now()
+           WHERE student_id = $5 AND entry_date = $6 AND entry_type = $7 AND school_id = $8
+           RETURNING *`,
+          [raw_text, beautified_text, send_to_parent, send_to_parent ? new Date() : null,
+           student_id, date, entry_type, school_id]
+        );
+      } else {
+        throw upsertErr;
+      }
+    }
 
     return res.status(201).json({ ...r.rows[0], student_name: student.name });
   } catch (err: any) {
-    if (err.code === '23505') {
-      // Unique constraint ÔÇö update instead
-      return res.status(409).json({ error: 'Entry already exists for this date. Use PUT to update.' });
-    }
     console.error('[childJourney] POST', err);
     return res.status(500).json({ error: 'Internal server error' });
   }

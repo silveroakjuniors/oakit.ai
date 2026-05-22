@@ -207,7 +207,15 @@ SUBJECT_TIPS = {
 }
 
 AGE_GROUPS = {
+    "playgroup": {"age": "2-3 years", "style": "toddlers"},
+    "nursery": {"age": "2.5-3.5 years", "style": "very young children"},
+    "jr.kg": {"age": "3-4 years", "style": "very young children"},
+    "jr.k.g": {"age": "3-4 years", "style": "very young children"},
+    "juniorkg": {"age": "3-4 years", "style": "very young children"},
     "lkg":   {"age": "3-4 years", "style": "very young children"},
+    "sr.kg": {"age": "4-5 years", "style": "young children"},
+    "sr.k.g": {"age": "4-5 years", "style": "young children"},
+    "seniorkg": {"age": "4-5 years", "style": "young children"},
     "ukg":   {"age": "4-5 years", "style": "young children"},
     "prep1": {"age": "5-6 years", "style": "early primary children"},
     "prep2": {"age": "6-7 years", "style": "primary children"},
