@@ -40,15 +40,40 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     // Count school days in last 30 days for rate calculation
-    const schoolDaysRow = await pool.query(
-      `SELECT COUNT(DISTINCT dp.plan_date)::int as school_days
-       FROM day_plans dp
-       JOIN sections sec ON sec.id = dp.section_id
-       WHERE sec.school_id = $1
-         AND dp.plan_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date`,
-      [school_id, today]
-    );
-    const schoolDays = Math.max(schoolDaysRow.rows[0]?.school_days ?? 1, 1);
+    // Use school calendar working_days to determine actual school days, not just plan dates
+    let schoolDays = 1;
+    try {
+      const calRow = await pool.query(
+        `SELECT working_days FROM school_calendar
+         WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+        [school_id, today]
+      );
+      const workingDays: number[] = calRow.rows[0]?.working_days || [1, 2, 3, 4, 5];
+
+      // Count working days in the last 30 days (excluding holidays)
+      const holidayRow = await pool.query(
+        `SELECT holidays FROM school_calendar
+         WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+        [school_id, today]
+      );
+      const holidays: string[] = (holidayRow.rows[0]?.holidays || []).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+
+      const todayDate = new Date(today + 'T12:00:00');
+      let count = 0;
+      for (let i = 0; i < 30; i++) {
+        const d = new Date(todayDate);
+        d.setDate(d.getDate() - i);
+        const dow = d.getDay();
+        const dateStr = d.toISOString().split('T')[0];
+        if (workingDays.includes(dow) && !holidays.includes(dateStr)) {
+          count++;
+        }
+      }
+      schoolDays = Math.max(count, 1);
+    } catch {
+      // Fallback: assume ~22 working days in 30 calendar days
+      schoolDays = 22;
+    }
 
     const teachers = result.rows.map((t: any) => ({
       ...t,
