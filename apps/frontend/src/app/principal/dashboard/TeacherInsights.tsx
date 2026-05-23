@@ -170,7 +170,7 @@ function FullListPopup({ engagement, streaks, schoolDays30d, onClose, onSelectTe
                 <div className="w-full bg-neutral-100 rounded-full h-1.5 overflow-hidden">
                   <div className="h-1.5 rounded-full" style={{ width: `${t.completion_rate_30d}%`, background: getColor(t.completion_rate_30d) }} />
                 </div>
-                <p className="text-[9px] text-neutral-400 mt-0.5">{t.completions_30d}/{schoolDays30d} plans · last: {t.last_completed_date ?? 'never'}</p>
+                <p className="text-[9px] text-neutral-400 mt-0.5">{t.completions_30d}/{schoolDays30d} plans · last: {t.last_completed_date ? new Date(t.last_completed_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'never'}</p>
               </div>
               <p className="text-sm font-black shrink-0" style={{ color: getColor(t.completion_rate_30d) }}>
                 {t.completion_rate_30d}%
