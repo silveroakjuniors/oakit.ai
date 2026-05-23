@@ -988,7 +988,8 @@ router.put('/plans/:section_id/:plan_date', async (req: Request, res: Response) 
     }
 
     // Check if date is in the past
-    const today = new Date().toISOString().split('T')[0];
+    const { getTodayIST } = await import('../../lib/today');
+    const today = getTodayIST();
     if (plan_date < today) {
       return res.status(409).json({ error: 'Cannot edit plans for past dates.' });
     }

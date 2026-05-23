@@ -3,7 +3,7 @@ import axios from 'axios';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { getTeacherSections } from '../../lib/teacherSection';
-import { getToday } from '../../lib/today';
+import { getToday, getNowIST } from '../../lib/today';
 import { redis } from '../../lib/redis';
 
 const router = Router();
@@ -63,7 +63,7 @@ router.get('/', async (req: Request, res: Response) => {
         [section_id, today]
       );
       const mockActive = !!(await redis.get(`time_machine:${school_id}`));
-      const hour = mockActive ? 9 : new Date().getHours();
+      const hour = mockActive ? 9 : getNowIST().getHours();
 
       // Check if today is a working day before showing attendance prompt
       let isWorkingDay = true;

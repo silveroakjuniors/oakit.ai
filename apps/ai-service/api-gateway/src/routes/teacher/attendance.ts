@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { getTeacherSections } from '../../lib/teacherSection';
-import { getToday } from '../../lib/today';
+import { getToday, getNowIST } from '../../lib/today';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
@@ -54,7 +54,7 @@ router.get('/today', async (req: Request, res: Response) => {
     );
     const startTime = classRow.rows[0]?.day_start_time || '09:30:00';
     const [sh, sm] = startTime.split(':').map(Number);
-    const now = new Date();
+    const now = getNowIST();
     const schoolStartMinutes = sh * 60 + sm;
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const minutesLate = nowMinutes - schoolStartMinutes;
@@ -73,7 +73,7 @@ router.post('/today', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
     const today = await getToday(school_id);
-    const now = new Date();
+    const now = getNowIST();
 
     const sections = await getTeacherSections(user_id, school_id);
     const resolved = await resolveSection(sections, req.query.section_id as string | undefined);

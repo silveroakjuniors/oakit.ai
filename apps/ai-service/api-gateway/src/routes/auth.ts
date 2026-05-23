@@ -131,7 +131,8 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
       let attendance_prompt = false;
       if (user.role === 'teacher') {
         try {
-          const today = new Date().toISOString().split('T')[0];
+          const { getTodayIST, getNowIST } = await import('../lib/today');
+          const today = getTodayIST();
           const sectionRow = await pool.query(
             'SELECT section_id FROM teacher_sections WHERE teacher_id = $1 LIMIT 1',
             [user.id]
@@ -142,7 +143,7 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
               'SELECT id FROM attendance_records WHERE section_id = $1 AND attend_date = $2 LIMIT 1',
               [section_id, today]
             );
-            const hour = new Date().getHours();
+            const hour = getNowIST().getHours();
             attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17;
           }
         } catch { /* ignore */ }
