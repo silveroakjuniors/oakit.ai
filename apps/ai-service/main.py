@@ -762,7 +762,8 @@ async def export_pdf(req: ExportPdfRequest):
 
 @app.get("/internal/greeting")
 async def greeting(teacher_name: str = "Teacher", teacher_id: str = "", class_name: str = "", student_count: int = 0):
-    now = datetime.now()
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
     hour = now.hour
 
     if 5 <= hour < 12:
