@@ -9,6 +9,7 @@ import adminClassesRouter from './routes/admin/classes';
 import adminClassTeacherRouter from './routes/admin/classTeacher';
 import adminCurriculumRouter from './routes/admin/curriculum';
 import adminCalendarRouter from './routes/admin/calendar';
+import adminTermsRouter from './routes/admin/terms';
 import adminStudentsRouter from './routes/admin/students';
 import adminSupplementaryRouter from './routes/admin/supplementary';
 import adminSettingsRouter from './routes/admin/settings';
@@ -28,6 +29,7 @@ import teacherContextRouter from './routes/teacher/context';
 import teacherSectionsRouter from './routes/teacher/sections';
 import teacherNotesRouter from './routes/teacher/notes';
 import teacherStreaksRouter from './routes/teacher/streaks';
+import teacherCalendarRouter from './routes/teacher/calendar';
 import teacherHomeworkRouter from './routes/teacher/homework';
 import teacherSupplementaryRouter from './routes/teacher/supplementary';
 import teacherObservationsRouter from './routes/teacher/observations';
@@ -37,6 +39,9 @@ import teacherMessagesRouter from './routes/teacher/messages';
 import teacherResourcesRouter from './routes/teacher/resources';
 import teacherSuggestionsRouter from './routes/teacher/suggestions';
 import teacherVideosRouter from './routes/teacher/videos';
+import teacherHrRouter from './routes/teacher/hr';
+import teacherInsightsRouter from './routes/teacher/insights';
+import teacherClassPerformanceRouter from './routes/teacher/classPerformance';
 import principalDashboardRouter from './routes/principal/dashboard';
 import principalAttendanceRouter from './routes/principal/attendance';
 import principalTeachersRouter from './routes/principal/teachers';
@@ -46,11 +51,13 @@ import principalFlagsRouter from './routes/principal/flags';
 import principalContextRouter from './routes/principal/context';
 import principalObservationsRouter from './routes/principal/observations';
 import principalEngagementRouter from './routes/principal/engagement';
+import principalHrRouter from './routes/principal/hr';
 import superAdminSchoolsRouter from './routes/super-admin/schools';
 import superAdminStatsRouter from './routes/super-admin/stats';
 import superAdminImpersonateRouter from './routes/super-admin/impersonate';
 import superAdminBillingRouter from './routes/super-admin/billing';
 import superAdminFranchisesRouter from './routes/super-admin/franchises';
+import platformBillingRouter from './routes/super-admin/platformBilling';
 import adminAiUsageRouter from './routes/admin/aiUsage';
 import franchiseDashboardRouter from './routes/franchise/dashboard';
 import franchiseCurriculumRouter from './routes/franchise/curriculum';
@@ -64,21 +71,26 @@ import parentProgressRouter from './routes/parent/progress';
 import parentMessagesRouter from './routes/parent/messages';
 import parentObservationsRouter from './routes/parent/observations';
 import parentHomeworkRouter from './routes/parent/homework';
+import parentMilestonesRouter from './routes/parent/milestones';
 import parentEmergencyContactsRouter from './routes/parent/emergencyContacts';
 import parentSettingsRouter from './routes/parent/settings';
 import parentCalendarRouter from './routes/parent/calendar';
 import parentStudentAnalyticsRouter from './routes/parent/studentAnalytics';
+import parentClassComparisonRouter from './routes/parent/classComparison';
 import adminStudentPortalRouter from './routes/admin/studentPortal';
 import adminQuizzesRouter from './routes/admin/quizzes';
 import adminSmartAlertsRouter from './routes/admin/smartAlerts';
+import adminUniformRouter from './routes/admin/uniform';
 import textbookPlannerRouter from './routes/admin/textbookPlanner';
 import adminEnquiriesRouter from './routes/admin/enquiries';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
 import teacherQuizRouter from './routes/teacher/quiz';
+import teacherReportCardRouter from './routes/teacher/reportCard';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
 import publicEnquiriesRouter from './routes/public/enquiries';
+import publicUniformRouter from './routes/public/uniform';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
 import { piiGuard } from './middleware/piiGuard';
 import { chunkGuard } from './middleware/chunkGuard';
@@ -99,8 +111,11 @@ import financialSalaryRecordsRouter from './routes/financial/salary/records';
 import financialUsageRecordsRouter from './routes/financial/usageRecords';
 import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
+import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
 
+import sharedTodayContextRouter from './routes/shared/todayContext';
+import staffHrRouter from './routes/staff/hr';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
 import { connectRedis } from './lib/redis';
@@ -229,6 +244,13 @@ app.get('/health/ai', async (_req, res) => {
 
 // Public routes — no authentication required
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
+app.use('/api/v1/public/uniform', publicUniformRouter);
+
+// Shared (any authenticated role)
+app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
+
+// Staff HR (leave, offer letters, payslips)
+app.use('/api/v1/staff/hr', staffHrRouter);
 
 // Auth
 app.use('/api/v1/auth', authRateLimit, authRouter);
@@ -239,6 +261,7 @@ app.use('/api/v1/admin/classes', adminClassesRouter);
 app.use('/api/v1/admin/classes', adminClassTeacherRouter);
 app.use('/api/v1/admin/curriculum', adminCurriculumRouter);
 app.use('/api/v1/admin/calendar', adminCalendarRouter);
+app.use('/api/v1/admin/terms', adminTermsRouter);
 app.use('/api/v1/admin/students', adminStudentsRouter);
 app.use('/api/v1/admin/supplementary', adminSupplementaryRouter);
 app.use('/api/v1/admin/settings', adminSettingsRouter);
@@ -262,14 +285,18 @@ app.use('/api/v1/teacher/notes', teacherNotesRouter);
 app.use('/api/v1/teacher/homework', teacherHomeworkRouter);
 app.use('/api/v1/teacher/supplementary', teacherSupplementaryRouter);
 app.use('/api/v1/teacher/streaks', teacherStreaksRouter);
+app.use('/api/v1/teacher/calendar', teacherCalendarRouter);
 app.use('/api/v1/teacher/observations', teacherObservationsRouter);
 app.use('/api/v1/teacher/milestones', teacherMilestonesRouter);
+app.use('/api/v1/teacher/insights', teacherInsightsRouter);
+app.use('/api/v1/teacher/class-performance', teacherClassPerformanceRouter);
 app.use('/api/v1/teacher/child-journey', childJourneyRouter);
 app.use('/api/v1/parent/child-journey', childJourneyRouter);
 app.use('/api/v1/teacher/messages', teacherMessagesRouter);
 app.use('/api/v1/teacher/resources', teacherResourcesRouter);
 app.use('/api/v1/teacher/suggestions', teacherSuggestionsRouter);
 app.use('/api/v1/teacher/videos', teacherVideosRouter);
+app.use('/api/v1/teacher/hr', teacherHrRouter);
 app.use('/api/v1/teacher/announcements', teacherAnnouncementsRouter);
 
 // Principal
@@ -284,6 +311,7 @@ app.use('/api/v1/principal/flags', principalFlagsRouter);
 app.use('/api/v1/principal/context', principalContextRouter);
 app.use('/api/v1/principal/observations', principalObservationsRouter);
 app.use('/api/v1/principal/teachers/engagement', principalEngagementRouter);
+app.use('/api/v1/principal/hr', principalHrRouter);
 
 // Super Admin
 app.use('/api/v1/super-admin/schools', superAdminSchoolsRouter);
@@ -291,6 +319,7 @@ app.use('/api/v1/super-admin/stats', superAdminStatsRouter);
 app.use('/api/v1/super-admin/impersonate', superAdminImpersonateRouter);
 app.use('/api/v1/super-admin/billing', superAdminBillingRouter);
 app.use('/api/v1/super-admin/franchises', superAdminFranchisesRouter);
+app.use('/api/v1/super-admin/platform-billing', platformBillingRouter);
 
 // Admin AI usage (admin + principal)
 app.use('/api/v1/admin/ai-usage', adminAiUsageRouter);
@@ -336,21 +365,25 @@ app.use('/api/v1/parent/messages', parentMessagesRouter);
 app.use('/api/v1/parent/announcements', parentAnnouncementsRouter);
 app.use('/api/v1/parent/observations', parentObservationsRouter);
 app.use('/api/v1/parent/homework', parentHomeworkRouter);
+app.use('/api/v1/parent/milestones', parentMilestonesRouter);
 app.use('/api/v1/parent/emergency-contacts', parentEmergencyContactsRouter);
 app.use('/api/v1/parent/settings', parentSettingsRouter);
 app.use('/api/v1/parent/student-analytics', parentStudentAnalyticsRouter);
 app.use('/api/v1/parent/calendar', parentCalendarRouter);
+app.use('/api/v1/parent/class-comparison', parentClassComparisonRouter);
 
 // Admin — Student Portal
 app.use('/api/v1/admin/student-portal', adminStudentPortalRouter);
 app.use('/api/v1/admin/textbook-planner', textbookPlannerRouter);
 app.use('/api/v1/admin/quizzes', adminQuizzesRouter);
 app.use('/api/v1/admin/smart-alerts', adminSmartAlertsRouter);
+app.use('/api/v1/admin/uniform', adminUniformRouter);
 app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 
-// Teacher — Student Credentials & Quiz
+// Teacher — Student Credentials, Quiz & Report Card
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
+app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
 
 // Student Portal
 app.use('/api/v1/student', studentFeedRouter);
@@ -377,6 +410,7 @@ app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalar
 app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalaryRecordsRouter);
 app.use('/api/v1/financial/usage-records',  financialModuleGuard, financialUsageRecordsRouter);
 app.use('/api/v1/financial/reports',        financialModuleGuard, financialReportsRouter);
+app.use('/api/v1/financial/reminders',      financialModuleGuard, financialRemindersRouter);
 app.use('/api/v1/financial',                financialModuleGuard, financialInsightsRouter);
 
 // Parent fees (guarded by financialModuleGuard)

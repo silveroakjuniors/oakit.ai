@@ -10,7 +10,7 @@ router.use(jwtVerify, schoolScope, roleGuard('admin'));
  * into the new section. Used when a new section is added or a teacher is assigned
  * to a section that has no plans yet.
  */
-async function _copyPlansToSection(school_id: string, class_id: string, new_section_id: string, teacher_id: string): Promise<number> {
+async function _copyPlansToSection(school_id: string, class_id: string, new_section_id: string, _teacher_id: string): Promise<number> {
   // Find a sibling section that already has plans
   const sibling = await pool.query(
     `SELECT dp.plan_date, dp.chunk_ids, dp.status
@@ -25,10 +25,10 @@ async function _copyPlansToSection(school_id: string, class_id: string, new_sect
   let copied = 0;
   for (const plan of sibling.rows) {
     await pool.query(
-      `INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
-       VALUES ($1, $2, $3, $4, $5::uuid[], $6)
+      `INSERT INTO day_plans (school_id, section_id, plan_date, chunk_ids, status)
+       VALUES ($1, $2, $3, $4::uuid[], $5)
        ON CONFLICT (section_id, plan_date) DO NOTHING`,
-      [school_id, new_section_id, teacher_id, plan.plan_date, plan.chunk_ids, plan.status]
+      [school_id, new_section_id, plan.plan_date, plan.chunk_ids, plan.status]
     );
     copied++;
   }
@@ -152,6 +152,51 @@ router.post('/:id/sections', async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'Section label already exists in this class' });
     }
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/v1/admin/classes/sections/:id — delete a section
+// Blocked if the section has active students or completion records
+router.delete('/sections/:id', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const sectionId = req.params.id;
+
+    // Verify section belongs to this school
+    const secRow = await pool.query(
+      `SELECT sec.id, sec.label, c.name AS class_name
+       FROM sections sec JOIN classes c ON c.id = sec.class_id
+       WHERE sec.id = $1 AND sec.school_id = $2`,
+      [sectionId, school_id]
+    );
+    if (secRow.rows.length === 0) {
+      return res.status(404).json({ error: 'Section not found' });
+    }
+
+    // Block if active students are enrolled
+    const students = await pool.query(
+      'SELECT COUNT(*)::int AS cnt FROM students WHERE section_id = $1 AND is_active = true',
+      [sectionId]
+    );
+    if (students.rows[0].cnt > 0) {
+      return res.status(409).json({
+        error: `Cannot delete Section ${secRow.rows[0].label} — it has ${students.rows[0].cnt} active student(s). Move or terminate them first.`,
+      });
+    }
+
+    // Delete in safe order: day_plans → daily_completions → teacher_sections → section
+    await pool.query('DELETE FROM day_plans WHERE section_id = $1', [sectionId]);
+    await pool.query('DELETE FROM daily_completions WHERE section_id = $1', [sectionId]);
+    await pool.query('DELETE FROM teacher_sections WHERE section_id = $1', [sectionId]);
+    await pool.query('DELETE FROM sections WHERE id = $1 AND school_id = $2', [sectionId, school_id]);
+
+    return res.json({
+      message: `Section ${secRow.rows[0].label} deleted`,
+      class_name: secRow.rows[0].class_name,
+    });
+  } catch (err: any) {
+    console.error('[delete-section]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
   }
 });
 

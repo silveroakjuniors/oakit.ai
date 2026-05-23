@@ -8,6 +8,7 @@ import { getToday } from '../lib/today';
 import { jwtVerify, schoolScope, roleGuard } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/rateLimit';
 import { checkAndDeductCredits } from '../lib/aiCredits';
+import { handleDataQuery } from '../lib/oakieDataQueries';
 import crypto from 'crypto';
 
 const router = Router();
@@ -125,11 +126,13 @@ function fallbackTeacherResponse(errorDetail?: string): {
   covered_chunk_ids: string[];
   activity_ids: string[];
 } {
-  const detail = errorDetail ? ` (${errorDetail})` : '';
+  // Don't leak raw HTTP error details to the user
+  const isWakingUp = errorDetail?.includes('429') || errorDetail?.includes('503') || errorDetail?.includes('ECONNREFUSED') || errorDetail?.includes('ETIMEDOUT');
+  const userMessage = isWakingUp
+    ? `Oakie is starting up — this usually takes about 20 seconds on the first request of the day. Please try again in a moment. 🌱\n\nIn the meantime, you can still use your plan and mark activities as completed.`
+    : `Oakie is temporarily unavailable. Please try again in 1-2 minutes.\n\nIn the meantime, you can still use your plan and mark activities as completed.`;
   return {
-    response:
-      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
-      `In the meantime, you can still use your plan and mark activities as completed.`,
+    response: userMessage,
     chunk_ids: [],
     covered_chunk_ids: [],
     activity_ids: [],
@@ -137,18 +140,39 @@ function fallbackTeacherResponse(errorDetail?: string): {
 }
 
 function fallbackParentResponse(errorDetail?: string): { response: string } {
-  const detail = errorDetail ? ` (${errorDetail})` : '';
-  return {
-    response:
-      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
-      `You can still check attendance, homework, and notes on this page.`,
-  };
+  const isWakingUp = errorDetail?.includes('429') || errorDetail?.includes('503') || errorDetail?.includes('ECONNREFUSED') || errorDetail?.includes('ETIMEDOUT');
+  const userMessage = isWakingUp
+    ? `Oakie is starting up — this usually takes about 20 seconds on the first request of the day. Please try again in a moment. 🌱\n\nYou can still check attendance, homework, and notes on this page.`
+    : `Oakie is temporarily unavailable. Please try again in 1-2 minutes.\n\nYou can still check attendance, homework, and notes on this page.`;
+  return { response: userMessage };
 }
 
 function getAiErrorMessage(err: unknown): string {
   if (!axios.isAxiosError(err)) return 'AI service unavailable';
   const detail = (err.response?.data as any)?.detail;
   return detail || err.message || 'AI service unavailable';
+}
+
+/** Call the AI service with one automatic retry on 429/503 (Render cold-start) */
+async function callAiWithRetry(
+  endpoint: string,
+  payload: object,
+  timeoutMs: number,
+): Promise<import('axios').AxiosResponse> {
+  try {
+    return await axios.post(endpoint, payload, { timeout: timeoutMs });
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const status = err.response?.status;
+      // Render free tier returns 429 or 503 while the service is waking up
+      if (status === 429 || status === 503 || !status) {
+        // Wait 5 seconds then try once more
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return axios.post(endpoint, payload, { timeout: timeoutMs });
+      }
+    }
+    throw err;
+  }
 }
 
 /** Detect and neutralize prompt injection attempts */
@@ -311,6 +335,14 @@ router.post('/query', async (req: Request, res: Response) => {
       return res.json({ response: OFF_TOPIC_RESPONSE, chunk_ids: [], covered_chunk_ids: [], activity_ids: [] });
     }
 
+    // 4. Structured data queries — answer directly from DB (fees, attendance, students, etc.)
+    //    Works for principal, admin, finance_manager. No AI service call needed.
+    const dataResult = await handleDataQuery(cleanText, school_id, role);
+    if (dataResult) {
+      await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: cleanText, outcome: 'allowed' });
+      return res.json(dataResult);
+    }
+
     // ── Question limit (teachers only, activity questions only) ──────────
     if (role === 'teacher' && !isAlwaysAllowed(cleanText)) {
       const countKey = `ai:qlimit:${user_id}:${today}`;
@@ -345,9 +377,9 @@ router.post('/query', async (req: Request, res: Response) => {
           return res.json(parsed);
         }
         try {
-          const aiResp = await axios.post(`${AI()}/internal/query`, {
+          const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
             teacher_id: user_id, school_id, text: cleanText, query_date: today, role,
-          }, { timeout: AI_TIMEOUT_MS });
+          }, AI_TIMEOUT_MS);
           const data = aiResp.data;
           data.response += `\n\n---\n💬 You've asked ${NUDGE_AT} questions today. When you're ready, mark your activities as completed using the checkboxes below.`;
           await redis.setEx(cacheKey, 10, JSON.stringify(data));
@@ -360,7 +392,7 @@ router.post('/query', async (req: Request, res: Response) => {
             endpoint: `${AI()}/internal/query`,
             message: errMsg,
           });
-          return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
+          return res.json(fallbackTeacherResponse(errMsg));
         }
       }
     }
@@ -387,7 +419,7 @@ router.post('/query', async (req: Request, res: Response) => {
     if (cached) return res.json(JSON.parse(cached));
 
     try {
-      const aiResp = await axios.post(`${AI()}/internal/query`, {
+      const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
         teacher_id: user_id,
         school_id,
         text: cleanText,
@@ -395,7 +427,7 @@ router.post('/query', async (req: Request, res: Response) => {
         role,
         history: Array.isArray(history) ? history.slice(-3) : [],
         ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
-      }, { timeout: AI_TIMEOUT_MS });
+      }, AI_TIMEOUT_MS);
 
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
       return res.json(aiResp.data);
@@ -408,7 +440,7 @@ router.post('/query', async (req: Request, res: Response) => {
         ai_service_url: AI(),
         message: errMsg,
       });
-      return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
+      return res.json(fallbackTeacherResponse(errMsg));
     }
 
   } catch (err: unknown) {
@@ -587,10 +619,11 @@ router.post('/parent-query', async (req: Request, res: Response) => {
 
     // Get the student's section_id to pass as teacher context
     // The AI service uses teacher_id to find section — for parents we pass the section's class teacher instead
-    let section_teacher_id = user_id; // fallback
+    let section_teacher_id: string | null = null;
+    let section_id_for_ai: string | null = null;
     if (student_id) {
       const teacherRow = await pool.query(
-        `SELECT COALESCE(sec.class_teacher_id, ts.teacher_id) as teacher_id
+        `SELECT COALESCE(sec.class_teacher_id, ts.teacher_id) as teacher_id, sec.id as section_id
          FROM students s
          JOIN sections sec ON sec.id = s.section_id
          LEFT JOIN teacher_sections ts ON ts.section_id = s.section_id
@@ -598,9 +631,15 @@ router.post('/parent-query', async (req: Request, res: Response) => {
          LIMIT 1`,
         [student_id]
       );
-      if (teacherRow.rows.length > 0 && teacherRow.rows[0].teacher_id) {
-        section_teacher_id = teacherRow.rows[0].teacher_id;
+      if (teacherRow.rows.length > 0) {
+        section_teacher_id = teacherRow.rows[0].teacher_id || null;
+        section_id_for_ai = teacherRow.rows[0].section_id || null;
       }
+    }
+
+    // If no teacher found, we can't answer curriculum questions — return a helpful message
+    if (!section_teacher_id) {
+      return res.json({ response: `I don't have enough information about your child's class yet. Please check back once the teacher has been assigned to the section.` });
     }
 
     try {
@@ -611,14 +650,14 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         if (nameRow.rows[0]?.name) studentFirstName = nameRow.rows[0].name.split(' ')[0];
       }
 
-      const aiResp = await axios.post(`${AI()}/internal/query`, {
+      const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
         teacher_id: section_teacher_id,
         school_id,
         text: cleanText,
         query_date: today,
         role: 'parent',
         context: `You are answering a parent's question about their child ${studentFirstName}.\nAlways use the child's name (${studentFirstName}) in your response — never say "your child".\nBe warm, reassuring, and specific. Keep the response under 100 words.\nIf the parent asks about absence, tell them exactly which subjects were covered that day and suggest they can help ${studentFirstName} catch up at home.\n\n${context}`,
-      }, { timeout: AI_TIMEOUT_MS });
+      }, AI_TIMEOUT_MS);
       await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
       return res.json(aiResp.data);
     } catch (err: unknown) {
@@ -629,7 +668,7 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         endpoint: `${AI()}/internal/query`,
         message: getAiErrorMessage(err),
       });
-      return res.json(fallbackParentResponse());
+      return res.json(fallbackParentResponse(getAiErrorMessage(err)));
     }
 
   } catch (err: unknown) {
@@ -790,6 +829,7 @@ router.post('/voice', voiceUpload.single('audio'), async (req: Request, res: Res
 
 // GET /api/v1/ai/topic-summary — parent-friendly summary of today's topics
 // Query params: topics (comma-separated), class_name, child_name, completed (boolean)
+// Body (optional): { chunks: [{ topic, snippet }] } for richer AI context
 router.get('/topic-summary', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -797,42 +837,97 @@ router.get('/topic-summary', async (req: Request, res: Response) => {
     const className  = (req.query.class_name as string || 'Nursery').trim();
     const childName  = (req.query.child_name as string || 'your child').trim();
     const completed  = req.query.completed === 'true';
+    const chunks: { topic: string; snippet: string }[] = (req as any).body?.chunks ?? [];
 
     if (!topicsRaw) return res.status(400).json({ error: 'topics is required' });
 
-    const topics = topicsRaw.split(',').map(t => t.trim()).filter(Boolean);
+    const topics = topicsRaw.split(',').map((t: string) => t.trim()).filter(Boolean);
     if (topics.length === 0) return res.status(400).json({ error: 'No topics provided' });
 
-    // Cache per school+topics+completion combo (1 hour)
-    const cacheKey = `ai:topic-summary:${school_id}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topicsRaw + className).digest('hex')}`;
+    // Cache key includes child name + completion state (content-aware)
+    const cacheKey = `ai:topic-summary:${school_id}:${childName}:${completed ? 'done' : 'plan'}:${crypto.createHash('md5').update(topicsRaw + className).digest('hex')}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json({ summary: cached });
 
     try {
-      // Call the dedicated topic-summary endpoint — bypasses all query pipeline filters
       const aiResp = await axios.post(`${AI()}/internal/topic-summary`, {
         topics,
+        chunks,
         class_name: className,
         child_name: childName,
         completed,
       }, { timeout: 15000 });
 
-      const summary: string = aiResp.data?.summary || topics.join(' · ');
+      const summary: string = aiResp.data?.summary || '';
       if (summary) await redis.setEx(cacheKey, 3600, summary);
       return res.json({ summary });
     } catch {
-      // Fallback: strip "Week X Day Y" and join
+      // Fallback: build a readable sentence without LLM
       const cleaned = topics
-        .map(t => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim())
+        .map((t: string) => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim())
         .filter(Boolean);
-      return res.json({ summary: cleaned.length > 0 ? cleaned.join(' · ') : topics.join(' · ') });
+      const meaningful = cleaned.length > 0 ? cleaned : topics;
+      const tense = completed ? 'learned about' : 'will learn about';
+      let summary: string;
+      if (meaningful.length === 1) {
+        summary = `Today, ${childName} ${tense} ${meaningful[0]}.`;
+      } else if (meaningful.length === 2) {
+        summary = `Today, ${childName} ${tense} ${meaningful[0]} and ${meaningful[1]}.`;
+      } else {
+        summary = `Today, ${childName} ${tense} ${meaningful.slice(0, -1).join(', ')}, and ${meaningful[meaningful.length - 1]}.`;
+      }
+      return res.json({ summary });
     }
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// GET /api/v1/ai/voice-status — check if voice is enabled for this school
+// POST /api/v1/ai/topic-summary — same as GET but accepts chunks in body for richer context
+router.post('/topic-summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { topics: topicsArr, chunks = [], class_name: className = 'Nursery', child_name: childName = 'your child', completed = false, feed_date = '' } = req.body;
+
+    if (!topicsArr?.length) return res.status(400).json({ error: 'topics is required' });
+
+    const topics: string[] = topicsArr.map((t: string) => t.trim()).filter(Boolean);
+    // Include feed_date in cache key so different dates get different summaries
+    const cacheKey = `ai:topic-summary:${school_id}:${childName}:${completed ? 'done' : 'plan'}:${feed_date}:${crypto.createHash('md5').update(topics.join(',') + className).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json({ summary: cached });
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/topic-summary`, {
+        topics, chunks, class_name: className, child_name: childName, completed, feed_date,
+      }, { timeout: 15000 });
+
+      const summary: string = aiResp.data?.summary || '';
+      if (summary) await redis.setEx(cacheKey, 3600, summary);
+      return res.json({ summary });
+    } catch {
+      // Fallback: strip "Week X Day Y" and build a plain sentence
+      const cleaned = topics.map((t: string) => t.replace(/week\s*\d+\s*day\s*\d+/gi, '').trim()).filter(Boolean);
+      const meaningful = cleaned.length > 0 ? cleaned : topics;
+      const tense = completed ? 'learned about' : 'will learn about';
+      // Format date for display
+      let dayRef = 'Today';
+      if (feed_date) {
+        try {
+          const d = new Date(feed_date + 'T12:00:00');
+          dayRef = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+        } catch {}
+      }
+      let summary: string;
+      if (meaningful.length === 1) summary = `${dayRef}, ${childName} ${tense} ${meaningful[0]}.`;
+      else if (meaningful.length === 2) summary = `${dayRef}, ${childName} ${tense} ${meaningful[0]} and ${meaningful[1]}.`;
+      else summary = `${dayRef}, ${childName} ${tense} ${meaningful.slice(0, -1).join(', ')}, and ${meaningful[meaningful.length - 1]}.`;
+      return res.json({ summary });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 router.get('/voice-status', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -843,6 +938,111 @@ router.get('/voice-status', async (req: Request, res: Response) => {
     return res.json({ voice_enabled: row.rows[0]?.voice_enabled ?? false });
   } catch {
     return res.json({ voice_enabled: false });
+  }
+});
+
+// POST /api/v1/ai/term-summary — cumulative summary of everything learned from start of term
+router.post('/term-summary', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { subjects = [], chunks = [], class_name: className = 'Nursery', child_name: childName = 'your child', completion_days = 0, covered_chunks = 0 } = req.body;
+
+    if (!subjects?.length) return res.status(400).json({ error: 'subjects is required' });
+
+    const cacheKey = `ai:term-summary:${school_id}:${childName}:${covered_chunks}:${crypto.createHash('md5').update(subjects.slice(0, 20).join(',') + className).digest('hex')}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) return res.json({ summary: cached });
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/term-summary`, {
+        subjects, chunks, class_name: className, child_name: childName, completion_days, covered_chunks,
+      }, { timeout: 15000 });
+
+      const summary: string = aiResp.data?.summary || '';
+      if (summary) await redis.setEx(cacheKey, 7200, summary); // cache 2h
+      return res.json({ summary });
+    } catch {
+      // Fallback
+      const top = subjects.slice(0, 5);
+      const summary = top.length > 0
+        ? `Since the start of school, ${childName} has been learning about ${top.slice(0, 3).join(', ')} and more. It has been a wonderful term so far!`
+        : `${childName} has been busy learning at school this term!`;
+      return res.json({ summary });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/ai/format-observation
+// Formats a raw teacher observation into a warm, professional note using the child's name.
+// Bypasses the off-topic guard — this is always school-relevant.
+router.post('/format-observation', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { text, student_name, category, class_name } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+
+    const aiResp = await axios.post(`${AI()}/internal/format-observation`, {
+      text: text.trim(),
+      student_name: student_name || 'the student',
+      category: category || '',
+      class_name: class_name || '',
+    }, { timeout: 15000 });
+
+    const formatted = aiResp.data.formatted || text;
+    return res.json({ formatted });
+  } catch (err) {
+    console.error('[ai.format-observation]', err);
+    // Graceful fallback — return original text
+    return res.json({ formatted: req.body.text });
+  }
+});
+
+// POST /api/v1/ai/hr-terms — generate employment terms using Oakie (principal/admin only)
+router.post('/hr-terms', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id, role } = req.user!;
+    if (!['principal', 'admin'].includes(role)) return res.status(403).json({ error: 'Forbidden' });
+
+    const { school_name, designation, salary, context } = req.body;
+    // designation is required; school_name and salary are optional (template creation may not have them)
+    if (!designation || !String(designation).trim())
+      return res.status(400).json({ error: 'designation is required' });
+
+    // Check and deduct credits
+    const credit = await checkAndDeductCredits({
+      schoolId: school_id, actorId: user_id, actorRole: role, endpoint: 'hr-terms',
+    });
+    if (!credit.allowed) {
+      return res.status(402).json({ error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' });
+    }
+
+    const salaryPart = salary ? ` Monthly salary: ₹${salary}.` : '';
+    const schoolPart = school_name ? ` at ${school_name}` : '';
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/query`, {
+        text: `Generate professional employment terms and conditions for a ${designation} position${schoolPart}.${salaryPart} ${context || ''} Write formal, clear terms covering probation period, notice period, working hours, leave policy, and code of conduct. Return only the terms text, no preamble.`,
+        teacher_id: user_id,
+        school_id,
+        role,
+      }, { timeout: AI_TIMEOUT_MS });
+
+      return res.json({ terms: aiResp.data.response });
+    } catch (err: unknown) {
+      const requestId = crypto.randomBytes(6).toString('hex');
+      console.error(`[ai.hr-terms][${requestId}] upstream error`, {
+        user_id, school_id, role,
+        endpoint: `${AI()}/internal/query`,
+        message: getAiErrorMessage(err),
+      });
+      return res.status(503).json({ error: 'Oakie is temporarily unavailable', code: 'AI_UNAVAILABLE' });
+    }
+  } catch (err: unknown) {
+    const requestId = crypto.randomBytes(6).toString('hex');
+    console.error(`[ai.hr-terms][${requestId}] route error`, { message: getAiErrorMessage(err) });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -1,5 +1,5 @@
 'use client';
-import { BookOpen, CheckCircle2, ChevronDown, Clock, FileText, Play } from 'lucide-react';
+import { BookOpen, Check, CheckCircle2, ChevronDown, Clock, FileText, Pencil, Play, FileEdit } from 'lucide-react';
 import { Button } from '@/UIComponents/primitives/Button';
 
 interface Activity { chunkId: string; label: string; subjectKey: string; }
@@ -50,8 +50,8 @@ export function TopicsChecklist({
           <BookOpen className="w-4 h-4 text-primary-500" />
           <span className="text-sm font-semibold text-neutral-800">Today's Topics</span>
           {completed ? (
-            <span className="text-xs font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-              ✓ All done
+              <span className="text-xs font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <Check className="w-3 h-3" /> All done
             </span>
           ) : checkedCount > 0 && (
             <span className="text-xs font-normal text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
@@ -109,7 +109,7 @@ export function TopicsChecklist({
                 >
                   {act.label}
                   {chunkLabelOverrides[act.chunkId] && (
-                    <span className="text-[10px] text-amber-600 font-medium ml-1">✏ Updated</span>
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-medium ml-1"><Pencil className="w-2.5 h-2.5" /> Updated</span>
                   )}
                 </span>
                 {/* Play Video button — always shown */}
@@ -136,7 +136,10 @@ export function TopicsChecklist({
                     }`}
                     title={homeworkSentChunks.has(act.chunkId) ? 'View / Edit Homework' : 'Generate Homework'}
                   >
-                    {homeworkSentChunks.has(act.chunkId) ? '✓ HW' : '📝 HW'}
+                    {homeworkSentChunks.has(act.chunkId)
+                      ? <><Check className="w-3 h-3" /> HW</>
+                      : <><FileEdit className="w-3 h-3" /> HW</>
+                    }
                   </button>
                 )}
                 {/* Ask Oakie button — always shown */}
@@ -154,7 +157,9 @@ export function TopicsChecklist({
           {/* Footer */}
           <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
             {completed ? (
-              <p className="text-xs text-emerald-600 text-center font-medium">✓ All topics completed today · Tap "Ask" to ask Oakie about any topic</p>
+              <p className="text-xs text-emerald-600 text-center font-medium flex items-center justify-center gap-1">
+                <Check className="w-3.5 h-3.5" /> All topics completed today · Tap "Ask" to ask Oakie about any topic
+              </p>
             ) : checkedCount === 0 ? (
               <p className="text-xs text-neutral-400 text-center">Tick topics as you complete them today</p>
             ) : (
@@ -168,7 +173,7 @@ export function TopicsChecklist({
                   </div>
                 )}
                 {completionMsg && (
-                  <p className={`text-xs text-center font-medium ${completionMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <p className={`text-xs text-center font-medium ${completionMsg.startsWith('✅') || completionMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>
                     {completionMsg}
                   </p>
                 )}
@@ -180,7 +185,10 @@ export function TopicsChecklist({
                     variant={allChecked ? 'success' : 'primary'}
                     fullWidth
                   >
-                    {allChecked ? '✓ Mark All as Done — Parents Notified' : `✓ Submit — ${checkedCount} done, ${uncheckedCount} carry forward`}
+                    {allChecked
+                      ? <><Check className="w-3.5 h-3.5" /> Mark All as Done — Parents Notified</>
+                      : <><Check className="w-3.5 h-3.5" /> Submit — {checkedCount} done, {uncheckedCount} carry forward</>
+                    }
                   </Button>
                   <button
                     onClick={onExportPdf}

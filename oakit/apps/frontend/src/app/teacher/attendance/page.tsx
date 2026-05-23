@@ -143,11 +143,20 @@ export default function AttendancePage() {
   }
 
   if (submitted) {
+    const absentStudents = students.filter(s => s.attendance_status === 'absent');
+    const lateStudents = students.filter(s => s.is_late);
+
     return (
       <div className="min-h-screen bg-bg">
         <header className="bg-primary text-white px-4 py-3 flex items-center gap-3">
           <button onClick={() => router.push('/teacher')} className="text-white/70 hover:text-white">←</button>
           <h1 className="font-semibold">Attendance — {date}</h1>
+          <button
+            onClick={() => loadToday(selectedSectionId || undefined)}
+            className="ml-auto text-white/70 hover:text-white text-xs px-2 py-1 rounded border border-white/20"
+          >
+            ↻ Refresh
+          </button>
         </header>
         <div className="p-4 max-w-lg mx-auto">
           {lateMarkingWarning && (
@@ -162,27 +171,37 @@ export default function AttendancePage() {
             <p className="text-sm text-gray-500">{presentCount} present · {markedCount - presentCount} absent</p>
           </Card>
 
-          {/* Late arrival section */}
+          {/* Late arrival section — always visible, refreshes after each update */}
           <Card>
-            <p className="text-sm font-semibold text-gray-700 mb-3">Late Arrivals</p>
-            <p className="text-xs text-gray-400 mb-3">If a student arrived late, tap "Mark Late Arrival" to update their status.</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-700">Late Arrivals</p>
+              {(absentStudents.length > 0 || lateStudents.length > 0) && (
+                <span className="text-xs text-gray-400">{absentStudents.length} absent · {lateStudents.length} late</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              If a student arrived late, tap "Late Arrival" to update their status to present.
+            </p>
             <div className="flex flex-col gap-2">
-              {students.filter(s => s.attendance_status === 'absent').map(s => (
+              {/* Absent students — can be marked as late arrivals */}
+              {absentStudents.map(s => (
                 <div key={s.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                   <div>
                     <p className="text-sm text-gray-800">{s.name}</p>
                     {s.father_name && <p className="text-xs text-gray-400">{s.father_name}</p>}
+                    <p className="text-xs text-red-500 font-medium">Absent</p>
                   </div>
                   <button
                     onClick={() => markLateArrival(s.id)}
                     disabled={updatingLate === s.id}
-                    className="text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-200 disabled:opacity-50"
+                    className="text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-200 disabled:opacity-50 font-medium"
                   >
                     {updatingLate === s.id ? '...' : '⏰ Late Arrival'}
                   </button>
                 </div>
               ))}
-              {students.filter(s => s.is_late).map(s => (
+              {/* Already marked late */}
+              {lateStudents.map(s => (
                 <div key={s.id + '_late'} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                   <div>
                     <p className="text-sm text-gray-800">{s.name}</p>
@@ -191,12 +210,11 @@ export default function AttendancePage() {
                       {s.arrived_at ? ` · ${new Date(s.arrived_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}
                     </p>
                   </div>
-                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Late</span>
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full font-medium">Late</span>
                 </div>
               ))}
-              {students.filter(s => s.attendance_status === 'absent').length === 0 &&
-               students.filter(s => s.is_late).length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-2">All students present on time</p>
+              {absentStudents.length === 0 && lateStudents.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-2">All students present on time ✓</p>
               )}
             </div>
           </Card>

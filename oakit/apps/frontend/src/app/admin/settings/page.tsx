@@ -17,6 +17,7 @@ interface Settings {
   logo_url: string | null;
   primary_color: string;
   tagline: string;
+  instagram_handle: string;
 }
 
 interface PortalClass {
@@ -292,7 +293,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     school_name: '', subdomain: '', contact_email: '',
     contact_phone: '', contact_address: '', notes_expiry_days: 14,
-    ai_plan_mode: 'standard', voice_enabled: false, logo_url: null, primary_color: '#1A3C2E', tagline: '',
+    ai_plan_mode: 'standard', voice_enabled: false, logo_url: null, primary_color: '#1A3C2E', tagline: '', instagram_handle: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -430,6 +431,24 @@ export default function SettingsPage() {
                   placeholder="e.g. Nurturing Young Minds Since 2010"
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-primary-400" />
                 <p className="text-xs text-neutral-400 mt-1">Appears on reports and login page</p>
+              </div>
+
+              {/* Instagram handle */}
+              <div>
+                <label className="text-xs font-medium text-neutral-600 mb-1 block">
+                  Instagram Handle
+                  <span className="ml-1.5 text-[10px] font-normal text-neutral-400">for social sharing</span>
+                </label>
+                <div className="flex items-center border border-neutral-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-primary-400">
+                  <span className="px-3 py-2.5 text-sm text-neutral-400 bg-neutral-50 border-r border-neutral-200 select-none">@</span>
+                  <input
+                    value={settings.instagram_handle}
+                    onChange={e => setSettings(s => ({ ...s, instagram_handle: e.target.value.replace(/^@/, '').replace(/\s/g, '') }))}
+                    placeholder="silveroakjuniors_seegehalli"
+                    className="flex-1 px-3 py-2.5 text-sm focus:outline-none bg-white"
+                  />
+                </div>
+                <p className="text-xs text-neutral-400 mt-1">When parents share class feed photos, this account will be auto-tagged on Instagram and Facebook</p>
               </div>
 
               {/* Primary color */}

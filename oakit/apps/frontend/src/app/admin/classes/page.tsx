@@ -172,6 +172,26 @@ export default function ClassesPage() {
                   <div key={sec.id} className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-sm text-gray-700">Section {sec.label}</span>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete Section ${sec.label}? This will also delete all day plans for this section. Active students must be moved first.`)) return;
+                          try {
+                            const res = await fetch(`${API_BASE}/api/v1/admin/classes/sections/${sec.id}`, {
+                              method: 'DELETE',
+                              headers: { Authorization: `Bearer ${token}` },
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error);
+                            await load();
+                          } catch (err: unknown) {
+                            alert(err instanceof Error ? err.message : 'Failed to delete section');
+                          }
+                        }}
+                        className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors"
+                        title="Delete section"
+                      >
+                        🗑 Delete
+                      </button>
                     </div>
 
                     {/* Class teacher */}

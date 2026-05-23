@@ -1,7 +1,8 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { API_BASE } from '@/lib/api';
+import { Phone, School, Smartphone, MapPin, Clock, Star, Camera, ClipboardList, Bell, Calendar } from 'lucide-react';
 
 const SCHOOL_CODE = 'sojs';
 const SCHOOL_WEBSITE = 'https://silveroakjuniors.in';
@@ -18,17 +19,17 @@ interface SchoolInfo {
 
 const STEPS = [
   {
-    icon: '📞',
+    Icon: Phone,
     title: "We'll call you",
     desc: 'Our admissions team will reach out within 1-2 business days.',
   },
   {
-    icon: '🏫',
+    Icon: School,
     title: 'School visit',
     desc: 'Step into a safe and nurturing environment for your child.',
   },
   {
-    icon: '📱',
+    Icon: Smartphone,
     title: 'Parent portal access',
     desc: 'Get real-time updates, learning insights and more — right on your phone.',
   },
@@ -79,7 +80,7 @@ function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
             </div>
           </div>
 
-          <p className="text-center text-xs text-gray-400 mb-4">📍 Seegahalli, Bangalore</p>
+          <p className="text-center text-xs text-gray-400 mb-4 flex items-center justify-center gap-1"><MapPin size={11} /> Seegahalli, Bangalore</p>
 
           <div className="bg-emerald-50 rounded-2xl px-4 py-3 mb-5 space-y-2">
             <p className="text-xs font-semibold text-emerald-800 mb-2">Enhanced with Oakit.ai</p>
@@ -97,12 +98,14 @@ function WelcomeSplash({ onContinue }: { onContinue: () => void }) {
 
           <button
             onClick={onContinue}
-            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-green-500 shadow-lg shadow-emerald-200 hover:from-emerald-700 hover:to-green-600 transition-all active:scale-[0.98]"
+            className="w-full py-4 rounded-2xl font-extrabold text-base text-white bg-gradient-to-r from-emerald-600 to-green-500 shadow-xl shadow-emerald-300 hover:from-emerald-700 hover:to-green-600 transition-all active:scale-[0.97] flex flex-col items-center gap-0.5 animate-pulse-subtle"
+            style={{ boxShadow: '0 8px 24px 0 rgba(16,185,129,0.45)' }}
           >
-            👉 Experience the Future of Early Learning
+            <span className="text-lg">Enquire Now →</span>
+            <span className="text-xs font-medium text-white/80">Book a free school visit</span>
           </button>
 
-          <p className="text-center text-xs text-gray-400 mt-3">Takes less than 2 minutes to enquire</p>
+          <p className="text-center text-xs text-gray-400 mt-3 flex items-center justify-center gap-1"><Clock size={11} /> Takes less than 2 minutes</p>
         </div>
       </div>
     </div>
@@ -220,7 +223,7 @@ export default function EnquiryPage() {
                 <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-amber-500 via-amber-400 to-yellow-400 px-6 pt-8 pb-10 mb-5 shadow-xl shadow-amber-100">
                   <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-white/10 -translate-y-8 translate-x-8" />
                   <div className="relative z-10 w-16 h-16 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center mx-auto mb-4">
-                    <span className="text-3xl">📋</span>
+                    <ClipboardList size={28} className="text-white" />
                   </div>
                   <p className="relative z-10 text-white/80 text-xs font-semibold uppercase tracking-widest mb-2">Already Submitted</p>
                   <h2 className="relative z-10 text-xl font-extrabold text-white leading-tight mb-2">
@@ -264,7 +267,7 @@ export default function EnquiryPage() {
 
                   <p className="relative z-10 text-white/80 text-xs font-semibold uppercase tracking-widest mb-2">Enquiry Received</p>
                   <h2 className="relative z-10 text-2xl font-extrabold text-white leading-tight mb-2">
-                    Welcome to the Future<br />of Early Learning! 🌟
+                    Welcome to the Future<br />of Early Learning!
                   </h2>
                   <p className="relative z-10 text-white/90 text-sm leading-relaxed">
                     Silver Oak Juniors — Bangalore&apos;s first AI-powered preschool that keeps parents truly connected to their child&apos;s growth.
@@ -277,7 +280,9 @@ export default function EnquiryPage() {
                   <div className="space-y-3">
                     {STEPS.map(step => (
                       <div key={step.title} className="flex items-start gap-3">
-                        <span className="text-xl mt-0.5">{step.icon}</span>
+                        <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+                          <step.Icon size={16} className="text-emerald-700" />
+                        </div>
                         <div>
                           <p className="text-sm font-semibold text-gray-800">{step.title}</p>
                           <p className="text-xs text-gray-500 leading-relaxed">{step.desc}</p>
@@ -473,3 +478,4 @@ export default function EnquiryPage() {
     </div>
   );
 }
+

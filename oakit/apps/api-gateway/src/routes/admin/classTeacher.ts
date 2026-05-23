@@ -67,7 +67,7 @@ router.post('/sections/:id/class-teacher', async (req: Request, res: Response) =
       );
       if (secInfo.rows.length > 0) {
         const { class_id } = secInfo.rows[0];
-        // Copy plans from sibling section
+        // Copy plans from sibling section (teacher_id stored as NULL — plans belong to section)
         const sibling = await pool.query(
           `SELECT dp.plan_date, dp.chunk_ids, dp.status
            FROM day_plans dp
@@ -78,19 +78,16 @@ router.post('/sections/:id/class-teacher', async (req: Request, res: Response) =
         );
         for (const plan of sibling.rows) {
           await pool.query(
-            `INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
-             VALUES ($1, $2, $3, $4, $5::uuid[], $6)
+            `INSERT INTO day_plans (school_id, section_id, plan_date, chunk_ids, status)
+             VALUES ($1, $2, $3, $4::uuid[], $5)
              ON CONFLICT (section_id, plan_date) DO NOTHING`,
-            [school_id, section_id, teacher_id, plan.plan_date, plan.chunk_ids, plan.status]
+            [school_id, section_id, plan.plan_date, plan.chunk_ids, plan.status]
           );
         }
       }
     } else {
-      // Update teacher_id on existing plans for this section
-      await pool.query(
-        'UPDATE day_plans SET teacher_id = $1 WHERE section_id = $2',
-        [teacher_id, section_id]
-      );
+      // Teacher changed — no need to update day_plans.teacher_id
+      // Plans belong to the section; whoever is assigned to the section teaches them.
     }
 
     return res.json({ message: 'Class teacher assigned' });

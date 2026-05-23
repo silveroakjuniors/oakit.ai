@@ -48,13 +48,14 @@ router.get('/children', async (req: Request, res: Response) => {
     const { user_id, school_id } = req.user!;
     const result = await pool.query(
       `SELECT s.id, s.name, s.father_name, s.mother_name,
+              s.parent_contact, s.mother_contact, s.date_of_birth::text,
               s.photo_path,
               c.name as class_name, sec.label as section_label,
               sec.id as section_id, s.class_id
        FROM parent_student_links psl
        JOIN students s ON s.id = psl.student_id
-       JOIN classes c ON c.id = s.class_id
-       JOIN sections sec ON sec.id = s.section_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       LEFT JOIN sections sec ON sec.id = s.section_id
        WHERE psl.parent_id = $1 AND s.school_id = $2 AND s.is_active = true
        ORDER BY c.name, s.name`,
       [user_id, school_id]
@@ -172,12 +173,14 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
     );
 
     let topics: string[] = [];
+    let topicChunks: { topic: string; snippet: string }[] = [];
     if (planRow.rows.length > 0 && planRow.rows[0].chunk_ids?.length > 0) {
       const chunks = await pool.query(
-        'SELECT topic_label FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
+        'SELECT topic_label, LEFT(content, 300) as snippet FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
         [planRow.rows[0].chunk_ids]
       );
       topics = chunks.rows.map((r: any) => r.topic_label);
+      topicChunks = chunks.rows.map((r: any) => ({ topic: r.topic_label || '', snippet: r.snippet || '' }));
     }
 
     // Today's homework
@@ -197,16 +200,25 @@ router.get('/child/:student_id/feed', async (req: Request, res: Response) => {
       [section_id, today]
     ).catch(() => ({ rows: [] }));
 
+    // School instagram handle for social sharing
+    const igRow = await pool.query(
+      `SELECT instagram_handle, COALESCE(translation_enabled, true) as translation_enabled FROM school_settings WHERE school_id = $1`,
+      [school_id]
+    ).catch(() => ({ rows: [] }));
+
     return res.json({
       student_id, name, class_name, section_label,
       feed_date: today,
       attendance: attRow.rows[0] || null,
       completion: compRow.rows[0] || null,
       topics,
+      topic_chunks: topicChunks,
       plan_status: planRow.rows[0]?.status || null,
       special_label: planRow.rows[0]?.special_label || null,
       homework: hwRow.rows[0] || null,
       notes: notesRow.rows,
+      instagram_handle: igRow.rows[0]?.instagram_handle ?? '',
+      translation_enabled: igRow.rows[0]?.translation_enabled ?? true,
     });
   } catch (err) {
     console.error(err);
@@ -362,31 +374,260 @@ router.get('/child/:student_id/week-schedule', async (req: Request, res: Respons
     );
 
     // Resolve topic labels — plan_date is already a string due to ::text cast
-    const days: Record<string, string[]> = {};
+    const days: Record<string, { topics: string[]; chunks: { topic: string; snippet: string }[]; completed: boolean }> = {};
     for (const row of plansRow.rows) {
       const dateKey: string = typeof row.plan_date === 'string'
         ? row.plan_date.split('T')[0]
         : (row.plan_date as Date).toISOString().split('T')[0];
 
       if (row.special_label) {
-        days[dateKey] = [row.special_label];
+        days[dateKey] = { topics: [row.special_label], chunks: [], completed: false };
         continue;
       }
       if (row.chunk_ids?.length > 0) {
-        const chunks = await pool.query(
-          `SELECT topic_label FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
+        const chunkRows = await pool.query(
+          `SELECT topic_label, content, LEFT(content, 1200) as snippet FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
           [row.chunk_ids]
         );
-        days[dateKey] = chunks.rows.map((c: any) => c.topic_label);
+        // Check if this day has a completion record
+        const compRow = await pool.query(
+          `SELECT id FROM daily_completions WHERE section_id = $1 AND completion_date = $2 LIMIT 1`,
+          [section_id, dateKey]
+        );
+
+        // Extract subject headings from content when topic_label is "Week X Day Y"
+        function extractSubjects(content: string): string[] {
+          const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
+          const subjects: string[] = [];
+          for (const line of lines) {
+            if (/^week\s*\d+\s*day\s*\d+/i.test(line)) continue;
+            if (/^\d+$/.test(line)) continue;
+            // Subject heading: short line ending with colon, or ALL CAPS word, or "Subject:" pattern
+            if (
+              /^[A-Z][a-zA-Z\s&\/\-]{1,50}:\s*$/.test(line) ||
+              /^[A-Z][A-Z\s]{2,30}$/.test(line) ||
+              /^(English|Math|Maths|GK|General Knowledge|Circle Time|Fine Motor|Art|Craft|Music|PE|Science|Hindi|Telugu|Tamil|Kannada|Story|Rhymes?|Writing|Reading|Numbers?|Shapes?|Colours?|Colors?|Drawing|Phonics|EVS|Computer|Dance|Yoga|Library|Activity|Outdoor|Indoor|Language|Numeracy|Literacy|Motor Skills?|Sensory|Play|Exploration|Discovery|Social|Emotional|Cognitive|Creative|Physical)[:\s]/i.test(line)
+            ) {
+              subjects.push(line.replace(/:$/, '').trim());
+            }
+          }
+          return subjects;
+        }
+
+        days[dateKey] = {
+          topics: chunkRows.rows.map((c: any) => c.topic_label),
+          chunks: chunkRows.rows.map((c: any) => {
+            const isWeekDayLabel = /^week\s*\d+\s*day\s*\d+\s*$/i.test((c.topic_label || '').trim());
+            const subjects = isWeekDayLabel ? extractSubjects(c.content || '') : [];
+            return {
+              topic: c.topic_label || '',
+              snippet: c.snippet || '',
+              subjects: subjects.length > 0 ? subjects : undefined,
+            };
+          }),
+          completed: compRow.rows.length > 0,
+        };
       } else {
-        days[dateKey] = [];
+        days[dateKey] = { topics: [], chunks: [], completed: false };
       }
     }
 
-    return res.json({ week_start: monday, days });
+    return res.json({ week_start: monday, today: todayStr, days });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/parent/child/:student_id/term-summary — all topics covered this term
+router.get('/child/:student_id/term-summary', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { student_id } = req.params;
+
+    const link = await pool.query(
+      `SELECT 1 FROM parent_student_links WHERE parent_id = $1 AND student_id = $2`,
+      [user_id, student_id]
+    );
+    if (link.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+
+    const studentRow = await pool.query(
+      `SELECT s.section_id, s.name, c.name as class_name
+       FROM students s JOIN classes c ON c.id = s.class_id
+       WHERE s.id = $1 AND s.school_id = $2`,
+      [student_id, school_id]
+    );
+    if (studentRow.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+    const { section_id, name: student_name, class_name } = studentRow.rows[0];
+
+    const termToday = await getToday(school_id);
+
+    // Get current academic year — use time-machine-aware today, fallback to most recent
+    let calRow = await pool.query(
+      `SELECT start_date, end_date FROM school_calendar
+       WHERE school_id = $1 AND $2::date BETWEEN start_date AND end_date LIMIT 1`,
+      [school_id, termToday]
+    );
+    if (calRow.rows.length === 0) {
+      calRow = await pool.query(
+        `SELECT start_date, end_date FROM school_calendar
+         WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1`,
+        [school_id]
+      );
+    }
+    const yearStart = calRow.rows[0]?.start_date ?? null;
+    const yearEnd = calRow.rows[0]?.end_date ?? null;
+
+    // All completed days this term with their chunk IDs
+    const completionsRow = await pool.query(
+      `SELECT completion_date::text, covered_chunk_ids, settling_day_note
+       FROM daily_completions
+       WHERE section_id = $1
+         AND ($2::date IS NULL OR completion_date >= $2::date)
+         AND ($3::date IS NULL OR completion_date <= $3::date)
+       ORDER BY completion_date ASC`,
+      [section_id, yearStart, yearEnd]
+    );
+
+    // Also count all school days that have passed (from day_plans) — includes settling days
+    // even if teacher hasn't submitted a completion record
+    const schoolDaysRow = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE dp.status = 'settling' OR sd.day_type ILIKE '%settl%') AS settling_count,
+         COUNT(*) FILTER (WHERE dp.status NOT IN ('holiday','weekend') AND (dp.chunk_ids IS NULL OR dp.chunk_ids = '{}') AND (sd.day_type IS NULL OR sd.day_type NOT ILIKE '%settl%')) AS empty_days,
+         COUNT(*) AS total_past_days
+       FROM day_plans dp
+       LEFT JOIN special_days sd ON sd.school_id = dp.school_id AND sd.day_date = dp.plan_date
+       WHERE dp.section_id = $1
+         AND dp.plan_date < $2::date
+         AND dp.status NOT IN ('holiday','weekend')
+         AND ($3::date IS NULL OR dp.plan_date >= $3::date)`,
+      [section_id, yearStart ? yearStart : new Date().toISOString().split('T')[0], yearStart]
+    );
+
+    // Get school's today for accurate past-day counting
+    const schoolToday = await getToday(school_id);
+
+    // Count past day_plans up to school's today
+    const pastDaysRow = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE dp.status = 'settling' OR sd.day_type ILIKE '%settl%') AS settling_days,
+         COUNT(*) FILTER (WHERE (dp.chunk_ids IS NOT NULL AND dp.chunk_ids != '{}') AND dp.status NOT IN ('holiday','weekend','settling')) AS curriculum_days,
+         COUNT(*) AS total_school_days
+       FROM day_plans dp
+       LEFT JOIN special_days sd ON sd.school_id = dp.school_id AND sd.day_date = dp.plan_date
+       WHERE dp.section_id = $1
+         AND dp.plan_date <= $2::date
+         AND dp.status NOT IN ('holiday','weekend')
+         AND ($3::date IS NULL OR dp.plan_date >= $3::date)`,
+      [section_id, schoolToday, yearStart]
+    );
+
+    const settlingDaysCount = parseInt(pastDaysRow.rows[0]?.settling_days ?? '0');
+    const curriculumDaysCount = parseInt(pastDaysRow.rows[0]?.curriculum_days ?? '0');
+    const totalSchoolDays = parseInt(pastDaysRow.rows[0]?.total_school_days ?? '0');
+
+    // Collect all unique chunk IDs from curriculum days (from daily_completions)
+    const allChunkIds: string[] = [];
+    const seenIds = new Set<string>();
+    for (const row of completionsRow.rows) {
+      for (const id of (row.covered_chunk_ids ?? [])) {
+        if (!seenIds.has(id)) { seenIds.add(id); allChunkIds.push(id); }
+      }
+    }
+
+    // Fetch chunk details — get full content to extract subjects
+    let chunks: { id: string; topic_label: string; snippet: string; subjects?: string[] }[] = [];
+    if (allChunkIds.length > 0) {
+      const chunksRow = await pool.query(
+        `SELECT id::text, topic_label, content, LEFT(content, 400) as snippet
+         FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index`,
+        [allChunkIds]
+      );
+
+      function extractSubjects(content: string): string[] {
+        const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
+        const subjects: string[] = [];
+        const subjectRe = /^(English|Math|Maths|GK|General Knowledge|Circle Time|Fine Motor|Art|Craft|Music|PE|Science|Hindi|Telugu|Tamil|Kannada|Story|Rhymes?|Writing|Reading|Numbers?|Shapes?|Colours?|Colors?|Drawing|Phonics|EVS|Computer|Dance|Yoga|Library|Activity|Outdoor|Indoor|Language|Numeracy|Literacy|Motor Skills?|Sensory|Play|Exploration|Discovery|Social|Emotional|Cognitive|Creative|Physical)/i;
+        for (const line of lines) {
+          if (/^week\s*\d+\s*day\s*\d+/i.test(line)) continue;
+          if (/^\d+$/.test(line)) continue;
+          if (subjectRe.test(line) || /^[A-Z][a-zA-Z\s&\/\-]{1,50}:\s*$/.test(line)) {
+            const clean = line.replace(/:$/, '').trim();
+            if (clean && !subjects.includes(clean)) subjects.push(clean);
+          }
+        }
+        return subjects;
+      }
+
+      chunks = chunksRow.rows.map((c: any) => {
+        const isWeekDayLabel = /^week\s*\d+\s*day\s*\d+\s*$/i.test((c.topic_label || '').trim());
+        const subjects = isWeekDayLabel ? extractSubjects(c.content || '') : [];
+        return {
+          id: c.id,
+          topic_label: c.topic_label,
+          snippet: c.snippet || '',
+          subjects: subjects.length > 0 ? subjects : undefined,
+        };
+      });
+    }
+
+    // Settling day notes
+    const settlingNotes = completionsRow.rows
+      .filter((r: any) => r.settling_day_note)
+      .map((r: any) => ({ date: r.completion_date, note: r.settling_day_note }));
+
+    // Total curriculum chunks for this section
+    const totalRow = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM curriculum_chunks cc
+       JOIN curriculum_documents cd ON cd.id = cc.document_id
+       JOIN sections sec ON sec.class_id = cd.class_id
+       WHERE sec.id = $1 AND cd.school_id = $2`,
+      [section_id, school_id]
+    );
+
+    return res.json({
+      student_name,
+      class_name,
+      total_curriculum_chunks: totalRow.rows[0]?.total ?? 0,
+      covered_chunks: allChunkIds.length,
+      chunks,
+      settling_notes: settlingNotes,
+      settling_days: settlingDaysCount,
+      curriculum_days: curriculumDaysCount,
+      completion_days: totalSchoolDays,
+    });
+  } catch (err) {
+    console.error('[term-summary]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/parent/child/:student_id/report-card?from=&to=
+// Parent generates a full report card for their own child
+router.get('/child/:student_id/report-card', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { student_id } = req.params;
+    const { from, to } = req.query as Record<string, string>;
+
+    // Verify parent owns this student
+    const link = await pool.query(
+      `SELECT 1 FROM parent_student_links psl JOIN students s ON s.id = psl.student_id
+       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3`,
+      [user_id, student_id, school_id]
+    );
+    if (link.rows.length === 0) return res.status(403).json({ error: 'Access denied' });
+
+    const fromDate = from || new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+    const toDate = to || new Date().toISOString().split('T')[0];
+
+    const { generateProgressReport } = await import('./admin/reportHelper');
+    const result = await generateProgressReport(student_id, school_id, fromDate, toDate, 'progress', user_id);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[parent report-card]', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
@@ -722,17 +963,25 @@ router.get('/profile', async (req: Request, res: Response) => {
   try {
     const { user_id } = req.user!;
     const result = await pool.query(
-      `SELECT id, name, mobile, mobile_updated_at
-       FROM parent_users WHERE id = $1`,
+      `SELECT id, name, mobile FROM parent_users WHERE id = $1`,
       [user_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
     const p = result.rows[0];
+    // Check if mobile_updated_at column exists (added in migration 067)
+    let mobile_can_update = true;
+    try {
+      const upd = await pool.query(
+        `SELECT mobile_updated_at FROM parent_users WHERE id = $1`,
+        [user_id]
+      );
+      mobile_can_update = !upd.rows[0]?.mobile_updated_at;
+    } catch { /* column not yet migrated — allow update */ }
     return res.json({
       id: p.id,
       name: p.name,
       mobile: p.mobile,
-      mobile_can_update: !p.mobile_updated_at, // once-only: can only update if never updated before
+      mobile_can_update,
     });
   } catch (err) {
     console.error('[parent profile GET]', err);
@@ -753,7 +1002,7 @@ router.put('/profile', async (req: Request, res: Response) => {
 
     // Fetch current profile
     const current = await pool.query(
-      `SELECT id, name, mobile, mobile_updated_at FROM parent_users WHERE id = $1`,
+      `SELECT id, name, mobile FROM parent_users WHERE id = $1`,
       [user_id]
     );
     if (current.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
@@ -765,12 +1014,19 @@ router.put('/profile', async (req: Request, res: Response) => {
       if (!/^\d{10}$/.test(cleaned)) {
         return res.status(400).json({ error: 'Mobile must be a valid 10-digit number' });
       }
-      if (profile.mobile_updated_at) {
-        return res.status(403).json({
-          error: 'Mobile number has already been updated once and cannot be changed again. Contact the school admin if you need help.',
-          mobile_locked: true,
-        });
-      }
+      // Check once-only lock (column may not exist yet)
+      try {
+        const lockCheck = await pool.query(
+          `SELECT mobile_updated_at FROM parent_users WHERE id = $1`, [user_id]
+        );
+        if (lockCheck.rows[0]?.mobile_updated_at) {
+          return res.status(403).json({
+            error: 'Mobile number has already been updated once and cannot be changed again. Contact the school admin if you need help.',
+            mobile_locked: true,
+          });
+        }
+      } catch { /* column not yet migrated — allow update */ }
+
       if (cleaned === profile.mobile) {
         return res.status(400).json({ error: 'New mobile number is the same as the current one' });
       }
@@ -787,19 +1043,23 @@ router.put('/profile', async (req: Request, res: Response) => {
       // Update mobile + name (if provided)
       const bcrypt = require('bcryptjs');
       const newHash = await bcrypt.hash(cleaned, 12);
-      await pool.query(
-        `UPDATE parent_users
-         SET mobile = $1,
-             password_hash = $2,
-             mobile_updated_at = now(),
-             mobile_updated_by = 'parent',
-             ${name ? "name = $4," : ''}
-             force_password_reset = false
-         WHERE id = ${name ? '$5' : '$3'}`,
-        name
-          ? [cleaned, newHash, name.trim(), user_id]
-          : [cleaned, newHash, user_id]
-      );
+      try {
+        await pool.query(
+          `UPDATE parent_users
+           SET mobile = $1, password_hash = $2,
+               mobile_updated_at = now(), mobile_updated_by = 'parent',
+               ${name ? "name = $4," : ''}
+               force_password_reset = false
+           WHERE id = ${name ? '$5' : '$3'}`,
+          name ? [cleaned, newHash, name.trim(), user_id] : [cleaned, newHash, user_id]
+        );
+      } catch {
+        // Fallback if columns don't exist yet
+        await pool.query(
+          `UPDATE parent_users SET mobile = $1, password_hash = $2 ${name ? ', name = $4' : ''}, force_password_reset = false WHERE id = ${name ? '$5' : '$3'}`,
+          name ? [cleaned, newHash, name.trim(), user_id] : [cleaned, newHash, user_id]
+        );
+      }
 
       return res.json({
         success: true,
@@ -856,6 +1116,112 @@ router.get('/missed-topics/completed', async (req: Request, res: Response) => {
     );
     return res.json(result.rows);
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/parent/calendar — holidays, special days, and announcements for the school
+router.get('/calendar', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+
+    // Get school's "today" — respects time machine
+    const todayStr = await getToday(school_id);
+
+    // Get academic year — use time-machine-aware today, fall back to most recent calendar
+    let calRow = await pool.query(
+      `SELECT academic_year, start_date::text, end_date::text
+       FROM school_calendar
+       WHERE school_id = $1 AND $2::date BETWEEN start_date AND end_date
+       LIMIT 1`,
+      [school_id, todayStr]
+    );
+    // Fallback: use the most recently started calendar year (handles time machine)
+    if (calRow.rows.length === 0) {
+      calRow = await pool.query(
+        `SELECT academic_year, start_date::text, end_date::text
+         FROM school_calendar
+         WHERE school_id = $1
+         ORDER BY start_date DESC
+         LIMIT 1`,
+        [school_id]
+      );
+    }
+    const academicYear = calRow.rows[0]?.academic_year || '';
+    const calStart = calRow.rows[0]?.start_date || new Date().toISOString().split('T')[0];
+    const calEnd   = calRow.rows[0]?.end_date   || new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0];
+
+    // Holidays — all for this academic year
+    const holidayRows = await pool.query(
+      `SELECT id::text, holiday_date::text as date, event_name as title
+       FROM holidays
+       WHERE school_id = $1 AND academic_year = $2
+       ORDER BY holiday_date`,
+      [school_id, academicYear]
+    );
+
+    // Special days — settling, events, half-days, etc.
+    const specialRows = await pool.query(
+      `SELECT id::text, day_date::text as date, label as title, day_type
+       FROM special_days
+       WHERE school_id = $1 AND academic_year = $2
+       ORDER BY day_date`,
+      [school_id, academicYear]
+    );
+
+    // Announcements — active ones for parents (JOIN users for author name, filter by audience)
+    const classIds = await pool.query(
+      `SELECT DISTINCT s.class_id FROM parent_student_links psl
+       JOIN students s ON s.id = psl.student_id
+       WHERE psl.parent_id = $1`,
+      [user_id]
+    );
+    const ids = classIds.rows.map((r: any) => r.class_id);
+    const announcementRows = await pool.query(
+      `SELECT a.id::text, a.title, a.body, a.created_at::text, u.name as author_name
+       FROM announcements a
+       JOIN users u ON u.id = a.author_id
+       WHERE a.school_id = $1
+         AND a.deleted_at IS NULL
+         AND (a.expires_at IS NULL OR a.expires_at > now())
+         AND (a.target_audience IN ('all','parents')
+              OR (a.target_audience = 'class' AND a.target_class_id = ANY($2::uuid[])))
+       ORDER BY a.created_at DESC
+       LIMIT 30`,
+      [school_id, ids]
+    );
+
+    function mapDayType(dayType: string): string {
+      if (!dayType) return 'event';
+      const t = dayType.toLowerCase();
+      if (t.includes('settl')) return 'settling';
+      if (t.includes('half')) return 'half_day';
+      if (t.includes('exam') || t.includes('test')) return 'exam';
+      if (t.includes('sport') || t.includes('activity')) return 'activity';
+      if (t.includes('holiday') || t.includes('vacation')) return 'holiday';
+      return 'event';
+    }
+
+    return res.json({
+      today: todayStr,           // school's "today" — respects time machine
+      academic_year: academicYear,
+      calendar_start: calStart,
+      calendar_end: calEnd,
+      holidays: holidayRows.rows.map((r: any) => ({
+        id: r.id, date: r.date, title: r.title, type: 'holiday',
+      })),
+      special_days: specialRows.rows.map((r: any) => ({
+        id: r.id, date: r.date, title: r.title,
+        type: mapDayType(r.day_type), day_type: r.day_type,
+      })),
+      announcements: announcementRows.rows.map((r: any) => ({
+        id: r.id, title: r.title, body: r.body,
+        date: r.created_at?.split('T')[0] || '',
+        author: r.author_name, type: 'announcement',
+      })),
+    });
+  } catch (err) {
+    console.error('[parent/calendar]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

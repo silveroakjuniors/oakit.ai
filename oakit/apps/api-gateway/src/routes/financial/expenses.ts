@@ -32,7 +32,10 @@ router.post('/', permissionGuard('ADD_EXPENSE'), upload.single('attachment'), as
     if (parseFloat(amount) <= 0)
       return res.status(400).json({ error: 'amount must be > 0' });
 
-    const validCategories = ['rent', 'salary', 'utilities', 'marketing', 'maintenance', 'miscellaneous'];
+    const validCategories = [
+      'rent', 'salary', 'utilities', 'marketing', 'maintenance',
+      'supplies', 'transport', 'food', 'events', 'miscellaneous', 'other',
+    ];
     if (!validCategories.includes(category))
       return res.status(400).json({ error: `category must be one of: ${validCategories.join(', ')}` });
 
@@ -90,26 +93,50 @@ router.post('/', permissionGuard('ADD_EXPENSE'), upload.single('attachment'), as
   }
 });
 
-// ── GET / — List expenses with filters ───────────────────────────────────────
+// ── GET / — List expenses with filters + serial numbers ──────────────────────
 router.get('/', permissionGuard('VIEW_EXPENSE'), async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { from, to, category } = req.query as Record<string, string>;
 
-    let query = `SELECT * FROM expenses WHERE school_id = $1 AND deleted_at IS NULL`;
     const params: any[] = [schoolId];
     let idx = 2;
+    let filters = '';
 
-    if (from) { query += ` AND date >= $${idx++}`; params.push(from); }
-    if (to)   { query += ` AND date <= $${idx++}`; params.push(to); }
-    if (category) { query += ` AND category = $${idx++}`; params.push(category); }
+    if (from)     { filters += ` AND date >= $${idx++}`;     params.push(from); }
+    if (to)       { filters += ` AND date <= $${idx++}`;     params.push(to); }
+    if (category) { filters += ` AND category = $${idx++}`; params.push(category); }
 
-    query += ` ORDER BY date DESC`;
-
-    const result = await pool.query(query, params);
+    const result = await pool.query(
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY date DESC, created_at DESC) AS sl_no,
+         *
+       FROM expenses
+       WHERE school_id = $1 AND deleted_at IS NULL${filters}
+       ORDER BY date DESC, created_at DESC`,
+      params
+    );
     return res.json(result.rows);
   } catch (err) {
     console.error('[expenses GET]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /:id — Get a single expense ──────────────────────────────────────────
+router.get('/:id', permissionGuard('VIEW_EXPENSE'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT * FROM expenses WHERE id = $1 AND school_id = $2 AND deleted_at IS NULL`,
+      [id, schoolId]
+    );
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: 'Expense not found' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[expenses GET /:id]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

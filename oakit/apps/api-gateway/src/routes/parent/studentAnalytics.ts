@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, forceResetGuard, schoolScope, roleGuard } from '../../middleware/auth';
+import { verifyParentOwnsStudent } from '../../lib/parentAuth';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('parent'));
@@ -10,7 +11,7 @@ router.get('/:studentId', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
 
-    // Verify parent owns this student
+    // Verify parent owns this student and get class_id
     const link = await pool.query(
       `SELECT s.class_id FROM parent_student_links psl
        JOIN students s ON s.id = psl.student_id

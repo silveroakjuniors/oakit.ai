@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { uploadFile, deleteFile, getPublicUrl } from '../../lib/storage';
+import { assignFeeStructureToStudent } from '../../lib/feeAssignment';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
@@ -27,11 +28,13 @@ function normalise(s: string): string {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-// - POST /api/v1/admin/students ? create a single student -
+// - POST /api/v1/admin/students — create a single student -
 router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { name, class_id, section_id, father_name, mother_name, parent_contact, mother_contact } = req.body;
+    const { name, class_id, section_id, father_name, mother_name, parent_contact, mother_contact, fee_assignment } = req.body;
+    // fee_assignment?: { fee_structure_id: string; fee_type: 'term' | 'annual' }
+
     if (!name || !class_id || !section_id) {
       return res.status(400).json({ error: 'name, class_id, and section_id are required' });
     }
@@ -44,6 +47,68 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
     if (mother_contact && !/^\d{10}$/.test(mother_contact.trim())) {
       return res.status(400).json({ error: 'Mother mobile must be 10 digits' });
     }
+
+    // Require a tuition or admission fee head assigned to this class before onboarding
+    const feeCheck = await pool.query(
+      `SELECT fh.id
+       FROM fee_heads fh
+       WHERE fh.school_id = $1
+         AND fh.class_id = $2
+         AND fh.type IN ('tuition', 'admission')
+         AND fh.deleted_at IS NULL
+       LIMIT 1`,
+      [school_id, class_id]
+    );
+    if (feeCheck.rows.length === 0) {
+      return res.status(400).json({
+        error: 'Cannot onboard student: no tuition or annual fee has been assigned to this class. Please set up a fee structure for this class first.',
+      });
+    }
+
+    // When fee_assignment is provided, wrap everything in a transaction
+    if (fee_assignment) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const insertResult = await client.query(
+          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+          [school_id, class_id, section_id, name.trim(),
+           father_name?.trim() || null, mother_name?.trim() || null,
+           parent_contact?.trim() || null, mother_contact?.trim() || null]
+        );
+        const student = insertResult.rows[0];
+
+        let feeAccountsCreated = 0;
+        try {
+          const assignResult = await assignFeeStructureToStudent({
+            studentId: student.id,
+            schoolId: school_id,
+            feeStructureId: fee_assignment.fee_structure_id,
+            classId: class_id,
+            client,
+          });
+          feeAccountsCreated = assignResult.fee_accounts_created;
+        } catch (assignErr: any) {
+          await client.query('ROLLBACK');
+          if (assignErr.message === "Fee structure does not match the student's class") {
+            return res.status(400).json({ error: assignErr.message });
+          }
+          throw assignErr;
+        }
+
+        await client.query('COMMIT');
+        return res.status(201).json({ ...student, fee_accounts_created: feeAccountsCreated });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // No fee_assignment — keep existing simple pool.query approach
     const result = await pool.query(
       `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
@@ -58,11 +123,11 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   }
 });
 
-// - GET /api/v1/admin/students � list students
-router.get('/', roleGuard('admin'), async (req: Request, res: Response) => {
+// - GET /api/v1/admin/students � list students
+router.get('/', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { class_id, section_id, include_inactive, incomplete_parents } = req.query;
+    const { class_id, section_id, include_inactive, incomplete_parents, search } = req.query;
     let query = `
       SELECT s.id, s.name, s.father_name, s.mother_name,
              s.parent_contact, s.mother_contact,
@@ -85,6 +150,18 @@ router.get('/', roleGuard('admin'), async (req: Request, res: Response) => {
         s.parent_contact IS NULL OR s.parent_contact = '' OR
         s.mother_name IS NULL OR s.mother_name = '' OR
         s.mother_contact IS NULL OR s.mother_contact = ''
+      )`;
+    }
+    // Full-text search across name, parent names, and phone numbers
+    if (search) {
+      const searchTerm = `%${(search as string).toLowerCase()}%`;
+      params.push(searchTerm);
+      query += ` AND (
+        LOWER(s.name) LIKE $${params.length} OR
+        LOWER(COALESCE(s.father_name, '')) LIKE $${params.length} OR
+        LOWER(COALESCE(s.mother_name, '')) LIKE $${params.length} OR
+        COALESCE(s.parent_contact, '') LIKE $${params.length} OR
+        COALESCE(s.mother_contact, '') LIKE $${params.length}
       )`;
     }
     query += ' ORDER BY s.name';
@@ -138,16 +215,37 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
     ws.getRow(1).eachCell((cell, colNum) => { headers[colNum - 1] = String(cell.value || ''); });
 
     const colMap: Record<string, number> = {};
-    headers.forEach((h, i) => {
-      const n = normalise(h);
-      if (n.includes('studentname') || n === 'studentname' || n === 'name') colMap.student_name = i;
-      else if (n.includes('fathername') || n === 'fathername') colMap.father_name = i;
-      else if (n.includes('mothername') || n === 'mothername') colMap.mother_name = i;
-      else if (n === 'section') colMap.section = i;
-      else if (n === 'class' || n === 'classname') colMap.class = i;
-      else if (n.includes('parentcontact') || n.includes('fathercontact') || n.includes('contactnumber')) colMap.parent_contact = i;
-      else if (n.includes('mothercontact')) colMap.mother_contact = i;
-    });
+headers.forEach((h, i) => {
+  const n = normalise(h);
+
+  if (n === 'studentname') {
+    colMap.student_name = i;
+  }
+
+  else if (n === 'fathername') {
+    colMap.father_name = i;
+  }
+
+  else if (n === 'mothername') {
+    colMap.mother_name = i;
+  }
+
+  else if (n === 'section') {
+    colMap.section = i;
+  }
+
+  else if (n === 'class') {
+    colMap.class = i;
+  }
+
+  else if (n === 'parentcontactnumber') {
+    colMap.parent_contact = i;
+  }
+
+  else if (n === 'mothercontactnumber') {
+    colMap.mother_contact = i;
+  }
+});
 
     if (colMap.student_name === undefined) return res.status(400).json({ error: 'Column "student name" not found in file' });
     if (colMap.class === undefined) return res.status(400).json({ error: 'Column "class" not found in file' });
@@ -192,21 +290,276 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
       );
       if (sectionRow.rows.length === 0) { skipped.push({ studentName, reason: `Section '${sectionLabel}' not found in class '${className}'` }); continue; }
 
-      try {
-        await pool.query(
-          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [school_id, classRow.rows[0].id, sectionRow.rows[0].id, studentName,
-           fatherName || null, motherName || null, parentContact || null, motherContact || null]
-        );
-        created++;
-      } catch (err: any) { skipped.push({ studentName, reason: err.message }); }
+try {
+  // Check if student already exists
+  const existingStudent = await pool.query(
+    `SELECT id
+     FROM students
+     WHERE school_id = $1
+       AND LOWER(name) = LOWER($2)
+       AND class_id = $3
+       AND section_id = $4
+     LIMIT 1`,
+    [
+      school_id,
+      studentName,
+      classRow.rows[0].id,
+      sectionRow.rows[0].id
+    ]
+  );
+
+  if (existingStudent.rows.length > 0) {
+    // UPDATE existing student
+    await pool.query(
+      `UPDATE students
+       SET father_name = $1,
+           mother_name = $2,
+           parent_contact = $3,
+           mother_contact = $4
+       WHERE id = $5`,
+      [
+        fatherName || null,
+        motherName || null,
+        parentContact || null,
+        motherContact || null,
+        existingStudent.rows[0].id
+      ]
+    );
+  } else {
+    // INSERT new student
+    await pool.query(
+      `INSERT INTO students
+       (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        school_id,
+        classRow.rows[0].id,
+        sectionRow.rows[0].id,
+        studentName,
+        fatherName || null,
+        motherName || null,
+        parentContact || null,
+        motherContact || null
+      ]
+    );
+  }
+
+  created++;
+
+} catch (err: any) {
+  skipped.push({ studentName, reason: err.message });
+}
     }
 
     return res.json({ created, skipped });
   } catch (err: unknown) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// --- Bulk Activate Parent Logins -------------------------------------------
+
+// POST /api/v1/admin/students/bulk-activate-parents
+// Activates parent logins for a list of students using their stored
+// parent_contact (father) and/or mother_contact numbers.
+// Skips students that have no contact numbers on file.
+router.post('/bulk-activate-parents', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const { school_id } = req.user!;
+    const { student_ids, relation } = req.body as {
+      student_ids: string[];
+      relation: 'father' | 'mother' | 'both';
+    };
+
+    if (!Array.isArray(student_ids) || student_ids.length === 0) {
+      return res.status(400).json({ error: 'student_ids array is required' });
+    }
+    if (!['father', 'mother', 'both'].includes(relation)) {
+      return res.status(400).json({ error: 'relation must be "father", "mother", or "both"' });
+    }
+
+    const bcrypt = require('bcryptjs');
+
+    // Fetch all requested students in one query
+    const studentsResult = await client.query(
+      `SELECT id, name, father_name, mother_name, parent_contact, mother_contact
+       FROM students
+       WHERE id = ANY($1::uuid[]) AND school_id = $2 AND is_active = true`,
+      [student_ids, school_id]
+    );
+
+    await client.query('BEGIN');
+
+    const activated: { student_name: string; mobile: string; relation: string }[] = [];
+    const skipped:   { student_name: string; reason: string }[] = [];
+
+    async function activateOne(
+      studentId: string,
+      studentName: string,
+      mobile: string,
+      parentName: string | null,
+      rel: 'father' | 'mother' | 'guardian',
+    ) {
+      if (!mobile || !/^\d{10}$/.test(mobile.trim())) {
+        skipped.push({ student_name: studentName, reason: `${rel} mobile "${mobile}" is not a valid 10-digit number` });
+        return;
+      }
+      const m = mobile.trim();
+      const hash = await bcrypt.hash(m, 12);
+
+      // Upsert parent_users
+      const existing = await client.query(
+        'SELECT id FROM parent_users WHERE mobile = $1 AND school_id = $2',
+        [m, school_id]
+      );
+      let parentId: string;
+      if (existing.rows.length === 0) {
+        const ins = await client.query(
+          `INSERT INTO parent_users (school_id, mobile, name, password_hash, force_password_reset, is_active)
+           VALUES ($1, $2, $3, $4, true, true) RETURNING id`,
+          [school_id, m, parentName || null, hash]
+        );
+        parentId = ins.rows[0].id;
+      } else {
+        parentId = existing.rows[0].id;
+        await client.query(
+          `UPDATE parent_users SET password_hash = $1, force_password_reset = true, is_active = true WHERE id = $2`,
+          [hash, parentId]
+        );
+      }
+
+      // Link to student
+      await client.query(
+        `INSERT INTO parent_student_links (parent_id, student_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [parentId, studentId]
+      );
+
+      activated.push({ student_name: studentName, mobile: m, relation: rel });
+    }
+
+    for (const student of studentsResult.rows) {
+      const hasFather = student.parent_contact && /^\d{10}$/.test(student.parent_contact.trim());
+      const hasMother = student.mother_contact && /^\d{10}$/.test(student.mother_contact.trim());
+
+      if (relation === 'father' || relation === 'both') {
+        if (hasFather) {
+          await activateOne(student.id, student.name, student.parent_contact, student.father_name, 'father');
+        } else if (relation === 'father') {
+          skipped.push({ student_name: student.name, reason: 'No valid father mobile on file' });
+        }
+      }
+
+      if (relation === 'mother' || relation === 'both') {
+        if (hasMother) {
+          await activateOne(student.id, student.name, student.mother_contact, student.mother_name, 'mother');
+        } else if (relation === 'mother') {
+          skipped.push({ student_name: student.name, reason: 'No valid mother mobile on file' });
+        }
+      }
+
+      // If "both" and neither contact exists, add a single skip entry
+      if (relation === 'both' && !hasFather && !hasMother) {
+        skipped.push({ student_name: student.name, reason: 'No valid parent contacts on file' });
+      }
+    }
+
+    // Students in the request that weren't found / inactive
+    const foundIds = new Set(studentsResult.rows.map((r: any) => r.id));
+    for (const id of student_ids) {
+      if (!foundIds.has(id)) {
+        skipped.push({ student_name: id, reason: 'Student not found or inactive' });
+      }
+    }
+
+    await client.query('COMMIT');
+
+    return res.json({
+      activated: activated.length,
+      skipped:   skipped.length,
+      details:   { activated, skipped },
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[bulk-activate-parents]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  } finally {
+    client.release();
+  }
+});
+
+// --- Student Dashboard (counts by class) -------------------------------------
+
+// GET /api/v1/admin/students/dashboard
+router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+
+    // 1. Total active students
+    const totalRow = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM students WHERE school_id = $1 AND is_active = true`,
+      [school_id]
+    );
+
+    // 2. Per-class counts + contact completeness
+    const byClassRow = await pool.query(
+      `SELECT
+         c.id   AS class_id,
+         c.name AS class_name,
+         COUNT(s.id)::int AS total_students,
+         COUNT(s.id) FILTER (WHERE s.father_name    IS NOT NULL AND s.father_name    <> '')::int AS with_father,
+         COUNT(s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
+         COUNT(s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
+         COUNT(s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact
+       FROM classes c
+       LEFT JOIN students s
+         ON s.class_id = c.id AND s.school_id = c.school_id AND s.is_active = true
+       WHERE c.school_id = $1
+       GROUP BY c.id, c.name
+       ORDER BY c.name`,
+      [school_id]
+    );
+
+    // 3. Per-section counts (separate query — avoids json_agg complexity)
+    const bySectionRow = await pool.query(
+      `SELECT
+         sec.class_id,
+         sec.id    AS section_id,
+         sec.label AS section_label,
+         COUNT(s.id)::int AS count
+       FROM sections sec
+       LEFT JOIN students s
+         ON s.section_id = sec.id AND s.school_id = sec.school_id AND s.is_active = true
+       WHERE sec.school_id = $1
+       GROUP BY sec.class_id, sec.id, sec.label
+       ORDER BY sec.label`,
+      [school_id]
+    );
+
+    // Group sections by class_id
+    const sectionsByClass: Record<string, { section_id: string; section_label: string; count: number }[]> = {};
+    for (const row of bySectionRow.rows) {
+      if (!sectionsByClass[row.class_id]) sectionsByClass[row.class_id] = [];
+      sectionsByClass[row.class_id].push({
+        section_id:    row.section_id,
+        section_label: row.section_label,
+        count:         row.count,
+      });
+    }
+
+    const byClass = byClassRow.rows.map((r: any) => ({
+      ...r,
+      sections: sectionsByClass[r.class_id] || [],
+    }));
+
+    return res.json({
+      total_students: totalRow.rows[0].total,
+      by_class: byClass,
+    });
+  } catch (err: any) {
+    console.error('[students/dashboard]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
   }
 });
 
@@ -478,26 +831,96 @@ router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   }
 });
 
-// - POST /api/v1/admin/students/:id/terminate ? soft-delete a student -
+// - POST /api/v1/admin/students/:id/terminate — soft-delete a student -
 router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
-    const { school_id } = req.user!;
+    const { school_id, user_id } = req.user!;
     const studentId = req.params.id;
 
-    // 1. Deactivate the student
-    await pool.query(
-      'UPDATE students SET is_active = false WHERE id = $1 AND school_id = $2',
+    // Fetch student details before terminating (needed for history)
+    const studentRow = await client.query(
+      `SELECT s.id, s.name, s.class_id, s.section_id,
+              c.name AS class_name, sec.label AS section_label
+       FROM students s
+       JOIN classes c ON c.id = s.class_id
+       JOIN sections sec ON sec.id = s.section_id
+       WHERE s.id = $1 AND s.school_id = $2 AND s.is_active = true`,
+      [studentId, school_id]
+    );
+    if (studentRow.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found or already terminated' });
+    }
+    const student = studentRow.rows[0];
+
+    await client.query('BEGIN');
+
+    // 1. Soft-terminate the student
+    await client.query(
+      `UPDATE students
+       SET is_active = false, terminated_at = now(), terminated_by = $1
+       WHERE id = $2 AND school_id = $3`,
+      [user_id, studentId, school_id]
+    );
+
+    // 2. Save academic history record
+    // Determine current academic year from school settings (fall back to current calendar year)
+    const ayRow = await client.query(
+      `SELECT label FROM academic_years
+       WHERE school_id = $1 AND is_current = true LIMIT 1`,
+      [school_id]
+    );
+    const academicYear = ayRow.rows[0]?.label ||
+      `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(2)}`;
+
+    await client.query(
+      `INSERT INTO student_academic_history
+         (school_id, student_id, academic_year, class_id, section_id,
+          class_name, section_label, outcome, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'terminated',$8)
+       ON CONFLICT (student_id, academic_year)
+       DO UPDATE SET outcome = 'terminated', created_by = EXCLUDED.created_by`,
+      [school_id, studentId, academicYear,
+       student.class_id, student.section_id,
+       student.class_name, student.section_label, user_id]
+    );
+
+    // 3. Mark outstanding fee accounts as status='terminated'
+    //    Preserves payment history but flags the account so it's excluded from
+    //    active collection reports. Outstanding balance is kept for audit purposes.
+    await client.query(
+      `UPDATE student_fee_accounts
+       SET status = 'terminated', updated_at = now()
+       WHERE student_id = $1 AND school_id = $2
+         AND deleted_at IS NULL AND status != 'paid'`,
       [studentId, school_id]
     );
 
-    // 2. Delete student portal account
-    await pool.query(
+    // 4. Cancel any pending fee reminders for this student
+    await client.query(
+      `UPDATE fee_reminders
+       SET status = 'cancelled'
+       WHERE student_id = $1 AND school_id = $2 AND status = 'pending'`,
+      [studentId, school_id]
+    ).catch(() => { /* fee_reminders table may not exist in all deployments */ });
+
+    // 5. Abandon any in-progress quiz attempts
+    await client.query(
+      `UPDATE quiz_attempts
+       SET status = 'abandoned'
+       WHERE student_id = $1 AND school_id = $2 AND status = 'in_progress'`,
+      [studentId, school_id]
+    ).catch(() => { /* ignore if table doesn't exist */ });
+
+    // 6. Delete student portal account
+    await client.query(
       'DELETE FROM student_accounts WHERE student_id = $1 AND school_id = $2',
       [studentId, school_id]
     );
 
-    // 3. Deactivate parent accounts linked ONLY to this student (not to any other active student)
-    const orphaned = await pool.query(
+    // 7. Deactivate parent accounts linked ONLY to this student
+    //    (parents with other active children keep their accounts)
+    const orphaned = await client.query(
       `SELECT DISTINCT psl.parent_id
        FROM parent_student_links psl
        WHERE psl.student_id = $1
@@ -510,32 +933,96 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
          )`,
       [studentId]
     );
+
+    let parentsDeactivated = 0;
     if (orphaned.rows.length > 0) {
       const parentIds = orphaned.rows.map((r: any) => r.parent_id);
-      await pool.query(
+      await client.query(
         'UPDATE parent_users SET is_active = false WHERE id = ANY($1::uuid[]) AND school_id = $2',
         [parentIds, school_id]
       );
+      parentsDeactivated = parentIds.length;
     }
 
-    return res.json({ message: 'Student terminated' });
+    await client.query('COMMIT');
+    return res.json({
+      message: 'Student terminated',
+      student_name: student.name,
+      parents_deactivated: parentsDeactivated,
+      academic_year: academicYear,
+    });
   } catch (err) {
-    console.error(err);
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[terminate]', err);
     return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
-// - POST /api/v1/admin/students/:id/reactivate ? restore a terminated student -
+// - POST /api/v1/admin/students/:id/reactivate — restore a terminated student -
 router.post('/:id/reactivate', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const { school_id } = req.user!;
-    await pool.query(
-      'UPDATE students SET is_active = true WHERE id = $1 AND school_id = $2',
-      [req.params.id, school_id]
+    const studentId = req.params.id;
+
+    await client.query('BEGIN');
+
+    // 1. Reactivate the student
+    const result = await client.query(
+      `UPDATE students
+       SET is_active = true, terminated_at = null, terminated_by = null
+       WHERE id = $1 AND school_id = $2
+       RETURNING name`,
+      [studentId, school_id]
     );
-    return res.json({ message: 'Student reactivated' });
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // 2. Restore fee accounts from 'terminated' back to 'active'
+    //    (only those that weren't already paid)
+    await client.query(
+      `UPDATE student_fee_accounts
+       SET status = 'active', updated_at = now()
+       WHERE student_id = $1 AND school_id = $2
+         AND deleted_at IS NULL AND status = 'terminated'`,
+      [studentId, school_id]
+    );
+
+    // 3. Reactivate parent accounts that were deactivated because of this student
+    //    (any parent linked to this student who is currently inactive)
+    const linkedParents = await client.query(
+      `SELECT psl.parent_id
+       FROM parent_student_links psl
+       JOIN parent_users pu ON pu.id = psl.parent_id
+       WHERE psl.student_id = $1 AND pu.school_id = $2 AND pu.is_active = false`,
+      [studentId, school_id]
+    );
+    let parentsReactivated = 0;
+    if (linkedParents.rows.length > 0) {
+      const parentIds = linkedParents.rows.map((r: any) => r.parent_id);
+      await client.query(
+        'UPDATE parent_users SET is_active = true WHERE id = ANY($1::uuid[]) AND school_id = $2',
+        [parentIds, school_id]
+      );
+      parentsReactivated = parentIds.length;
+    }
+
+    await client.query('COMMIT');
+    return res.json({
+      message: 'Student reactivated',
+      student_name: result.rows[0].name,
+      parents_reactivated: parentsReactivated,
+    });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[reactivate]', err);
     return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -670,6 +1157,66 @@ router.put('/:id/change-class', roleGuard('admin'), async (req: Request, res: Re
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// --- Bulk Change Section --------------------------------------------------
+
+// POST /api/v1/admin/students/bulk-change-section
+// Moves all selected students to a new class + section in one shot.
+router.post('/bulk-change-section', roleGuard('admin'), async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const { school_id } = req.user!;
+    const { student_ids, class_id, section_id } = req.body as {
+      student_ids: string[];
+      class_id: string;
+      section_id: string;
+    };
+
+    if (!Array.isArray(student_ids) || student_ids.length === 0) {
+      return res.status(400).json({ error: 'student_ids array is required' });
+    }
+    if (!class_id || !section_id) {
+      return res.status(400).json({ error: 'class_id and section_id are required' });
+    }
+
+    // Verify the section belongs to the class and this school
+    const secRow = await client.query(
+      `SELECT sec.id, sec.label, c.name AS class_name
+       FROM sections sec JOIN classes c ON c.id = sec.class_id
+       WHERE sec.id = $1 AND sec.class_id = $2 AND sec.school_id = $3`,
+      [section_id, class_id, school_id]
+    );
+    if (secRow.rows.length === 0) {
+      return res.status(400).json({ error: 'Section not found in the specified class' });
+    }
+
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `UPDATE students
+       SET class_id = $1, section_id = $2
+       WHERE id = ANY($3::uuid[]) AND school_id = $4 AND is_active = true
+       RETURNING id, name`,
+      [class_id, section_id, student_ids, school_id]
+    );
+
+    await client.query('COMMIT');
+
+    return res.json({
+      updated: result.rows.length,
+      class_name: secRow.rows[0].class_name,
+      section_label: secRow.rows[0].label,
+      students: result.rows.map((r: any) => r.name),
+      message: `${result.rows.length} student(s) moved to ${secRow.rows[0].class_name} Section ${secRow.rows[0].label}`,
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[bulk-change-section]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -850,7 +1397,30 @@ router.post('/bulk-terminate', roleGuard('admin'), async (req: Request, res: Res
       [student_ids, school_id]
     );
 
-    // 4. Deactivate orphaned parents
+    // 4. Mark outstanding fee accounts as 'terminated'
+    await client.query(
+      `UPDATE student_fee_accounts
+       SET status = 'terminated', updated_at = now()
+       WHERE student_id = ANY($1::uuid[]) AND school_id = $2
+         AND deleted_at IS NULL AND status != 'paid'`,
+      [student_ids, school_id]
+    );
+
+    // 5. Cancel pending fee reminders
+    await client.query(
+      `UPDATE fee_reminders SET status = 'cancelled'
+       WHERE student_id = ANY($1::uuid[]) AND school_id = $2 AND status = 'pending'`,
+      [student_ids, school_id]
+    ).catch(() => {});
+
+    // 6. Abandon in-progress quiz attempts
+    await client.query(
+      `UPDATE quiz_attempts SET status = 'abandoned'
+       WHERE student_id = ANY($1::uuid[]) AND school_id = $2 AND status = 'in_progress'`,
+      [student_ids, school_id]
+    ).catch(() => {});
+
+    // 7. Deactivate orphaned parents (linked only to terminated students)
     const orphaned = await client.query(
       `SELECT DISTINCT psl.parent_id
        FROM parent_student_links psl

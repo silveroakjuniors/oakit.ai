@@ -1,0 +1,30 @@
+[
+  {
+    "id": "brave-lion",
+    "title": "The Brave Little Lion",
+    "ageGroup": "4-5",
+    "imageUrl": "https://images.unsplash.com/photo-1546182990-dffeafbe841d?q=80&w=1200",
+    "audioUrl": "/audio/brave-lion.mp3",
+    "storyText": "Once upon a time, a little lion was afraid of the dark. One day, he helped his friend cross the forest and became very brave.",
+    "targetVocabulary": [
+      "lion",
+      "brave",
+      "forest",
+      "friend"
+    ]
+  },
+  {
+    "id": "kind-elephant",
+    "title": "The Kind Elephant",
+    "ageGroup": "4-5",
+    "imageUrl": "https://images.unsplash.com/photo-1557050543-4d5f4e07ef46?q=80&w=1200",
+    "audioUrl": "/audio/kind-elephant.mp3",
+    "storyText": "A big elephant shared water with thirsty animals during a hot summer day.",
+    "targetVocabulary": [
+      "elephant",
+      "water",
+      "summer",
+      "share"
+    ]
+  }
+]

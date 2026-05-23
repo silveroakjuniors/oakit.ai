@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../../lib/db';
 import { redis } from '../../lib/redis';
 import { jwtVerify, roleGuard } from '../../middleware/auth';
+import { DEFAULT_ROLE_PERMISSIONS } from '../../lib/permissions';
 
 const router = Router();
 
@@ -101,34 +102,87 @@ router.put(
 
 // ── GET /api/v1/financial/permissions ────────────────────────────────────────
 // Returns the current user's effective financial permissions.
+// Merges JWT perms + role defaults (so principal always gets VIEW_SALARY even
+// if the JWT was issued before financial permissions were added to the payload),
+// then applies per-user DB overrides on top.
 router.get('/permissions', async (req, res) => {
   try {
     const userId = req.user!.id;
+    const role: string = req.user!.role || '';
 
-    const result = await pool.query(
-      `SELECT financial_permissions FROM users WHERE id = $1`,
-      [userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    // Principal always gets all permissions — no DB lookup needed
+    if (role === 'principal' || role === 'super_admin') {
+      const allPerms = Object.values(DEFAULT_ROLE_PERMISSIONS['principal'] || []);
+      return res.json({ permissions: allPerms, overrides: {} });
     }
 
-    const overrides: Record<string, boolean> = result.rows[0].financial_permissions || {};
-    // Merge JWT permissions with per-user overrides stored in the DB
+    // Fetch per-user overrides — gracefully handle missing column
+    let overrides: Record<string, boolean> = {};
+    try {
+      const result = await pool.query(
+        `SELECT financial_permissions FROM users WHERE id = $1`,
+        [userId]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      overrides = result.rows[0].financial_permissions || {};
+    } catch {
+      // financial_permissions column may not exist in older DB schemas — ignore
+    }
+
     const jwtPerms: string[] = (req.user as any).permissions || [];
-    const effectivePerms = jwtPerms.filter(p => overrides[p] !== false);
-    // Add any permissions explicitly granted via overrides
+    const roleDefaults: string[] = DEFAULT_ROLE_PERMISSIONS[role] || [];
+
+    // Merge: JWT perms + role defaults
+    const merged = new Set([...jwtPerms, ...roleDefaults]);
+
+    // Per-user DB overrides only apply to non-privileged roles.
+    const PRIVILEGED_ROLES = new Set(['principal', 'admin', 'super_admin']);
     Object.entries(overrides).forEach(([perm, granted]) => {
-      if (granted && !effectivePerms.includes(perm)) effectivePerms.push(perm);
+      if (granted) {
+        merged.add(perm);
+      } else if (!PRIVILEGED_ROLES.has(role)) {
+        merged.delete(perm);
+      }
     });
 
+    const effectivePerms = Array.from(merged);
     return res.json({ permissions: effectivePerms, overrides });
   } catch (err) {
     console.error('[financial/permissions GET]', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    // Last resort: return role defaults so the page doesn't break
+    const role: string = (req.user as any)?.role || '';
+    const fallback = DEFAULT_ROLE_PERMISSIONS[role] || [];
+    return res.json({ permissions: fallback, overrides: {} });
   }
 });
+
+// ── GET /api/v1/financial/staff ───────────────────────────────────────────────
+// Principal only — list all staff users with their current financial permissions.
+router.get(
+  '/staff',
+  roleGuard('principal'),
+  async (req, res) => {
+    try {
+      const schoolId = req.user!.school_id;
+      const result = await pool.query(
+        `SELECT u.id, u.name, r.name as role, u.financial_permissions
+         FROM users u
+         JOIN roles r ON r.id = u.role_id
+         WHERE u.school_id = $1
+           AND r.name NOT IN ('principal', 'super_admin', 'franchise_admin', 'parent', 'student')
+           AND u.is_active = true
+         ORDER BY r.name, u.name`,
+        [schoolId]
+      );
+      return res.json(result.rows);
+    } catch (err) {
+      console.error('[financial/staff GET]', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
 
 // ── PUT /api/v1/financial/permissions/:userId ─────────────────────────────────
 // Principal only — update a Finance_Manager's financial permission set.
@@ -156,10 +210,10 @@ router.put(
       if (target.rows[0].school_id !== schoolId) {
         return res.status(403).json({ error: 'User does not belong to your school' });
       }
-      // Principal can assign permissions to finance_manager or admin roles
-      const assignableRoles = ['finance_manager', 'admin'];
-      if (!assignableRoles.includes(target.rows[0].role)) {
-        return res.status(400).json({ error: 'Permissions can only be updated for finance_manager or admin roles' });
+      // Principal can assign permissions to finance_manager, admin, or any staff role
+      const nonAssignableRoles = ['principal', 'super_admin', 'franchise_admin', 'parent', 'student'];
+      if (nonAssignableRoles.includes(target.rows[0].role)) {
+        return res.status(400).json({ error: 'Cannot override permissions for this role' });
       }
 
       // Fetch before-state for audit log

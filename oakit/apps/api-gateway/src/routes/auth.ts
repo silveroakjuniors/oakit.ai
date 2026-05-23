@@ -4,10 +4,17 @@ import { pool } from '../lib/db';
 import { signToken, verifyToken, SuperAdminJwtPayload } from '../lib/jwt';
 import { jwtVerify } from '../middleware/auth';
 import { loginThrottle } from '../middleware/rateLimit';
+import { redis } from '../lib/redis';
 
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
+const SESSION_TTL = 8 * 60 * 60; // 8 hours — matches JWT expiry
+
+// Helper: register session in Redis (single-session enforcement)
+async function registerSession(userId: string, sid: string) {
+  try { await redis.set(`session:${userId}`, sid, { EX: SESSION_TTL }); } catch { /* non-critical */ }
+}
 const RESET_TOKEN_EXPIRES = 15 * 60; // 15 minutes in seconds
 
 // GET /api/v1/auth/school-info?code=sojs — public endpoint to get school name
@@ -50,6 +57,8 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         const valid = await bcrypt.compare(password, sa.password_hash);
         if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
         const token = signToken({ user_id: sa.id, school_id: null, role: 'super_admin', permissions: [] } as SuperAdminJwtPayload);
+        const { verifyToken: vt } = await import('../lib/jwt');
+        const p = vt(token); await registerSession(sa.id, p.sid!);
         return res.json({ token, role: 'super_admin' });
       }
 
@@ -68,6 +77,8 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
           user_id: fa.id, school_id: null, role: 'franchise_admin',
           franchise_id: fa.franchise_id, permissions: [],
         } as any);
+        const { verifyToken: vt2 } = await import('../lib/jwt');
+        const p2 = vt2(token); await registerSession(fa.id, p2.sid!);
         return res.json({ token, role: 'franchise_admin', franchise_id: fa.franchise_id });
       }
 
@@ -113,12 +124,15 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         permissions: user.permissions || [],
         force_password_reset: user.force_password_reset,
       } as any);
+      const { verifyToken: vt3 } = await import('../lib/jwt');
+      const p3 = vt3(token); await registerSession(user.id, p3.sid!);
 
       // Attendance prompt for teachers
       let attendance_prompt = false;
       if (user.role === 'teacher') {
         try {
-          const today = new Date().toISOString().split('T')[0];
+          const { getTodayIST, getNowIST } = await import('../lib/today');
+          const today = getTodayIST();
           const sectionRow = await pool.query(
             'SELECT section_id FROM teacher_sections WHERE teacher_id = $1 LIMIT 1',
             [user.id]
@@ -129,11 +143,21 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
               'SELECT id FROM attendance_records WHERE section_id = $1 AND attend_date = $2 LIMIT 1',
               [section_id, today]
             );
-            const hour = new Date().getHours();
+            const hour = getNowIST().getHours();
             attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17;
           }
         } catch { /* ignore */ }
       }
+
+      // Check if this staff user also has a parent account (dual-role)
+      let also_parent = false;
+      try {
+        const parentCheck = await pool.query(
+          'SELECT id FROM parent_users WHERE mobile = $1 AND school_id = $2 AND is_active = true',
+          [user.mobile, school_id]
+        );
+        also_parent = parentCheck.rows.length > 0;
+      } catch { /* ignore */ }
 
       return res.json({
         token,
@@ -141,12 +165,13 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
         display_role: user.role,
         force_password_reset: user.force_password_reset,
         attendance_prompt,
+        also_parent,
       });
     }
 
     // Fallback: try parent_users table
     const parentResult = await pool.query(
-      `SELECT id, password_hash, is_active, force_password_reset
+      `SELECT id, password_hash, is_active, force_password_reset, mobile
        FROM parent_users WHERE mobile = $1 AND school_id = $2`,
       [identifier, school_id]
     );
@@ -159,6 +184,17 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
     const parentValid = await bcrypt.compare(password, parent.password_hash);
     if (!parentValid) return res.status(401).json({ error: 'Invalid credentials' });
 
+    // Check if this parent also has a staff account (dual-role)
+    let also_staff_role: string | null = null;
+    try {
+      const staffCheck = await pool.query(
+        `SELECT r.name as role FROM users u JOIN roles r ON r.id = u.role_id
+         WHERE u.mobile = $1 AND u.school_id = $2 AND u.is_active = true`,
+        [parent.mobile, school_id]
+      );
+      if (staffCheck.rows.length > 0) also_staff_role = staffCheck.rows[0].role;
+    } catch { /* ignore */ }
+
     const parentToken = signToken({
       user_id: parent.id,
       school_id,
@@ -166,7 +202,9 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
       permissions: [],
       force_password_reset: parent.force_password_reset,
     } as any);
-    return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset });
+    const { verifyToken: vt4 } = await import('../lib/jwt');
+    const p4 = vt4(parentToken); await registerSession(parent.id, p4.sid!);
+    return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset, also_staff_role });
 
   } catch (err) {
     console.error('Login error:', err);
@@ -240,9 +278,63 @@ router.post('/student-login', loginThrottle, async (req: Request, res: Response)
   }
 });
 
+// POST /api/v1/auth/refresh
+// Issues a fresh token if the current session is still active in Redis.
+// Accepts an expired token — only the session validity matters.
+router.post('/refresh', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing authorization token' });
+  }
+  const token = authHeader.slice(7);
+  try {
+    // Decode without verifying expiry so we can still read the payload
+    const import_jwt = require('jsonwebtoken');
+    let payload: any;
+    try {
+      payload = import_jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+    } catch {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const { user_id, sid } = payload;
+    if (!user_id || !sid) {
+      return res.status(401).json({ error: 'Invalid token payload' });
+    }
+
+    // Check the session is still registered in Redis
+    const activeSession = await redis.get(`session:${user_id}`);
+    if (!activeSession || activeSession !== sid) {
+      return res.status(401).json({ error: 'Session expired — please log in again', code: 'SESSION_EXPIRED' });
+    }
+
+    // Issue a fresh token with the same payload (minus exp/iat/sid — signToken adds a new sid)
+    const { signToken: sign } = await import('../lib/jwt');
+    const { exp, iat, ...rest } = payload;
+    const newToken = sign({ ...rest, sid } as any);
+
+    // Extend the Redis session TTL
+    await redis.set(`session:${user_id}`, sid, { EX: SESSION_TTL });
+
+    return res.json({ token: newToken });
+  } catch (err) {
+    console.error('Refresh error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/v1/auth/logout
-router.post('/logout', async (_req: Request, res: Response) => {
+router.post('/logout', jwtVerify, async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.user!;
+    await redis.del(`session:${user_id}`);
+  } catch { /* non-critical */ }
   return res.json({ message: 'Logged out' });
+});
+
+// GET /api/v1/auth/session-check — lightweight endpoint to verify session is still active
+router.get('/session-check', jwtVerify, (_req: Request, res: Response) => {
+  return res.json({ ok: true });
 });
 
 // POST /api/v1/auth/change-password
@@ -474,6 +566,64 @@ router.post('/setup', async (req: Request, res: Response) => {
 
     return res.json({ message: 'Password set successfully' });
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/auth/switch-role — switch between teacher and parent portals (dual-role users)
+router.post('/switch-role', async (req: Request, res: Response) => {
+  try {
+    const { token: currentToken, target_role } = req.body;
+    if (!currentToken || !target_role) {
+      return res.status(400).json({ error: 'token and target_role are required' });
+    }
+
+    const { verifyToken } = await import('../lib/jwt');
+    let payload: any;
+    try { payload = verifyToken(currentToken); }
+    catch { return res.status(401).json({ error: 'Invalid token' }); }
+
+    const { school_id } = payload;
+
+    if (target_role === 'parent') {
+      // Current user is staff, switch to parent portal
+      // Find their mobile from users table
+      const userRow = await pool.query('SELECT mobile FROM users WHERE id = $1 AND school_id = $2', [payload.user_id, school_id]);
+      if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+      const mobile = userRow.rows[0].mobile;
+
+      const parentRow = await pool.query(
+        'SELECT id, force_password_reset FROM parent_users WHERE mobile = $1 AND school_id = $2 AND is_active = true',
+        [mobile, school_id]
+      );
+      if (parentRow.rows.length === 0) return res.status(404).json({ error: 'No parent account linked to this mobile' });
+
+      const parent = parentRow.rows[0];
+      const newToken = signToken({ user_id: parent.id, school_id, role: 'parent', permissions: [], force_password_reset: parent.force_password_reset } as any);
+      const p = verifyToken(newToken); await registerSession(parent.id, p.sid!);
+      return res.json({ token: newToken, role: 'parent' });
+
+    } else {
+      // Current user is parent, switch to staff portal
+      const parentRow = await pool.query('SELECT mobile FROM parent_users WHERE id = $1 AND school_id = $2', [payload.user_id, school_id]);
+      if (parentRow.rows.length === 0) return res.status(404).json({ error: 'Parent not found' });
+      const mobile = parentRow.rows[0].mobile;
+
+      const staffRow = await pool.query(
+        `SELECT u.id, r.name as role, COALESCE(r.portal_access, r.name) as portal_role, r.permissions, u.force_password_reset
+         FROM users u JOIN roles r ON r.id = u.role_id
+         WHERE u.mobile = $1 AND u.school_id = $2 AND u.is_active = true`,
+        [mobile, school_id]
+      );
+      if (staffRow.rows.length === 0) return res.status(404).json({ error: 'No staff account linked to this mobile' });
+
+      const staff = staffRow.rows[0];
+      const newToken = signToken({ user_id: staff.id, school_id, role: staff.portal_role, permissions: staff.permissions || [], force_password_reset: staff.force_password_reset } as any);
+      const p = verifyToken(newToken); await registerSession(staff.id, p.sid!);
+      return res.json({ token: newToken, role: staff.portal_role, display_role: staff.role });
+    }
+  } catch (err) {
+    console.error('[switch-role]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

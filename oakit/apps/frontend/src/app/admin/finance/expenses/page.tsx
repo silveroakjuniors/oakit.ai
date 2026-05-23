@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { apiGet, apiPost, API_BASE } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { getToken, getRole } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface Expense {
   id: string;
@@ -17,15 +18,18 @@ interface Expense {
 }
 
 const CATEGORIES = [
-  'salaries', 'utilities', 'maintenance', 'supplies', 'transport',
-  'marketing', 'rent', 'food', 'events', 'other',
+  'rent', 'salary', 'utilities', 'marketing', 'maintenance',
+  'supplies', 'transport', 'food', 'events', 'miscellaneous', 'other',
 ];
 
 export default function ExpensesPage() {
   const token = getToken() || '';
+  const { today } = useAcademicCalendar(token);
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [permsLoaded, setPermsLoaded] = useState(false);
 
   // Filters
   const [fromDate, setFromDate] = useState('');
@@ -55,8 +59,14 @@ export default function ExpensesPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
-    loadExpenses();
-  }, [fromDate, toDate, categoryFilter]);
+    apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+      .then(d => { setPermissions(d.permissions || []); setPermsLoaded(true); })
+      .catch(() => setPermsLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    if (permsLoaded && permissions.includes('VIEW_EXPENSE')) loadExpenses();
+  }, [fromDate, toDate, categoryFilter, permsLoaded]);
 
   async function loadExpenses() {
     setLoading(true);
@@ -155,24 +165,42 @@ export default function ExpensesPage() {
     finally { setDeleteLoading(false); }
   }
 
+  const canAdd = permissions.includes('ADD_EXPENSE');
+  // finance_manager cannot edit/delete (backend enforces; we mirror in UI).
+  // Principal and admin always can edit/delete when they have ADD_EXPENSE.
+  const role = getRole() || '';
+  const canEdit = canAdd && role !== 'finance_manager';
+
+  if (permsLoaded && !permissions.includes('VIEW_EXPENSE')) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-[300px] text-center">
+        <p className="text-4xl mb-3">🔒</p>
+        <p className="text-base font-semibold text-gray-700 mb-1">Access Restricted</p>
+        <p className="text-sm text-gray-400">You don't have permission to view expenses.<br />Contact the Principal to request access.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-primary">Expenses</h1>
-        <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
-          {showCreate ? 'Cancel' : '+ Add Expense'}
-        </Button>
+        {canAdd && (
+          <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
+            {showCreate ? 'Cancel' : '+ Add Expense'}
+          </Button>
+        )}
       </div>
 
       {/* Create form */}
-      {showCreate && (
+      {showCreate && canAdd && (
         <Card className="mb-6">
           <h2 className="text-sm font-semibold text-gray-700 mb-4">New Expense</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
               <input type="date" className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                value={date} onChange={e => setDate(e.target.value)} />
+                max={today} value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₹)</label>
@@ -310,19 +338,24 @@ export default function ExpensesPage() {
                         </td>
                         <td className="py-2 px-3 text-center">
                           <div className="flex gap-1 justify-center">
-                            <button onClick={() => startEdit(exp)}
-                              className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (confirm('Delete this expense? This action cannot be undone.')) handleDelete(exp.id);
-                              }}
-                              disabled={deleteLoading && deleteId === exp.id}
-                              className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
-                            >
-                              {deleteLoading && deleteId === exp.id ? '…' : 'Delete'}
-                            </button>
+                            {canEdit && (
+                              <button onClick={() => startEdit(exp)}
+                                className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200">
+                                Edit
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                onClick={() => {
+                                  if (confirm('Delete this expense? This action cannot be undone.')) handleDelete(exp.id);
+                                }}
+                                disabled={deleteLoading && deleteId === exp.id}
+                                className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                              >
+                                {deleteLoading && deleteId === exp.id ? '…' : 'Delete'}
+                              </button>
+                            )}
+                            {!canEdit && <span className="text-xs text-gray-400">View only</span>}
                           </div>
                         </td>
                       </>

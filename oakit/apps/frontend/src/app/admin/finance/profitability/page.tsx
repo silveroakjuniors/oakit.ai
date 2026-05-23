@@ -13,8 +13,8 @@ interface ProfitLoss {
 
 interface ClassCollection {
   class_name: string;
-  collected: number;
-  pending: number;
+  total_collected: number;
+  total_pending: number;
 }
 
 interface ActivityRevenue {
@@ -134,8 +134,8 @@ export default function ProfitabilityPage() {
                 {classCollection.map((c, i) => (
                   <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="py-2 px-3 font-medium text-gray-800">{c.class_name}</td>
-                    <td className="py-2 px-3 text-right text-green-700">₹{c.collected.toLocaleString('en-IN')}</td>
-                    <td className="py-2 px-3 text-right text-yellow-700">₹{c.pending.toLocaleString('en-IN')}</td>
+                    <td className="py-2 px-3 text-right text-green-700">₹{c.total_collected.toLocaleString('en-IN')}</td>
+                    <td className="py-2 px-3 text-right text-yellow-700">₹{c.total_pending.toLocaleString('en-IN')}</td>
                   </tr>
                 ))}
               </tbody>

@@ -439,6 +439,15 @@ export default function CalendarPage() {
   const [calSummary, setCalSummary] = useState<{ working_day_count: number; holiday_count: number; special_days: Record<string, number> } | null>(null);
   const academicYear = savedCalendar?.academic_year || '';
 
+  // Term date configuration
+  const [terms, setTerms] = useState<{ id?: string; term_name: string; start_date: string; end_date: string }[]>([
+    { term_name: 'Term 1', start_date: '', end_date: '' },
+    { term_name: 'Term 2', start_date: '', end_date: '' },
+    { term_name: 'Term 3', start_date: '', end_date: '' },
+  ]);
+  const [savingTerms, setSavingTerms] = useState(false);
+  const [termMsg, setTermMsg] = useState('');
+
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [specialDays, setSpecialDays] = useState<SpecialDayGroup[]>([]);
   const [newHoliday, setNewHoliday] = useState({ holiday_date: '', event_name: '' });
@@ -469,6 +478,15 @@ export default function CalendarPage() {
     }).catch(() => { setEditing(true); setCalendarLoaded(true); });
     apiGet<any>('/api/v1/admin/calendar/summary', token).then(s => { if (s) setCalSummary(s); }).catch(console.error);
     apiGet<any[]>('/api/v1/admin/classes', token).then(setClasses).catch(console.error);
+    // Load term dates
+    apiGet<any[]>('/api/v1/admin/terms', token).then(saved => {
+      if (saved.length > 0) {
+        setTerms(['Term 1', 'Term 2', 'Term 3'].map(name => {
+          const found = saved.find(t => t.term_name === name);
+          return { term_name: name, start_date: found?.start_date?.split('T')[0] || '', end_date: found?.end_date?.split('T')[0] || '', id: found?.id };
+        }));
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { if (academicYear) { loadHolidays(); loadSpecialDays(); } }, [academicYear]);
@@ -486,6 +504,17 @@ export default function CalendarPage() {
       apiGet<any>('/api/v1/admin/calendar/summary', token).then(s => { if (s) setCalSummary(s); }).catch(console.error);
     } catch (err: unknown) { setSaveMsg(err instanceof Error ? err.message : 'Failed'); }
     finally { setSaving(false); }
+  }
+
+  async function saveTerms() {
+    const filled = terms.filter(t => t.start_date && t.end_date);
+    if (filled.length === 0) { setTermMsg('Please set at least one term date range.'); return; }
+    setSavingTerms(true); setTermMsg('');
+    try {
+      await apiPost('/api/v1/admin/terms', { terms: filled }, token);
+      setTermMsg('✓ Term dates saved');
+    } catch (e: unknown) { setTermMsg(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSavingTerms(false); }
   }
 
   function toggleDay(day: number) { setForm(f => ({ ...f, working_days: f.working_days.includes(day) ? f.working_days.filter(d => d !== day) : [...f.working_days, day].sort() })); }
@@ -686,6 +715,48 @@ export default function CalendarPage() {
           </div>
         )}
       </Card>
+
+      {/* Term Date Configuration */}
+      {savedCalendar && (
+        <Card className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Term Dates</p>
+              <p className="text-xs text-gray-400 mt-0.5">Define Term 1, 2, 3 date ranges — used to filter milestones and track progress by term</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {terms.map((t, i) => (
+              <div key={t.term_name} className="grid grid-cols-3 gap-3 items-center">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${i === 0 ? 'bg-blue-400' : i === 1 ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span className="text-sm font-medium text-gray-700">{t.term_name}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">Start</label>
+                  <input type="date" value={t.start_date}
+                    min={savedCalendar.start_date?.split('T')[0]}
+                    max={savedCalendar.end_date?.split('T')[0]}
+                    onChange={e => setTerms(prev => prev.map((x, j) => j === i ? { ...x, start_date: e.target.value } : x))}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">End</label>
+                  <input type="date" value={t.end_date}
+                    min={t.start_date || savedCalendar.start_date?.split('T')[0]}
+                    max={savedCalendar.end_date?.split('T')[0]}
+                    onChange={e => setTerms(prev => prev.map((x, j) => j === i ? { ...x, end_date: e.target.value } : x))}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+              </div>
+            ))}
+          </div>
+          {termMsg && <p className={`text-xs mt-3 font-medium ${termMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{termMsg}</p>}
+          <div className="mt-4">
+            <Button onClick={saveTerms} loading={savingTerms} size="sm">Save Term Dates</Button>
+          </div>
+        </Card>
+      )}
 
       {/* Holidays */}
       <Card className="mb-6">

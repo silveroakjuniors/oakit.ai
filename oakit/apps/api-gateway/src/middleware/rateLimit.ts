@@ -5,7 +5,7 @@ import { redis } from '../lib/redis';
 
 // OWASP A05: Security Misconfiguration — proper rate limits
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 20;
+const LOGIN_MAX_ATTEMPTS = 50;
 const FALLBACK_LOGIN_BUCKETS = new Map<string, { count: number; resetAt: number }>();
 
 function loginKey(req: Request) {
@@ -14,10 +14,10 @@ function loginKey(req: Request) {
   return `${schoolCode}:${identifier}:${req.ip || 'unknown'}`;
 }
 
-/** Global API rate limit — 200 req / 15 min per IP */
+/** Global API rate limit — 500 req / 15 min per IP */
 export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
@@ -34,10 +34,10 @@ export const authRateLimit = rateLimit({
   message: { error: 'Too many auth requests, please try again later' },
 });
 
-/** Login endpoint — strict: 20 attempts / 15 min per school+user+IP */
+/** Login endpoint — strict: 50 attempts / 15 min per school+user+IP */
 export const loginRateLimit = rateLimit({
   windowMs: LOGIN_WINDOW_MS,
-  max: 20,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts, please try again later' },

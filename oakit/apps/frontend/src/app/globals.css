@@ -596,19 +596,138 @@ button:active:not(:disabled) { transform: scale(0.97); }
 /* Premium card hover lift — desktop only */
 @media (hover: hover) {
   .premium-card {
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    transition: box-shadow 0.2s ease, transform 0.2s ease !important;
   }
   .premium-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    transform: translateY(-3px) !important;
+    box-shadow: 0 8px 32px rgba(80,60,180,0.18) !important;
   }
 }
 
-/* Hide scrollbar but keep scroll */
+/* Stats card hover */
+@media (hover: hover) {
+  .stat-pill {
+    transition: transform 0.18s ease, box-shadow 0.18s ease !important;
+    cursor: default;
+  }
+  .stat-pill:hover {
+    transform: translateY(-4px) scale(1.04) !important;
+    filter: brightness(1.08);
+  }
+}
+
+/* Feed photo hover */
+@media (hover: hover) {
+  .feed-photo-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+  }
+  .feed-photo-card:hover {
+    transform: translateY(-3px) !important;
+    box-shadow: 0 12px 32px rgba(91,79,207,0.22) !important;
+  }
+}
+
+/* Nav item hover */
+@media (hover: hover) {
+  .nav-item-btn {
+    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease !important;
+  }
+  .nav-item-btn:not(.nav-active):hover {
+    background: rgba(60,40,160,0.22) !important;
+    transform: translateX(2px) !important;
+  }
+}
+
+/* Like button pop */
+.like-btn {
+  transition: transform 0.15s ease, background 0.15s ease !important;
+}
+.like-btn:hover {
+  transform: scale(1.1) !important;
+}
+
+/* Right panel feature row */
+@media (hover: hover) {
+  .feature-row {
+    transition: background 0.15s ease, transform 0.15s ease !important;
+  }
+  .feature-row:hover {
+    transform: translateX(3px) !important;
+  }
+}
+
+/* White content cards — subtle lift on hover */
+@media (hover: hover) {
+  .parent-card {
+    transition: box-shadow 0.2s ease, transform 0.2s ease !important;
+  }
+  .parent-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+  }
+}
+
 .scrollbar-none {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .scrollbar-none::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Dashboard widget entrance animations ─────────────────────────────────── */
+@keyframes widgetFadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes widgetPop {
+  0%   { opacity: 0; transform: scale(0.95) translateY(8px); }
+  60%  { transform: scale(1.01) translateY(-1px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes highlightPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(27,67,50,0); }
+  50%       { box-shadow: 0 0 0 4px rgba(27,67,50,0.12); }
+}
+@keyframes shimmerSlide {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.widget-enter {
+  animation: widgetFadeUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.widget-enter-1 { animation-delay: 0.05s; }
+.widget-enter-2 { animation-delay: 0.10s; }
+.widget-enter-3 { animation-delay: 0.15s; }
+.widget-enter-4 { animation-delay: 0.20s; }
+.widget-enter-5 { animation-delay: 0.25s; }
+.widget-enter-6 { animation-delay: 0.30s; }
+
+.widget-pop {
+  animation: widgetPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Highlight pulse on widgets with alerts */
+.widget-alert {
+  animation: highlightPulse 2.5s ease-in-out infinite;
+}
+
+/* Hover lift for all dashboard cards */
+@media (hover: hover) {
+  .dashboard-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+  }
+  .dashboard-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important;
+  }
+}
+
+/* KPI ring number shimmer on load */
+.kpi-value {
+  background: linear-gradient(90deg, currentColor 0%, rgba(255,255,255,0.6) 50%, currentColor 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  animation: shimmerSlide 1.5s ease 0.5s 1 both;
 }
