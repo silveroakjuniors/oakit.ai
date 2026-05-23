@@ -87,26 +87,30 @@ export default function TeacherActivityPage() {
 
           {activeTab === 'engagement' && (
             <div className="flex flex-col gap-3">
-              <p className="text-xs text-neutral-500 mb-1">Based on last {schoolDays} school days</p>
-              {engagement.map(t => (
+              <p className="text-xs text-neutral-500 mb-1">Plan completion in last {schoolDays} school days</p>
+              {engagement.map(t => {
+                const lastPlanFormatted = t.last_completed_date
+                  ? new Date(t.last_completed_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                  : 'Never';
+                return (
                 <div key={t.id} className={`bg-white rounded-2xl border p-4 shadow-sm ${t.amber_warning ? 'border-amber-300 bg-amber-50/30' : 'border-neutral-200'}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-neutral-800">{t.name}</p>
                         <span className="text-xs text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full capitalize">{t.role_name}</span>
-                        {t.amber_warning && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⚠ {t.days_since_last}d no plan</span>}
-                        {t.current_streak >= 5 && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">🔥 {t.current_streak} consistency</span>}
+                        {t.amber_warning && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">{t.days_since_last}d inactive</span>}
+                        {t.current_streak >= 3 && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">{t.current_streak}d streak</span>}
                       </div>
                       <p className="text-xs text-neutral-500 mt-1">
-                        Last plan: {t.last_completed_date ?? 'Never'} · Best consistency: {t.best_streak} days
+                        {t.completions_30d} of {schoolDays} days completed · Last: {lastPlanFormatted}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className={`text-xl font-bold ${t.completion_rate_30d >= 80 ? 'text-green-600' : t.completion_rate_30d >= 50 ? 'text-amber-600' : 'text-red-500'}`}>
                         {t.completion_rate_30d}%
                       </p>
-                      <p className="text-xs text-neutral-400">30-day rate</p>
+                      <p className="text-xs text-neutral-400">completion</p>
                     </div>
                   </div>
                   {/* Progress bar */}
@@ -115,7 +119,8 @@ export default function TeacherActivityPage() {
                       style={{ width: `${t.completion_rate_30d}%` }} />
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {engagement.length === 0 && <p className="text-gray-400">No engagement data yet</p>}
             </div>
           )}
