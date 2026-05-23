@@ -305,30 +305,49 @@ router.get('/week/pdf', async (req: Request, res: Response) => {
     const GRAY = '#6B7280';
     const LIGHT_GRAY = '#F9FAFB';
 
+    const leftM = 40;
+    const rightM = doc.page.width - 40;
+    const colW = rightM - leftM;
+    const pageH = doc.page.height - 60;
+
+    // Footer helper — adds "oakit.ai" watermark to every page
+    function addFooter() {
+      doc.fillColor('#D1D5DB').fontSize(8).font('Helvetica')
+        .text('oakit.ai', leftM, doc.page.height - 30, { width: colW, align: 'center' });
+    }
+
+    function checkPage(needed: number) {
+      if (y + needed > pageH) {
+        addFooter();
+        doc.addPage();
+        y = 40;
+      }
+    }
+
+    // Helper to render text and advance y by actual height
+    function renderText(text: string, x: number, opts: { width: number; fontSize: number; font: string; color: string; indent?: number }) {
+      const w = opts.width;
+      doc.fillColor(opts.color).fontSize(opts.fontSize).font(opts.font);
+      const h = doc.heightOfString(text, { width: w }) + 2;
+      checkPage(h + 4);
+      doc.text(text, x, y, { width: w });
+      y += h;
+    }
+
     // Header
     doc.rect(0, 0, doc.page.width, 70).fill(GREEN);
     doc.fillColor('white').fontSize(16).font('Helvetica-Bold')
       .text('Weekly Plan', 40, 20);
     doc.fontSize(10).font('Helvetica')
-      .text(`${sec.class_name} · Section ${sec.label}`, 40, 42);
+      .text(`${sec.class_name} · Section ${sec.label} · ${sec.teacher_name || ''}`, 40, 42);
     const first = new Date(days[0] + 'T12:00:00');
     const last  = new Date(days[days.length - 1] + 'T12:00:00');
     const fmtD = (d: Date) => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     doc.text(`${fmtD(first)} – ${fmtD(last)}`, 40, 56);
-    doc.fillColor(GRAY).fontSize(9).text(`Generated ${new Date().toLocaleDateString('en-IN')}`, doc.page.width - 160, 56);
+    doc.fillColor('#D1FAE5').fontSize(8).font('Helvetica')
+      .text('oakit.ai', doc.page.width - 100, 28);
 
     let y = 90;
-    const pageH = doc.page.height - 60;
-    const leftM = 40;
-    const rightM = doc.page.width - 40;
-    const colW = rightM - leftM;
-
-    function checkPage(needed: number) {
-      if (y + needed > pageH) {
-        doc.addPage();
-        y = 40;
-      }
-    }
 
     for (const date of days) {
       const plan = planMap.get(date);
@@ -349,61 +368,44 @@ router.get('/week/pdf', async (req: Request, res: Response) => {
       y += 28;
 
       if (holiday) {
-        checkPage(20);
-        doc.fillColor('#DC2626').fontSize(9).font('Helvetica-Oblique')
-          .text(`🎉 Holiday: ${holiday}`, leftM + 8, y);
-        y += 18;
+        renderText(`Holiday: ${holiday}`, leftM + 8, { width: colW - 16, fontSize: 9, font: 'Helvetica-Oblique', color: '#DC2626' });
+        y += 6;
         continue;
       }
 
       if (special) {
-        checkPage(20);
-        doc.fillColor('#1D4ED8').fontSize(9).font('Helvetica-Oblique')
-          .text(`📌 ${special.day_type?.replace(/_/g, ' ')}: ${special.label}${special.activity_note ? ' — ' + special.activity_note : ''}`, leftM + 8, y, { width: colW - 16 });
-        y += 18;
+        renderText(`${special.day_type?.replace(/_/g, ' ')}: ${special.label}${special.activity_note ? ' — ' + special.activity_note : ''}`, leftM + 8, { width: colW - 16, fontSize: 9, font: 'Helvetica-Oblique', color: '#1D4ED8' });
+        y += 4;
       }
 
       if (plan?.admin_note) {
-        checkPage(20);
-        doc.fillColor('#92400E').fontSize(9).font('Helvetica-Oblique')
-          .text(`📌 Note: ${plan.admin_note}`, leftM + 8, y, { width: colW - 16 });
-        y += 16;
+        renderText(`Note: ${plan.admin_note}`, leftM + 8, { width: colW - 16, fontSize: 9, font: 'Helvetica-Oblique', color: '#92400E' });
+        y += 4;
       }
 
       const planChunks: any[] = plan?.chunks || [];
       if (planChunks.length === 0) {
-        checkPage(18);
-        doc.fillColor(GRAY).fontSize(9).font('Helvetica-Oblique')
-          .text('No curriculum plan for this day', leftM + 8, y);
-        y += 18;
+        renderText('No curriculum plan for this day', leftM + 8, { width: colW - 16, fontSize: 9, font: 'Helvetica-Oblique', color: GRAY });
+        y += 4;
       } else {
         for (const chunk of planChunks) {
-          checkPage(30);
           // Topic label
-          doc.fillColor('#111827').fontSize(10).font('Helvetica-Bold')
-            .text(`• ${chunk.topic_label || 'Topic'}`, leftM + 8, y, { width: colW - 16 });
-          y += 14;
+          renderText(`• ${chunk.topic_label || 'Topic'}`, leftM + 8, { width: colW - 16, fontSize: 10, font: 'Helvetica-Bold', color: '#111827' });
+          y += 2;
           if (chunk.content) {
             const lines = chunk.content.split('\n').filter((l: string) => l.trim());
             for (const line of lines) {
-              checkPage(14);
-              doc.fillColor(GRAY).fontSize(8.5).font('Helvetica')
-                .text(line.trim(), leftM + 18, y, { width: colW - 26 });
-              y += 12;
+              renderText(line.trim(), leftM + 18, { width: colW - 36, fontSize: 8.5, font: 'Helvetica', color: GRAY });
             }
           }
-          if (chunk.activity_ids?.length) {
-            checkPage(14);
-            doc.fillColor('#065F46').fontSize(8).font('Helvetica-Oblique')
-              .text(`📎 ${chunk.activity_ids.join(', ')}`, leftM + 18, y, { width: colW - 26 });
-            y += 12;
-          }
-          y += 4;
+          y += 6;
         }
       }
       y += 10; // gap between days
     }
 
+    // Add footer to last page
+    addFooter();
     doc.end();
 
     await new Promise<void>(resolve => doc.on('end', resolve));
