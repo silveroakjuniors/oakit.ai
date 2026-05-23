@@ -403,7 +403,8 @@ async def export_holiday_pdf(req: HolidayExportRequest):
     c.setFont("Helvetica", 9)
     c.setFillColorRGB(0.5, 0.5, 0.5)
     from datetime import datetime
-    c.drawString(2 * cm, y, f"Generated on {datetime.now().strftime('%d %B %Y')}   ·   {len(req.holidays)} holidays")
+    from zoneinfo import ZoneInfo
+    c.drawString(2 * cm, y, f"Generated on {datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%d %B %Y')}   ·   {len(req.holidays)} holidays")
     c.setFillColorRGB(0, 0, 0)
     y -= 0.4 * cm
     c.line(2 * cm, y, width - 2 * cm, y)

@@ -89,3 +89,23 @@ export async function getToday(schoolId: string): Promise<string> {
   const d = String(istDate.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * Returns the current IST Date object.
+ * Use this instead of `new Date()` when you need IST hours/minutes.
+ */
+export function getNowIST(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+}
+
+/**
+ * Returns today's date as YYYY-MM-DD in IST (without needing school_id for time machine).
+ * Use when you don't have school_id context (e.g., auth routes).
+ */
+export function getTodayIST(): string {
+  const d = getNowIST();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
