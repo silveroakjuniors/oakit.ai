@@ -672,7 +672,7 @@ export default function AdminDashboardPage() {
                             <span className="text-[10px] text-neutral-400">­ƒô▒ {p.mobile}</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{p.activity_status === 'active' ? '­ƒƒó Active' : p.activity_status === 'never_logged_in' ? '­ƒö┤ Never logged in' : '­ƒƒí Inactive'}</span>
                           </div>
-                          <p className="text-[11px] text-neutral-500 mt-1">­ƒæÂ {p.children_names || 'No children linked'}</p>
+                          <p className="text-[11px] text-neutral-500 mt-1">­ƒæ... {p.children_names || 'No children linked'}</p>
                           <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500"><span>­ƒÆ¼ {p.messages_sent_30d} msgs</span><span>­ƒöö {p.notifications_read_30d} read</span>{p.unread_notifications > 0 && <span className="text-amber-600 font-medium">ÔÜá {p.unread_notifications} unread</span>}</div>
                         </div>
                       ))}
@@ -840,3 +840,4 @@ function AttendanceTrendChart({ data }: { data: TrendRow[] }) {
     </div>
   );
 }
+

@@ -38,7 +38,7 @@ export default function HomeworkNotesPage() {
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, HwStatus>>({});
   const [savingHwSubmissions, setSavingHwSubmissions] = useState(false);
   const [hwSubmissionsMsg, setHwSubmissionsMsg] = useState('');
-  // Notes â€” subject + date specific
+  // Notes ...€” subject + date specific
   const [noteText, setNoteText] = useState('');
   const [noteSubject, setNoteSubject] = useState('');
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
@@ -117,7 +117,7 @@ export default function HomeworkNotesPage() {
         raw_text: homeworkText, ...(sectionId ? { section_id: sectionId } : {}),
       }, token);
       setExistingHomework(res);
-      setHomeworkMsg('âœ“ Homework sent to parents');
+      setHomeworkMsg('...œ“ Homework sent to parents');
     } catch (e: unknown) { setHomeworkMsg(e instanceof Error ? e.message : 'Failed'); }
     finally { setSavingHomework(false); }
   }
@@ -129,7 +129,7 @@ export default function HomeworkNotesPage() {
       await apiPost('/api/v1/teacher/notes/homework/submissions', {
         submissions, ...(sectionId ? { section_id: sectionId } : {}),
       }, token);
-      setHwSubmissionsMsg('âœ“ Homework status saved');
+      setHwSubmissionsMsg('...œ“ Homework status saved');
     } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
     finally { setSavingHwSubmissions(false); }
   }
@@ -169,7 +169,7 @@ export default function HomeworkNotesPage() {
           ...(sectionId ? { section_id: sectionId } : {}),
         }, token);
       }
-      setNoteMsg(`âœ“ Note sent to all parents Â· expires in 14 days`);
+      setNoteMsg(`...œ“ Note sent to all parents ...· expires in 14 days`);
       setNoteText(''); setNoteFile(null); setNoteSubject('');
       const ns = await apiGet<NoteItem[]>('/api/v1/teacher/notes', token).catch(() => []);
       setNotes(ns || []);
@@ -248,7 +248,7 @@ export default function HomeworkNotesPage() {
           ))}
         </div>
 
-        {/* â”€â”€ HOMEWORK TAB â”€â”€ */}
+        {/* ...”€...”€ HOMEWORK TAB ...”€...”€ */}
         {activeSection === 'homework' && (
           <div className="flex flex-col gap-3">
             {existingHomework?.formatted_text && (
@@ -278,7 +278,7 @@ export default function HomeworkNotesPage() {
                   Ask Oakie to format
                 </button>
               </div>
-              {homeworkMsg && <p className={`text-xs font-medium ${homeworkMsg.startsWith('âœ“') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
+              {homeworkMsg && <p className={`text-xs font-medium ${homeworkMsg.startsWith('...œ“') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
               <Button onClick={sendHomework} loading={savingHomework} disabled={!homeworkText.trim()} fullWidth>
                 <Send className="w-4 h-4 mr-1.5" />
                 {existingHomework ? 'Update & Resend to Parents' : 'Send Homework to Parents'}
@@ -287,14 +287,14 @@ export default function HomeworkNotesPage() {
           </div>
         )}
 
-        {/* â”€â”€ TRACKING TAB â”€â”€ */}
+        {/* ...”€...”€ TRACKING TAB ...”€...”€ */}
         {activeSection === 'tracking' && (
           <div className="flex flex-col gap-3">
             {!existingHomework ? (
               <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
                 <BookOpen className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
                 <p className="text-sm font-semibold text-neutral-700 mb-1">No homework sent yet</p>
-                <button onClick={() => setActiveSection('homework')} className="text-xs text-primary-600 font-semibold hover:underline">â†’ Go to Homework tab</button>
+                <button onClick={() => setActiveSection('homework')} className="text-xs text-primary-600 font-semibold hover:underline">...†’ Go to Homework tab</button>
               </div>
             ) : students.length === 0 ? (
               <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
@@ -324,7 +324,7 @@ export default function HomeworkNotesPage() {
                                 ? s === 'completed' ? 'bg-emerald-500 text-white' : s === 'partial' ? 'bg-amber-500 text-white' : 'bg-red-400 text-white'
                                 : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'
                             }`}>
-                            {s === 'completed' ? 'âœ“' : s === 'partial' ? 'Â½' : 'âœ—'}
+                            {s === 'completed' ? '...œ“' : s === 'partial' ? '...½' : '...œ—'}
                           </button>
                         ))}
                       </div>
@@ -332,7 +332,7 @@ export default function HomeworkNotesPage() {
                   );
                 })}
                 <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
-                  {hwSubmissionsMsg && <p className={`text-xs font-medium mb-2 ${hwSubmissionsMsg.startsWith('âœ“') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
+                  {hwSubmissionsMsg && <p className={`text-xs font-medium mb-2 ${hwSubmissionsMsg.startsWith('...œ“') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
                   <Button onClick={saveSubmissions} loading={savingHwSubmissions} disabled={Object.keys(hwSubmissions).length === 0} fullWidth>
                     Save Homework Status
                   </Button>
@@ -342,7 +342,7 @@ export default function HomeworkNotesPage() {
           </div>
         )}
 
-        {/* â”€â”€ CLASS NOTES TAB â”€â”€ */}
+        {/* ...”€...”€ CLASS NOTES TAB ...”€...”€ */}
         {activeSection === 'notes' && (
           <div className="flex flex-col gap-3">
             <div className="bg-white border border-neutral-200 rounded-2xl p-4 flex flex-col gap-3">
@@ -388,16 +388,16 @@ export default function HomeworkNotesPage() {
                 <div className="flex gap-2 items-start">
                   <textarea value={noteText} onChange={e => setNoteText(e.target.value)}
                     rows={3}
-                    placeholder={noteSubject ? `Notes for ${noteSubject} class todayâ€¦` : 'e.g. Covered addition up to 10. Students struggled with carrying â€” will revise tomorrow.'}
+                    placeholder={noteSubject ? `Notes for ${noteSubject} class today...€¦` : 'e.g. Covered addition up to 10. Students struggled with carrying ...€” will revise tomorrow.'}
                     className="flex-1 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white" />
                   <InlineMicButton token={token} onTranscript={t => setNoteText(prev => prev ? prev + ' ' + t : t)} />
                 </div>
               </div>
 
-              {/* File attach â€” for session transcripts or PDFs */}
+              {/* File attach ...€” for session transcripts or PDFs */}
               <div>
                 <label className="text-xs font-medium text-neutral-600 mb-1 block">
-                  Attach file <span className="text-neutral-400 font-normal">(session transcript, PDF, Word â€” optional)</span>
+                  Attach file <span className="text-neutral-400 font-normal">(session transcript, PDF, Word ...€” optional)</span>
                 </label>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 px-3 py-2.5 border border-neutral-200 rounded-xl bg-neutral-50 text-xs text-neutral-600 cursor-pointer hover:bg-neutral-100 transition-colors flex-1">
@@ -415,7 +415,7 @@ export default function HomeworkNotesPage() {
                 </div>
                 {noteFile && (
                   <p className="text-xs text-neutral-400 mt-1">
-                    Session transcript or class document â€” parents can download this from their portal.
+                    Session transcript or class document ...€” parents can download this from their portal.
                   </p>
                 )}
               </div>
@@ -425,7 +425,7 @@ export default function HomeworkNotesPage() {
                 <p className="text-xs text-amber-700">Notes auto-delete after <strong>14 days</strong>. Remind parents to download attachments.</p>
               </div>
 
-              {noteMsg && <p className={`text-xs font-medium ${noteMsg.startsWith('âœ“') ? 'text-emerald-600' : 'text-red-500'}`}>{noteMsg}</p>}
+              {noteMsg && <p className={`text-xs font-medium ${noteMsg.startsWith('...œ“') ? 'text-emerald-600' : 'text-red-500'}`}>{noteMsg}</p>}
 
 
               {noteBlockReason && (
@@ -457,7 +457,7 @@ export default function HomeworkNotesPage() {
                       <div className="flex-1 min-w-0">
                         {(n as any).subject && <p className="text-[10px] font-semibold text-primary-600 mb-0.5">{(n as any).subject}</p>}
                         <p className="text-sm text-neutral-700 truncate">
-                          {n.file_name || (n.note_text?.slice(0, 60) + (n.note_text && n.note_text.length > 60 ? 'â€¦' : ''))}
+                          {n.file_name || (n.note_text?.slice(0, 60) + (n.note_text && n.note_text.length > 60 ? '...€¦' : ''))}
                         </p>
                         <p className={`text-xs mt-0.5 ${expiresIn <= 3 ? 'text-red-500 font-medium' : 'text-neutral-400'}`}>
                           {expiresIn <= 0 ? 'Expires today' : `Expires in ${expiresIn} day${expiresIn !== 1 ? 's' : ''}`}
@@ -481,5 +481,6 @@ export default function HomeworkNotesPage() {
     </div>
   );
 }
+
 
 
