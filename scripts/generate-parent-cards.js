@@ -200,10 +200,10 @@ function drawFrontCard(doc, x, y, student) {
   doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica')
     .text(`Code: ${SCHOOL_CODE}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
 
-  // Oakie mascot (bottom-right corner, above footer)
+  // Oakie mascot (right side, larger)
   try {
     if (fs.existsSync(OAKIE_PATH)) {
-      doc.image(OAKIE_PATH, x + CARD_W - 45, y + CARD_H - 58, { width: 35, height: 35 });
+      doc.image(OAKIE_PATH, x + CARD_W - 62, y + CARD_H - 75, { width: 55, height: 55 });
     }
   } catch { /* skip if not found */ }
 }
