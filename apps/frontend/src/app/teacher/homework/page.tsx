@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -287,7 +287,7 @@ export default function HomeworkNotesPage() {
                   Ask Oakie to format
                 </button>
               </div>
-              {homeworkMsg && <p className={`text-xs font-medium ${homeworkMsg.includes('sent') || homeworkMsg.includes('Done') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}œ“') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
+              {homeworkMsg && <p className={`text-xs font-medium ${homeworkMsg.includes('Done') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
 
               {homeworkBlockReason && (
                 <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
