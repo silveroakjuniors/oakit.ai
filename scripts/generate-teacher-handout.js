@@ -45,15 +45,12 @@ const CW = W - M * 2;
 let pageNum = 0;
 
 function newPage() {
-  if (pageNum > 0) doc.addPage();
+  if (pageNum > 0) {
+    drawPageFooter();
+    doc.addPage();
+  }
   pageNum++;
-  addFooter();
-}
-
-function addFooter() {
-  doc.on('pageAdded', () => {
-    // footer added at end
-  });
+  doc.y = 50;
 }
 
 function drawPageFooter() {
@@ -62,6 +59,7 @@ function drawPageFooter() {
 }
 
 function header(text) {
+  checkSpace(40);
   doc.fillColor(C.primary).fontSize(16).font('Helvetica-Bold').text(text, M, doc.y, { width: CW });
   doc.moveDown(0.2);
   doc.moveTo(M, doc.y).lineTo(M + 60, doc.y).lineWidth(2).stroke(C.accent);
@@ -115,7 +113,9 @@ function warnBox(text) {
 function checkSpace(needed) {
   if (doc.y + needed > H - 60) {
     drawPageFooter();
-    newPage();
+    doc.addPage();
+    pageNum++;
+    doc.y = 50;
   }
 }
 
