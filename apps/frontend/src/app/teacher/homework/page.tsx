@@ -299,13 +299,6 @@ export default function HomeworkNotesPage() {
               </div>
               {homeworkMsg && <p className={`text-xs font-medium ${homeworkMsg.includes('Done') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
 
-              {homeworkBlockReason && (
-                <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
-                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-red-600">{homeworkBlockReason}</p>
-                </div>
-              )}
-
               <Button onClick={sendHomework} loading={savingHomework} disabled={!homeworkText.trim() || !!homeworkBlockReason} fullWidth>
                 <Send className="w-4 h-4 mr-1.5" />
                 {existingHomework ? 'Update & Resend to Parents' : 'Send Homework to Parents'}
