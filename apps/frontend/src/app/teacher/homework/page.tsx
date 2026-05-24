@@ -260,6 +260,15 @@ export default function HomeworkNotesPage() {
         {/* ...”€...”€ HOMEWORK TAB ...”€...”€ */}
         {activeSection === 'homework' && (
           <div className="flex flex-col gap-3">
+            {homeworkBlockReason && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-semibold text-red-800">Homework sending is disabled</p>
+                  <p className="text-xs text-red-600 mt-0.5">{homeworkBlockReason}</p>
+                </div>
+              </div>
+            )}
             {existingHomework?.formatted_text && (
               <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -270,18 +279,19 @@ export default function HomeworkNotesPage() {
                 <p className="text-xs text-emerald-500 mt-2">Update by typing below and resending.</p>
               </div>
             )}
-            <div className="bg-white border border-neutral-200 rounded-2xl p-4 flex flex-col gap-3">
+            <div className={`bg-white border border-neutral-200 rounded-2xl p-4 flex flex-col gap-3 ${homeworkBlockReason ? 'opacity-50 pointer-events-none' : ''}`}>
               <p className="text-sm font-semibold text-neutral-800">Today's Homework</p>
               <div className="flex gap-2 items-start">
                 <textarea value={homeworkText} onChange={e => setHomeworkText(e.target.value)}
                   rows={4}
+                  disabled={!!homeworkBlockReason}
                   placeholder="e.g. Practice writing A-E, count objects at home up to 10, bring a leaf tomorrow"
-                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white" />
-                <InlineMicButton token={token} onTranscript={t => setHomeworkText(prev => prev ? prev + ' ' + t : t)} />
+                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/30 resize-none bg-white disabled:bg-neutral-50" />
+                <InlineMicButton token={token} onTranscript={t => setHomeworkText(prev => prev ? prev + ' ' + t : t)} disabled={!!homeworkBlockReason} />
               </div>
               <div className="flex gap-2">
                 <button onClick={() => formatWithOakie(homeworkText, setHomeworkText, setFormattingHw)}
-                  disabled={formattingHw || !homeworkText.trim()}
+                  disabled={formattingHw || !homeworkText.trim() || !!homeworkBlockReason}
                   className="flex items-center gap-1.5 px-3 py-2 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl text-xs font-medium transition-colors disabled:opacity-40">
                   {formattingHw ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
                   Ask Oakie to format
