@@ -62,7 +62,7 @@ async function main() {
     JOIN parent_student_links psl ON psl.student_id = s.id
     JOIN parent_users pu ON pu.id = psl.parent_id
     WHERE s.is_active = true AND pu.is_active = true
-      AND s.school_id = (SELECT id FROM schools WHERE code = $1 LIMIT 1)
+      AND s.school_id = (SELECT id FROM schools WHERE subdomain = $1 LIMIT 1)
     ORDER BY c.name, sec.label, s.name, pu.name
   `, [SCHOOL_CODE]);
 
