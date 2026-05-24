@@ -182,7 +182,43 @@ router.get('/', async (req: Request, res: Response) => {
       } catch { /* non-critical */ }
     }
 
-    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count, all_sections });
+    // Check if tomorrow has a holiday or special day (for alert popup)
+    let tomorrow_event: { date: string; label: string; type: string } | null = null;
+    try {
+      const todayDate = new Date(today + 'T12:00:00');
+      const tomorrowDate = new Date(todayDate);
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      // Skip weekends
+      while (tomorrowDate.getDay() === 0 || tomorrowDate.getDay() === 6) {
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      }
+      const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+
+      const calCheck = await pool.query(
+        `SELECT academic_year FROM school_calendar WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+        [school_id, tomorrowStr]
+      );
+      if (calCheck.rows.length > 0) {
+        const ay = calCheck.rows[0].academic_year;
+        const hol = await pool.query(
+          `SELECT event_name AS label FROM holidays WHERE school_id = $1 AND academic_year = $2 AND holiday_date = $3`,
+          [school_id, ay, tomorrowStr]
+        );
+        if (hol.rows.length > 0) {
+          tomorrow_event = { date: tomorrowStr, label: hol.rows[0].label, type: 'holiday' };
+        } else {
+          const sp = await pool.query(
+            `SELECT label, day_type FROM special_days WHERE school_id = $1 AND academic_year = $2 AND day_date = $3`,
+            [school_id, ay, tomorrowStr]
+          );
+          if (sp.rows.length > 0) {
+            tomorrow_event = { date: tomorrowStr, label: sp.rows[0].label, type: sp.rows[0].day_type };
+          }
+        }
+      }
+    } catch { /* non-critical */ }
+
+    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count, all_sections, tomorrow_event });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
