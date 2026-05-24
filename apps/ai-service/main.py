@@ -402,9 +402,14 @@ async def export_holiday_pdf(req: HolidayExportRequest):
     y -= 0.6 * cm
     c.setFont("Helvetica", 9)
     c.setFillColorRGB(0.5, 0.5, 0.5)
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    c.drawString(2 * cm, y, f"Generated on {datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%d %B %Y')}   ·   {len(req.holidays)} holidays")
+    from datetime import datetime, timezone, timedelta
+    try:
+        from zoneinfo import ZoneInfo
+        gen_date = datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%d %B %Y')
+    except Exception:
+        IST = timezone(timedelta(hours=5, minutes=30))
+        gen_date = datetime.now(IST).strftime('%d %B %Y')
+    c.drawString(2 * cm, y, f"Generated on {gen_date}   ·   {len(req.holidays)} holidays")
     c.setFillColorRGB(0, 0, 0)
     y -= 0.4 * cm
     c.line(2 * cm, y, width - 2 * cm, y)
@@ -763,8 +768,14 @@ async def export_pdf(req: ExportPdfRequest):
 
 @app.get("/internal/greeting")
 async def greeting(teacher_name: str = "Teacher", teacher_id: str = "", class_name: str = "", student_count: int = 0):
-    from zoneinfo import ZoneInfo
-    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    except Exception:
+        # Fallback: manual IST offset (UTC+5:30)
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+        now = datetime.now(IST)
     hour = now.hour
 
     if 5 <= hour < 12:
