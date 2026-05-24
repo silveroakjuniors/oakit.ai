@@ -1388,6 +1388,24 @@ export default function StudentsPage() {
           Students <span className="text-sm font-normal text-gray-400">{active.length}{inactive.length > 0 ? `, ${inactive.length} terminated` : ''}</span>
         </h1>
         <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              const params = new URLSearchParams();
+              if (selectedSection) params.set('section_id', selectedSection);
+              else if (selectedClass) params.set('class_id', selectedClass);
+              const res = await fetch(`${API_BASE}/api/v1/admin/students/login-cards?${params}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!res.ok) { alert((await res.json()).error || 'Failed'); return; }
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a'); a.href = url; a.download = 'parent-login-cards.pdf'; a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Login Cards
+          </button>
           <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>Import</Button>
           <Button size="sm" onClick={() => setShowAdd(true)}>+ Add</Button>
         </div>

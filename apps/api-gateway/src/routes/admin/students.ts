@@ -1870,4 +1870,144 @@ router.post('/bulk-terminate', roleGuard('admin'), async (req: Request, res: Res
   }
 });
 
+// GET /api/v1/admin/students/login-cards?class_id=&section_id=
+// Generates a PDF of parent login cards for printing
+router.get('/login-cards', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, section_id } = req.query as Record<string, string>;
+
+    // Get school info
+    const schoolRow = await pool.query('SELECT name, subdomain FROM schools WHERE id = $1', [school_id]);
+    const school = schoolRow.rows[0] || { name: 'School', subdomain: '' };
+    const APP_URL = 'oakit.silveroakjuniors.in';
+
+    // Build query
+    let query = `
+      SELECT s.name AS student_name, c.name AS class_name, sec.label AS section_label,
+             s.father_name, s.mother_name, pu.mobile AS parent_mobile, pu.name AS parent_name
+      FROM students s
+      JOIN sections sec ON sec.id = s.section_id
+      JOIN classes c ON c.id = sec.class_id
+      JOIN parent_student_links psl ON psl.student_id = s.id
+      JOIN parent_users pu ON pu.id = psl.parent_id
+      WHERE s.is_active = true AND pu.is_active = true AND s.school_id = $1
+    `;
+    const params: any[] = [school_id];
+    if (section_id) { params.push(section_id); query += ` AND s.section_id = $${params.length}`; }
+    else if (class_id) { params.push(class_id); query += ` AND sec.class_id = $${params.length}`; }
+    query += ' ORDER BY c.name, sec.label, s.name, pu.name';
+
+    const result = await pool.query(query, params);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'No parent accounts found for the selected class/section' });
+
+    // Group by student
+    const studentMap = new Map<string, any>();
+    for (const row of result.rows) {
+      const key = row.student_name + '|' + row.class_name + '|' + row.section_label;
+      if (!studentMap.has(key)) {
+        studentMap.set(key, { ...row, parents: [] });
+      }
+      studentMap.get(key).parents.push({ name: row.parent_name, mobile: row.parent_mobile });
+    }
+    const students = Array.from(studentMap.values());
+
+    // Generate PDF
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ size: 'A4', margin: 30 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+
+    const CARD_W = 241, CARD_H = 156, PAGE_MARGIN = 30, M = 8;
+
+    let cardIdx = 0;
+    const cardsPerPage = 8; // 2x4
+
+    for (const student of students) {
+      if (cardIdx > 0 && cardIdx % cardsPerPage === 0) doc.addPage();
+      const pos = cardIdx % cardsPerPage;
+      const col = pos % 2;
+      const row = Math.floor(pos / 2);
+      const x = PAGE_MARGIN + col * (CARD_W + 10);
+      const y = PAGE_MARGIN + row * (CARD_H + 10);
+
+      // Card border
+      doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.5).stroke('#e5e7eb');
+      // Header
+      doc.rect(x, y, CARD_W, 22).fill('#1B4332');
+      doc.fillColor('white').fontSize(7).font('Helvetica-Bold').text(school.name, x + M, y + 4, { width: CARD_W - M * 2 });
+      doc.fontSize(6).font('Helvetica').text('Parent Login Card', x + M, y + 13);
+
+      let ty = y + 28;
+      doc.fillColor('#111827').fontSize(9).font('Helvetica-Bold').text(student.student_name, x + M, ty, { width: CARD_W - M * 2 });
+      ty += 12;
+      doc.fillColor('#6b7280').fontSize(7).font('Helvetica').text(`Class: ${student.class_name} | Section: ${student.section_label}`, x + M, ty);
+      ty += 14;
+      doc.moveTo(x + M, ty).lineTo(x + CARD_W - M, ty).lineWidth(0.3).stroke('#e5e7eb');
+      ty += 6;
+      doc.fillColor('#374151').fontSize(6.5).font('Helvetica-Bold').text('LOGIN DETAILS', x + M, ty);
+      ty += 10;
+
+      for (const p of student.parents) {
+        doc.fillColor('#111827').fontSize(7).font('Helvetica').text(p.name, x + M, ty);
+        ty += 9;
+        doc.fillColor('#1B4332').fontSize(7.5).font('Helvetica-Bold').text(`Mobile: ${p.mobile}`, x + M + 4, ty);
+        ty += 9;
+        doc.fillColor('#6b7280').fontSize(6.5).font('Helvetica').text(`Password: ${p.mobile}`, x + M + 4, ty);
+        ty += 11;
+      }
+
+      doc.fillColor('#1B4332').fontSize(7).font('Helvetica-Bold').text(APP_URL, x + M, y + CARD_H - 18);
+      doc.fillColor('#9ca3af').fontSize(5.5).font('Helvetica').text(`School Code: ${school.subdomain}`, x + M, y + CARD_H - 10);
+      cardIdx++;
+    }
+
+    // Back pages with instructions
+    const totalPages = Math.ceil(students.length / cardsPerPage);
+    for (let p = 0; p < totalPages; p++) {
+      doc.addPage();
+      for (let i = 0; i < cardsPerPage; i++) {
+        const col = 1 - (i % 2); // mirror for double-sided
+        const row = Math.floor(i / 2);
+        const x = PAGE_MARGIN + col * (CARD_W + 10);
+        const y = PAGE_MARGIN + row * (CARD_H + 10);
+
+        doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.5).stroke('#e5e7eb');
+        let ty = y + M;
+        doc.fillColor('#1B4332').fontSize(7.5).font('Helvetica-Bold').text('How to use Oakit', x + M, ty, { width: CARD_W - M * 2 });
+        ty += 12;
+        const steps = [
+          '1. Open Chrome (Android) or Safari (iPhone)',
+          `2. Go to: ${APP_URL}`,
+          `3. Enter School Code: ${school.subdomain}`,
+          '4. Enter your Mobile Number & Password',
+          '5. Tap "Login"',
+        ];
+        doc.fillColor('#374151').fontSize(6.5).font('Helvetica');
+        for (const s of steps) { doc.text(s, x + M, ty, { width: CARD_W - M * 2 }); ty += 9; }
+        ty += 4;
+        doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text('Save to Home Screen:', x + M, ty);
+        ty += 10;
+        doc.fillColor('#374151').fontSize(6).font('Helvetica');
+        doc.text('Android: Menu (3 dots) > "Add to Home screen"', x + M, ty, { width: CARD_W - M * 2 }); ty += 8;
+        doc.text('iPhone: Share button > "Add to Home Screen"', x + M, ty, { width: CARD_W - M * 2 }); ty += 12;
+        doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica').text('Default password is your mobile number.', x + M, ty); ty += 7;
+        doc.text('Change it after first login from Settings.', x + M, ty);
+        doc.fillColor('#9ca3af').fontSize(5).font('Helvetica').text('oakit.ai', x + M, y + CARD_H - 10, { width: CARD_W - M * 2, align: 'center' });
+      }
+    }
+
+    doc.end();
+    await new Promise<void>(resolve => doc.on('end', resolve));
+    const pdfBuffer = Buffer.concat(chunks);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="login-cards-${section_id || class_id || 'all'}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('[login-cards]', err);
+    return res.status(500).json({ error: 'Failed to generate login cards' });
+  }
+});
+
 export default router;
