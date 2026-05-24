@@ -1932,33 +1932,37 @@ router.get('/login-cards', async (req: Request, res: Response) => {
       const y = PAGE_MARGIN + row * (CARD_H + 10);
 
       // Card border
-      doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.5).stroke('#e5e7eb');
-      // Header
-      doc.rect(x, y, CARD_W, 22).fill('#1B4332');
-      doc.fillColor('white').fontSize(7).font('Helvetica-Bold').text(school.name, x + M, y + 4, { width: CARD_W - M * 2 });
-      doc.fontSize(6).font('Helvetica').text('Parent Login Card', x + M, y + 13);
+      doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
+      // Header with logo
+      doc.rect(x, y, CARD_W, 24).fill('#1B4332');
+      doc.fillColor('white').fontSize(8).font('Helvetica-Bold').text('oakit.ai', x + M, y + 5);
+      doc.fillColor('#86efac').fontSize(5.5).font('Helvetica').text(school.name, x + M, y + 15);
+      doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold').text('Oakie - Your AI Assistant', x + CARD_W - 90, y + 9, { width: 82, align: 'right' });
 
-      let ty = y + 28;
-      doc.fillColor('#111827').fontSize(9).font('Helvetica-Bold').text(student.student_name, x + M, ty, { width: CARD_W - M * 2 });
-      ty += 12;
-      doc.fillColor('#6b7280').fontSize(7).font('Helvetica').text(`Class: ${student.class_name} | Section: ${student.section_label}`, x + M, ty);
+      // Student name - centered
+      let ty = y + 32;
+      doc.fillColor('#1B4332').fontSize(11).font('Helvetica-Bold').text(student.student_name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
       ty += 14;
-      doc.moveTo(x + M, ty).lineTo(x + CARD_W - M, ty).lineWidth(0.3).stroke('#e5e7eb');
-      ty += 6;
-      doc.fillColor('#374151').fontSize(6.5).font('Helvetica-Bold').text('LOGIN DETAILS', x + M, ty);
+      doc.fillColor('#6b7280').fontSize(7).font('Helvetica').text(`${student.class_name} - Section ${student.section_label}`, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+      ty += 14;
+      doc.moveTo(x + M + 20, ty).lineTo(x + CARD_W - M - 20, ty).lineWidth(0.3).stroke('#e5e7eb');
+      ty += 8;
+
+      // Login details
+      doc.fillColor('#374151').fontSize(6).font('Helvetica-Bold').text('PARENT LOGIN', x + M, ty);
       ty += 10;
 
       for (const p of student.parents) {
-        doc.fillColor('#111827').fontSize(7).font('Helvetica').text(p.name, x + M, ty);
+        doc.fillColor('#111827').fontSize(7).font('Helvetica-Bold').text(p.name, x + M, ty);
         ty += 9;
-        doc.fillColor('#1B4332').fontSize(7.5).font('Helvetica-Bold').text(`Mobile: ${p.mobile}`, x + M + 4, ty);
-        ty += 9;
-        doc.fillColor('#6b7280').fontSize(6.5).font('Helvetica').text(`Password: ${p.mobile}`, x + M + 4, ty);
+        doc.fillColor('#1B4332').fontSize(7).font('Helvetica').text(`Mobile: ${p.mobile}  |  Password: ${p.mobile}`, x + M, ty);
         ty += 11;
       }
 
-      doc.fillColor('#1B4332').fontSize(7).font('Helvetica-Bold').text(APP_URL, x + M, y + CARD_H - 18);
-      doc.fillColor('#9ca3af').fontSize(5.5).font('Helvetica').text(`School Code: ${school.subdomain}`, x + M, y + CARD_H - 10);
+      // Footer
+      doc.rect(x, y + CARD_H - 16, CARD_W, 16).fill('#f0fdf4');
+      doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text(APP_URL, x + M, y + CARD_H - 12);
+      doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica').text(`Code: ${school.subdomain}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
       cardIdx++;
     }
 

@@ -148,51 +148,54 @@ async function main() {
 }
 
 function drawFrontCard(doc, x, y, student) {
-  // Card border
-  doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.5).stroke('#e5e7eb');
+  // Card border with subtle shadow effect
+  doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
 
-  // Header bar
-  doc.rect(x, y, CARD_W, 22).fill('#1B4332');
-  doc.fillColor('white').fontSize(7).font('Helvetica-Bold')
-    .text(SCHOOL_NAME, x + MARGIN, y + 4, { width: CARD_W - MARGIN * 2 });
-  doc.fontSize(6).font('Helvetica')
-    .text('Parent Login Card', x + MARGIN, y + 13, { width: CARD_W - MARGIN * 2 });
+  // Header bar with logo area
+  doc.rect(x, y, CARD_W, 24).fill('#1B4332');
+  
+  // Logo text (top-left)
+  doc.fillColor('white').fontSize(8).font('Helvetica-Bold')
+    .text('oakit.ai', x + MARGIN, y + 5);
+  doc.fillColor('#86efac').fontSize(5.5).font('Helvetica')
+    .text(SCHOOL_NAME, x + MARGIN, y + 15);
 
-  let ty = y + 28;
+  // "Your AI Assistant" badge (top-right)
+  doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold')
+    .text('Oakie - Your AI Assistant', x + CARD_W - 90, y + 9, { width: 82, align: 'right' });
 
-  // Student info
-  doc.fillColor('#111827').fontSize(9).font('Helvetica-Bold')
-    .text(student.student_name, x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
-  ty += 12;
+  // Student name - CENTERED and prominent
+  let ty = y + 32;
+  doc.fillColor('#1B4332').fontSize(11).font('Helvetica-Bold')
+    .text(student.student_name, x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
+  ty += 14;
   doc.fillColor('#6b7280').fontSize(7).font('Helvetica')
-    .text(`Class: ${student.class_name} | Section: ${student.section_label}`, x + MARGIN, ty);
+    .text(`${student.class_name} - Section ${student.section_label}`, x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
   ty += 14;
 
   // Divider
-  doc.moveTo(x + MARGIN, ty).lineTo(x + CARD_W - MARGIN, ty).lineWidth(0.3).stroke('#e5e7eb');
-  ty += 6;
+  doc.moveTo(x + MARGIN + 20, ty).lineTo(x + CARD_W - MARGIN - 20, ty).lineWidth(0.3).stroke('#e5e7eb');
+  ty += 8;
 
-  // Login details
-  doc.fillColor('#374151').fontSize(6.5).font('Helvetica-Bold').text('LOGIN DETAILS', x + MARGIN, ty);
+  // Login details - left side
+  doc.fillColor('#374151').fontSize(6).font('Helvetica-Bold').text('PARENT LOGIN', x + MARGIN, ty);
   ty += 10;
 
   for (const parent of student.parents) {
-    doc.fillColor('#111827').fontSize(7).font('Helvetica')
-      .text(`${parent.name}`, x + MARGIN, ty);
+    doc.fillColor('#111827').fontSize(7).font('Helvetica-Bold')
+      .text(parent.name, x + MARGIN, ty);
     ty += 9;
-    doc.fillColor('#1B4332').fontSize(7.5).font('Helvetica-Bold')
-      .text(`Mobile: ${parent.mobile}`, x + MARGIN + 4, ty);
-    ty += 9;
-    doc.fillColor('#6b7280').fontSize(6.5).font('Helvetica')
-      .text(`Password: ${parent.mobile}`, x + MARGIN + 4, ty);
+    doc.fillColor('#1B4332').fontSize(7).font('Helvetica')
+      .text(`Mobile: ${parent.mobile}  |  Password: ${parent.mobile}`, x + MARGIN, ty);
     ty += 11;
   }
 
-  // URL at bottom
-  doc.fillColor('#1B4332').fontSize(7).font('Helvetica-Bold')
-    .text(APP_URL, x + MARGIN, y + CARD_H - 18, { width: CARD_W - MARGIN * 2 });
-  doc.fillColor('#9ca3af').fontSize(5.5).font('Helvetica')
-    .text(`School Code: ${SCHOOL_CODE}`, x + MARGIN, y + CARD_H - 10);
+  // Footer with URL
+  doc.rect(x, y + CARD_H - 16, CARD_W, 16).fill('#f0fdf4');
+  doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold')
+    .text(APP_URL, x + MARGIN, y + CARD_H - 12, { width: (CARD_W - MARGIN * 2) / 2 });
+  doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica')
+    .text(`Code: ${SCHOOL_CODE}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
 }
 
 function drawBackCard(doc, x, y) {
