@@ -32,7 +32,7 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
-const SCHOOL_CODE = 'sojs';
+const SCHOOL_CODE = 'soj';
 const APP_URL = 'oakit.silveroakjuniors.in';
 const SCHOOL_NAME = 'Silver Oak Juniors';
 
