@@ -36,6 +36,7 @@ const SCHOOL_CODE = 'soj';
 const APP_URL = 'oakit.silveroakjuniors.in';
 const SCHOOL_NAME = 'Silver Oak Juniors';
 const LOGO_PATH = path.join(__dirname, '../apps/frontend/public/school-logo.png');
+const OAKIE_PATH = path.join(__dirname, '../apps/frontend/public/oakie.png');
 
 // Visiting card dimensions: 85mm x 55mm = 241pt x 156pt
 const CARD_W = 241;
@@ -197,6 +198,13 @@ function drawFrontCard(doc, x, y, student) {
     .text(APP_URL, x + MARGIN, y + CARD_H - 12, { width: (CARD_W - MARGIN * 2) / 2 });
   doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica')
     .text(`Code: ${SCHOOL_CODE}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
+
+  // Oakie mascot (bottom-right corner, above footer)
+  try {
+    if (fs.existsSync(OAKIE_PATH)) {
+      doc.image(OAKIE_PATH, x + CARD_W - 45, y + CARD_H - 58, { width: 35, height: 35 });
+    }
+  } catch { /* skip if not found */ }
 }
 
 function drawBackCard(doc, x, y) {

@@ -1963,6 +1963,13 @@ router.get('/login-cards', async (req: Request, res: Response) => {
       doc.rect(x, y + CARD_H - 16, CARD_W, 16).fill('#f0fdf4');
       doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text(APP_URL, x + M, y + CARD_H - 12);
       doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica').text(`Code: ${school.subdomain}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
+      // Oakie mascot
+      try {
+        const oakiePath = require('path').join(__dirname, '../../../frontend/public/oakie.png');
+        if (require('fs').existsSync(oakiePath)) {
+          doc.image(oakiePath, x + CARD_W - 45, y + CARD_H - 58, { width: 35, height: 35 });
+        }
+      } catch { /* skip */ }
       cardIdx++;
     }
 
