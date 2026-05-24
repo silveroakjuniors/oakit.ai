@@ -159,4 +159,61 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/teacher/calendar/upcoming?section_id=&page=1&limit=10
+// Returns upcoming holidays and special days from today onwards
+router.get('/upcoming', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const today = await getToday(school_id);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = (page - 1) * limit;
+
+    // Get academic year
+    const calRow = await pool.query(
+      `SELECT academic_year FROM school_calendar WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+      [school_id, today]
+    );
+    const academic_year = calRow.rows[0]?.academic_year;
+    if (!academic_year) return res.json({ events: [], total: 0, page, has_more: false });
+
+    // Fetch upcoming holidays
+    const holidays = await pool.query(
+      `SELECT holiday_date::text AS date, event_name AS label, 'holiday' AS type
+       FROM holidays
+       WHERE school_id = $1 AND academic_year = $2 AND holiday_date >= $3
+       ORDER BY holiday_date`,
+      [school_id, academic_year, today]
+    );
+
+    // Fetch upcoming special days
+    const specials = await pool.query(
+      `SELECT day_date::text AS date, label, day_type AS type, activity_note, duration_type
+       FROM special_days
+       WHERE school_id = $1 AND academic_year = $2 AND day_date >= $3
+       ORDER BY day_date`,
+      [school_id, academic_year, today]
+    );
+
+    // Merge and sort by date
+    const allEvents = [
+      ...holidays.rows.map((r: any) => ({ date: r.date, label: r.label, type: 'holiday' as const, note: null, duration: null })),
+      ...specials.rows.map((r: any) => ({ date: r.date, label: r.label, type: r.type as string, note: r.activity_note, duration: r.duration_type })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+
+    const total = allEvents.length;
+    const paginated = allEvents.slice(offset, offset + limit);
+
+    return res.json({
+      events: paginated,
+      total,
+      page,
+      has_more: offset + limit < total,
+    });
+  } catch (err) {
+    console.error('[teacher/calendar/upcoming]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

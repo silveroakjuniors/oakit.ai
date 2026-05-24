@@ -184,6 +184,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Check if tomorrow has a holiday or special day (for alert popup)
     let tomorrow_event: { date: string; label: string; type: string } | null = null;
+    let tomorrow_birthdays: { name: string; date_of_birth: string }[] = [];
     try {
       const todayDate = new Date(today + 'T12:00:00');
       const tomorrowDate = new Date(todayDate);
@@ -216,9 +217,23 @@ router.get('/', async (req: Request, res: Response) => {
           }
         }
       }
+
+      // Check for student birthdays tomorrow (in teacher's section)
+      if (section_id) {
+        const tomorrowMonth = tomorrowDate.getMonth() + 1;
+        const tomorrowDay = tomorrowDate.getDate();
+        const bdayRows = await pool.query(
+          `SELECT name, date_of_birth::text FROM students
+           WHERE section_id = $1 AND is_active = true AND date_of_birth IS NOT NULL
+             AND EXTRACT(MONTH FROM date_of_birth) = $2
+             AND EXTRACT(DAY FROM date_of_birth) = $3`,
+          [section_id, tomorrowMonth, tomorrowDay]
+        );
+        tomorrow_birthdays = bdayRows.rows;
+      }
     } catch { /* non-critical */ }
 
-    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count, all_sections, tomorrow_event });
+    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count, all_sections, tomorrow_event, tomorrow_birthdays });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
