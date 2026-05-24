@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Generate Teacher Handout PDF - Complete User Guide
  * 
  * Usage: node scripts/generate-teacher-handout.js
@@ -51,6 +51,15 @@ function newPage() {
   }
   pageNum++;
   doc.y = 50;
+}
+
+function drawPageHeader() {
+  doc.rect(0, 0, W, 40).fill(C.primary);
+  doc.fillColor(C.white).fontSize(12).font('Helvetica-Bold').text('oakit', M, 12, { continued: true });
+  doc.fillColor(C.accent).text('.ai');
+  doc.fillColor('#86efac').fontSize(7).font('Helvetica').text("Silver Oak Junior's AI Mentor", M, 26);
+  try { if (fs.existsSync(OAKIE_PATH)) doc.image(OAKIE_PATH, W - 75, 3, { height: 34 }); } catch {}
+  doc.y = 55;
 }
 
 function drawPageFooter() {
