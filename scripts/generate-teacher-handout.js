@@ -9,7 +9,7 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 
-const OUTPUT = path.join(__dirname, '../teacher-handout.pdf');
+const OUTPUT = path.join(__dirname, '../teacher-handout1.pdf');
 const OAKIE_PATH = path.join(__dirname, '../apps/frontend/public/oakie.png');
 
 // Professional color palette
@@ -190,6 +190,97 @@ toc.forEach(item => {
   doc.fillColor(C.text).fontSize(10).font('Helvetica-Bold').text(item.title, M + 10, doc.y);
   doc.fillColor(C.muted).fontSize(8).font('Helvetica').text(item.sub, M + 25, doc.y, { width: CW - 30 });
   doc.moveDown(0.5);
+});
+
+drawPageFooter();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// APP OVERVIEW - Flow Diagrams
+// ═══════════════════════════════════════════════════════════════════════════
+newPage();
+header('What You Can Do with Oakit');
+
+para('Oakit helps you manage your entire teaching day from one app:');
+doc.moveDown(0.3);
+
+// Flow boxes - 2 columns x 3 rows
+const capabilities = [
+  { title: 'View Daily Plans', desc: 'AI-generated lesson plans', color: C.primary },
+  { title: 'Ask Oakie (AI Chat)', desc: 'Teaching tips & activity ideas', color: C.blue },
+  { title: 'Mark Attendance', desc: 'One-tap daily attendance', color: C.violet },
+  { title: 'Send Homework', desc: 'Format & send to parents', color: C.accent },
+  { title: 'Child Journey', desc: 'Daily notes per student', color: '#059669' },
+  { title: 'Class Performance', desc: 'Stats & insights dashboard', color: '#dc2626' },
+];
+
+const bw = (CW - 15) / 2;
+const bh = 32;
+capabilities.forEach((cap, i) => {
+  const col = i % 2;
+  const row = Math.floor(i / 2);
+  const bx = M + col * (bw + 15);
+  const by = doc.y + row * (bh + 8);
+  doc.roundedRect(bx, by, bw, bh, 4).lineWidth(1).stroke(cap.color);
+  doc.fillColor(cap.color).fontSize(9).font('Helvetica-Bold').text(cap.title, bx + 8, by + 6, { width: bw - 16 });
+  doc.fillColor(C.muted).fontSize(7.5).font('Helvetica').text(cap.desc, bx + 8, by + 18, { width: bw - 16 });
+});
+doc.y += (bh + 8) * 3 + 10;
+
+doc.moveDown(1);
+header('Your Daily Workflow');
+
+// Vertical flow with arrows
+const workflow = [
+  { step: 'Morning', action: 'Mark Attendance', detail: 'Within 30 min of school start' },
+  { step: 'Plan', action: 'View Today\'s Plan', detail: 'Check topics and activities' },
+  { step: 'Teach', action: 'Conduct Class', detail: 'Use Oakie for help anytime' },
+  { step: 'End of Day', action: 'Mark Completion', detail: 'Tick covered topics' },
+  { step: 'Communicate', action: 'Send Updates', detail: 'Homework + Child Journey notes' },
+];
+
+workflow.forEach((w, i) => {
+  checkSpace(30);
+  const wy = doc.y;
+  // Step circle
+  doc.circle(M + 12, wy + 8, 8).fill(C.primary);
+  doc.fillColor(C.white).fontSize(7).font('Helvetica-Bold').text(String(i + 1), M + 9, wy + 5);
+  // Content
+  doc.fillColor(C.text).fontSize(10).font('Helvetica-Bold').text(`${w.step}: ${w.action}`, M + 28, wy);
+  doc.fillColor(C.muted).fontSize(8).font('Helvetica').text(w.detail, M + 28, wy + 12);
+  // Arrow line (except last)
+  if (i < workflow.length - 1) {
+    doc.moveTo(M + 12, wy + 18).lineTo(M + 12, wy + 28).lineWidth(1).stroke('#d1d5db');
+  }
+  doc.y = wy + 28;
+});
+
+doc.moveDown(1.5);
+checkSpace(200);
+header('Navigation Structure');
+
+para('The app has 3 main tabs. Each tab contains specific features:');
+doc.moveDown(0.3);
+
+// Navigation tree
+const navTree = [
+  { tab: 'Plan', color: C.primary, features: ['Today\'s lesson plan', 'Topic checkboxes', 'Mark as Done', 'Raw Plan view', 'Week Plan download', 'Session Recorder'] },
+  { tab: 'Oakie (Chat)', color: C.blue, features: ['Ask curriculum questions', 'Get activity ideas', 'Classroom management tips', 'Voice input (mic button)', 'AI-formatted responses'] },
+  { tab: 'Help (Quick Links)', color: C.violet, features: ['Attendance', 'Homework & Notes', 'Child Journey', 'Report Cards', 'Class Feed', 'Students & Milestones', 'Calendar', 'Class Performance', 'My HR'] },
+];
+
+navTree.forEach(nav => {
+  checkSpace(80);
+  const ny = doc.y;
+  // Tab header
+  doc.roundedRect(M, ny, CW, 18, 3).fill(nav.color);
+  doc.fillColor(C.white).fontSize(9).font('Helvetica-Bold').text(nav.tab, M + 10, ny + 4);
+  doc.y = ny + 22;
+  // Features
+  nav.features.forEach(f => {
+    doc.fillColor(C.gray).fontSize(8).font('Helvetica').text('  - ' + f, M + 15, doc.y);
+    doc.moveDown(0.1);
+  });
+  doc.moveDown(0.4);
 });
 
 drawPageFooter();
