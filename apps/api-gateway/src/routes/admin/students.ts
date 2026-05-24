@@ -1976,28 +1976,32 @@ router.get('/login-cards', async (req: Request, res: Response) => {
         const x = PAGE_MARGIN + col * (CARD_W + 10);
         const y = PAGE_MARGIN + row * (CARD_H + 10);
 
-        doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.5).stroke('#e5e7eb');
+        doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
         let ty = y + M;
-        doc.fillColor('#1B4332').fontSize(7.5).font('Helvetica-Bold').text('How to use Oakit', x + M, ty, { width: CARD_W - M * 2 });
+        // Branding
+        doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold').text(school.name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
         ty += 12;
-        const steps = [
-          '1. Open Chrome (Android) or Safari (iPhone)',
-          `2. Go to: ${APP_URL}`,
-          `3. Enter School Code: ${school.subdomain}`,
-          '4. Enter your Mobile Number & Password',
-          '5. Tap "Login"',
-        ];
-        doc.fillColor('#374151').fontSize(6.5).font('Helvetica');
-        for (const s of steps) { doc.text(s, x + M, ty, { width: CARD_W - M * 2 }); ty += 9; }
-        ty += 4;
-        doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text('Save to Home Screen:', x + M, ty);
+        doc.fillColor('#6b7280').fontSize(6).font('Helvetica').text('AI-Integrated Preschool & Primary School', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
         ty += 10;
+        doc.fillColor('#d4a017').fontSize(5.5).font('Helvetica-Bold').text('Rooted Fearlessly', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+        ty += 12;
+        doc.moveTo(x + M + 30, ty).lineTo(x + CARD_W - M - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
+        ty += 8;
+        // Quick start
+        doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text('Quick Start Guide', x + M, ty);
+        ty += 10;
+        const steps = [`1. Open Chrome/Safari > ${APP_URL}`, `2. School Code: ${school.subdomain}`, '3. Enter Mobile & Password > Login'];
         doc.fillColor('#374151').fontSize(6).font('Helvetica');
-        doc.text('Android: Menu (3 dots) > "Add to Home screen"', x + M, ty, { width: CARD_W - M * 2 }); ty += 8;
-        doc.text('iPhone: Share button > "Add to Home Screen"', x + M, ty, { width: CARD_W - M * 2 }); ty += 12;
-        doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica').text('Default password is your mobile number.', x + M, ty); ty += 7;
-        doc.text('Change it after first login from Settings.', x + M, ty);
-        doc.fillColor('#9ca3af').fontSize(5).font('Helvetica').text('oakit.ai', x + M, y + CARD_H - 10, { width: CARD_W - M * 2, align: 'center' });
+        for (const s of steps) { doc.text(s, x + M, ty, { width: CARD_W - M * 2 }); ty += 8; }
+        ty += 4;
+        doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold').text('Add to Home Screen:', x + M, ty); ty += 9;
+        doc.fillColor('#374151').fontSize(5.5).font('Helvetica');
+        doc.text('Android: Menu > Add to Home screen', x + M, ty); ty += 7;
+        doc.text('iPhone: Share > Add to Home Screen', x + M, ty); ty += 10;
+        doc.fillColor('#6b7280').fontSize(5).font('Helvetica').text('Password = your mobile number. Change after first login.', x + M, ty, { width: CARD_W - M * 2 });
+        // Footer
+        doc.rect(x, y + CARD_H - 14, CARD_W, 14).fill('#1B4332');
+        doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold').text('Powered by oakit.ai - Where AI meets Early Education', x + M, y + CARD_H - 10, { width: CARD_W - M * 2, align: 'center' });
       }
     }
 

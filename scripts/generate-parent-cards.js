@@ -200,51 +200,58 @@ function drawFrontCard(doc, x, y, student) {
 
 function drawBackCard(doc, x, y) {
   // Card border
-  doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.5).stroke('#e5e7eb');
+  doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
 
+  // Top branding section
   let ty = y + MARGIN;
-
-  // Title
-  doc.fillColor('#1B4332').fontSize(7.5).font('Helvetica-Bold')
-    .text('How to use Oakit', x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
+  doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold')
+    .text('Silver Oak Juniors', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
+  ty += 12;
+  doc.fillColor('#6b7280').fontSize(6).font('Helvetica')
+    .text('AI-Integrated Preschool & Primary School', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
+  ty += 10;
+  doc.fillColor('#d4a017').fontSize(5.5).font('Helvetica-Bold')
+    .text('Rooted Fearlessly', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
   ty += 12;
 
-  // Steps
+  // Divider
+  doc.moveTo(x + MARGIN + 30, ty).lineTo(x + CARD_W - MARGIN - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
+  ty += 8;
+
+  // Steps - compact
+  doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold')
+    .text('Quick Start Guide', x + MARGIN, ty);
+  ty += 10;
+
   const steps = [
-    '1. Open Chrome (Android) or Safari (iPhone)',
-    `2. Go to: ${APP_URL}`,
-    `3. Enter School Code: ${SCHOOL_CODE}`,
-    '4. Enter your Mobile Number & Password',
-    '5. Tap "Login"',
+    `1. Open Chrome/Safari > ${APP_URL}`,
+    `2. School Code: ${SCHOOL_CODE}`,
+    '3. Enter Mobile & Password > Login',
   ];
 
-  doc.fillColor('#374151').fontSize(6.5).font('Helvetica');
+  doc.fillColor('#374151').fontSize(6).font('Helvetica');
   for (const step of steps) {
     doc.text(step, x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
-    ty += 9;
+    ty += 8;
   }
 
   ty += 4;
-  // Save to home screen
-  doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold')
-    .text('Save to Home Screen:', x + MARGIN, ty);
-  ty += 10;
-
-  doc.fillColor('#374151').fontSize(6).font('Helvetica');
-  doc.text('Android: Menu (3 dots) > "Add to Home screen"', x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
-  ty += 8;
-  doc.text('iPhone: Share button > "Add to Home Screen"', x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
-  ty += 12;
+  // Save to home screen - compact
+  doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold')
+    .text('Add to Home Screen:', x + MARGIN, ty);
+  ty += 9;
+  doc.fillColor('#374151').fontSize(5.5).font('Helvetica');
+  doc.text('Android: Menu > Add to Home screen', x + MARGIN, ty); ty += 7;
+  doc.text('iPhone: Share > Add to Home Screen', x + MARGIN, ty); ty += 10;
 
   // Note
-  doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica')
-    .text('Default password is your mobile number.', x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
-  ty += 7;
-  doc.text('Change it after first login from Settings.', x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
+  doc.fillColor('#6b7280').fontSize(5).font('Helvetica')
+    .text('Password = your mobile number. Change after first login.', x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
 
   // Footer
-  doc.fillColor('#9ca3af').fontSize(5).font('Helvetica')
-    .text('oakit.ai - Powered by AI', x + MARGIN, y + CARD_H - 10, { width: CARD_W - MARGIN * 2, align: 'center' });
+  doc.rect(x, y + CARD_H - 14, CARD_W, 14).fill('#1B4332');
+  doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold')
+    .text('Powered by oakit.ai - Where AI meets Early Education', x + MARGIN, y + CARD_H - 10, { width: CARD_W - MARGIN * 2, align: 'center' });
 }
 
 main().catch(err => {
