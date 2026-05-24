@@ -2,10 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Button, Card } from '@/components/ui';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Holiday { id: string; holiday_date: string; event_name: string; }
 interface SpecialDay { id: string; day_date: string; day_type: string; label: string; }

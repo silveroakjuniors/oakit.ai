@@ -440,67 +440,13 @@ export default function ParentPage() {
             if (settings.translation_settings) setTranslationSettings(settings.translation_settings);
           }
         } catch (e) {
-          // fallback to mock data for other features
-          loadMockFeaturesData(true);
+          // API failed — leave defaults (empty arrays/null) rather than showing fake data
         }
       })();
       
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id, kids); }
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }
-
-  // --- Mock Data for New Features ---------------------------------------------
-  function loadMockFeaturesData(includeEmergency = true) {
-    // Emergency Contacts
-    if (includeEmergency) {
-      setEmergencyContacts([
-        { id: '1', name: 'John Doe', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
-        { id: '2', name: 'Jane Doe', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: false },
-        { id: '3', name: 'Grandma', relation: 'Grandmother', phone: '+91-9876543212', priority: 3, available: true },
-      ]);
-    }
-
-    // Notification Preferences
-    setNotificationPrefs([
-      { type: 'homework', enabled: true, channels: ['push', 'email'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
-      { type: 'attendance', enabled: true, channels: ['push'], quietHours: null, frequency: 'daily' },
-      { type: 'progress', enabled: true, channels: ['email'], quietHours: null, frequency: 'weekly' },
-      { type: 'messages', enabled: true, channels: ['push', 'sms'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
-      { type: 'announcements', enabled: false, channels: ['email'], quietHours: null, frequency: 'weekly' },
-    ]);
-
-    // Calendar Events � now loaded from real API in CalendarTab, no mock needed
-
-    // Parent Insights
-    setParentInsights({
-      attendanceTrend: 'improving',
-      participationScore: 85,
-      strengths: ['Mathematics', 'Reading Comprehension', 'Class Participation'],
-      areasForImprovement: ['Handwriting', 'Physical Education'],
-      teacherFeedback: ['Excellent progress in math this month', 'Shows great enthusiasm for learning'],
-      predictions: {
-        nextWeekAttendance: 95,
-        endOfMonthProgress: 88,
-        areasNeedingAttention: ['Practice handwriting daily']
-      },
-      goals: {
-        academic: [
-          { id: '1', title: 'Improve Math Grade', description: 'Achieve 90% or higher in mathematics', target: '90%', current: '85%', deadline: '2026-06-30', status: 'in_progress', category: 'academic' },
-          { id: '2', title: 'Complete Reading Program', description: 'Finish all assigned reading comprehension exercises', target: '100%', current: '75%', deadline: '2026-05-15', status: 'in_progress', category: 'academic' },
-        ],
-        behavioral: [
-          { id: '3', title: 'Class Participation', description: 'Actively participate in 80% of class activities', target: '80%', current: '65%', deadline: '2026-04-30', status: 'in_progress', category: 'behavioral' },
-        ],
-        attendance: [
-          { id: '4', title: 'Perfect Attendance Month', description: 'Attend all classes for the entire month', target: '100%', current: '92%', deadline: '2026-04-30', status: 'in_progress', category: 'attendance' },
-        ]
-      }
-    });
-
-    // Integration Settings
-    setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
-    setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
   }
 
   const fetchChildData = useCallback(async (childId: string, childList?: Child[]) => {

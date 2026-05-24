@@ -149,8 +149,8 @@ export default function OakieFloatingChat({ initialMessages, token }: Props) {
       {/* ── Chat popup ── */}
       {open && (
         <div
-          className="fixed bottom-24 right-6 z-50 flex flex-col bg-white rounded-3xl shadow-2xl border border-neutral-100 overflow-hidden"
-          style={{ width: 380, height: showGuide ? 580 : 560 }}
+          className="fixed bottom-24 right-4 left-4 sm:left-auto sm:right-6 z-50 flex flex-col bg-white rounded-3xl shadow-2xl border border-neutral-100 overflow-hidden"
+          style={{ maxWidth: 380, height: showGuide ? 580 : 560 }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 shrink-0"
