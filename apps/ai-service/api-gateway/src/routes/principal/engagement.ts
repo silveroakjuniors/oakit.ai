@@ -20,21 +20,21 @@ router.get('/', async (req: Request, res: Response) => {
          COALESCE(ts.best_streak, 0) as best_streak,
          ts.last_completed_date,
          r.name as role_name,
-         -- 30-day completion rate
+         -- 30-day completion rate (count distinct days this teacher completed)
          (SELECT COUNT(DISTINCT dc.completion_date)::float
           FROM daily_completions dc
-          JOIN sections sec ON sec.id = dc.section_id
           WHERE dc.teacher_id = u.id
+            AND dc.school_id = $1
             AND dc.completion_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
          ) as completions_30d,
          -- Days since last completion
          CASE WHEN ts.last_completed_date IS NULL THEN 999
-              ELSE ($2::date - ts.last_completed_date)
+              ELSE ($2::date - ts.last_completed_date::date)::int
          END as days_since_last
        FROM users u
        JOIN roles r ON r.id = u.role_id
        LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = u.school_id
-       WHERE u.school_id = $1 AND r.name IN ('teacher','class teacher','supporting teacher')
+       WHERE u.school_id = $1 AND r.name IN ('teacher','class teacher','supporting teacher') AND u.is_active = true
        ORDER BY u.name`,
       [school_id, today]
     );
