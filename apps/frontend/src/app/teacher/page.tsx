@@ -1559,6 +1559,13 @@ export default function TeacherPlanner() {
             </span>
           )}
           <button
+            onClick={() => router.push('/teacher/calendar')}
+            className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white/80 hover:text-white transition-colors active:scale-95 border border-white/20"
+            title="Calendar"
+          >
+            <CalendarDays className="w-3.5 h-3.5" />
+          </button>
+          <button
             onClick={() => router.push('/teacher/class-performance')}
             className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white/80 hover:text-white transition-colors active:scale-95 border border-white/20"
             title="Class Performance"

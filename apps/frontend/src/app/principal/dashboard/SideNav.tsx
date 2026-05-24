@@ -27,7 +27,8 @@ const NAV_GROUPS = [
       { href: '/principal/feed', label: 'School Feed', Icon: Camera },
       { href: '/principal/announcements', label: 'Announcements', Icon: Megaphone },
       { href: '/principal/curriculum', label: 'Curriculum', Icon: BookOpen },
-      { href: '/principal/planner', label: 'Planner', Icon: Calendar },
+      { href: '/principal/planner', label: 'Planner', Icon: FileText },
+      { href: '/admin/calendar', label: 'Calendar', Icon: Calendar },
     ],
   },
   {
