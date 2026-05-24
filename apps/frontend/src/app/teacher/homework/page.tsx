@@ -134,6 +134,20 @@ export default function HomeworkNotesPage() {
     finally { setSavingHwSubmissions(false); }
   }
 
+  // Validate if noteDate is a valid working day
+  function isWeekend(dateStr: string): boolean {
+    const d = new Date(dateStr + 'T12:00:00');
+    return d.getDay() === 0 || d.getDay() === 6;
+  }
+
+  const noteDateIsWeekend = isWeekend(noteDate);
+  const noteCanSend = !noteDateIsWeekend && (noteSubject || todayCompleted);
+  const noteBlockReason = noteDateIsWeekend
+    ? 'Cannot send notes on weekends (Saturday/Sunday). Please select a working day.'
+    : !noteSubject && !todayCompleted
+    ? 'Please select a subject or mark today\'s plan as completed before sending notes.'
+    : null;
+
   async function sendNote() {
     setSavingNote(true); setNoteMsg('');
     try {
@@ -413,7 +427,15 @@ export default function HomeworkNotesPage() {
 
               {noteMsg && <p className={`text-xs font-medium ${noteMsg.startsWith('âœ“') ? 'text-emerald-600' : 'text-red-500'}`}>{noteMsg}</p>}
 
-              <Button onClick={sendNote} loading={savingNote} disabled={!noteText.trim() && !noteFile} fullWidth>
+
+              {noteBlockReason && (
+                <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-600">{noteBlockReason}</p>
+                </div>
+              )}
+
+              <Button onClick={sendNote} loading={savingNote} disabled={(!noteText.trim() && !noteFile) || !!noteBlockReason} fullWidth>
                 <Send className="w-4 h-4 mr-1.5" />
                 Send Note to Parents
               </Button>
@@ -459,4 +481,5 @@ export default function HomeworkNotesPage() {
     </div>
   );
 }
+
 
