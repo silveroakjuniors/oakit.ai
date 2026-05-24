@@ -1,5 +1,10 @@
-import webpush from 'web-push';
 import { pool } from './db';
+
+// Lazy-load web-push to avoid crash if module isn't installed yet
+let webpush: any = null;
+try {
+  webpush = require('web-push');
+} catch { /* web-push not installed — push notifications disabled */ }
 
 // VAPID keys — generate once and store in env vars
 // To generate: npx web-push generate-vapid-keys
@@ -7,7 +12,7 @@ const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:hello@oakit.ai';
 
-if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+if (webpush && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
@@ -77,8 +82,7 @@ async function sendToSubscriptions(
   subscriptions: { id: string; endpoint: string; p256dh: string; auth: string }[],
   payload: PushPayload
 ): Promise<{ sent: number; failed: number }> {
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-    console.warn('[Push] VAPID keys not configured — skipping push notifications');
+  if (!webpush || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     return { sent: 0, failed: 0 };
   }
 
