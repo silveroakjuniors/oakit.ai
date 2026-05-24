@@ -115,6 +115,7 @@ import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
+import pushSubscriptionRouter from './routes/shared/pushSubscription';
 import staffHrRouter from './routes/staff/hr';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
@@ -248,6 +249,7 @@ app.use('/api/v1/public/uniform', publicUniformRouter);
 
 // Shared (any authenticated role)
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
+app.use('/api/v1/push', pushSubscriptionRouter);
 
 // Staff HR (leave, offer letters, payslips)
 app.use('/api/v1/staff/hr', staffHrRouter);
