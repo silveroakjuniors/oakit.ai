@@ -161,9 +161,9 @@ function drawFrontCard(doc, x, y, student) {
   doc.fillColor('#86efac').fontSize(5.5).font('Helvetica')
     .text(SCHOOL_NAME, x + MARGIN, y + 15);
 
-  // "Your AI Assistant" badge (top-right)
+  // "Your AI Mentor" badge (top-right)
   doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold')
-    .text('Oakie - Your AI Assistant', x + CARD_W - 90, y + 9, { width: 82, align: 'right' });
+    .text('Oakie - Your AI Mentor', x + CARD_W - 85, y + 9, { width: 77, align: 'right' });
 
   // Student name - CENTERED and prominent
   let ty = y + 32;
@@ -218,9 +218,6 @@ function drawBackCard(doc, x, y) {
   ty += 11;
   doc.fillColor('#6b7280').fontSize(6).font('Helvetica')
     .text('AI-Integrated Preschool', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
-  ty += 9;
-  doc.fillColor('#d4a017').fontSize(5.5).font('Helvetica-Bold')
-    .text('Rooted Fearlessly', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
   ty += 10;
 
   // Divider

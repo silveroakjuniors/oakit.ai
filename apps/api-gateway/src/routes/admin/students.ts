@@ -1937,7 +1937,7 @@ router.get('/login-cards', async (req: Request, res: Response) => {
       doc.rect(x, y, CARD_W, 24).fill('#1B4332');
       doc.fillColor('white').fontSize(8).font('Helvetica-Bold').text('oakit.ai', x + M, y + 5);
       doc.fillColor('#86efac').fontSize(5.5).font('Helvetica').text(school.name, x + M, y + 15);
-      doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold').text('Oakie - Your AI Assistant', x + CARD_W - 90, y + 9, { width: 82, align: 'right' });
+      doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold').text('Oakie - Your AI Mentor', x + CARD_W - 85, y + 9, { width: 77, align: 'right' });
 
       // Student name - centered
       let ty = y + 32;
@@ -1992,8 +1992,6 @@ router.get('/login-cards', async (req: Request, res: Response) => {
         doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold').text(school.name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
         ty += 11;
         doc.fillColor('#6b7280').fontSize(6).font('Helvetica').text('AI-Integrated Preschool', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
-        ty += 9;
-        doc.fillColor('#d4a017').fontSize(5.5).font('Helvetica-Bold').text('Rooted Fearlessly', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
         ty += 10;
         doc.moveTo(x + M + 30, ty).lineTo(x + CARD_W - M - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
         ty += 6;
