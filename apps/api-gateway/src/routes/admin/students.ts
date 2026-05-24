@@ -1978,30 +1978,38 @@ router.get('/login-cards', async (req: Request, res: Response) => {
 
         doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
         let ty = y + M;
+
+        // School logo
+        try {
+          const logoPath = require('path').join(__dirname, '../../../frontend/public/school-logo.png');
+          if (require('fs').existsSync(logoPath)) {
+            doc.image(logoPath, x + (CARD_W - 40) / 2, ty, { width: 40, height: 40 });
+            ty += 44;
+          }
+        } catch { /* skip logo */ }
+
         // Branding
         doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold').text(school.name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
-        ty += 12;
-        doc.fillColor('#6b7280').fontSize(6).font('Helvetica').text('AI-Integrated Preschool & Primary School', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
-        ty += 10;
+        ty += 11;
+        doc.fillColor('#6b7280').fontSize(6).font('Helvetica').text('AI-Integrated Preschool', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+        ty += 9;
         doc.fillColor('#d4a017').fontSize(5.5).font('Helvetica-Bold').text('Rooted Fearlessly', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
-        ty += 12;
-        doc.moveTo(x + M + 30, ty).lineTo(x + CARD_W - M - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
-        ty += 8;
-        // Quick start
-        doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text('Quick Start Guide', x + M, ty);
         ty += 10;
+        doc.moveTo(x + M + 30, ty).lineTo(x + CARD_W - M - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
+        ty += 6;
+        // Quick start
+        doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold').text('Quick Start', x + M, ty);
+        ty += 9;
         const steps = [`1. Open Chrome/Safari > ${APP_URL}`, `2. School Code: ${school.subdomain}`, '3. Enter Mobile & Password > Login'];
-        doc.fillColor('#374151').fontSize(6).font('Helvetica');
-        for (const s of steps) { doc.text(s, x + M, ty, { width: CARD_W - M * 2 }); ty += 8; }
-        ty += 4;
-        doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold').text('Add to Home Screen:', x + M, ty); ty += 9;
         doc.fillColor('#374151').fontSize(5.5).font('Helvetica');
-        doc.text('Android: Menu > Add to Home screen', x + M, ty); ty += 7;
-        doc.text('iPhone: Share > Add to Home Screen', x + M, ty); ty += 10;
-        doc.fillColor('#6b7280').fontSize(5).font('Helvetica').text('Password = your mobile number. Change after first login.', x + M, ty, { width: CARD_W - M * 2 });
+        for (const s of steps) { doc.text(s, x + M, ty, { width: CARD_W - M * 2 }); ty += 7; }
+        ty += 3;
+        doc.fillColor('#374151').fontSize(5).font('Helvetica');
+        doc.text('Android: Menu > Add to Home screen', x + M, ty); ty += 6;
+        doc.text('iPhone: Share > Add to Home Screen', x + M, ty);
         // Footer
-        doc.rect(x, y + CARD_H - 14, CARD_W, 14).fill('#1B4332');
-        doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold').text('Powered by oakit.ai - Where AI meets Early Education', x + M, y + CARD_H - 10, { width: CARD_W - M * 2, align: 'center' });
+        doc.rect(x, y + CARD_H - 12, CARD_W, 12).fill('#1B4332');
+        doc.fillColor('#86efac').fontSize(4.5).font('Helvetica-Bold').text('Powered by oakit.ai - Where AI meets Early Education', x + M, y + CARD_H - 9, { width: CARD_W - M * 2, align: 'center' });
       }
     }
 

@@ -35,6 +35,7 @@ const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorize
 const SCHOOL_CODE = 'soj';
 const APP_URL = 'oakit.silveroakjuniors.in';
 const SCHOOL_NAME = 'Silver Oak Juniors';
+const LOGO_PATH = path.join(__dirname, '../apps/frontend/public/school-logo.png');
 
 // Visiting card dimensions: 85mm x 55mm = 241pt x 156pt
 const CARD_W = 241;
@@ -202,26 +203,34 @@ function drawBackCard(doc, x, y) {
   // Card border
   doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
 
-  // Top branding section
+  // School logo (centered at top)
   let ty = y + MARGIN;
+  try {
+    if (fs.existsSync(LOGO_PATH)) {
+      doc.image(LOGO_PATH, x + (CARD_W - 40) / 2, ty, { width: 40, height: 40 });
+      ty += 44;
+    }
+  } catch { /* skip logo if not found */ }
+
+  // School name
   doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold')
     .text('Silver Oak Juniors', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
-  ty += 12;
+  ty += 11;
   doc.fillColor('#6b7280').fontSize(6).font('Helvetica')
-    .text('AI-Integrated Preschool & Primary School', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
-  ty += 10;
+    .text('AI-Integrated Preschool', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
+  ty += 9;
   doc.fillColor('#d4a017').fontSize(5.5).font('Helvetica-Bold')
     .text('Rooted Fearlessly', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
-  ty += 12;
+  ty += 10;
 
   // Divider
   doc.moveTo(x + MARGIN + 30, ty).lineTo(x + CARD_W - MARGIN - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
-  ty += 8;
+  ty += 6;
 
-  // Steps - compact
-  doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold')
-    .text('Quick Start Guide', x + MARGIN, ty);
-  ty += 10;
+  // Quick start - compact
+  doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold')
+    .text('Quick Start', x + MARGIN, ty);
+  ty += 9;
 
   const steps = [
     `1. Open Chrome/Safari > ${APP_URL}`,
@@ -229,29 +238,21 @@ function drawBackCard(doc, x, y) {
     '3. Enter Mobile & Password > Login',
   ];
 
-  doc.fillColor('#374151').fontSize(6).font('Helvetica');
+  doc.fillColor('#374151').fontSize(5.5).font('Helvetica');
   for (const step of steps) {
     doc.text(step, x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
-    ty += 8;
+    ty += 7;
   }
 
-  ty += 4;
-  // Save to home screen - compact
-  doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold')
-    .text('Add to Home Screen:', x + MARGIN, ty);
-  ty += 9;
-  doc.fillColor('#374151').fontSize(5.5).font('Helvetica');
-  doc.text('Android: Menu > Add to Home screen', x + MARGIN, ty); ty += 7;
-  doc.text('iPhone: Share > Add to Home Screen', x + MARGIN, ty); ty += 10;
-
-  // Note
-  doc.fillColor('#6b7280').fontSize(5).font('Helvetica')
-    .text('Password = your mobile number. Change after first login.', x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
+  ty += 3;
+  doc.fillColor('#374151').fontSize(5).font('Helvetica');
+  doc.text('Android: Menu > Add to Home screen', x + MARGIN, ty); ty += 6;
+  doc.text('iPhone: Share > Add to Home Screen', x + MARGIN, ty); ty += 6;
 
   // Footer
-  doc.rect(x, y + CARD_H - 14, CARD_W, 14).fill('#1B4332');
-  doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold')
-    .text('Powered by oakit.ai - Where AI meets Early Education', x + MARGIN, y + CARD_H - 10, { width: CARD_W - MARGIN * 2, align: 'center' });
+  doc.rect(x, y + CARD_H - 12, CARD_W, 12).fill('#1B4332');
+  doc.fillColor('#86efac').fontSize(4.5).font('Helvetica-Bold')
+    .text('Powered by oakit.ai - Where AI meets Early Education', x + MARGIN, y + CARD_H - 9, { width: CARD_W - MARGIN * 2, align: 'center' });
 }
 
 main().catch(err => {
