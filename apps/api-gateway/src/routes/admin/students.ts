@@ -1966,11 +1966,11 @@ router.get('/login-cards', async (req: Request, res: Response) => {
       doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica').text(`Code: ${school.subdomain}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
       // Oakie mascot (larger)
       try {
-        const oakiePath = require('path').join(__dirname, '../../../frontend/public/oakie.png');
+        const oakiePath = require('path').resolve(__dirname, '../../public/oakie.png');
         if (require('fs').existsSync(oakiePath)) {
           doc.image(oakiePath, x + CARD_W - 62, y + CARD_H - 75, { width: 55, height: 55 });
         }
-      } catch { /* skip */ }
+      } catch { /* skip - image not available on server */ }
       cardIdx++;
     }
 
@@ -1989,7 +1989,7 @@ router.get('/login-cards', async (req: Request, res: Response) => {
 
         // School logo
         try {
-          const logoPath = require('path').join(__dirname, '../../../frontend/public/school-logo.png');
+          const logoPath = require('path').resolve(__dirname, '../../public/school-logo.png');
           if (require('fs').existsSync(logoPath)) {
             doc.image(logoPath, x + (CARD_W - 40) / 2, ty, { width: 40, height: 40 });
             ty += 44;
