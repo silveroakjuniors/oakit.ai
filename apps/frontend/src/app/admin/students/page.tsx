@@ -1391,8 +1391,8 @@ export default function StudentsPage() {
           <button
             onClick={async () => {
               const params = new URLSearchParams();
-              if (selectedSection) params.set('section_id', selectedSection);
-              else if (selectedClass) params.set('class_id', selectedClass);
+              if (filterSection) params.set('section_id', filterSection);
+              else if (filterClass) params.set('class_id', filterClass);
               const res = await fetch(`${API_BASE}/api/v1/admin/students/login-cards?${params}`, {
                 headers: { Authorization: `Bearer ${token}` },
               });
