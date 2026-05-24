@@ -9,7 +9,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-section[id] { scroll-margin-top: 80px; }
+section[id] { scroll-margin-top: 90px; }
 
 /* Animations */
 @keyframes fadeUp {
