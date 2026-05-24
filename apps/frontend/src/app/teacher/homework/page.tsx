@@ -140,6 +140,15 @@ export default function HomeworkNotesPage() {
     return d.getDay() === 0 || d.getDay() === 6;
   }
 
+  // Homework validation — today must be a working day
+  const todayIsWeekend = isWeekend(today);
+  const homeworkBlockReason = todayIsWeekend
+    ? 'Homework cannot be sent on weekends. School is closed today.'
+    : !todayCompleted && !existingHomework
+    ? 'Complete today\'s plan first, or this is a non-curriculum day (holiday/special day).'
+    : null;
+
+  // Notes validation
   const noteDateIsWeekend = isWeekend(noteDate);
   const noteCanSend = !noteDateIsWeekend && (noteSubject || todayCompleted);
   const noteBlockReason = noteDateIsWeekend
@@ -278,8 +287,16 @@ export default function HomeworkNotesPage() {
                   Ask Oakie to format
                 </button>
               </div>
-              {homeworkMsg && <p className={`text-xs font-medium ${homeworkMsg.startsWith('...œ“') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
-              <Button onClick={sendHomework} loading={savingHomework} disabled={!homeworkText.trim()} fullWidth>
+              {homeworkMsg && <p className={`text-xs font-medium ${homeworkMsg.includes('sent') || homeworkMsg.includes('Done') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}œ“') ? 'text-emerald-600' : 'text-red-500'}`}>{homeworkMsg}</p>}
+
+              {homeworkBlockReason && (
+                <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-600">{homeworkBlockReason}</p>
+                </div>
+              )}
+
+              <Button onClick={sendHomework} loading={savingHomework} disabled={!homeworkText.trim() || !!homeworkBlockReason} fullWidth>
                 <Send className="w-4 h-4 mr-1.5" />
                 {existingHomework ? 'Update & Resend to Parents' : 'Send Homework to Parents'}
               </Button>
@@ -481,6 +498,7 @@ export default function HomeworkNotesPage() {
     </div>
   );
 }
+
 
 
 
