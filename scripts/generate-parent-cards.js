@@ -156,9 +156,10 @@ function drawFrontCard(doc, x, y, student) {
   // Header bar with logo area
   doc.rect(x, y, CARD_W, 24).fill('#1B4332');
   
-  // Logo text (top-left)
+  // Logo text (top-left) - "oakit" in white, ".ai" in dark yellow
   doc.fillColor('white').fontSize(8).font('Helvetica-Bold')
-    .text('oakit.ai', x + MARGIN, y + 5);
+    .text('oakit', x + MARGIN, y + 5, { continued: true });
+  doc.fillColor('#E8960C').text('.ai');
   doc.fillColor('#86efac').fontSize(5.5).font('Helvetica')
     .text(SCHOOL_NAME, x + MARGIN, y + 15);
 

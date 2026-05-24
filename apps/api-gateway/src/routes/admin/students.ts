@@ -1933,9 +1933,10 @@ router.get('/login-cards', async (req: Request, res: Response) => {
 
       // Card border
       doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
-      // Header with logo
+      // Header with logo - "oakit" white, ".ai" dark yellow
       doc.rect(x, y, CARD_W, 24).fill('#1B4332');
-      doc.fillColor('white').fontSize(8).font('Helvetica-Bold').text('oakit.ai', x + M, y + 5);
+      doc.fillColor('white').fontSize(8).font('Helvetica-Bold').text('oakit', x + M, y + 5, { continued: true });
+      doc.fillColor('#E8960C').text('.ai');
       doc.fillColor('#86efac').fontSize(5.5).font('Helvetica').text(school.name, x + M, y + 15);
       doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold').text('Oakie - Your AI Mentor', x + CARD_W - 85, y + 9, { width: 77, align: 'right' });
 
