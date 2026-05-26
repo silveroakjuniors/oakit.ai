@@ -1,354 +1,231 @@
-/**
- * Silver Oak Juniors - Teacher Guide PDF
+﻿/**
+ * node scripts/createteacherguide.js
  * Output: sojs_teacher_guide.pdf
- * Run: node scripts/createteacherguide.js
  */
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
-
 const OUTPUT = path.join(__dirname, '../sojs_teacher_guide.pdf');
 const OAKIE = path.join(__dirname, '../apps/frontend/public/oakie.png');
-
-const doc = new PDFDocument({
-  size: 'A4',
-  margins: { top: 55, bottom: 45, left: 50, right: 50 },
-  bufferPages: true, // Buffer all pages so we can add headers/footers at the end
-});
+const doc = new PDFDocument({ size: 'A4', margins: { top: 55, bottom: 45, left: 50, right: 50 } });
 doc.pipe(fs.createWriteStream(OUTPUT));
+const W = doc.page.width, H = doc.page.height, M = 50, CW = W - 100;
+let pg = 0;
 
-const W = doc.page.width;
-const H = doc.page.height;
-const M = 50;
-const CW = W - 100;
-const GREEN = '#1B4332';
-const YELLOW = '#E8960C';
-
-// ── Helper functions (content only, no page management) ──
-function title(t) {
-  doc.moveDown(0.8);
-  doc.fillColor(GREEN).fontSize(15).font('Helvetica-Bold').text(t, M);
-  doc.moveTo(M, doc.y + 2).lineTo(M + 50, doc.y + 2).lineWidth(2).stroke(YELLOW);
-  doc.moveDown(0.5);
+function hf() {
+  pg++;
+  doc.save();
+  doc.rect(0, 0, W, 36).fill('#1B4332');
+  doc.fillColor('#fff').fontSize(11).font('Helvetica-Bold').text('oakit', M, 10, {lineBreak:false,continued:true});
+  doc.fillColor('#E8960C').text('.ai',{lineBreak:false});
+  doc.fillColor('#86efac').fontSize(7).font('Helvetica').text("Silver Oak Junior\u2019s AI Mentor", M, 23, {lineBreak:false});
+  try{if(fs.existsSync(OAKIE))doc.image(OAKIE,W-70,2,{height:32});}catch{}
+  doc.rect(0, H-22, W, 22).fill('#1B4332');
+  doc.fillColor('#fff').fontSize(7).font('Helvetica').text("oakit.ai | Silver Oak Junior\u2019s AI Mentor | Teacher Guide | Page "+pg, 0, H-15, {width:W,align:'center',lineBreak:false});
+  doc.restore();
+  doc.x = M; doc.y = 48;
 }
-function sub(t) { doc.moveDown(0.3); doc.fillColor(GREEN).fontSize(11).font('Helvetica-Bold').text(t, M, doc.y, { width: CW }); doc.moveDown(0.2); }
-function p(t) { doc.fillColor('#111827').fontSize(9.5).font('Helvetica').text(t, M, doc.y, { width: CW, lineGap: 2 }); doc.moveDown(0.3); }
-function b(t) { doc.fillColor('#111827').fontSize(9).font('Helvetica').text('  \u2022  ' + t, M + 5, doc.y, { width: CW - 10, lineGap: 1 }); doc.moveDown(0.1); }
-function step(n, t, d) { doc.fillColor(GREEN).fontSize(9.5).font('Helvetica-Bold').text(`${n}. ${t}`, M + 5, doc.y); if (d) doc.fillColor('#4b5563').fontSize(8.5).font('Helvetica').text(`    ${d}`, M + 5, doc.y, { width: CW - 10 }); doc.moveDown(0.2); }
-function tip(t) { doc.moveDown(0.2); doc.fillColor('#065f46').fontSize(8.5).font('Helvetica-Bold').text('Tip: ', M + 5, doc.y, { continued: true }); doc.font('Helvetica').text(t, { width: CW - 15 }); doc.moveDown(0.3); }
-function warn(t) { doc.moveDown(0.2); doc.fillColor('#92400e').fontSize(8.5).font('Helvetica-Bold').text('Important: ', M + 5, doc.y, { continued: true }); doc.font('Helvetica').text(t, { width: CW - 15 }); doc.moveDown(0.3); }
-function gap() { doc.moveDown(0.3); }
-function pageBreak() { doc.addPage(); }
+function np() { doc.addPage(); hf(); }
+function t(s){doc.moveDown(0.6);doc.fillColor('#1B4332').fontSize(14).font('Helvetica-Bold').text(s,M);doc.moveTo(M,doc.y+2).lineTo(M+45,doc.y+2).lineWidth(2).stroke('#E8960C');doc.moveDown(0.4);}
+function s(s){doc.moveDown(0.2);doc.fillColor('#1B4332').fontSize(10.5).font('Helvetica-Bold').text(s,M,doc.y,{width:CW});doc.moveDown(0.15);}
+function p(s){doc.fillColor('#111').fontSize(9).font('Helvetica').text(s,M,doc.y,{width:CW,lineGap:2});doc.moveDown(0.25);}
+function b(s){doc.fillColor('#111').fontSize(8.5).font('Helvetica').text('\u2022 '+s,M+8,doc.y,{width:CW-12,lineGap:1});doc.moveDown(0.08);}
+function st(n,tt,d){doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold').text(n+'. '+tt,M+3,doc.y);if(d)doc.fillColor('#4b5563').fontSize(8).font('Helvetica').text('   '+d,M+3,doc.y,{width:CW-8});doc.moveDown(0.15);}
 
-// ══════════════════════════════════════════════════════════════════════════
-// COVER PAGE
-// ══════════════════════════════════════════════════════════════════════════
-doc.rect(0, 0, W, 6).fill(GREEN);
-doc.y = 120;
-doc.fillColor(GREEN).fontSize(34).font('Helvetica-Bold').text('oakit', 0, doc.y, { width: W, align: 'center', continued: true });
-doc.fillColor(YELLOW).text('.ai');
-doc.moveDown(0.4);
-doc.fillColor('#6b7280').fontSize(12).font('Helvetica').text("Silver Oak Junior's AI Mentor", 0, doc.y, { width: W, align: 'center' });
-doc.moveDown(2.5);
-try { if (fs.existsSync(OAKIE)) doc.image(OAKIE, (W - 110) / 2, doc.y, { width: 110 }); } catch {}
-doc.y += 120;
+// ═══ COVER ═══
+doc.rect(0,0,W,6).fill('#1B4332');
+doc.y=110;
+doc.fillColor('#1B4332').fontSize(32).font('Helvetica-Bold').text('oakit',0,doc.y,{width:W,align:'center',continued:true});
+doc.fillColor('#E8960C').text('.ai');
+doc.moveDown(0.3);
+doc.fillColor('#6b7280').fontSize(11).font('Helvetica').text("Silver Oak Junior\u2019s AI Mentor",0,doc.y,{width:W,align:'center'});
 doc.moveDown(2);
-doc.fillColor(GREEN).fontSize(22).font('Helvetica-Bold').text('Teacher Guide', 0, doc.y, { width: W, align: 'center' });
-doc.moveDown(0.5);
-doc.fillColor('#6b7280').fontSize(10).font('Helvetica').text('Complete guide to using Oakit.ai in your classroom', 0, doc.y, { width: W, align: 'center' });
-doc.moveDown(4);
-doc.fillColor('#9ca3af').fontSize(8).font('Helvetica').text('Silver Oak Juniors  |  AI-Integrated Preschool\noakit.silveroakjuniors.in  |  School Code: soj', 0, doc.y, { width: W, align: 'center' });
+try{if(fs.existsSync(OAKIE))doc.image(OAKIE,(W-100)/2,doc.y,{width:100});}catch{}
+doc.y+=115;
+doc.moveDown(1.5);
+doc.fillColor('#1B4332').fontSize(20).font('Helvetica-Bold').text('Teacher Guide',0,doc.y,{width:W,align:'center'});
+doc.moveDown(0.4);
+doc.fillColor('#6b7280').fontSize(9.5).font('Helvetica').text('Complete guide to using Oakit.ai in your classroom',0,doc.y,{width:W,align:'center'});
+doc.moveDown(3);
+doc.fillColor('#9ca3af').fontSize(8).font('Helvetica').text('Silver Oak Juniors | AI-Integrated Preschool\noakit.silveroakjuniors.in | School Code: soj',0,doc.y,{width:W,align:'center'});
 
-// ══════════════════════════════════════════════════════════════════════════
-// TABLE OF CONTENTS
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('Table of Contents');
-gap();
-const toc = ['1. App Overview & Daily Workflow', '2. Getting Started', '3. Daily Plan & Completion',
-  '4. Oakie AI Chat', '5. Attendance', '6. Homework & Notes', '7. Child Journey',
-  '8. Report Cards & Observations', '9. Calendar', '10. Class Performance',
-  '11. Students & Milestones', '12. Class Feed & My HR', '13. Important Rules'];
-toc.forEach(t => { doc.fillColor('#111827').fontSize(10).font('Helvetica-Bold').text(t, M + 10, doc.y); doc.moveDown(0.45); });
+// ═══ TOC ═══
+np();
+t('Table of Contents');
+['1. App Overview & Daily Workflow','2. Getting Started','3. Daily Plan','4. Oakie AI Chat','5. Attendance','6. Homework & Notes','7. Child Journey','8. Reports & Calendar','9. Class Performance','10. Students, Feed, HR & Rules'].forEach(x=>{doc.fillColor('#111').fontSize(9.5).font('Helvetica-Bold').text(x,M+8,doc.y);doc.moveDown(0.4);});
 
-// ══════════════════════════════════════════════════════════════════════════
-// 1. APP OVERVIEW
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('1. App Overview');
-p('Oakit helps you manage your entire teaching day:');
-gap();
-sub('What You Can Do');
+// ═══ 1. OVERVIEW ═══
+np();
+t('1. App Overview');
+p('Oakit is your AI-powered teaching platform. Here is what you can do:');
+doc.moveDown(0.2);
+s('Features');
 b('View Daily Plans - AI-generated lesson plans for each day');
 b('Ask Oakie (AI Chat) - Teaching tips, activity ideas, classroom help');
 b('Mark Attendance - One-tap daily attendance');
 b('Send Homework & Notes - Format and send to all parents');
 b('Child Journey - Personalized daily notes per student');
-b('Class Performance - Visual stats and insights dashboard');
-b('Calendar - View holidays and special days');
-b('Report Cards - Generate term progress reports');
-b('Students & Milestones - Track developmental progress');
-b('Class Feed - Post photos for parents');
-gap();
-title('Daily Workflow');
-step(1, 'Morning: Mark Attendance', 'Open app > Help > Attendance > Mark > Submit');
-step(2, 'View Today\'s Plan', 'Plan tab > See topics and activities');
-step(3, 'Teach Your Class', 'Use Oakie chat for help anytime');
-step(4, 'End of Day: Mark Completion', 'Tick covered topics > Mark as Done');
-step(5, 'Send Updates', 'Homework + Child Journey notes to parents');
-gap();
-tip('Complete all 5 steps daily to maintain your teaching streak.');
-gap();
-title('Navigation');
-p('3 tabs at the bottom of the screen:');
-gap();
-sub('Plan Tab');
-b('Today\'s lesson plan with topics and checkboxes');
-b('Mark topics as covered, then Mark as Done');
-b('Raw Plan (full text) and Week Plan (PDF download)');
-gap();
-sub('Oakie Tab (Chat)');
-b('Ask any teaching question in natural language');
-b('Get activity ideas, classroom tips, curriculum help');
-b('Use mic button to speak instead of typing');
-gap();
-sub('Help Tab (Quick Links)');
-b('Attendance - Mark daily attendance');
-b('Homework & Notes - Send homework, class notes, attachments');
-b('Child Journey - Daily highlights per student');
-b('Report Cards - Generate term progress reports');
-b('Calendar - View holidays and special days');
-b('Class Performance - Stats dashboard');
-b('Students - Profiles and milestones');
+b('Class Performance - Visual stats and insights');
+b('Calendar - Holidays and special days');
+b('Report Cards - Term progress reports');
+b('Students & Milestones - Track development');
 b('Class Feed - Post photos for parents');
 b('My HR - Salary, leave, documents');
+doc.moveDown(0.4);
+t('Daily Workflow');
+st(1,'Morning: Mark Attendance','Help > Attendance > Mark > Submit');
+st(2,'View Plan','Plan tab > See topics and activities');
+st(3,'Teach','Use Oakie chat for help anytime');
+st(4,'Mark Completion','Tick topics > Mark as Done');
+st(5,'Send Updates','Homework + Child Journey to parents');
+doc.moveDown(0.3);
+doc.fillColor('#065f46').fontSize(8).font('Helvetica-Bold').text('Tip: Complete all 5 steps daily to maintain your streak.',M+5,doc.y);
+doc.moveDown(0.5);
+t('Navigation (3 Tabs)');
+s('Plan Tab');
+b('Today\'s lesson plan with topic checkboxes');
+b('Mark as Done when finished');
+b('Raw Plan (full text) | Week Plan (PDF)');
+doc.moveDown(0.2);
+s('Oakie Tab (Chat)');
+b('Ask any teaching question');
+b('Activity ideas, classroom tips');
+b('Mic button to speak');
+doc.moveDown(0.2);
+s('Help Tab (Quick Links)');
+b('Attendance | Homework | Child Journey | Report Cards');
+b('Calendar | Class Performance | Students | Feed | HR');
 
-// ══════════════════════════════════════════════════════════════════════════
-// 2. GETTING STARTED
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('2. Getting Started');
-sub('How to Login');
-step(1, 'Open Chrome (Android) or Safari (iPhone)');
-step(2, 'Go to: oakit.silveroakjuniors.in');
-step(3, 'Enter School Code: soj');
-step(4, 'Enter your Mobile Number (10 digits)');
-step(5, 'Enter Password (default = your mobile number)');
-step(6, 'Tap Login');
-gap();
-sub('Save to Home Screen');
-p('Save the app so it works like a native app:');
-b('Android: Tap 3-dot menu > "Add to Home screen"');
-b('iPhone: Tap Share button > "Add to Home Screen"');
-gap();
-tip('After saving, open Oakit directly from your home screen.');
-gap();
-sub('Header Icons (top-right)');
-b('Calendar icon - Monthly calendar with holidays');
-b('Chart icon - Class Performance dashboard');
-b('Flame icon - Your teaching consistency streak');
+// ═══ 2. GETTING STARTED ═══
+np();
+t('2. Getting Started');
+s('Login Steps');
+st(1,'Open Chrome (Android) or Safari (iPhone)');
+st(2,'Go to: oakit.silveroakjuniors.in');
+st(3,'School Code: soj');
+st(4,'Enter Mobile Number (10 digits)');
+st(5,'Password (default = mobile number)');
+st(6,'Tap Login');
+doc.moveDown(0.3);
+s('Save to Home Screen');
+b('Android: 3-dot menu > Add to Home screen');
+b('iPhone: Share > Add to Home Screen');
+doc.moveDown(0.2);
+s('Header Icons');
+b('Calendar - Monthly holidays view');
+b('Chart - Class Performance');
+b('Flame - Teaching streak');
 
-// ══════════════════════════════════════════════════════════════════════════
-// 3. DAILY PLAN
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('3. Daily Plan & Completion');
-p('Every day, Oakie prepares a lesson plan based on your curriculum.');
-gap();
-sub('What You See');
-b('Today\'s date, day name, and planned topics');
-b('Activity suggestions for each topic');
-b('Checkboxes to mark topics as covered');
-b('Pending work from previous days');
-gap();
-sub('Marking Completion');
-step(1, 'Review topics listed for today');
-step(2, 'Teach your class as planned');
-step(3, 'Tick checkboxes for topics you covered');
-step(4, 'Tap "Mark as Done" to complete the day');
-gap();
-warn('Can only mark today or past days (up to 7 days back). Future dates blocked.');
-gap();
-sub('Additional Features');
-b('Raw Plan - Full AI-generated plan text');
-b('Week Plan - See entire week, download as PDF');
-b('Record Session - Log what was actually covered');
-gap();
-tip('Missed days show as "Pending Work" next day. Complete within 7 days.');
+// ═══ 3. DAILY PLAN ═══
+t('3. Daily Plan & Completion');
+p('Oakie prepares daily plans from your curriculum.');
+s('What You See');
+b('Topics to cover with activity suggestions');
+b('Checkboxes to mark covered');
+b('Pending work from missed days');
+s('How to Complete');
+st(1,'Review topics');
+st(2,'Teach class');
+st(3,'Tick covered topics');
+st(4,'Mark as Done');
+doc.moveDown(0.2);
+doc.fillColor('#92400e').fontSize(8).font('Helvetica-Bold').text('Note: Only today or past 7 days. Future dates blocked.',M+5,doc.y);
 
-// ══════════════════════════════════════════════════════════════════════════
-// 4. OAKIE AI CHAT
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('4. Oakie AI Chat');
-p('Your AI teaching assistant. Ask anything about curriculum, classroom management, or teaching.');
-gap();
-sub('What Oakie Helps With');
-b('Explain curriculum topics in simple terms');
-b('Suggest activities, games, songs for any subject');
-b('Classroom management (crying, misbehavior, shy students)');
-b('Age-appropriate teaching strategies');
+// ═══ 4. OAKIE ═══
+np();
+t('4. Oakie AI Chat');
+p('Your AI teaching assistant. Ask anything about curriculum or classroom.');
+s('Oakie Helps With');
+b('Explain topics simply');
+b('Suggest activities, games, songs');
+b('Classroom management (crying, shy, misbehavior)');
+b('Age-appropriate strategies');
 b('Textbook content questions');
-b('Tips for circle time, English, math, art, etc.');
-gap();
-sub('Example Questions');
-b('"What activities can I do for counting today?"');
-b('"How to handle a child who won\'t stop crying?"');
-b('"Explain today\'s English topic simply"');
-b('"Give me a rhyme for the letter B"');
-gap();
-warn('Limit: 5 questions before marking completion. Complete the day to unlock more.');
+s('Example Questions');
+b('"What activities for counting today?"');
+b('"How to handle a crying child?"');
+b('"Explain today\'s English topic"');
+b('"Rhyme for letter B?"');
+doc.moveDown(0.2);
+doc.fillColor('#92400e').fontSize(8).font('Helvetica-Bold').text('Note: 5 question limit before completion. Mark done to unlock more.',M+5,doc.y);
 
-// ══════════════════════════════════════════════════════════════════════════
-// 5. ATTENDANCE
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('5. Attendance');
-p('Mark attendance every morning. Parents notified automatically.');
-gap();
-sub('How to Mark');
-step(1, 'Help tab > Attendance');
-step(2, 'All students listed');
-step(3, 'Tap Present (green) or Absent (red)');
-step(4, 'Tap "Submit Attendance"');
-gap();
-sub('Rules');
+// ═══ 5. ATTENDANCE ═══
+doc.moveDown(0.5);
+t('5. Attendance');
+s('How to Mark');
+st(1,'Help > Attendance');
+st(2,'Tap Present/Absent per student');
+st(3,'Submit');
+s('Rules');
 b('Mark within 30 min of school start');
-b('Present cannot be changed to Absent');
-b('Late arrivals: mark absent, update when they arrive');
-b('Blocked on weekends and holidays');
-b('Late marking (>90 min) shows warning to principal');
-gap();
-tip('Principal sees your attendance timing. Mark early for consistency.');
+b('Present cannot change to Absent');
+b('No weekends/holidays');
+b('Late marking warns principal');
 
-// ══════════════════════════════════════════════════════════════════════════
-// 6. HOMEWORK & NOTES
-// ══════════════════════════════════════════════════════════════════════════
-title('6. Homework & Notes');
-sub('Sending Homework');
-step(1, 'Help > Homework & Notes');
-step(2, 'Type or dictate homework');
-step(3, '"Ask Oakie to format" for parent-friendly version');
-step(4, '"Send Homework to Parents"');
-gap();
-b('Sent to ALL parents in your section');
-b('Cannot send on weekends or holidays');
-gap();
-sub('Tracking');
-b('"Tracking" tab - mark each student: Done / Partial / Not Submitted');
-gap();
-sub('Class Notes');
-b('"Class Notes" tab - select subject, type note or attach file');
-b('Notes auto-delete after 14 days');
-gap();
-tip('Use mic button to dictate quickly.');
+// ═══ 6. HOMEWORK ═══
+np();
+t('6. Homework & Notes');
+s('Send Homework');
+st(1,'Help > Homework & Notes');
+st(2,'Type or dictate');
+st(3,'Ask Oakie to format');
+st(4,'Send to Parents');
+b('Sent to ALL parents | Cannot send weekends');
+s('Tracking');
+b('Tracking tab: Mark Done/Partial/Not Submitted per student');
+s('Class Notes');
+b('Class Notes tab: Subject + date + text/file');
+b('Auto-deletes after 14 days');
 
-// ══════════════════════════════════════════════════════════════════════════
-// 7. CHILD JOURNEY
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('7. Child Journey');
-p('Personalized daily updates per child to parents.');
-gap();
-sub('Individual Notes');
-b('Help > Child Journey > Write note per student');
-b('"Ask Oakie" to beautify text');
-b('Type: Daily / Weekly / Highlight');
+// ═══ 7. CHILD JOURNEY ═══
+t('7. Child Journey');
+s('Individual Notes');
+b('Help > Child Journey > Write per student');
+b('Ask Oakie to beautify | Daily/Weekly/Highlight');
 b('Save Only or Save & Send');
-gap();
-sub('Generic Class Note');
-b('One note for whole class, saved per student');
-b('"Save & Send All" notifies all parents');
-gap();
-sub('History');
-b('View past entries by date, filter by student');
-b('Edit, delete, or send unsent entries');
-gap();
-tip('Parents love daily updates. Even "Had a great day!" helps.');
+s('Generic Class Note');
+b('One note for all students | Save & Send All');
+s('History');
+b('View/edit/delete past entries | Send unsent');
 
-// ══════════════════════════════════════════════════════════════════════════
-// 8-9. REPORTS + CALENDAR
-// ══════════════════════════════════════════════════════════════════════════
-title('8. Report Cards & Observations');
-sub('Observations');
+// ═══ 8. REPORTS + CALENDAR ═══
+np();
+t('8. Reports & Calendar');
+s('Observations');
 b('Child Journey > Report Readiness tab');
 b('Categories: Cognitive, Language, Social, Emotional, Motor, Creativity, Participation, Peer, Behavior');
-b('Used to generate term report cards');
-gap();
-sub('Report Cards');
-b('Help > Report Cards > Select student + date range');
-b('Auto-generated from observations');
-gap();
-title('9. Calendar');
-b('Monthly view with color-coded days');
-b('Green=completed, Amber=missed, Red=holiday, Blue=special');
-b('Tap any day for details');
-b('Upcoming events listed below');
+b('Used for term report cards');
+s('Report Cards');
+b('Help > Report Cards > Select student + dates');
+s('Calendar');
+b('Monthly view: Green=done, Amber=missed, Red=holiday, Blue=special');
+b('Tap any day for details | Upcoming events below');
 
-// ══════════════════════════════════════════════════════════════════════════
-// 10-13. REMAINING
-// ══════════════════════════════════════════════════════════════════════════
-pageBreak();
-title('10. Class Performance');
-b('Stats: Students, Attendance %, Coverage %, Plans Done');
-b('Daily timing graph (attendance + completion times)');
-b('Parent engagement (active/inactive/never logged in)');
-b('School comparison (your class vs others)');
-b('Low attendance students, missing journals, birthdays');
-gap();
-title('11. Students & Milestones');
-b('Help > Students - View profiles, parent contacts');
-b('Track milestones: Physical, Cognitive, Language, Social, Self-help');
-gap();
-title('12. Class Feed & My HR');
-b('Class Feed: Post photos, parents see in their feed');
-b('My HR: Salary slips, leave requests, offer letters');
-gap();
-title('13. Important Rules');
-gap();
-sub("Do's");
-b('Mark attendance before 10:00 AM daily');
-b('Complete plan before leaving school');
-b('Send child journey notes weekly per student');
-b('Use Oakie for help - it knows your curriculum');
-b('Change password from default');
-gap();
-sub("Don'ts");
-b('No homework on weekends/holidays');
-b('Never share login credentials');
-b('No future date attendance');
-b('No negative language in child notes');
-b('Never skip marking completion');
-gap();
-warn('Principal sees your timing, completion rate, and streak. Consistency is tracked.');
+// ═══ 9. CLASS PERFORMANCE ═══
+t('9. Class Performance');
+b('Students, Attendance %, Coverage %, Plans Done');
+b('Daily timing graph');
+b('Parent engagement (active/inactive/never)');
+b('School comparison | Low attendance | Birthdays');
 
-// ══════════════════════════════════════════════════════════════════════════
-// ADD HEADERS AND FOOTERS TO ALL PAGES (using buffered pages)
-// ══════════════════════════════════════════════════════════════════════════
-const pages = doc.bufferedPageRange();
-for (let i = 0; i < pages.count; i++) {
-  doc.switchToPage(i);
-  
-  // Skip cover page (page 0)
-  if (i > 0) {
-    // Header
-    doc.save();
-    doc.rect(0, 0, W, 36).fill(GREEN);
-    doc.fillColor('#ffffff').fontSize(11).font('Helvetica-Bold').text('oakit', M, 10, { continued: true });
-    doc.fillColor(YELLOW).text('.ai');
-    doc.fillColor('#86efac').fontSize(7).font('Helvetica').text("Silver Oak Junior's AI Mentor", M, 23);
-    try { if (fs.existsSync(OAKIE)) doc.image(OAKIE, W - 70, 2, { height: 32 }); } catch {}
-    doc.restore();
-  }
-  
-  // Footer on all pages
-  doc.save();
-  doc.rect(0, H - 22, W, 22).fill(GREEN);
-  doc.fillColor('#ffffff').fontSize(7).font('Helvetica')
-    .text(`oakit.ai  |  Silver Oak Junior's AI Mentor  |  Teacher Guide  |  Page ${i + 1}`, 0, H - 15, { width: W, align: 'center' });
-  doc.restore();
-}
+// ═══ 10. REMAINING ═══
+t('10. Students, Feed, HR & Rules');
+s('Students & Milestones');
+b('Help > Students: Profiles, contacts, milestones');
+s('Class Feed');
+b('Post photos from activities for parents');
+s('My HR');
+b('Salary slips | Leave requests | Documents');
+doc.moveDown(0.3);
+s("Do's");
+b('Attendance before 10 AM | Complete plan daily');
+b('Child journey weekly | Use Oakie | Change password');
+s("Don'ts");
+b('No homework weekends | No sharing login');
+b('No future attendance | No negative notes | No skipping completion');
+doc.moveDown(0.3);
+doc.fillColor('#92400e').fontSize(8).font('Helvetica-Bold').text('Principal sees your timing, completion rate, and streak.',M+5,doc.y);
 
 doc.end();
-console.log(`Generated: ${OUTPUT}`);
-console.log(`Pages: ${pages.count}`);
+console.log('Generated: ' + OUTPUT);
+console.log('Pages: ' + pg);
