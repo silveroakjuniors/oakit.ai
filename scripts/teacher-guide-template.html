@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -6,23 +6,23 @@
 <style>
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', -apple-system, sans-serif; color: #111827; font-size: 11px; line-height: 1.5; }
+body { font-family: 'Segoe UI', -apple-system, sans-serif; color: #111827; font-size: 12px; line-height: 1.5; }
 
 .page { width: 210mm; min-height: 297mm; padding: 12mm 15mm 18mm 15mm; position: relative; page-break-after: always; }
 .page:last-child { page-break-after: avoid; }
 
 /* Header */
-.header { background: #1B4332; padding: 8px 15mm; display: flex; align-items: center; justify-content: space-between; position: absolute; top: 0; left: 0; right: 0; height: 36px; }
-.header .logo { color: #fff; font-size: 14px; font-weight: 700; }
+.header { background: #1B4332; padding: 10px 15mm; display: flex; align-items: center; justify-content: space-between; position: absolute; top: 0; left: 0; right: 0; height: 44px; }
+.header .logo { color: #fff; font-size: 16px; font-weight: 700; }
 .header .logo .ai { color: #E8960C; }
-.header .subtitle { color: #86efac; font-size: 8px; margin-top: 2px; }
-.header .mascot { height: 30px; }
+.header .subtitle { color: #86efac; font-size: 9px; margin-top: 2px; }
+.header .mascot { height: 38px; }
 
 /* Footer */
-.footer { background: #1B4332; padding: 5px 15mm; position: absolute; bottom: 0; left: 0; right: 0; height: 20px; text-align: center; color: #fff; font-size: 7px; }
+.footer { background: #1B4332; padding: 7px 15mm; position: absolute; bottom: 0; left: 0; right: 0; height: 26px; text-align: center; color: #fff; font-size: 7px; }
 
 /* Content area */
-.content { padding-top: 40px; }
+.content { padding-top: 48px; }
 
 /* Cover */
 .cover { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 260mm; text-align: center; }
@@ -31,7 +31,7 @@ body { font-family: 'Segoe UI', -apple-system, sans-serif; color: #111827; font-
 .cover .tagline { color: #6b7280; font-size: 13px; margin-top: 8px; }
 .cover .mascot-img { width: 120px; margin: 40px 0; }
 .cover h1 { font-size: 26px; color: #1B4332; margin-bottom: 8px; }
-.cover .sub { color: #6b7280; font-size: 11px; }
+.cover .sub { color: #6b7280; font-size: 12px; }
 .cover .school-info { color: #9ca3af; font-size: 9px; margin-top: 40px; }
 
 /* Typography */
@@ -73,7 +73,7 @@ li { margin: 2px 0; color: #374151; }
 /* Steps */
 .steps { margin: 8px 0; }
 .step { display: flex; gap: 8px; margin: 5px 0; align-items: flex-start; }
-.step-num { background: #1B4332; color: #fff; min-width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; }
+.step-num { background: #1B4332; color: #fff; min-width: 20px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; }
 .step-content { flex: 1; }
 .step-content strong { font-size: 9.5px; color: #111827; }
 .step-content span { font-size: 8.5px; color: #6b7280; display: block; }
@@ -93,7 +93,7 @@ li { margin: 2px 0; color: #374151; }
 <div class="page">
   <div class="cover">
     <div class="brand">oakit<span class="ai">.ai</span></div>
-    <div class="tagline">Silver Oak Junior's AI Mentor</div>
+    <div class="tagline">AI Mentor for Silver Oak Juniors</div>
     <img src="OAKIE_PATH" class="mascot-img" alt="Oakie">
     <h1>Teacher Guide</h1>
     <div class="sub">Complete guide to using Oakit.ai in your classroom</div>
@@ -103,7 +103,7 @@ li { margin: 2px 0; color: #374151; }
 
 <!-- TOC -->
 <div class="page">
-  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">AI Mentor for Silver Oak Juniors</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
   <div class="content">
     <h2>Table of Contents</h2>
     <div style="margin-top:12px">
@@ -119,12 +119,12 @@ li { margin: 2px 0; color: #374151; }
       <div class="toc-item"><span><strong>10.</strong> Important Rules</span></div>
     </div>
   </div>
-  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 2</div>
+  <div class="footer">oakit.ai | AI Mentor for Silver Oak Juniors | Teacher Guide | Page 2</div>
 </div>
 
 <!-- PAGE 3: APP OVERVIEW -->
 <div class="page">
-  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">AI Mentor for Silver Oak Juniors</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
   <div class="content">
     <h2>1. What You Can Do with Oakit</h2>
     <p>Oakit is your AI-powered teaching platform. Everything you need in one app:</p>
@@ -187,12 +187,12 @@ li { margin: 2px 0; color: #374151; }
       </div>
     </div>
   </div>
-  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 3</div>
+  <div class="footer">oakit.ai | AI Mentor for Silver Oak Juniors | Teacher Guide | Page 3</div>
 </div>
 
 <!-- PAGE 4: GETTING STARTED -->
 <div class="page">
-  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">AI Mentor for Silver Oak Juniors</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
   <div class="content">
     <h2>2. Getting Started</h2>
     <h3>Login Steps</h3>
@@ -233,12 +233,12 @@ li { margin: 2px 0; color: #374151; }
     </div>
     <div class="warn">You can only mark today or past days (up to 7 days back). Future dates are blocked.</div>
   </div>
-  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 4</div>
+  <div class="footer">oakit.ai | AI Mentor for Silver Oak Juniors | Teacher Guide | Page 4</div>
 </div>
 
 <!-- PAGE 5: OAKIE + ATTENDANCE -->
 <div class="page">
-  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">AI Mentor for Silver Oak Juniors</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
   <div class="content">
     <h2>4. Oakie AI Chat</h2>
     <p>Your AI teaching assistant. Ask anything about curriculum, classroom management, or teaching strategies.</p>
@@ -275,12 +275,12 @@ li { margin: 2px 0; color: #374151; }
       <li>Principal sees what time you marked</li>
     </ul>
   </div>
-  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 5</div>
+  <div class="footer">oakit.ai | AI Mentor for Silver Oak Juniors | Teacher Guide | Page 5</div>
 </div>
 
 <!-- PAGE 6: HOMEWORK + JOURNEY -->
 <div class="page">
-  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">AI Mentor for Silver Oak Juniors</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
   <div class="content">
     <h2>6. Homework & Notes</h2>
     <div class="flow">
@@ -308,12 +308,12 @@ li { margin: 2px 0; color: #374151; }
     </div>
     <div class="tip">Parents love daily updates. Even "Had a great day!" makes a difference.</div>
   </div>
-  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 6</div>
+  <div class="footer">oakit.ai | AI Mentor for Silver Oak Juniors | Teacher Guide | Page 6</div>
 </div>
 
 <!-- PAGE 7: REPORTS + CALENDAR + PERFORMANCE + RULES -->
 <div class="page">
-  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">AI Mentor for Silver Oak Juniors</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
   <div class="content">
     <h2>8. Report Cards & Calendar</h2>
     <h3>Observations (for Report Cards)</h3>
@@ -362,7 +362,7 @@ li { margin: 2px 0; color: #374151; }
     </div>
     <div class="warn" style="margin-top:12px">Your principal can see your attendance timing, plan completion rate, and teaching streak. Consistency is tracked and visible.</div>
   </div>
-  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 7</div>
+  <div class="footer">oakit.ai | AI Mentor for Silver Oak Juniors | Teacher Guide | Page 7</div>
 </div>
 
 </body>
