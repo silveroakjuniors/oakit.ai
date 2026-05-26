@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Oakit.ai Teacher Guide</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', -apple-system, sans-serif; color: #111827; font-size: 11px; line-height: 1.5; }
+
+.page { width: 210mm; min-height: 297mm; padding: 12mm 15mm 18mm 15mm; position: relative; page-break-after: always; }
+.page:last-child { page-break-after: avoid; }
+
+/* Header */
+.header { background: #1B4332; padding: 8px 15mm; display: flex; align-items: center; justify-content: space-between; position: absolute; top: 0; left: 0; right: 0; height: 36px; }
+.header .logo { color: #fff; font-size: 14px; font-weight: 700; }
+.header .logo .ai { color: #E8960C; }
+.header .subtitle { color: #86efac; font-size: 8px; margin-top: 2px; }
+.header .mascot { height: 30px; }
+
+/* Footer */
+.footer { background: #1B4332; padding: 5px 15mm; position: absolute; bottom: 0; left: 0; right: 0; height: 20px; text-align: center; color: #fff; font-size: 7px; }
+
+/* Content area */
+.content { padding-top: 40px; }
+
+/* Cover */
+.cover { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 260mm; text-align: center; }
+.cover .brand { font-size: 42px; font-weight: 800; color: #1B4332; }
+.cover .brand .ai { color: #E8960C; }
+.cover .tagline { color: #6b7280; font-size: 13px; margin-top: 8px; }
+.cover .mascot-img { width: 120px; margin: 40px 0; }
+.cover h1 { font-size: 26px; color: #1B4332; margin-bottom: 8px; }
+.cover .sub { color: #6b7280; font-size: 11px; }
+.cover .school-info { color: #9ca3af; font-size: 9px; margin-top: 40px; }
+
+/* Typography */
+h2 { font-size: 16px; color: #1B4332; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #E8960C; border-bottom-width: 2px; display: inline-block; }
+h3 { font-size: 12px; color: #1B4332; margin: 12px 0 4px; }
+p { margin: 4px 0 8px; color: #374151; }
+ul { margin: 4px 0 10px 16px; }
+li { margin: 2px 0; color: #374151; }
+
+/* Flow diagram */
+.flow { display: flex; align-items: center; gap: 6px; margin: 12px 0; flex-wrap: wrap; justify-content: center; }
+.flow-step { background: #ecfdf5; border: 1.5px solid #10b981; border-radius: 8px; padding: 8px 12px; text-align: center; min-width: 90px; }
+.flow-step .num { background: #1B4332; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; margin-bottom: 3px; }
+.flow-step .label { font-size: 9px; font-weight: 600; color: #1B4332; }
+.flow-step .desc { font-size: 7.5px; color: #6b7280; margin-top: 2px; }
+.flow-arrow { color: #d1d5db; font-size: 16px; }
+
+/* Feature grid */
+.feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.feature-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; border-left: 3px solid; }
+.feature-card.green { border-left-color: #10b981; }
+.feature-card.blue { border-left-color: #3b82f6; }
+.feature-card.violet { border-left-color: #8b5cf6; }
+.feature-card.amber { border-left-color: #f59e0b; }
+.feature-card.rose { border-left-color: #f43f5e; }
+.feature-card.cyan { border-left-color: #06b6d4; }
+.feature-card h4 { font-size: 9.5px; color: #111827; margin-bottom: 2px; }
+.feature-card p { font-size: 8px; color: #6b7280; margin: 0; }
+
+/* Nav tree */
+.nav-tree { margin: 10px 0; }
+.nav-tab { background: #f3f4f6; border-radius: 6px; margin: 6px 0; overflow: hidden; }
+.nav-tab-header { background: #1B4332; color: #fff; padding: 5px 10px; font-size: 10px; font-weight: 600; }
+.nav-tab-header.blue { background: #1e40af; }
+.nav-tab-header.violet { background: #5b21b6; }
+.nav-tab-body { padding: 6px 10px; }
+.nav-tab-body li { font-size: 8.5px; margin: 1px 0; }
+
+/* Steps */
+.steps { margin: 8px 0; }
+.step { display: flex; gap: 8px; margin: 5px 0; align-items: flex-start; }
+.step-num { background: #1B4332; color: #fff; min-width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; }
+.step-content { flex: 1; }
+.step-content strong { font-size: 9.5px; color: #111827; }
+.step-content span { font-size: 8.5px; color: #6b7280; display: block; }
+
+/* Tip/Warning boxes */
+.tip { background: #ecfdf5; border-left: 3px solid #10b981; padding: 6px 10px; margin: 8px 0; border-radius: 4px; font-size: 8.5px; color: #065f46; }
+.warn { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 6px 10px; margin: 8px 0; border-radius: 4px; font-size: 8.5px; color: #92400e; }
+
+/* TOC */
+.toc-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dotted #e5e7eb; }
+.toc-item span { font-size: 10px; }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="page">
+  <div class="cover">
+    <div class="brand">oakit<span class="ai">.ai</span></div>
+    <div class="tagline">Silver Oak Junior's AI Mentor</div>
+    <img src="OAKIE_PATH" class="mascot-img" alt="Oakie">
+    <h1>Teacher Guide</h1>
+    <div class="sub">Complete guide to using Oakit.ai in your classroom</div>
+    <div class="school-info">Silver Oak Juniors | AI-Integrated Preschool<br>oakit.silveroakjuniors.in | School Code: soj</div>
+  </div>
+</div>
+
+<!-- TOC -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>Table of Contents</h2>
+    <div style="margin-top:12px">
+      <div class="toc-item"><span><strong>1.</strong> App Overview & Daily Workflow</span></div>
+      <div class="toc-item"><span><strong>2.</strong> Getting Started (Login & Navigation)</span></div>
+      <div class="toc-item"><span><strong>3.</strong> Daily Plan & Completion</span></div>
+      <div class="toc-item"><span><strong>4.</strong> Oakie AI Chat</span></div>
+      <div class="toc-item"><span><strong>5.</strong> Attendance</span></div>
+      <div class="toc-item"><span><strong>6.</strong> Homework & Notes</span></div>
+      <div class="toc-item"><span><strong>7.</strong> Child Journey</span></div>
+      <div class="toc-item"><span><strong>8.</strong> Report Cards & Calendar</span></div>
+      <div class="toc-item"><span><strong>9.</strong> Class Performance & Other Features</span></div>
+      <div class="toc-item"><span><strong>10.</strong> Important Rules</span></div>
+    </div>
+  </div>
+  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 2</div>
+</div>
+
+<!-- PAGE 3: APP OVERVIEW -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>1. What You Can Do with Oakit</h2>
+    <p>Oakit is your AI-powered teaching platform. Everything you need in one app:</p>
+
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>View Daily Plans</h4><p>AI-generated lesson plans for each day based on your curriculum</p></div>
+      <div class="feature-card blue"><h4>Ask Oakie (AI Chat)</h4><p>Get teaching tips, activity ideas, and classroom management help</p></div>
+      <div class="feature-card violet"><h4>Mark Attendance</h4><p>One-tap daily attendance. Parents notified automatically</p></div>
+      <div class="feature-card amber"><h4>Send Homework & Notes</h4><p>Format and send homework, class notes to all parents</p></div>
+      <div class="feature-card rose"><h4>Child Journey</h4><p>Personalized daily notes per student sent to parents</p></div>
+      <div class="feature-card cyan"><h4>Class Performance</h4><p>Visual dashboard with stats, insights, and school comparison</p></div>
+    </div>
+
+    <h2>Your Daily Workflow</h2>
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">Mark Attendance</div><div class="desc">Morning, within 30 min</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">View Plan</div><div class="desc">Check today's topics</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Teach</div><div class="desc">Use Oakie for help</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">4</div><div class="label">Mark Done</div><div class="desc">Tick covered topics</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">5</div><div class="label">Send Updates</div><div class="desc">HW + Journey notes</div></div>
+    </div>
+
+    <h2>Navigation Structure</h2>
+    <div class="nav-tree">
+      <div class="nav-tab">
+        <div class="nav-tab-header">Plan Tab</div>
+        <div class="nav-tab-body"><ul>
+          <li>Today's lesson plan with topic checkboxes</li>
+          <li>Mark topics as covered, then "Mark as Done"</li>
+          <li>Raw Plan (full AI text) | Week Plan (PDF download)</li>
+          <li>Session Recorder | Pending Work from missed days</li>
+        </ul></div>
+      </div>
+      <div class="nav-tab">
+        <div class="nav-tab-header blue">Oakie Tab (Chat)</div>
+        <div class="nav-tab-body"><ul>
+          <li>Ask any curriculum or teaching question</li>
+          <li>Get activity ideas, games, songs, rhymes</li>
+          <li>Classroom management tips</li>
+          <li>Mic button for voice input</li>
+        </ul></div>
+      </div>
+      <div class="nav-tab">
+        <div class="nav-tab-header violet">Help Tab (Quick Links)</div>
+        <div class="nav-tab-body"><ul>
+          <li><strong>Attendance</strong> - Mark daily attendance</li>
+          <li><strong>Homework & Notes</strong> - Send homework, class notes, file attachments</li>
+          <li><strong>Child Journey</strong> - Daily highlights per student</li>
+          <li><strong>Report Cards</strong> - Generate term progress reports</li>
+          <li><strong>Calendar</strong> - Holidays and special days</li>
+          <li><strong>Class Performance</strong> - Stats and insights dashboard</li>
+          <li><strong>Students</strong> - Profiles and milestones</li>
+          <li><strong>Class Feed</strong> - Post photos for parents</li>
+          <li><strong>My HR</strong> - Salary, leave, documents</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 3</div>
+</div>
+
+<!-- PAGE 4: GETTING STARTED -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>2. Getting Started</h2>
+    <h3>Login Steps</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Open Chrome (Android) or Safari (iPhone)</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Go to: oakit.silveroakjuniors.in</strong><span>Type this in the address bar</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enter School Code: soj</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Enter your Mobile Number</strong><span>10-digit number registered with school</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Enter Password</strong><span>Default = your mobile number. Change in Settings.</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Tap Login</strong></div></div>
+    </div>
+
+    <h3>Save to Home Screen (works like an app!)</h3>
+    <ul>
+      <li><strong>Android:</strong> Tap 3-dot menu (top-right) &gt; "Add to Home screen" &gt; "Add"</li>
+      <li><strong>iPhone:</strong> Tap Share button (bottom) &gt; "Add to Home Screen" &gt; "Add"</li>
+    </ul>
+    <div class="tip">After saving to home screen, you can open Oakit directly from your phone like any other app.</div>
+
+    <h2>3. Daily Plan & Completion</h2>
+    <p>Every day, Oakie prepares a lesson plan based on your curriculum. The Plan tab shows what to teach today.</p>
+    <h3>What You See</h3>
+    <ul>
+      <li>Today's date, day name, and planned topics</li>
+      <li>Activity suggestions for each topic</li>
+      <li>Checkboxes to mark topics as covered</li>
+      <li>Pending work from previous days (if any)</li>
+    </ul>
+    <h3>How to Complete</h3>
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">Review</div><div class="desc">Check topics</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">Teach</div><div class="desc">Conduct class</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Tick</div><div class="desc">Mark covered</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">4</div><div class="label">Done</div><div class="desc">Mark as Done</div></div>
+    </div>
+    <div class="warn">You can only mark today or past days (up to 7 days back). Future dates are blocked.</div>
+  </div>
+  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 4</div>
+</div>
+
+<!-- PAGE 5: OAKIE + ATTENDANCE -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>4. Oakie AI Chat</h2>
+    <p>Your AI teaching assistant. Ask anything about curriculum, classroom management, or teaching strategies.</p>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>Curriculum Help</h4><p>Explain topics, suggest activities, provide resources</p></div>
+      <div class="feature-card blue"><h4>Classroom Management</h4><p>Handle crying, misbehavior, shy students, energy levels</p></div>
+      <div class="feature-card violet"><h4>Activity Ideas</h4><p>Games, songs, rhymes, art projects for any subject</p></div>
+      <div class="feature-card amber"><h4>Format & Beautify</h4><p>Format homework and notes for parents</p></div>
+    </div>
+    <h3>Example Questions</h3>
+    <ul>
+      <li>"What activities can I do for counting today?"</li>
+      <li>"How to handle a child who won't stop crying?"</li>
+      <li>"Give me a rhyme for the letter B"</li>
+      <li>"What should I do if a child finishes early?"</li>
+    </ul>
+    <div class="warn">Limit: 5 questions before marking completion. Complete the day to unlock more.</div>
+
+    <h2>5. Attendance</h2>
+    <h3>Process</h3>
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">Open</div><div class="desc">Help > Attendance</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">Mark</div><div class="desc">Present / Absent</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Submit</div><div class="desc">Parents notified</div></div>
+    </div>
+    <h3>Rules</h3>
+    <ul>
+      <li>Mark within 30 minutes of school start time</li>
+      <li>Once marked Present, cannot be changed to Absent</li>
+      <li>Late arrivals: mark absent first, update when they arrive</li>
+      <li>Cannot mark on weekends or holidays</li>
+      <li>Principal sees what time you marked</li>
+    </ul>
+  </div>
+  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 5</div>
+</div>
+
+<!-- PAGE 6: HOMEWORK + JOURNEY -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>6. Homework & Notes</h2>
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">Type/Dictate</div><div class="desc">Homework text</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">Format</div><div class="desc">Ask Oakie</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Send</div><div class="desc">To all parents</div></div>
+    </div>
+    <h3>3 Tabs Available</h3>
+    <ul>
+      <li><strong>Homework:</strong> Type, format with Oakie, send to parents. Track completion per student.</li>
+      <li><strong>Tracking:</strong> Mark each student as Done / Partial / Not Submitted</li>
+      <li><strong>Class Notes:</strong> Subject-specific notes with file attachments. Auto-delete after 14 days.</li>
+    </ul>
+    <div class="tip">Use the mic button to dictate notes quickly instead of typing.</div>
+
+    <h2>7. Child Journey</h2>
+    <p>Send personalized daily updates about each child to their parents.</p>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>Individual Notes</h4><p>Write per student, beautify with Oakie, choose Daily/Weekly/Highlight</p></div>
+      <div class="feature-card blue"><h4>Generic Class Note</h4><p>One note for all students. Save & Send All at once.</p></div>
+      <div class="feature-card violet"><h4>History Tab</h4><p>View, edit, delete past entries. Send unsent to parents.</p></div>
+      <div class="feature-card amber"><h4>Save & Send</h4><p>Save Only (history) or Save & Send (notifies parents immediately)</p></div>
+    </div>
+    <div class="tip">Parents love daily updates. Even "Had a great day!" makes a difference.</div>
+  </div>
+  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 6</div>
+</div>
+
+<!-- PAGE 7: REPORTS + CALENDAR + PERFORMANCE + RULES -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Silver Oak Junior's AI Mentor</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>8. Report Cards & Calendar</h2>
+    <h3>Observations (for Report Cards)</h3>
+    <ul>
+      <li>Child Journey &gt; Report Readiness tab</li>
+      <li>Categories: Cognitive, Language, Social, Emotional, Motor Skills, Creativity, Participation, Peer, Behavior</li>
+      <li>System alerts if students are missing observations</li>
+    </ul>
+    <h3>Calendar</h3>
+    <ul>
+      <li>Monthly view: <span style="color:#10b981">Green</span>=completed, <span style="color:#f59e0b">Amber</span>=missed, <span style="color:#ef4444">Red</span>=holiday, <span style="color:#3b82f6">Blue</span>=special</li>
+      <li>Tap any day for details. Upcoming events listed below.</li>
+    </ul>
+
+    <h2>9. Class Performance & Other Features</h2>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>Class Performance</h4><p>Stats, timing graph, parent engagement, school comparison</p></div>
+      <div class="feature-card blue"><h4>Students & Milestones</h4><p>Profiles, contacts, developmental milestone tracking</p></div>
+      <div class="feature-card violet"><h4>Class Feed</h4><p>Post photos from activities. Parents see in their feed.</p></div>
+      <div class="feature-card amber"><h4>My HR</h4><p>Salary slips, leave requests, offer letters, documents</p></div>
+    </div>
+
+    <h2>10. Important Rules</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+      <div>
+        <h3 style="color:#065f46">Do's</h3>
+        <ul>
+          <li>Mark attendance before 10:00 AM</li>
+          <li>Complete plan before leaving school</li>
+          <li>Send child journey notes weekly</li>
+          <li>Use Oakie for teaching help</li>
+          <li>Change password from default</li>
+          <li>Check calendar for holidays</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="color:#9f1239">Don'ts</h3>
+        <ul>
+          <li>No homework on weekends/holidays</li>
+          <li>Never share login credentials</li>
+          <li>No future date attendance</li>
+          <li>No negative language in notes</li>
+          <li>Never skip marking completion</li>
+        </ul>
+      </div>
+    </div>
+    <div class="warn" style="margin-top:12px">Your principal can see your attendance timing, plan completion rate, and teaching streak. Consistency is tracked and visible.</div>
+  </div>
+  <div class="footer">oakit.ai | Silver Oak Junior's AI Mentor | Teacher Guide | Page 7</div>
+</div>
+
+</body>
+</html>
