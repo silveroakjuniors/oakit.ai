@@ -690,7 +690,7 @@ function BulkActivateParentsModal({
 function ImportModal({ token, onClose, onImported }: { token: string; onClose: () => void; onImported: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ created: number; skipped: any[] } | null>(null);
+  const [result, setResult] = useState<{ total?: number; created: number; updated?: number; skipped: any[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function downloadTemplate() {
@@ -728,7 +728,7 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
         <div className="px-5 py-4">
           {!result ? (
             <>
-              <p className="text-xs text-gray-500 mb-1">Columns: student name, father name, mother name, section, class, parent contact number, mother contact number</p>
+              <p className="text-xs text-gray-500 mb-1">Columns: student name, father name, mother name, section, class, father contact number, mother contact number</p>
               <button onClick={downloadTemplate} className="text-xs text-primary hover:underline mb-4 block">↓ Download template</button>
               <div className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center cursor-pointer mb-4" onClick={() => fileRef.current?.click()}>
                 <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
@@ -741,8 +741,15 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
             </>
           ) : (
             <>
-              <p className="text-sm text-emerald-700 mb-2">✓ {result.created} students imported</p>
-              {result.skipped.length > 0 && <ul className="text-xs text-gray-500 list-disc pl-4 max-h-28 overflow-y-auto mb-4">{result.skipped.map((s: any, i: number) => <li key={i}>{s.studentName}: {s.reason}</li>)}</ul>}
+              {result.total && <p className="text-xs text-gray-400 mb-1">Total rows in file: {result.total}</p>}
+              <p className="text-sm text-emerald-700 mb-1">{result.created} new students inserted</p>
+              {(result.updated || 0) > 0 && <p className="text-sm text-blue-600 mb-1">{result.updated} existing students updated</p>}
+              {result.skipped.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs text-amber-600 font-medium mb-1">{result.skipped.length} skipped:</p>
+                  <ul className="text-xs text-gray-500 list-disc pl-4 max-h-28 overflow-y-auto">{result.skipped.map((s: any, i: number) => <li key={i}>{s.studentName}: {s.reason}</li>)}</ul>
+                </div>
+              )}
               <Button onClick={onClose} className="w-full">Done</Button>
             </>
           )}
@@ -1407,6 +1414,19 @@ export default function StudentsPage() {
             Login Cards
           </button>
           <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>Import</Button>
+          <Button variant="secondary" size="sm" onClick={async () => {
+            const params = new URLSearchParams();
+            if (filterClass) params.set('class_id', filterClass);
+            if (filterSection) params.set('section_id', filterSection);
+            const res = await fetch(`${API_BASE}/api/v1/admin/students/export?${params.toString()}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) { alert('Export failed'); return; }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'students_export.xlsx'; a.click();
+            URL.revokeObjectURL(url);
+          }}>Export</Button>
           <Button size="sm" onClick={() => setShowAdd(true)}>+ Add</Button>
         </div>
       </div>

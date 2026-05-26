@@ -69,7 +69,7 @@ async function main() {
   `, [SCHOOL_CODE]);
 
   if (result.rows.length === 0) {
-    console.error('No students/parents found for school code:', SCHOOL_CODE);
+    console.error('No activated parent logins found for school code:', SCHOOL_CODE);
     process.exit(1);
   }
 
@@ -150,62 +150,61 @@ async function main() {
 }
 
 function drawFrontCard(doc, x, y, student) {
-  // Card border with subtle shadow effect
+  // Card border
   doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
 
-  // Header bar with logo area
-  doc.rect(x, y, CARD_W, 24).fill('#1B4332');
-  
-  // Logo text (top-left) - "oakit" in white, ".ai" in dark yellow
-  doc.fillColor('white').fontSize(8).font('Helvetica-Bold')
-    .text('oakit', x + MARGIN, y + 5, { continued: true });
+  // Header bar
+  doc.rect(x, y, CARD_W, 22).fill('#1B4332');
+  doc.fillColor('white').fontSize(7).font('Helvetica-Bold')
+    .text('oakit', x + MARGIN, y + 4, { continued: true });
   doc.fillColor('#E8960C').text('.ai');
-  doc.fillColor('#86efac').fontSize(5.5).font('Helvetica')
-    .text(SCHOOL_NAME, x + MARGIN, y + 15);
-
-  // "Your AI Mentor" badge (top-right)
+  doc.fillColor('#86efac').fontSize(5).font('Helvetica')
+    .text(SCHOOL_NAME, x + MARGIN, y + 13);
   doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold')
-    .text('Oakie - Your AI Mentor', x + CARD_W - 85, y + 9, { width: 77, align: 'right' });
+    .text('Oakie - Your AI Mentor', x + CARD_W - 80, y + 8, { width: 72, align: 'right' });
 
-  // Student name - CENTERED and prominent
-  let ty = y + 32;
+  // Student name - centered, full width
+  let ty = y + 28;
   doc.fillColor('#1B4332').fontSize(11).font('Helvetica-Bold')
     .text(student.student_name, x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
   ty += 14;
   doc.fillColor('#6b7280').fontSize(7).font('Helvetica')
     .text(`${student.class_name} - Section ${student.section_label}`, x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
-  ty += 14;
+  ty += 12;
 
   // Divider
-  doc.moveTo(x + MARGIN + 20, ty).lineTo(x + CARD_W - MARGIN - 20, ty).lineWidth(0.3).stroke('#e5e7eb');
-  ty += 8;
+  doc.moveTo(x + MARGIN, ty).lineTo(x + CARD_W - MARGIN, ty).lineWidth(0.3).stroke('#e5e7eb');
+  ty += 6;
 
-  // Login details - left side
-  doc.fillColor('#374151').fontSize(6).font('Helvetica-Bold').text('PARENT LOGIN', x + MARGIN, ty);
-  ty += 10;
+  // --- LEFT: Oakie mascot (head aligns with PARENT LOGIN) ---
+  try {
+    if (fs.existsSync(OAKIE_PATH)) {
+      doc.image(OAKIE_PATH, x + 4, ty - 4, { width: 72, height: 72 });
+    }
+  } catch { /* skip if not found */ }
+
+  // --- RIGHT: Parent login details (pushed right) ---
+  const rightX = x + 82;
+  const rightW = CARD_W - 88;
+
+  doc.fillColor('#374151').fontSize(5.5).font('Helvetica-Bold').text('PARENT LOGIN', rightX, ty);
+  ty += 9;
 
   for (const parent of student.parents) {
     doc.fillColor('#111827').fontSize(7).font('Helvetica-Bold')
-      .text(parent.name, x + MARGIN, ty);
+      .text(parent.name, rightX, ty, { width: rightW });
     ty += 9;
-    doc.fillColor('#1B4332').fontSize(7).font('Helvetica')
-      .text(`Mobile: ${parent.mobile}  |  Password: ${parent.mobile}`, x + MARGIN, ty);
+    doc.fillColor('#1B4332').fontSize(6).font('Helvetica')
+      .text(`${parent.mobile} | Pass: ${parent.mobile}`, rightX, ty, { width: rightW });
     ty += 11;
   }
 
   // Footer with URL
-  doc.rect(x, y + CARD_H - 16, CARD_W, 16).fill('#f0fdf4');
-  doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold')
-    .text(APP_URL, x + MARGIN, y + CARD_H - 12, { width: (CARD_W - MARGIN * 2) / 2 });
-  doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica')
-    .text(`Code: ${SCHOOL_CODE}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
-
-  // Oakie mascot (right side, larger)
-  try {
-    if (fs.existsSync(OAKIE_PATH)) {
-      doc.image(OAKIE_PATH, x + CARD_W - 62, y + CARD_H - 75, { width: 55, height: 55 });
-    }
-  } catch { /* skip if not found */ }
+  doc.rect(x, y + CARD_H - 14, CARD_W, 14).fill('#f0fdf4');
+  doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold')
+    .text(APP_URL, x + MARGIN, y + CARD_H - 11);
+  doc.fillColor('#6b7280').fontSize(5).font('Helvetica')
+    .text(`Code: ${SCHOOL_CODE}`, x + CARD_W - 55, y + CARD_H - 11, { width: 47, align: 'right' });
 }
 
 function drawBackCard(doc, x, y) {

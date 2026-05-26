@@ -172,6 +172,78 @@ router.get('/', roleGuard('admin', 'principal'), async (req: Request, res: Respo
   }
 });
 
+// - GET /api/v1/admin/students/export -
+router.get('/export', roleGuard('admin'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, section_id } = req.query;
+
+    let query = `
+      SELECT s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+             s.date_of_birth, s.is_active,
+             c.name as class_name, sec.label as section_label
+      FROM students s
+      JOIN classes c ON c.id = s.class_id
+      JOIN sections sec ON sec.id = s.section_id
+      WHERE s.school_id = $1
+    `;
+    const params: any[] = [school_id];
+
+    if (class_id) {
+      params.push(class_id);
+      query += ` AND s.class_id = $${params.length}`;
+    }
+    if (section_id) {
+      params.push(section_id);
+      query += ` AND s.section_id = $${params.length}`;
+    }
+
+    query += ' ORDER BY c.name, sec.label, s.name';
+
+    const result = await pool.query(query, params);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Students');
+
+    ws.columns = [
+      { header: 'Student Name', width: 24 },
+      { header: 'Class', width: 12 },
+      { header: 'Section', width: 10 },
+      { header: 'Father Name', width: 22 },
+      { header: 'Mother Name', width: 22 },
+      { header: 'Father Contact Number', width: 20 },
+      { header: 'Mother Contact Number', width: 20 },
+      { header: 'Date of Birth', width: 14 },
+      { header: 'Status', width: 10 },
+    ];
+
+    // Style header row
+    ws.getRow(1).font = { bold: true };
+
+    for (const row of result.rows) {
+      ws.addRow([
+        row.name,
+        row.class_name,
+        row.section_label,
+        row.father_name || '',
+        row.mother_name || '',
+        row.parent_contact || '',
+        row.mother_contact || '',
+        row.date_of_birth || '',
+        row.is_active ? 'Active' : 'Inactive',
+      ]);
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="students_export.xlsx"');
+    const buf = await wb.xlsx.writeBuffer();
+    return res.send(buf);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // - GET /api/v1/admin/students/import/template -
 router.get('/import/template', roleGuard('admin'), async (_req: Request, res: Response) => {
   const wb = new ExcelJS.Workbook();
@@ -182,7 +254,7 @@ router.get('/import/template', roleGuard('admin'), async (_req: Request, res: Re
     { header: 'mother name', width: 20 },
     { header: 'section', width: 10 },
     { header: 'class', width: 12 },
-    { header: 'parent contact number', width: 22 },
+    { header: 'father contact number', width: 22 },
     { header: 'mother contact number', width: 22 },
   ];
   ws.addRow(['Aarav Sharma', 'Rajesh Sharma', 'Priya Sharma', 'A', 'UKG', '9876543210', '9876543211']);
@@ -238,7 +310,7 @@ headers.forEach((h, i) => {
     colMap.class = i;
   }
 
-  else if (n === 'parentcontactnumber') {
+  else if (n === 'parentcontactnumber' || n === 'fathercontactnumber') {
     colMap.parent_contact = i;
   }
 
@@ -251,6 +323,26 @@ headers.forEach((h, i) => {
     if (colMap.class === undefined) return res.status(400).json({ error: 'Column "class" not found in file' });
     if (colMap.section === undefined) return res.status(400).json({ error: 'Column "section" not found in file' });
 
+    // Validate ALL required columns are present
+    const requiredColumns: { key: string; label: string }[] = [
+      { key: 'student_name', label: 'student name' },
+      { key: 'father_name', label: 'father name' },
+      { key: 'mother_name', label: 'mother name' },
+      { key: 'section', label: 'section' },
+      { key: 'class', label: 'class' },
+      { key: 'parent_contact', label: 'father contact number' },
+      { key: 'mother_contact', label: 'mother contact number' },
+    ];
+
+    const missingColumns = requiredColumns
+      .filter(col => colMap[col.key] === undefined)
+      .map(col => `"${col.label}"`);
+
+    if (missingColumns.length > 0) {
+      return res.status(400).json({
+        error: `Missing required columns: ${missingColumns.join(', ')}. Please use the import template with all required headers: student name, father name, mother name, section, class, father contact number, mother contact number.`
+      });
+    }
     const rows: any[][] = [];
     ws.eachRow((row, rowNum) => {
       if (rowNum === 1) return; // skip header
@@ -262,6 +354,7 @@ headers.forEach((h, i) => {
     if (rows.length === 0) return res.status(400).json({ error: 'File is empty or has no data rows' });
 
     let created = 0;
+    let updated = 0;
     const skipped: any[] = [];
 
     for (const row of rows) {
@@ -291,58 +384,66 @@ headers.forEach((h, i) => {
       if (sectionRow.rows.length === 0) { skipped.push({ studentName, reason: `Section '${sectionLabel}' not found in class '${className}'` }); continue; }
 
 try {
-  // Check if student already exists
+  // Check for duplicate: match on name + father name + mother name (contact numbers may vary between imports)
   const existingStudent = await pool.query(
-    `SELECT id
+    `SELECT id, class_id, section_id
      FROM students
      WHERE school_id = $1
-       AND LOWER(name) = LOWER($2)
-       AND class_id = $3
-       AND section_id = $4
+       AND LOWER(TRIM(name)) = LOWER($2)
+       AND LOWER(COALESCE(TRIM(father_name), '')) = LOWER($3)
+       AND LOWER(COALESCE(TRIM(mother_name), '')) = LOWER($4)
      LIMIT 1`,
     [
       school_id,
-      studentName,
-      classRow.rows[0].id,
-      sectionRow.rows[0].id
+      studentName.toLowerCase(),
+      (fatherName || '').toLowerCase(),
+      (motherName || '').toLowerCase()
     ]
   );
 
   if (existingStudent.rows.length > 0) {
-    // UPDATE existing student
+    const existing = existingStudent.rows[0];
+    if (existing.class_id !== classRow.rows[0].id || existing.section_id !== sectionRow.rows[0].id) {
+      // Student exists in a different class/section - reject
+      skipped.push({ studentName, reason: `Duplicate student already exists in a different class/section. Use student management to transfer.` });
+      continue;
+    }
+    // Same class/section - update contact details
     await pool.query(
       `UPDATE students
-       SET father_name = $1,
-           mother_name = $2,
-           parent_contact = $3,
-           mother_contact = $4
+       SET parent_contact = COALESCE(NULLIF($1, ''), parent_contact),
+           mother_contact = COALESCE(NULLIF($2, ''), mother_contact),
+           father_name = COALESCE(NULLIF($3, ''), father_name),
+           mother_name = COALESCE(NULLIF($4, ''), mother_name)
        WHERE id = $5`,
       [
-        fatherName || null,
-        motherName || null,
-        parentContact || null,
-        motherContact || null,
-        existingStudent.rows[0].id
+        parentContact || '',
+        motherContact || '',
+        fatherName || '',
+        motherName || '',
+        existing.id
       ]
     );
-  } else {
-    // INSERT new student
-    await pool.query(
-      `INSERT INTO students
-       (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        school_id,
-        classRow.rows[0].id,
-        sectionRow.rows[0].id,
-        studentName,
-        fatherName || null,
-        motherName || null,
-        parentContact || null,
-        motherContact || null
-      ]
-    );
+    updated++;
+    continue;
   }
+
+  // INSERT new student
+  await pool.query(
+    `INSERT INTO students
+     (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      school_id,
+      classRow.rows[0].id,
+      sectionRow.rows[0].id,
+      studentName,
+      fatherName || null,
+      motherName || null,
+      parentContact || null,
+      motherContact || null
+    ]
+  );
 
   created++;
 
@@ -351,7 +452,7 @@ try {
 }
     }
 
-    return res.json({ created, skipped });
+    return res.json({ total: rows.length, created, updated, skipped });
   } catch (err: unknown) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1882,35 +1983,36 @@ router.get('/login-cards', async (req: Request, res: Response) => {
     const school = schoolRow.rows[0] || { name: 'School', subdomain: '' };
     const APP_URL = 'oakit.silveroakjuniors.in';
 
-    // Build query
+    // Build query - get ALL students with contact numbers (not just those with activated parent logins)
     let query = `
       SELECT s.name AS student_name, c.name AS class_name, sec.label AS section_label,
-             s.father_name, s.mother_name, pu.mobile AS parent_mobile, pu.name AS parent_name
+             s.father_name, s.mother_name, s.parent_contact, s.mother_contact
       FROM students s
       JOIN sections sec ON sec.id = s.section_id
       JOIN classes c ON c.id = sec.class_id
-      JOIN parent_student_links psl ON psl.student_id = s.id
-      JOIN parent_users pu ON pu.id = psl.parent_id
-      WHERE s.is_active = true AND pu.is_active = true AND s.school_id = $1
+      WHERE s.is_active = true AND s.school_id = $1
+        AND ((s.parent_contact IS NOT NULL AND s.parent_contact != '')
+             OR (s.mother_contact IS NOT NULL AND s.mother_contact != ''))
     `;
     const params: any[] = [school_id];
     if (section_id) { params.push(section_id); query += ` AND s.section_id = $${params.length}`; }
     else if (class_id) { params.push(class_id); query += ` AND sec.class_id = $${params.length}`; }
-    query += ' ORDER BY c.name, sec.label, s.name, pu.name';
+    query += ' ORDER BY c.name, sec.label, s.name';
 
     const result = await pool.query(query, params);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'No parent accounts found for the selected class/section' });
+    if (result.rows.length === 0) return res.status(404).json({ error: 'No students with contact numbers found for the selected class/section' });
 
-    // Group by student
-    const studentMap = new Map<string, any>();
-    for (const row of result.rows) {
-      const key = row.student_name + '|' + row.class_name + '|' + row.section_label;
-      if (!studentMap.has(key)) {
-        studentMap.set(key, { ...row, parents: [] });
+    // Build student cards with parent info from student record
+    const students = result.rows.map((row: any) => {
+      const parents: { name: string; mobile: string }[] = [];
+      if (row.parent_contact) {
+        parents.push({ name: row.father_name || 'Father', mobile: row.parent_contact });
       }
-      studentMap.get(key).parents.push({ name: row.parent_name, mobile: row.parent_mobile });
-    }
-    const students = Array.from(studentMap.values());
+      if (row.mother_contact) {
+        parents.push({ name: row.mother_name || 'Mother', mobile: row.mother_contact });
+      }
+      return { ...row, parents };
+    });
 
     // Generate PDF
     const PDFDocument = require('pdfkit');
@@ -1964,13 +2066,7 @@ router.get('/login-cards', async (req: Request, res: Response) => {
       doc.rect(x, y + CARD_H - 16, CARD_W, 16).fill('#f0fdf4');
       doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text(APP_URL, x + M, y + CARD_H - 12);
       doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica').text(`Code: ${school.subdomain}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
-      // Oakie mascot (larger)
-      try {
-        const oakiePath = require('path').resolve(__dirname, '../../public/oakie.png');
-        if (require('fs').existsSync(oakiePath)) {
-          doc.image(oakiePath, x + CARD_W - 62, y + CARD_H - 75, { width: 55, height: 55 });
-        }
-      } catch { /* skip - image not available on server */ }
+      // Oakie mascot - skip in API (image may not be available)
       cardIdx++;
     }
 
@@ -1985,16 +2081,8 @@ router.get('/login-cards', async (req: Request, res: Response) => {
         const y = PAGE_MARGIN + row * (CARD_H + 10);
 
         doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
-        let ty = y + M;
-
-        // School logo
-        try {
-          const logoPath = require('path').resolve(__dirname, '../../public/school-logo.png');
-          if (require('fs').existsSync(logoPath)) {
-            doc.image(logoPath, x + (CARD_W - 40) / 2, ty, { width: 40, height: 40 });
-            ty += 44;
-          }
-        } catch { /* skip logo */ }
+        // School logo - skip in API (image may not be available)
+        let ty = y + M + 10;
 
         // Branding
         doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold').text(school.name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
