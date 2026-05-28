@@ -28,26 +28,40 @@ router.get('/revenue', async (req, res) => {
   try {
     const schoolId = req.user!.school_id;
     const { from, to } = req.query as Record<string, string>;
+
+    // Get total pending from student_fee_accounts (no join needed)
+    const pendingResult = await pool.query(
+      `SELECT
+         COALESCE(SUM(outstanding_balance), 0) AS total_pending,
+         COALESCE(SUM(assigned_amount), 0) AS total_assigned
+       FROM student_fee_accounts
+       WHERE school_id = $1 AND deleted_at IS NULL`,
+      [schoolId]
+    );
+
+    // Get total collected from fee_payments
     const params: any[] = [schoolId];
     let idx = 2;
     let dateFilter = '';
-    if (from) { dateFilter += ` AND fp.payment_date >= $${idx++}`; params.push(from); }
-    if (to)   { dateFilter += ` AND fp.payment_date <= $${idx++}`; params.push(to); }
-    const result = await pool.query(
-      `SELECT
-         COALESCE(SUM(fp.amount), 0) AS total_collected,
-         COALESCE(SUM(sfa.outstanding_balance), 0) AS total_pending,
-         CASE WHEN SUM(sfa.assigned_amount) > 0
-              THEN ROUND(SUM(fp.amount) / SUM(sfa.assigned_amount) * 100, 2)
-              ELSE 0 END AS collection_rate
-       FROM student_fee_accounts sfa
-       LEFT JOIN fee_payments fp ON fp.fee_head_id = sfa.fee_head_id
-         AND fp.student_id = sfa.student_id AND fp.school_id = sfa.school_id
-         AND fp.deleted_at IS NULL${dateFilter}
-       WHERE sfa.school_id = $1 AND sfa.deleted_at IS NULL`,
+    if (from) { dateFilter += ` AND payment_date >= $${idx++}`; params.push(from); }
+    if (to)   { dateFilter += ` AND payment_date <= $${idx++}`; params.push(to); }
+    const collectedResult = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total_collected
+       FROM fee_payments
+       WHERE school_id = $1 AND deleted_at IS NULL${dateFilter}`,
       params
     );
-    return res.json(result.rows[0]);
+
+    const totalPending = parseFloat(pendingResult.rows[0].total_pending);
+    const totalAssigned = parseFloat(pendingResult.rows[0].total_assigned);
+    const totalCollected = parseFloat(collectedResult.rows[0].total_collected);
+    const collectionRate = totalAssigned > 0 ? Math.round((totalCollected / totalAssigned) * 10000) / 100 : 0;
+
+    return res.json({
+      total_collected: totalCollected,
+      total_pending: totalPending,
+      collection_rate: collectionRate,
+    });
   } catch (err) {
     console.error('[reports GET /revenue]', err);
     return res.status(500).json({ error: 'Internal server error' });
