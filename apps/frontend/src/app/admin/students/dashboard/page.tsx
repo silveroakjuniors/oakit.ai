@@ -20,11 +20,22 @@ interface ClassRow {
   with_mother: number;
   with_father_contact: number;
   with_mother_contact: number;
+  parents_activated: number;
+  parents_logged_in: number;
+  parents_not_logged_in: number;
   sections: SectionCount[];
+}
+
+interface ParentStats {
+  activated: number;
+  logged_in: number;
+  not_logged_in: number;
+  not_activated: number;
 }
 
 interface DashboardData {
   total_students: number;
+  parent_stats: ParentStats;
   by_class: ClassRow[];
 }
 
@@ -32,6 +43,18 @@ interface ClassOption {
   id: string;
   name: string;
   sections: { id: string; label: string }[];
+}
+
+interface StudentDetail {
+  id: string;
+  name: string;
+  father_name: string;
+  mother_name: string;
+  parent_contact: string;
+  mother_contact: string;
+  class_name: string;
+  section_label: string;
+  last_login?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -58,7 +81,15 @@ export default function StudentsDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Export filters
+  // Filters
+  const [filterClassId, setFilterClassId] = useState('');
+
+  // Detail modal
+  const [detailStatus, setDetailStatus] = useState<string | null>(null);
+  const [detailStudents, setDetailStudents] = useState<StudentDetail[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // Export
   const [exportClassId, setExportClassId] = useState('');
   const [exportSectionId, setExportSectionId] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -71,12 +102,12 @@ export default function StudentsDashboardPage() {
     try {
       const [dashRes, clsRes] = await Promise.all([
         fetch(`${API_BASE}/api/v1/admin/students/dashboard`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_BASE}/api/v1/admin/classes`,            { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE}/api/v1/admin/classes`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       const dashData = await dashRes.json();
-      const clsData  = await clsRes.json();
-      if (!dashRes.ok) throw new Error(dashData.detail || dashData.error || `Dashboard error ${dashRes.status}`);
-      if (!clsRes.ok)  throw new Error(clsData.detail  || clsData.error  || `Classes error ${clsRes.status}`);
+      const clsData = await clsRes.json();
+      if (!dashRes.ok) throw new Error(dashData.error || 'Dashboard error');
+      if (!clsRes.ok) throw new Error(clsData.error || 'Classes error');
       setData(dashData);
       setClasses(clsData);
     } catch (e: unknown) {
@@ -88,35 +119,39 @@ export default function StudentsDashboardPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const selectedClass = classes.find(c => c.id === exportClassId);
+  async function loadDetails(status: string) {
+    setDetailStatus(status);
+    setDetailLoading(true);
+    try {
+      const params = new URLSearchParams({ status });
+      if (filterClassId) params.set('class_id', filterClassId);
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/dashboard/details?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed');
+      setDetailStudents(d);
+    } catch { setDetailStudents([]); }
+    finally { setDetailLoading(false); }
+  }
 
   async function handleExport() {
     setExporting(true);
     try {
       const params = new URLSearchParams();
-      if (exportClassId)   params.set('class_id',   exportClassId);
+      if (exportClassId) params.set('class_id', exportClassId);
       if (exportSectionId) params.set('section_id', exportSectionId);
-      const qs = params.toString() ? `?${params.toString()}` : '';
-
-      const res = await fetch(`${API_BASE}/api/v1/admin/students/export${qs}`, {
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/export?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error || 'Export failed');
-      }
+      if (!res.ok) throw new Error('Export failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `students_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      a.click();
+      a.href = url; a.download = `students_export_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Export failed');
-    } finally {
-      setExporting(false);
-    }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Export failed'); }
+    finally { setExporting(false); }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -126,7 +161,7 @@ export default function StudentsDashboardPage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-[#1B4332] border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Loading dashboard…</p>
+          <p className="text-sm text-gray-500">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -135,72 +170,151 @@ export default function StudentsDashboardPage() {
   if (error) {
     return (
       <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm text-red-700 whitespace-pre-wrap">{error}</div>
+        <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm text-red-700">{error}</div>
       </div>
     );
   }
 
   const totalStudents = data?.total_students ?? 0;
+  const ps = data?.parent_stats ?? { activated: 0, logged_in: 0, not_logged_in: 0, not_activated: 0 };
+
+  // Filter by class if selected
+  const filteredClasses = filterClassId
+    ? (data?.by_class ?? []).filter(c => c.class_id === filterClassId)
+    : (data?.by_class ?? []);
+
+  // Compute filtered parent stats
+  const filteredPS = filterClassId
+    ? {
+        activated: filteredClasses.reduce((s, c) => s + c.parents_activated, 0),
+        logged_in: filteredClasses.reduce((s, c) => s + c.parents_logged_in, 0),
+        not_logged_in: filteredClasses.reduce((s, c) => s + c.parents_not_logged_in, 0),
+        not_activated: filteredClasses.reduce((s, c) => s + (c.total_students - c.parents_activated), 0),
+      }
+    : ps;
+
+  const filteredTotal = filterClassId
+    ? filteredClasses.reduce((s, c) => s + c.total_students, 0)
+    : totalStudents;
+
+  const selectedClass = classes.find(c => c.id === exportClassId);
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Students Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Enrolment overview by class and section</p>
+          <p className="text-sm text-gray-500 mt-0.5">Enrolment and parent activation overview</p>
         </div>
-        <a
-          href="/admin/students"
-          className="text-sm text-[#1B4332] hover:underline font-medium"
-        >
-          ← All Students
+        <a href="/admin/students" className="text-sm text-[#1B4332] hover:underline font-medium">
+          &larr; All Students
         </a>
       </div>
 
-      {/* ── Total stat card ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="col-span-2 sm:col-span-1 bg-[#1B4332] text-white rounded-2xl px-5 py-4">
-          <p className="text-xs font-medium opacity-70 uppercase tracking-wide">Total Students</p>
-          <p className="text-4xl font-bold mt-1">{totalStudents}</p>
-          <p className="text-xs opacity-60 mt-1">Active enrolments</p>
-        </div>
-        <div className="bg-white border border-gray-100 rounded-2xl px-5 py-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Classes</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">{data?.by_class.length ?? 0}</p>
-          <p className="text-xs text-gray-400 mt-1">With students</p>
-        </div>
-        <div className="bg-white border border-gray-100 rounded-2xl px-5 py-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Father Contact</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">
-            {data?.by_class.reduce((s, c) => s + c.with_father_contact, 0) ?? 0}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            {pct(data?.by_class.reduce((s, c) => s + c.with_father_contact, 0) ?? 0, totalStudents)}% filled
-          </p>
-        </div>
-        <div className="bg-white border border-gray-100 rounded-2xl px-5 py-4 shadow-sm">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Mother Contact</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">
-            {data?.by_class.reduce((s, c) => s + c.with_mother_contact, 0) ?? 0}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            {pct(data?.by_class.reduce((s, c) => s + c.with_mother_contact, 0) ?? 0, totalStudents)}% filled
-          </p>
-        </div>
+      {/* Class Filter */}
+      <div className="flex items-center gap-3">
+        <label className="text-xs font-medium text-gray-600">Filter by Class:</label>
+        <select
+          value={filterClassId}
+          onChange={e => setFilterClassId(e.target.value)}
+          className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#1B4332]/40"
+        >
+          <option value="">All Classes</option>
+          {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </div>
 
-      {/* ── Export card ── */}
+      {/* Parent Status Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="bg-[#1B4332] text-white rounded-2xl px-4 py-4">
+          <p className="text-xs font-medium opacity-70 uppercase tracking-wide">Total Students</p>
+          <p className="text-3xl font-bold mt-1">{filteredTotal}</p>
+          <p className="text-xs opacity-60 mt-1">Active</p>
+        </div>
+        <button
+          onClick={() => loadDetails('activated')}
+          className="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm text-left hover:border-emerald-300 transition-colors"
+        >
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Activated</p>
+          <p className="text-3xl font-bold text-emerald-700 mt-1">{filteredPS.activated}</p>
+          <p className="text-xs text-gray-400 mt-1">{pct(filteredPS.activated, filteredTotal)}% of students</p>
+        </button>
+        <button
+          onClick={() => loadDetails('logged_in')}
+          className="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm text-left hover:border-blue-300 transition-colors"
+        >
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Logged In</p>
+          <p className="text-3xl font-bold text-blue-700 mt-1">{filteredPS.logged_in}</p>
+          <p className="text-xs text-gray-400 mt-1">{pct(filteredPS.logged_in, filteredTotal)}% of students</p>
+        </button>
+        <button
+          onClick={() => loadDetails('not_logged_in')}
+          className="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm text-left hover:border-amber-300 transition-colors"
+        >
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Not Logged In</p>
+          <p className="text-3xl font-bold text-amber-600 mt-1">{filteredPS.not_logged_in}</p>
+          <p className="text-xs text-gray-400 mt-1">Activated but never used</p>
+        </button>
+        <button
+          onClick={() => loadDetails('not_activated')}
+          className="bg-white border border-gray-100 rounded-2xl px-4 py-4 shadow-sm text-left hover:border-red-300 transition-colors"
+        >
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Not Activated</p>
+          <p className="text-3xl font-bold text-red-600 mt-1">{filteredPS.not_activated}</p>
+          <p className="text-xs text-gray-400 mt-1">No parent login created</p>
+        </button>
+      </div>
+
+      {/* Detail Modal */}
+      {detailStatus && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-800 capitalize">
+              {detailStatus.replace(/_/g, ' ')} Students ({detailStudents.length})
+            </h3>
+            <button onClick={() => setDetailStatus(null)} className="text-xs text-gray-400 hover:text-gray-600">Close</button>
+          </div>
+          {detailLoading ? (
+            <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
+          ) : detailStudents.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4 text-center">No students found</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Student</th>
+                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Class</th>
+                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Father</th>
+                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Mother</th>
+                    {detailStatus === 'logged_in' && <th className="text-left px-2 py-1.5 font-medium text-gray-600">Last Login</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailStudents.map(s => (
+                    <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50">
+                      <td className="px-2 py-1.5 font-medium text-gray-900">{s.name}</td>
+                      <td className="px-2 py-1.5 text-gray-500">{s.class_name} {s.section_label}</td>
+                      <td className="px-2 py-1.5 text-gray-500">{s.father_name || '-'} <span className="text-gray-400">{s.parent_contact || ''}</span></td>
+                      <td className="px-2 py-1.5 text-gray-500">{s.mother_name || '-'} <span className="text-gray-400">{s.mother_contact || ''}</span></td>
+                      {detailStatus === 'logged_in' && <td className="px-2 py-1.5 text-gray-400">{s.last_login ? new Date(s.last_login).toLocaleDateString() : '-'}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Export Card */}
       <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
         <h2 className="text-sm font-semibold text-gray-800 mb-3">Export Student Details</h2>
-        <p className="text-xs text-gray-500 mb-4">
-          Downloads an Excel file with: Student Name, Father Name, Mother Name, Father Contact, Mother Contact, Class, Section.
-        </p>
         <div className="flex flex-wrap gap-3 items-end">
-          {/* Class filter */}
           <div className="flex flex-col gap-1 min-w-[160px]">
-            <label className="text-xs font-medium text-gray-600">Class (optional)</label>
+            <label className="text-xs font-medium text-gray-600">Class</label>
             <select
               value={exportClassId}
               onChange={e => { setExportClassId(e.target.value); setExportSectionId(''); }}
@@ -210,50 +324,35 @@ export default function StudentsDashboardPage() {
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-
-          {/* Section filter — only shown when a class is selected */}
           {selectedClass && (
             <div className="flex flex-col gap-1 min-w-[140px]">
-              <label className="text-xs font-medium text-gray-600">Section (optional)</label>
+              <label className="text-xs font-medium text-gray-600">Section</label>
               <select
                 value={exportSectionId}
                 onChange={e => setExportSectionId(e.target.value)}
                 className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#1B4332]/40"
               >
                 <option value="">All sections</option>
-                {selectedClass.sections.map(s => (
-                  <option key={s.id} value={s.id}>Section {s.label}</option>
-                ))}
+                {selectedClass.sections.map(s => <option key={s.id} value={s.id}>Section {s.label}</option>)}
               </select>
             </div>
           )}
-
           <button
             onClick={handleExport}
             disabled={exporting}
             className="flex items-center gap-2 px-5 py-2.5 bg-[#1B4332] text-white text-sm font-medium rounded-xl hover:bg-[#163828] disabled:opacity-50 transition-colors"
           >
-            {exporting ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Exporting…
-              </>
-            ) : (
-              <>
-                <span>⬇</span> Export to Excel
-              </>
-            )}
+            {exporting ? 'Exporting...' : 'Export to Excel'}
           </button>
         </div>
       </div>
 
-      {/* ── Per-class breakdown ── */}
+      {/* Per-class breakdown */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Enrolment by Class</h2>
 
-        {(data?.by_class ?? []).map(cls => (
+        {filteredClasses.map(cls => (
           <div key={cls.class_id} className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-            {/* Class header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-[#1B4332]/10 flex items-center justify-center text-[#1B4332] font-bold text-sm">
@@ -261,19 +360,16 @@ export default function StudentsDashboardPage() {
                 </div>
                 <div>
                   <p className="font-semibold text-gray-900">{cls.class_name}</p>
-                  <p className="text-xs text-gray-400">{cls.total_students} student{cls.total_students !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-gray-400">{cls.total_students} students</p>
                 </div>
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold text-[#1B4332]">{cls.total_students}</p>
-                <p className="text-xs text-gray-400">
-                  {pct(cls.total_students, totalStudents)}% of school
-                </p>
               </div>
             </div>
 
             {/* Section breakdown */}
-            {cls.sections && cls.sections.length > 0 && (
+            {cls.sections.length > 0 && (
               <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {cls.sections.map(sec => (
                   <div key={sec.section_id} className="bg-gray-50 rounded-xl px-3 py-2.5">
@@ -285,18 +381,32 @@ export default function StudentsDashboardPage() {
               </div>
             )}
 
-            {/* Contact completeness */}
-            <div className="px-5 pb-4 grid grid-cols-2 gap-3">
+            {/* Parent activation stats for this class */}
+            <div className="px-5 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>Father contact</span>
+                  <span>Activated</span>
+                  <span className="text-emerald-600">{cls.parents_activated}/{cls.total_students}</span>
+                </div>
+                <ProgressBar value={cls.parents_activated} max={cls.total_students} color="#059669" />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Logged In</span>
+                  <span className="text-blue-600">{cls.parents_logged_in}/{cls.total_students}</span>
+                </div>
+                <ProgressBar value={cls.parents_logged_in} max={cls.total_students} color="#2563eb" />
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Father Contact</span>
                   <span>{cls.with_father_contact}/{cls.total_students}</span>
                 </div>
                 <ProgressBar value={cls.with_father_contact} max={cls.total_students} color="#E8960C" />
               </div>
               <div>
                 <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>Mother contact</span>
+                  <span>Mother Contact</span>
                   <span>{cls.with_mother_contact}/{cls.total_students}</span>
                 </div>
                 <ProgressBar value={cls.with_mother_contact} max={cls.total_students} color="#E8960C" />
@@ -305,10 +415,8 @@ export default function StudentsDashboardPage() {
           </div>
         ))}
 
-        {(data?.by_class ?? []).length === 0 && (
-          <div className="text-center py-12 text-gray-400 text-sm">
-            No students enrolled yet.
-          </div>
+        {filteredClasses.length === 0 && (
+          <div className="text-center py-12 text-gray-400 text-sm">No students enrolled yet.</div>
         )}
       </div>
     </div>

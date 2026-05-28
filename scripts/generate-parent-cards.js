@@ -1,19 +1,16 @@
 /**
- * Generate Parent Login Cards (Visiting Card Size)
+ * Generate Parent Login Cards (Visiting Card Size on A3 Landscape)
  * 
- * Reads all students and their linked parents from the database,
- * generates a PDF with visiting-card-sized cards (85mm x 55mm)
- * containing login details and setup instructions.
+ * Layout: A3 Landscape, 5 columns x 5 rows = 25 cards per sheet
+ * Card size: 84mm x 54mm (standard visiting card)
+ * Page order: Front page, then Back page (for double-sided printing)
+ * Cut marks between cards for easy cutting
  * 
  * Usage:
  *   node scripts/generate-parent-cards.js
  * 
- * Requires:
- *   - DATABASE_URL env var (or .env file in apps/api-gateway)
- *   - npm install pdfkit pg dotenv
- * 
  * Output:
- *   parent-login-cards.pdf (in current directory)
+ *   parent-login-cards.pdf
  */
 
 const PDFDocument = require('pdfkit');
@@ -38,13 +35,36 @@ const SCHOOL_NAME = 'Silver Oak Juniors';
 const LOGO_PATH = path.join(__dirname, '../apps/frontend/public/school-logo.png');
 const OAKIE_PATH = path.join(__dirname, '../apps/frontend/public/oakie.png');
 
-// Visiting card dimensions: 85mm x 55mm = 241pt x 156pt
-const CARD_W = 241;
-const CARD_H = 156;
-const MARGIN = 8;
-const CARDS_PER_ROW = 2;
-const CARDS_PER_COL = 4;
-const PAGE_MARGIN = 30;
+// A3 Landscape: 420mm x 297mm = 1190.55pt x 841.89pt
+// Grid: 4 columns x 5 rows = 20 cards per sheet
+// Cards sized to fill the sheet with minimal waste
+// Card: ~98mm x 55mm (slightly wider than standard visiting card for better use of paper)
+const COLS = 4;
+const ROWS = 5;
+const CARDS_PER_PAGE = COLS * ROWS; // 20
+
+// A3 landscape dimensions in points
+const PAGE_W = 1190.55;
+const PAGE_H = 841.89;
+
+// Page margins (for printer safe area)
+const PAGE_MARGIN_X = 20; // ~7mm each side
+const PAGE_MARGIN_Y = 16; // ~5.6mm top/bottom
+
+// Gaps between cards for cutting
+const GAP_X = 8;  // ~2.8mm between columns
+const GAP_Y = 6;  // ~2.1mm between rows
+
+// Calculate card size to fill available space
+const CARD_W = Math.floor((PAGE_W - PAGE_MARGIN_X * 2 - (COLS - 1) * GAP_X) / COLS);  // ~278pt = ~98mm
+const CARD_H = Math.floor((PAGE_H - PAGE_MARGIN_Y * 2 - (ROWS - 1) * GAP_Y) / ROWS);  // ~158pt = ~56mm
+
+// Recalculate actual margins to center the grid
+const GRID_W = COLS * CARD_W + (COLS - 1) * GAP_X;
+const GRID_H = ROWS * CARD_H + (ROWS - 1) * GAP_Y;
+const MARGIN_X = (PAGE_W - GRID_W) / 2;
+const MARGIN_Y = (PAGE_H - GRID_H) / 2;
+const M = 9; // inner card margin
 
 async function main() {
   console.log('Connecting to database...');
@@ -75,7 +95,7 @@ async function main() {
 
   console.log(`Found ${result.rows.length} parent-student links`);
 
-  // Group by student (one card per student, may have multiple parents)
+  // Group by student
   const studentMap = new Map();
   for (const row of result.rows) {
     const key = row.student_name + '|' + row.class_name + '|' + row.section_label;
@@ -97,43 +117,47 @@ async function main() {
 
   const students = Array.from(studentMap.values());
   console.log(`Generating cards for ${students.length} students...`);
+  console.log(`Cards per sheet: ${CARDS_PER_PAGE} (${COLS}x${ROWS})`);
+  console.log(`Sheets needed: ${Math.ceil(students.length / CARDS_PER_PAGE)}`);
 
-  // Create PDF - A4 landscape for cutting
-  const doc = new PDFDocument({ size: 'A4', margin: PAGE_MARGIN });
+  // Create PDF - A3 Landscape
+  const doc = new PDFDocument({
+    size: [PAGE_W, PAGE_H],
+    margin: 0,
+    autoFirstPage: false,
+  });
   const outputPath = path.join(__dirname, '../parent-login-cards.pdf');
   const stream = fs.createWriteStream(outputPath);
   doc.pipe(stream);
 
-  let cardIdx = 0;
-  const cardsPerPage = CARDS_PER_ROW * CARDS_PER_COL;
+  // Process in batches of 25 (one sheet)
+  const totalSheets = Math.ceil(students.length / CARDS_PER_PAGE);
 
-  for (const student of students) {
-    // Check if we need a new page
-    if (cardIdx > 0 && cardIdx % cardsPerPage === 0) {
-      doc.addPage();
+  for (let sheet = 0; sheet < totalSheets; sheet++) {
+    const startIdx = sheet * CARDS_PER_PAGE;
+    const endIdx = Math.min(startIdx + CARDS_PER_PAGE, students.length);
+    const batch = students.slice(startIdx, endIdx);
+
+    // --- FRONT PAGE ---
+    doc.addPage();
+    drawCutMarks(doc);
+    for (let i = 0; i < batch.length; i++) {
+      const col = i % COLS;
+      const row = Math.floor(i / COLS);
+      const x = MARGIN_X + col * (CARD_W + GAP_X);
+      const y = MARGIN_Y + row * (CARD_H + GAP_Y);
+      drawFrontCard(doc, x, y, batch[i]);
     }
 
-    const posOnPage = cardIdx % cardsPerPage;
-    const col = posOnPage % CARDS_PER_ROW;
-    const row = Math.floor(posOnPage / CARDS_PER_ROW);
-    const x = PAGE_MARGIN + col * (CARD_W + 10);
-    const y = PAGE_MARGIN + row * (CARD_H + 10);
-
-    drawFrontCard(doc, x, y, student);
-    cardIdx++;
-  }
-
-  // New pages for back side (instructions)
-  const totalPages = Math.ceil(students.length / cardsPerPage);
-  for (let p = 0; p < totalPages; p++) {
+    // --- BACK PAGE (immediately after front for double-sided printing) ---
     doc.addPage();
-    for (let i = 0; i < cardsPerPage; i++) {
-      const col = i % CARDS_PER_ROW;
-      // Mirror columns for back side (when printed double-sided)
-      const mirrorCol = CARDS_PER_ROW - 1 - col;
-      const row = Math.floor(i / CARDS_PER_ROW);
-      const x = PAGE_MARGIN + mirrorCol * (CARD_W + 10);
-      const y = PAGE_MARGIN + row * (CARD_H + 10);
+    drawCutMarks(doc);
+    for (let i = 0; i < CARDS_PER_PAGE; i++) {
+      // Mirror columns for back side (flip horizontally for double-sided)
+      const col = (COLS - 1) - (i % COLS);
+      const row = Math.floor(i / COLS);
+      const x = MARGIN_X + col * (CARD_W + GAP_X);
+      const y = MARGIN_Y + row * (CARD_H + GAP_Y);
       drawBackCard(doc, x, y);
     }
   }
@@ -143,98 +167,129 @@ async function main() {
   
   console.log(`\nDone! PDF saved to: ${outputPath}`);
   console.log(`Total cards: ${students.length}`);
-  console.log(`Total pages: ${totalPages * 2} (${totalPages} front + ${totalPages} back)`);
-  console.log('\nPrint double-sided, cut along card borders.');
+  console.log(`Total pages: ${totalSheets * 2} (alternating front/back)`);
+  console.log(`Page size: A3 Landscape`);
+  console.log('\nPrint double-sided (flip on short edge), cut along marks.');
   
   await pool.end();
 }
 
+function drawCutMarks(doc) {
+  const markLen = 8;
+  doc.lineWidth(0.25).strokeColor('#999999');
+
+  // Draw cut marks at each card intersection
+  for (let col = 0; col <= COLS; col++) {
+    const cx = MARGIN_X + col * (CARD_W + GAP_X) - GAP_X / 2;
+    // Top edge marks
+    doc.moveTo(cx, MARGIN_Y - markLen - 2).lineTo(cx, MARGIN_Y - 2).stroke();
+    // Bottom edge marks
+    doc.moveTo(cx, MARGIN_Y + GRID_H + 2).lineTo(cx, MARGIN_Y + GRID_H + markLen + 2).stroke();
+  }
+  for (let row = 0; row <= ROWS; row++) {
+    const cy = MARGIN_Y + row * (CARD_H + GAP_Y) - GAP_Y / 2;
+    // Left edge marks
+    doc.moveTo(MARGIN_X - markLen - 2, cy).lineTo(MARGIN_X - 2, cy).stroke();
+    // Right edge marks
+    doc.moveTo(MARGIN_X + GRID_W + 2, cy).lineTo(MARGIN_X + GRID_W + markLen + 2, cy).stroke();
+  }
+}
+
 function drawFrontCard(doc, x, y, student) {
   // Card border
-  doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
+  doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.3).stroke('#d1d5db');
 
   // Header bar
+  doc.save();
+  doc.roundedRect(x, y, CARD_W, 22, 4).clip();
   doc.rect(x, y, CARD_W, 22).fill('#1B4332');
-  doc.fillColor('white').fontSize(7).font('Helvetica-Bold')
-    .text('oakit', x + MARGIN, y + 4, { continued: true });
+  doc.restore();
+
+  doc.fillColor('white').fontSize(8).font('Helvetica-Bold')
+    .text('oakit', x + M, y + 5, { continued: true });
   doc.fillColor('#E8960C').text('.ai');
   doc.fillColor('#86efac').fontSize(5).font('Helvetica')
-    .text(SCHOOL_NAME, x + MARGIN, y + 13);
+    .text(SCHOOL_NAME, x + M, y + 14);
   doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold')
-    .text('Oakie - Your AI Mentor', x + CARD_W - 80, y + 8, { width: 72, align: 'right' });
+    .text('Oakie - Your AI Mentor', x + CARD_W - 85, y + 8, { width: 76, align: 'right' });
 
-  // Student name - centered, full width
+  // Student name - centered
   let ty = y + 28;
   doc.fillColor('#1B4332').fontSize(11).font('Helvetica-Bold')
-    .text(student.student_name, x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
+    .text(student.student_name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
   ty += 14;
   doc.fillColor('#6b7280').fontSize(7).font('Helvetica')
-    .text(`${student.class_name} - Section ${student.section_label}`, x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
-  ty += 12;
+    .text(`${student.class_name} - Section ${student.section_label}`, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+  ty += 11;
 
   // Divider
-  doc.moveTo(x + MARGIN, ty).lineTo(x + CARD_W - MARGIN, ty).lineWidth(0.3).stroke('#e5e7eb');
-  ty += 6;
+  doc.moveTo(x + M, ty).lineTo(x + CARD_W - M, ty).lineWidth(0.3).stroke('#e5e7eb');
+  ty += 5;
 
-  // --- LEFT: Oakie mascot (head aligns with PARENT LOGIN) ---
+  // LEFT: Oakie mascot
   try {
     if (fs.existsSync(OAKIE_PATH)) {
-      doc.image(OAKIE_PATH, x + 4, ty - 4, { width: 72, height: 72 });
+      doc.image(OAKIE_PATH, x + 6, ty, { width: 68, height: 68 });
     }
-  } catch { /* skip if not found */ }
+  } catch { /* skip */ }
 
-  // --- RIGHT: Parent login details (pushed right) ---
-  const rightX = x + 82;
-  const rightW = CARD_W - 88;
+  // RIGHT: Parent login details
+  const rightX = x + 80;
+  const rightW = CARD_W - 80 - M;
 
-  doc.fillColor('#374151').fontSize(5.5).font('Helvetica-Bold').text('PARENT LOGIN', rightX, ty);
-  ty += 9;
+  doc.fillColor('#374151').fontSize(6).font('Helvetica-Bold').text('PARENT LOGIN', rightX, ty + 2);
+  let loginY = ty + 13;
 
   for (const parent of student.parents) {
     doc.fillColor('#111827').fontSize(7).font('Helvetica-Bold')
-      .text(parent.name, rightX, ty, { width: rightW });
-    ty += 9;
+      .text(parent.name, rightX, loginY, { width: rightW });
+    loginY += 10;
     doc.fillColor('#1B4332').fontSize(6).font('Helvetica')
-      .text(`${parent.mobile} | Pass: ${parent.mobile}`, rightX, ty, { width: rightW });
-    ty += 11;
+      .text(`${parent.mobile} | Pass: ${parent.mobile}`, rightX, loginY, { width: rightW });
+    loginY += 11;
   }
 
-  // Footer with URL
+  // Footer
+  doc.save();
+  doc.roundedRect(x, y + CARD_H - 14, CARD_W, 14, 4).clip();
   doc.rect(x, y + CARD_H - 14, CARD_W, 14).fill('#f0fdf4');
+  doc.restore();
+
   doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold')
-    .text(APP_URL, x + MARGIN, y + CARD_H - 11);
+    .text(APP_URL, x + M, y + CARD_H - 11);
   doc.fillColor('#6b7280').fontSize(5).font('Helvetica')
-    .text(`Code: ${SCHOOL_CODE}`, x + CARD_W - 55, y + CARD_H - 11, { width: 47, align: 'right' });
+    .text(`Code: ${SCHOOL_CODE}`, x + CARD_W - M - 50, y + CARD_H - 11, { width: 50, align: 'right' });
 }
 
 function drawBackCard(doc, x, y) {
   // Card border
-  doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
+  doc.roundedRect(x, y, CARD_W, CARD_H, 4).lineWidth(0.3).stroke('#d1d5db');
 
-  // School logo (centered at top)
-  let ty = y + MARGIN;
+  let ty = y + M + 2;
+
+  // School logo
   try {
     if (fs.existsSync(LOGO_PATH)) {
       doc.image(LOGO_PATH, x + (CARD_W - 40) / 2, ty, { width: 40, height: 40 });
       ty += 44;
     }
-  } catch { /* skip logo if not found */ }
+  } catch { ty += 5; }
 
   // School name
   doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold')
-    .text('Silver Oak Juniors', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
+    .text('Silver Oak Juniors', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
   ty += 11;
   doc.fillColor('#6b7280').fontSize(6).font('Helvetica')
-    .text('AI-Integrated Preschool', x + MARGIN, ty, { width: CARD_W - MARGIN * 2, align: 'center' });
+    .text('AI-Integrated Preschool', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
   ty += 10;
 
   // Divider
-  doc.moveTo(x + MARGIN + 30, ty).lineTo(x + CARD_W - MARGIN - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
+  doc.moveTo(x + M + 30, ty).lineTo(x + CARD_W - M - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
   ty += 6;
 
-  // Quick start - compact
+  // Quick start
   doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold')
-    .text('Quick Start', x + MARGIN, ty);
+    .text('Quick Start', x + M, ty);
   ty += 9;
 
   const steps = [
@@ -245,19 +300,23 @@ function drawBackCard(doc, x, y) {
 
   doc.fillColor('#374151').fontSize(5.5).font('Helvetica');
   for (const step of steps) {
-    doc.text(step, x + MARGIN, ty, { width: CARD_W - MARGIN * 2 });
+    doc.text(step, x + M, ty, { width: CARD_W - M * 2 });
     ty += 7;
   }
 
   ty += 3;
   doc.fillColor('#374151').fontSize(5).font('Helvetica');
-  doc.text('Android: Menu > Add to Home screen', x + MARGIN, ty); ty += 6;
-  doc.text('iPhone: Share > Add to Home Screen', x + MARGIN, ty); ty += 6;
+  doc.text('Android: Menu > Add to Home screen', x + M, ty); ty += 6;
+  doc.text('iPhone: Share > Add to Home Screen', x + M, ty);
 
   // Footer
+  doc.save();
+  doc.roundedRect(x, y + CARD_H - 12, CARD_W, 12, 4).clip();
   doc.rect(x, y + CARD_H - 12, CARD_W, 12).fill('#1B4332');
+  doc.restore();
+
   doc.fillColor('#86efac').fontSize(4.5).font('Helvetica-Bold')
-    .text('Powered by oakit.ai - Where AI meets Early Education', x + MARGIN, y + CARD_H - 9, { width: CARD_W - MARGIN * 2, align: 'center' });
+    .text('Powered by oakit.ai - Where AI meets Early Education', x + M, y + CARD_H - 9, { width: CARD_W - M * 2, align: 'center' });
 }
 
 main().catch(err => {

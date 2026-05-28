@@ -603,19 +603,39 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
       [school_id]
     );
 
-    // 2. Per-class counts + contact completeness
+    // 2. Parent activation/login stats (school-wide)
+    const parentStatsRow = await pool.query(
+      `SELECT
+         COUNT(DISTINCT s.id)::int AS total_students,
+         COUNT(DISTINCT psl.student_id)::int AS parents_activated,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN psl.student_id END)::int AS parents_logged_in,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NULL AND pu.id IS NOT NULL THEN psl.student_id END)::int AS parents_not_logged_in
+       FROM students s
+       LEFT JOIN parent_student_links psl ON psl.student_id = s.id
+       LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+       WHERE s.school_id = $1 AND s.is_active = true`,
+      [school_id]
+    );
+    const parentStats = parentStatsRow.rows[0];
+
+    // 3. Per-class counts + contact completeness + parent activation
     const byClassRow = await pool.query(
       `SELECT
          c.id   AS class_id,
          c.name AS class_name,
-         COUNT(s.id)::int AS total_students,
-         COUNT(s.id) FILTER (WHERE s.father_name    IS NOT NULL AND s.father_name    <> '')::int AS with_father,
-         COUNT(s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
-         COUNT(s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
-         COUNT(s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact
+         COUNT(DISTINCT s.id)::int AS total_students,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.father_name    IS NOT NULL AND s.father_name    <> '')::int AS with_father,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact,
+         COUNT(DISTINCT psl.student_id)::int AS parents_activated,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN psl.student_id END)::int AS parents_logged_in,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NULL AND pu.id IS NOT NULL THEN psl.student_id END)::int AS parents_not_logged_in
        FROM classes c
        LEFT JOIN students s
          ON s.class_id = c.id AND s.school_id = c.school_id AND s.is_active = true
+       LEFT JOIN parent_student_links psl ON psl.student_id = s.id
+       LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
        WHERE c.school_id = $1
        GROUP BY c.id, c.name
        ORDER BY c.name`,
@@ -656,11 +676,87 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
 
     return res.json({
       total_students: totalRow.rows[0].total,
+      parent_stats: {
+        activated: parentStats.parents_activated,
+        logged_in: parentStats.parents_logged_in,
+        not_logged_in: parentStats.parents_not_logged_in,
+        not_activated: totalRow.rows[0].total - parentStats.parents_activated,
+      },
       by_class: byClass,
     });
   } catch (err: any) {
     console.error('[students/dashboard]', err);
     return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  }
+});
+
+// GET /api/v1/admin/students/dashboard/details?class_id=&status=activated|logged_in|not_logged_in|not_activated
+router.get('/dashboard/details', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, section_id, status } = req.query as Record<string, string>;
+
+    let query = '';
+    const params: any[] = [school_id];
+
+    if (status === 'not_activated') {
+      // Students with no parent_student_links entry
+      query = `
+        SELECT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        LEFT JOIN parent_student_links psl ON psl.student_id = s.id
+        WHERE s.school_id = $1 AND s.is_active = true AND psl.student_id IS NULL
+      `;
+    } else if (status === 'logged_in') {
+      // Students whose parent has logged in at least once
+      query = `
+        SELECT DISTINCT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label, pu.last_login
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        JOIN parent_student_links psl ON psl.student_id = s.id
+        JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+        WHERE s.school_id = $1 AND s.is_active = true AND pu.last_login IS NOT NULL
+      `;
+    } else if (status === 'not_logged_in') {
+      // Students whose parent is activated but never logged in
+      query = `
+        SELECT DISTINCT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        JOIN parent_student_links psl ON psl.student_id = s.id
+        JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+        WHERE s.school_id = $1 AND s.is_active = true AND pu.last_login IS NULL
+      `;
+    } else {
+      // activated = all students with parent links
+      query = `
+        SELECT DISTINCT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label, pu.last_login
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        JOIN parent_student_links psl ON psl.student_id = s.id
+        JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+        WHERE s.school_id = $1 AND s.is_active = true
+      `;
+    }
+
+    if (class_id) { params.push(class_id); query += ` AND s.class_id = $${params.length}`; }
+    if (section_id) { params.push(section_id); query += ` AND s.section_id = $${params.length}`; }
+    query += ' ORDER BY c.name, sec.label, s.name';
+
+    const result = await pool.query(query, params);
+    return res.json(result.rows);
+  } catch (err: any) {
+    console.error('[students/dashboard/details]', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

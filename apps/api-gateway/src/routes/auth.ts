@@ -204,6 +204,10 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
     } as any);
     const { verifyToken: vt4 } = await import('../lib/jwt');
     const p4 = vt4(parentToken); await registerSession(parent.id, p4.sid!);
+
+    // Update last_login timestamp
+    pool.query('UPDATE parent_users SET last_login = now() WHERE id = $1', [parent.id]).catch(() => {});
+
     return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset, also_staff_role });
 
   } catch (err) {
