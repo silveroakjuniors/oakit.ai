@@ -384,20 +384,28 @@ headers.forEach((h, i) => {
       if (sectionRow.rows.length === 0) { skipped.push({ studentName, reason: `Section '${sectionLabel}' not found in class '${className}'` }); continue; }
 
 try {
-  // Check for duplicate: match on name + father name + mother name (contact numbers may vary between imports)
-  const existingStudent = await pool.query(
+  // Check for duplicate: multiple strategies
+  // 1. Match on name + father name + mother name
+  // 2. Match on name + father contact number
+  // 3. Match on name + mother contact number
+  let existingStudent = await pool.query(
     `SELECT id, class_id, section_id
      FROM students
      WHERE school_id = $1
        AND LOWER(TRIM(name)) = LOWER($2)
-       AND LOWER(COALESCE(TRIM(father_name), '')) = LOWER($3)
-       AND LOWER(COALESCE(TRIM(mother_name), '')) = LOWER($4)
+       AND (
+         (LOWER(COALESCE(TRIM(father_name), '')) = LOWER($3) AND LOWER(COALESCE(TRIM(mother_name), '')) = LOWER($4))
+         OR ($5 <> '' AND COALESCE(parent_contact, '') = $5)
+         OR ($6 <> '' AND COALESCE(mother_contact, '') = $6)
+       )
      LIMIT 1`,
     [
       school_id,
       studentName.toLowerCase(),
       (fatherName || '').toLowerCase(),
-      (motherName || '').toLowerCase()
+      (motherName || '').toLowerCase(),
+      parentContact || '',
+      motherContact || ''
     ]
   );
 
