@@ -88,6 +88,7 @@ export default function StudentsDashboardPage() {
   const [detailStatus, setDetailStatus] = useState<string | null>(null);
   const [detailStudents, setDetailStudents] = useState<StudentDetail[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [activating, setActivating] = useState(false);
 
   // Export
   const [exportClassId, setExportClassId] = useState('');
@@ -152,6 +153,27 @@ export default function StudentsDashboardPage() {
       URL.revokeObjectURL(url);
     } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Export failed'); }
     finally { setExporting(false); }
+  }
+
+  async function handleActivateAll() {
+    if (!detailStudents.length) return;
+    const studentIds = detailStudents.map(s => s.id);
+    if (!confirm(`Activate parent logins for ${studentIds.length} students?`)) return;
+    setActivating(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/bulk-activate-parents`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_ids: studentIds, relation: 'both' }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Activation failed');
+      alert(`Activated: ${d.activated}, Skipped: ${d.skipped}`);
+      // Refresh dashboard and detail list
+      load();
+      setDetailStatus(null);
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Activation failed'); }
+    finally { setActivating(false); }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -274,7 +296,18 @@ export default function StudentsDashboardPage() {
             <h3 className="text-sm font-semibold text-gray-800 capitalize">
               {detailStatus.replace(/_/g, ' ')} Students ({detailStudents.length})
             </h3>
-            <button onClick={() => setDetailStatus(null)} className="text-xs text-gray-400 hover:text-gray-600">Close</button>
+            <div className="flex items-center gap-3">
+              {detailStatus === 'not_activated' && detailStudents.length > 0 && (
+                <button
+                  onClick={handleActivateAll}
+                  disabled={activating}
+                  className="px-4 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  {activating ? 'Activating...' : `Activate All (${detailStudents.length})`}
+                </button>
+              )}
+              <button onClick={() => setDetailStatus(null)} className="text-xs text-gray-400 hover:text-gray-600">Close</button>
+            </div>
           </div>
           {detailLoading ? (
             <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
