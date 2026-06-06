@@ -204,9 +204,9 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Serve uploaded student photos
+// Serve uploaded files — require authentication
 const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || './uploads');
-app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/uploads', jwtVerify, express.static(UPLOAD_DIR));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'oakit-api-gateway' });
