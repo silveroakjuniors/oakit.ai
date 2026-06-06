@@ -8,30 +8,47 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
 const FALLBACK_LOGIN_BUCKETS = new Map<string, { count: number; resetAt: number }>();
 
+// Get real client IP (behind proxy/load balancer)
+function getClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
+    return first.trim();
+  }
+  return req.ip || 'unknown';
+}
+
+// Login rate limit key: per school + per user mobile/email (NOT per IP)
+// This way 500 different parents can login simultaneously from different mobiles
+// But a single mobile number is limited to 10 attempts
 function loginKey(req: Request) {
   const schoolCode = (req.body?.school_code || '').toString().toLowerCase().trim();
   const identifier = (req.body?.mobile || req.body?.email || '').toString().toLowerCase().trim();
-  return `${schoolCode}:${identifier}:${req.ip || 'unknown'}`;
+  return `${schoolCode}:${identifier}`;
 }
 
-/** Global API rate limit — 500 req / 15 min per IP */
+/** Global API rate limit — 1000 req / 15 min per real client IP */
 export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { error: 'Too many requests, please try again later' },
   // Don't double-throttle auth requests; login has its own dedicated limiter.
   skip: (req: Request) => req.path === '/health' || req.path.startsWith('/api/v1/auth'),
 });
 
-/** Auth endpoints (except login) — moderate: 100 req / 15 min per IP */
+/** Auth endpoints (except login) — moderate: 200 req / 15 min per real client IP */
 export const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { error: 'Too many auth requests, please try again later' },
+  // Skip login — it has its own dedicated per-user limiter (loginThrottle)
+  skip: (req: Request) => req.path === '/login' || req.path === '/student-login',
 });
 
 /** Login endpoint — strict: 10 attempts / 15 min per school+user+IP */
