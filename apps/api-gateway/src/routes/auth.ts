@@ -528,6 +528,13 @@ router.post('/forgot-password/reset', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid reset token' });
     }
 
+    // Single-use: check if token was already used (stored in Redis)
+    const tokenKey = `reset:used:${reset_token.slice(-16)}`;
+    try {
+      const used = await redis.get(tokenKey);
+      if (used) return res.status(401).json({ error: 'Reset token already used' });
+    } catch { /* Redis unavailable — proceed without single-use check */ }
+
     // Validate new password ≠ mobile
     const userRow = await pool.query('SELECT mobile FROM users WHERE id = $1', [payload.user_id]);
     if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -540,6 +547,9 @@ router.post('/forgot-password/reset', async (req: Request, res: Response) => {
       'UPDATE users SET password_hash = $1, force_password_reset = false WHERE id = $2',
       [hash, payload.user_id]
     );
+
+    // Mark token as used (expires in 15 min — matches token TTL)
+    try { await redis.set(tokenKey, '1', { EX: 900 }); } catch { /* non-critical */ }
 
     return res.json({ message: 'Password reset successfully' });
   } catch (err) {

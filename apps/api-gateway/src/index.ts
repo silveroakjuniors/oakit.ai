@@ -92,6 +92,7 @@ import feedRouter from './routes/feed';
 import publicEnquiriesRouter from './routes/public/enquiries';
 import publicUniformRouter from './routes/public/uniform';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
+import { jwtVerify, roleGuard } from './middleware/auth';
 import { piiGuard } from './middleware/piiGuard';
 import { chunkGuard } from './middleware/chunkGuard';
 import { financialModuleGuard } from './middleware/financialModuleGuard';
@@ -332,7 +333,7 @@ app.use('/api/v1/franchise', franchiseCurriculumRouter);
 app.use('/api/v1/franchise/schools', franchiseSchoolsRouter);
 
 // School franchise privacy status (Req 7.3) — accessible to admin + principal
-app.get('/api/v1/schools/:school_id/franchise-privacy-status', async (req, res) => {
+app.get('/api/v1/schools/:school_id/franchise-privacy-status', jwtVerify, roleGuard('admin', 'principal'), async (req, res) => {
   try {
     const { school_id } = req.params;
     const membership = await (await import('./lib/db')).pool.query(
