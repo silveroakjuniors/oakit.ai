@@ -12,7 +12,7 @@ import {
   Umbrella, Pencil, Activity, Megaphone, PartyPopper, FileText, GraduationCap
 } from 'lucide-react';
 import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
-import { getToken, clearToken, signOut } from '@/lib/auth';
+import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
 import ReportCardGenerator from '@/components/ReportCardGenerator';
 import { useSessionManager } from '@/hooks/useSessionManager';
@@ -362,7 +362,7 @@ export default function ParentPage() {
   const unreadMessages = messageThreads.reduce((s, t) => s + Number(t.unread_count), 0);
   const unreadNotifs = notifications.length;
 
-  useEffect(() => { if (!token) { router.push('/login'); return; } init(); }, []);
+  useEffect(() => { if (!token) { router.push('/login'); return; } const role = getRole(); if (!role || role.toLowerCase() !== 'parent') { router.replace('/login'); return; } init(); }, []);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs]);
   // Close profile dropdown on outside click
   useEffect(() => {

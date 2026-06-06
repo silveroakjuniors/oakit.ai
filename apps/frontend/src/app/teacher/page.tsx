@@ -17,7 +17,7 @@ import InlineMicButton from '@/components/InlineMicButton';
 import SessionRecorder from '@/components/SessionRecorder';
 import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
-import { getToken, clearToken, signOut } from '@/lib/auth';
+import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
@@ -235,6 +235,10 @@ export default function TeacherPlanner() {
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
+    const role = getRole();
+    if (!role || !['teacher', 'class teacher', 'supporting teacher'].includes(role.toLowerCase())) {
+      router.replace('/login'); return;
+    }
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
     loadAll();

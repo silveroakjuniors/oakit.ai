@@ -1,10 +1,10 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import OakitLogo from '@/components/OakitLogo';
-import { clearToken } from '@/lib/auth';
+import { clearToken, getToken, getRole } from '@/lib/auth';
 
 const navItems = [
   { href: '/super-admin',                 label: 'Dashboard',        icon: '⊞' },
@@ -19,6 +19,20 @@ const navItems = [
 export default function SuperAdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) { router.replace('/login'); return; }
+    const role = getRole();
+    if (!role || role.toLowerCase() !== 'super_admin') {
+      router.replace('/login');
+      return;
+    }
+    setAuthChecked(true);
+  }, [router]);
+
+  if (!authChecked) return null;
 
   return (
     <div className="flex min-h-screen" style={{ background: '#0F1A13' }}>

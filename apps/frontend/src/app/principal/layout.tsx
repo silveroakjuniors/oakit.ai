@@ -9,7 +9,7 @@ import {
   ChevronLeft, ChevronRight, Menu, X, GraduationCap,
 } from 'lucide-react';
 import OakitLogo from '@/components/OakitLogo';
-import { getRole } from '@/lib/auth';
+import { getToken, getRole } from '@/lib/auth';
 
 const NAV_GROUPS = [
   {

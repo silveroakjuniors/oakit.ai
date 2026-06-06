@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { getRole } from '@/lib/auth';
+import { getToken, getRole } from '@/lib/auth';
 
 const FINANCE_NAV = [
   { href: '/principal/finance',                       label: 'Overview',              icon: '💰' },
@@ -24,8 +24,10 @@ export default function PrincipalFinanceLayout({ children }: { children: React.R
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    const token = getToken();
+    if (!token) { router.replace('/login'); return; }
     const role = getRole();
-    if (role && !['principal', 'super_admin', 'vice principal', 'head teacher', 'center head'].includes(role.toLowerCase())) {
+    if (!role || !['principal', 'admin', 'super_admin', 'vice principal', 'head teacher', 'center head'].includes(role.toLowerCase())) {
       router.replace('/login');
     }
   }, []);
