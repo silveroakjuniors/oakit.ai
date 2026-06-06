@@ -142,15 +142,38 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [finPerms, setFinPerms] = useState<string[]>([]);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // Fetch the user's effective financial permissions once on mount
+  // Auth guard + financial permissions
   useEffect(() => {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      router.replace('/login');
+      return;
+    }
+    // Decode role from JWT to enforce role-based access
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const role = payload.role as string;
+      if (!['admin', 'principal'].includes(role)) {
+        // Not an admin or principal — redirect to their portal
+        if (role === 'teacher') { router.replace('/teacher'); return; }
+        if (role === 'parent')  { router.replace('/parent'); return; }
+        if (role === 'student') { router.replace('/student'); return; }
+        router.replace('/login');
+        return;
+      }
+    } catch {
+      router.replace('/login');
+      return;
+    }
+    setAuthChecked(true);
     apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
       .then(data => setFinPerms(data.permissions || []))
       .catch(() => setFinPerms([]));
-  }, []);
+  }, [router]);
+
+  if (!authChecked) return null;
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-50">

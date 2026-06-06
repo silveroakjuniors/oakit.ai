@@ -91,13 +91,20 @@ export default function PrincipalLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
+    const token = getToken();
+    if (!token) { router.replace('/login'); return; }
     const role = getRole();
-    if (role && !['principal', 'admin', 'super_admin'].includes(role.toLowerCase())) {
+    if (!role || !['principal', 'admin', 'super_admin'].includes(role.toLowerCase())) {
       router.replace('/login');
+      return;
     }
-  }, []);
+    setAuthChecked(true);
+  }, [router]);
+
+  if (!authChecked) return null;
 
   const SidebarInner = ({ onItemClick }: { onItemClick?: () => void }) => (
     <div className="flex flex-col h-full"
