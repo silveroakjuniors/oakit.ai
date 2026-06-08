@@ -31,6 +31,7 @@ export default function LoginPage() {
   const [aiStatus, setAiStatus] = useState<'checking' | 'up' | 'down'>('checking');
   const [sessionMsg, setSessionMsg] = useState('');
   const [dualRole, setDualRole] = useState<{ token: string; primaryRole: string; secondaryRole: string } | null>(null);
+  const [showFirstLoginHint, setShowFirstLoginHint] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -351,12 +352,19 @@ export default function LoginPage() {
                   <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                   <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password}
                     onChange={e => setPassword(e.target.value)} required
+                    onFocus={() => { if (mobile.length === 10 && !password) setShowFirstLoginHint(true); }}
+                    onBlur={() => setShowFirstLoginHint(false)}
                     className="w-full pl-11 pr-11 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 transition-all" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors">
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {showFirstLoginHint && (
+                  <p className="text-xs text-emerald-600 mt-1.5 font-medium">
+                    First time? Your default password is your mobile number.
+                  </p>
+                )}
               </div>
 
               {sessionMsg && (
