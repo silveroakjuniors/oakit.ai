@@ -380,8 +380,8 @@ headers.forEach((h, i) => {
       const motherName    = colMap.mother_name !== undefined ? cellText(row[colMap.mother_name]).trim() : '';
       const sectionLabel  = cellText(row[colMap.section]).trim();
       const className     = cellText(row[colMap.class]).trim();
-      const parentContact = colMap.parent_contact !== undefined ? cellText(row[colMap.parent_contact]).trim() : '';
-      const motherContact = colMap.mother_contact !== undefined ? cellText(row[colMap.mother_contact]).trim() : '';
+      const parentContact = colMap.parent_contact !== undefined ? cellText(row[colMap.parent_contact]).trim().replace(/[^0-9]/g, '') : '';
+      const motherContact = colMap.mother_contact !== undefined ? cellText(row[colMap.mother_contact]).trim().replace(/[^0-9]/g, '') : '';
 
       if (!studentName || !className || !sectionLabel) {
         skipped.push({ studentName, reason: 'Missing student name, class, or section' });
@@ -477,7 +477,7 @@ try {
 }
     }
 
-    return res.json({ total: rows.length, created, updated, skipped });
+    return res.json({ total: rows.length, created, updated, skipped, columns_detected: colMap });
   } catch (err: unknown) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
