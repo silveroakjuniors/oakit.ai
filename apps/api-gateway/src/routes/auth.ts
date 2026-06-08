@@ -33,6 +33,54 @@ router.get('/school-info', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/auth/check-first-login — check if user needs password setup (no auth required)
+router.post('/check-first-login', async (req: Request, res: Response) => {
+  try {
+    const { school_code, mobile } = req.body;
+    if (!school_code || !mobile) return res.status(400).json({ error: 'school_code and mobile required' });
+
+    const schoolResult = await pool.query(
+      'SELECT id FROM schools WHERE subdomain = $1 AND status != $2',
+      [school_code.toLowerCase(), 'inactive']
+    );
+    if (schoolResult.rows.length === 0) return res.json({ is_first_login: false });
+    const school_id = schoolResult.rows[0].id;
+
+    // Check staff users
+    const userResult = await pool.query(
+      'SELECT id, force_password_reset, name FROM users WHERE mobile = $1 AND school_id = $2 AND is_active = true',
+      [mobile.trim(), school_id]
+    );
+    if (userResult.rows.length > 0 && userResult.rows[0].force_password_reset) {
+      return res.json({ is_first_login: true, name: userResult.rows[0].name, account_type: 'staff' });
+    }
+
+    // Check parent users
+    const parentResult = await pool.query(
+      `SELECT pu.id, pu.force_password_reset, pu.name AS parent_name,
+              s.name AS child_name
+       FROM parent_users pu
+       LEFT JOIN parent_student_links psl ON psl.parent_id = pu.id
+       LEFT JOIN students s ON s.id = psl.student_id
+       WHERE pu.mobile = $1 AND pu.school_id = $2 AND pu.is_active = true
+       LIMIT 1`,
+      [mobile.trim(), school_id]
+    );
+    if (parentResult.rows.length > 0 && parentResult.rows[0].force_password_reset) {
+      return res.json({
+        is_first_login: true,
+        name: parentResult.rows[0].parent_name,
+        child_name: parentResult.rows[0].child_name,
+        account_type: 'parent',
+      });
+    }
+
+    return res.json({ is_first_login: false });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/v1/auth/login
 router.post('/login', loginThrottle, async (req: Request, res: Response) => {
   try {

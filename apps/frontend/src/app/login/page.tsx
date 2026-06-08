@@ -32,6 +32,36 @@ export default function LoginPage() {
   const [sessionMsg, setSessionMsg] = useState('');
   const [dualRole, setDualRole] = useState<{ token: string; primaryRole: string; secondaryRole: string } | null>(null);
   const [showFirstLoginHint, setShowFirstLoginHint] = useState(false);
+  const [checkingFirstLogin, setCheckingFirstLogin] = useState(false);
+
+  async function handlePasswordFocus() {
+    if (mobile.length !== 10 || password || checkingFirstLogin) return;
+    setCheckingFirstLogin(true);
+    try {
+      const code = isSuperAdminLogin ? 'platform' : (schoolCode || getSchoolCode());
+      if (!code) { setShowFirstLoginHint(true); setCheckingFirstLogin(false); return; }
+      const res = await fetch(`${API_BASE}/api/v1/auth/check-first-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ school_code: code.trim().toLowerCase(), mobile: mobile.trim() }),
+      });
+      const data = await res.json();
+      if (data.is_first_login) {
+        // Store context for the setup page
+        sessionStorage.setItem('oakit_first_login', JSON.stringify({
+          school_code: code.trim().toLowerCase(),
+          mobile: mobile.trim(),
+          name: data.name,
+          child_name: data.child_name,
+          account_type: data.account_type,
+        }));
+        router.push('/auth/first-login-setup');
+        return;
+      }
+      setShowFirstLoginHint(true);
+    } catch { setShowFirstLoginHint(true); }
+    finally { setCheckingFirstLogin(false); }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -352,7 +382,7 @@ export default function LoginPage() {
                   <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                   <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password}
                     onChange={e => setPassword(e.target.value)} required
-                    onFocus={() => { if (mobile.length === 10 && !password) setShowFirstLoginHint(true); }}
+                    onFocus={handlePasswordFocus}
                     onBlur={() => setShowFirstLoginHint(false)}
                     className="w-full pl-11 pr-11 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 transition-all" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)}
