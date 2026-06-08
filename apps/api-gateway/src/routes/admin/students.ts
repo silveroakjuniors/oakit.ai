@@ -785,6 +785,99 @@ router.get('/dashboard/details', roleGuard('admin', 'principal'), async (req: Re
   }
 });
 
+// GET /api/v1/admin/students/dashboard/section/:section_id — section details with students + teachers
+router.get('/dashboard/section/:section_id', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { section_id } = req.params;
+
+    // Get section + class info
+    const sectionRow = await pool.query(
+      `SELECT sec.id, sec.label, c.id AS class_id, c.name AS class_name
+       FROM sections sec JOIN classes c ON c.id = sec.class_id
+       WHERE sec.id = $1 AND sec.school_id = $2`,
+      [section_id, school_id]
+    );
+    if (sectionRow.rows.length === 0) return res.status(404).json({ error: 'Section not found' });
+    const section = sectionRow.rows[0];
+
+    // Get teachers assigned to this section
+    const teachersRow = await pool.query(
+      `SELECT u.id, u.name, u.mobile,
+              ts.is_class_teacher
+       FROM teacher_sections ts
+       JOIN users u ON u.id = ts.teacher_id
+       WHERE ts.section_id = $1 AND u.is_active = true
+       ORDER BY ts.is_class_teacher DESC, u.name`,
+      [section_id]
+    );
+
+    // Get students in this section
+    const studentsRow = await pool.query(
+      `SELECT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact
+       FROM students s
+       WHERE s.section_id = $1 AND s.school_id = $2 AND s.is_active = true
+       ORDER BY s.name`,
+      [section_id, school_id]
+    );
+
+    // Get all sections in the same class (for transfer dropdown)
+    const allSectionsRow = await pool.query(
+      `SELECT id, label FROM sections WHERE class_id = $1 AND school_id = $2 ORDER BY label`,
+      [section.class_id, school_id]
+    );
+
+    return res.json({
+      section: { id: section.id, label: section.label },
+      class_name: section.class_name,
+      class_id: section.class_id,
+      teachers: teachersRow.rows,
+      students: studentsRow.rows,
+      all_sections: allSectionsRow.rows,
+    });
+  } catch (err: any) {
+    console.error('[dashboard/section]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/admin/students/transfer-section — move student to a different section
+router.post('/transfer-section', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { student_id, new_section_id } = req.body;
+    if (!student_id || !new_section_id) return res.status(400).json({ error: 'student_id and new_section_id required' });
+
+    // Verify student belongs to this school
+    const student = await pool.query(
+      'SELECT id, name, section_id FROM students WHERE id = $1 AND school_id = $2 AND is_active = true',
+      [student_id, school_id]
+    );
+    if (student.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+
+    // Verify new section belongs to this school
+    const section = await pool.query(
+      'SELECT id, label FROM sections WHERE id = $1 AND school_id = $2',
+      [new_section_id, school_id]
+    );
+    if (section.rows.length === 0) return res.status(404).json({ error: 'Section not found' });
+
+    if (student.rows[0].section_id === new_section_id) {
+      return res.json({ message: 'Student already in this section' });
+    }
+
+    await pool.query(
+      'UPDATE students SET section_id = $1 WHERE id = $2 AND school_id = $3',
+      [new_section_id, student_id, school_id]
+    );
+
+    return res.json({ message: `${student.rows[0].name} moved to Section ${section.rows[0].label}` });
+  } catch (err: any) {
+    console.error('[transfer-section]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // - GET /api/v1/admin/students/:id -
 router.get('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   try {

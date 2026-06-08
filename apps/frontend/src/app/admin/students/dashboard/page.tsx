@@ -90,6 +90,41 @@ export default function StudentsDashboardPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [activating, setActivating] = useState(false);
 
+  // Section detail panel
+  const [selectedSection, setSelectedSection] = useState<any>(null);
+  const [sectionLoading, setSectionLoading] = useState(false);
+  const [transferring, setTransferring] = useState<string | null>(null);
+
+  async function loadSection(sectionId: string) {
+    setSectionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/dashboard/section/${sectionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      setSelectedSection(d);
+    } catch { setSelectedSection(null); }
+    finally { setSectionLoading(false); }
+  }
+
+  async function transferStudent(studentId: string, newSectionId: string) {
+    setTransferring(studentId);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/admin/students/transfer-section`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: studentId, new_section_id: newSectionId }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      // Reload section and dashboard
+      if (selectedSection) loadSection(selectedSection.section.id);
+      load();
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Transfer failed'); }
+    finally { setTransferring(null); }
+  }
+
   // Export
   const [exportClassId, setExportClassId] = useState('');
   const [exportSectionId, setExportSectionId] = useState('');
@@ -405,11 +440,17 @@ export default function StudentsDashboardPage() {
             {cls.sections.length > 0 && (
               <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {cls.sections.map(sec => (
-                  <div key={sec.section_id} className="bg-gray-50 rounded-xl px-3 py-2.5">
+                  <button
+                    key={sec.section_id}
+                    onClick={() => loadSection(sec.section_id)}
+                    className={`bg-gray-50 rounded-xl px-3 py-2.5 text-left hover:bg-emerald-50 hover:border-emerald-200 border transition-colors ${
+                      selectedSection?.section?.id === sec.section_id ? 'border-emerald-400 bg-emerald-50' : 'border-transparent'
+                    }`}
+                  >
                     <p className="text-xs font-medium text-gray-500">Section {sec.section_label}</p>
                     <p className="text-xl font-bold text-gray-900 mt-0.5">{sec.count ?? 0}</p>
                     <ProgressBar value={sec.count ?? 0} max={cls.total_students} />
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -452,6 +493,78 @@ export default function StudentsDashboardPage() {
           <div className="text-center py-12 text-gray-400 text-sm">No students enrolled yet.</div>
         )}
       </div>
+
+      {/* Section Detail Panel */}
+      {(selectedSection || sectionLoading) && (
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+          {sectionLoading ? (
+            <p className="text-sm text-gray-400 py-6 text-center">Loading section details...</p>
+          ) : selectedSection && (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">
+                    {selectedSection.class_name} - Section {selectedSection.section.label}
+                  </h3>
+                  <p className="text-xs text-gray-400">{selectedSection.students.length} students</p>
+                </div>
+                <button onClick={() => setSelectedSection(null)} className="text-xs text-gray-400 hover:text-gray-600">Close</button>
+              </div>
+
+              {/* Teachers */}
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Teachers</p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedSection.teachers.map((t: any) => (
+                    <div key={t.id} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${t.is_class_teacher ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-50 text-gray-600 border border-gray-200'}`}>
+                      {t.name} {t.is_class_teacher && <span className="text-emerald-500 ml-1">(Class Teacher)</span>}
+                    </div>
+                  ))}
+                  {selectedSection.teachers.length === 0 && <p className="text-xs text-gray-400">No teachers assigned</p>}
+                </div>
+              </div>
+
+              {/* Students table */}
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Student</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Father</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Mother</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Transfer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedSection.students.map((s: any) => (
+                      <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="px-2 py-2 font-medium text-gray-900">{s.name}</td>
+                        <td className="px-2 py-2 text-gray-500">{s.father_name || '-'} <span className="text-gray-300">{s.parent_contact || ''}</span></td>
+                        <td className="px-2 py-2 text-gray-500">{s.mother_name || '-'} <span className="text-gray-300">{s.mother_contact || ''}</span></td>
+                        <td className="px-2 py-2">
+                          <select
+                            disabled={transferring === s.id}
+                            defaultValue=""
+                            onChange={e => { if (e.target.value) transferStudent(s.id, e.target.value); e.target.value = ''; }}
+                            className="text-xs px-2 py-1 border border-gray-200 rounded-lg bg-white disabled:opacity-50"
+                          >
+                            <option value="">Move to...</option>
+                            {selectedSection.all_sections
+                              .filter((sec: any) => sec.id !== selectedSection.section.id)
+                              .map((sec: any) => (
+                                <option key={sec.id} value={sec.id}>Section {sec.label}</option>
+                              ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
