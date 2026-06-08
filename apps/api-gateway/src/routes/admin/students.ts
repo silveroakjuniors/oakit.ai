@@ -28,6 +28,23 @@ function normalise(s: string): string {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// - Extract plain text from ExcelJS cell value (handles rich text, formulas, etc.) -
+function cellText(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  // Rich text: { richText: [{ text: '...' }, ...] }
+  if (value.richText && Array.isArray(value.richText)) {
+    return value.richText.map((r: any) => r.text || '').join('');
+  }
+  // Formula result
+  if (value.result !== undefined) return String(value.result);
+  // Date
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  // Fallback
+  return String(value);
+}
+
 // - POST /api/v1/admin/students — create a single student -
 router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
@@ -284,7 +301,7 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
 
     // Get headers from first row
     const headers: string[] = [];
-    ws.getRow(1).eachCell((cell, colNum) => { headers[colNum - 1] = String(cell.value || ''); });
+    ws.getRow(1).eachCell((cell, colNum) => { headers[colNum - 1] = cellText(cell.value); });
 
     const colMap: Record<string, number> = {};
 headers.forEach((h, i) => {
@@ -310,11 +327,11 @@ headers.forEach((h, i) => {
     colMap.class = i;
   }
 
-  else if (n === 'parentcontactnumber' || n === 'fathercontactnumber' || n === 'fathermobile' || n === 'fatherphone' || n === 'fathermobilenumber' || n === 'parentnumber' || n === 'parentmobile' || n === 'fatherno' || n === 'dadmobile') {
+  else if (n === 'parentcontactnumber' || n === 'fathercontactnumber' || n === 'fathermobile' || n === 'fatherphone' || n === 'fathermobilenumber' || n === 'parentnumber' || n === 'parentmobile' || n === 'fatherno' || n === 'dadmobile' || n === 'fathernumber' || n === 'parentmobilenumber') {
     colMap.parent_contact = i;
   }
 
-  else if (n === 'mothercontactnumber' || n === 'mothermobile' || n === 'motherphone' || n === 'mothermobilenumber' || n === 'motherno' || n === 'mommobile') {
+  else if (n === 'mothercontactnumber' || n === 'mothermobile' || n === 'motherphone' || n === 'mothermobilenumber' || n === 'motherno' || n === 'mommobile' || n === 'mothernumber') {
     colMap.mother_contact = i;
   }
 });
@@ -358,13 +375,13 @@ headers.forEach((h, i) => {
     const skipped: any[] = [];
 
     for (const row of rows) {
-      const studentName   = String(row[colMap.student_name] || '').trim();
-      const fatherName    = colMap.father_name !== undefined ? String(row[colMap.father_name] || '').trim() : '';
-      const motherName    = colMap.mother_name !== undefined ? String(row[colMap.mother_name] || '').trim() : '';
-      const sectionLabel  = String(row[colMap.section] || '').trim();
-      const className     = String(row[colMap.class] || '').trim();
-      const parentContact = colMap.parent_contact !== undefined ? String(row[colMap.parent_contact] || '').trim() : '';
-      const motherContact = colMap.mother_contact !== undefined ? String(row[colMap.mother_contact] || '').trim() : '';
+      const studentName   = cellText(row[colMap.student_name]).trim();
+      const fatherName    = colMap.father_name !== undefined ? cellText(row[colMap.father_name]).trim() : '';
+      const motherName    = colMap.mother_name !== undefined ? cellText(row[colMap.mother_name]).trim() : '';
+      const sectionLabel  = cellText(row[colMap.section]).trim();
+      const className     = cellText(row[colMap.class]).trim();
+      const parentContact = colMap.parent_contact !== undefined ? cellText(row[colMap.parent_contact]).trim() : '';
+      const motherContact = colMap.mother_contact !== undefined ? cellText(row[colMap.mother_contact]).trim() : '';
 
       if (!studentName || !className || !sectionLabel) {
         skipped.push({ studentName, reason: 'Missing student name, class, or section' });

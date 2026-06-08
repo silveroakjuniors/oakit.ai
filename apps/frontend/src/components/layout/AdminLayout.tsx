@@ -155,8 +155,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       const role = payload.role as string;
-      if (!['admin', 'principal'].includes(role)) {
-        // Not an admin or principal — redirect to their portal
+      if (role !== 'admin') {
+        // Not an admin — redirect to their own portal
+        if (role === 'principal') { router.replace('/principal'); return; }
         if (role === 'teacher') { router.replace('/teacher'); return; }
         if (role === 'parent')  { router.replace('/parent'); return; }
         if (role === 'student') { router.replace('/student'); return; }
