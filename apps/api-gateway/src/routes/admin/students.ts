@@ -254,8 +254,8 @@ router.get('/import/template', roleGuard('admin'), async (_req: Request, res: Re
     { header: 'mother name', width: 20 },
     { header: 'section', width: 10 },
     { header: 'class', width: 12 },
-    { header: 'father contact number', width: 22 },
-    { header: 'mother contact number', width: 22 },
+    { header: 'father mobile', width: 18 },
+    { header: 'mother mobile', width: 18 },
   ];
   ws.addRow(['Aarav Sharma', 'Rajesh Sharma', 'Priya Sharma', 'A', 'UKG', '9876543210', '9876543211']);
   ws.addRow(['Diya Patel', 'Suresh Patel', 'Meena Patel', 'B', 'LKG', '9123456789', '']);
@@ -290,31 +290,31 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
 headers.forEach((h, i) => {
   const n = normalise(h);
 
-  if (n === 'studentname') {
+  if (n === 'studentname' || n === 'name' || n === 'childname' || n === 'studentsname') {
     colMap.student_name = i;
   }
 
-  else if (n === 'fathername') {
+  else if (n === 'fathername' || n === 'fathersname' || n === 'dadname') {
     colMap.father_name = i;
   }
 
-  else if (n === 'mothername') {
+  else if (n === 'mothername' || n === 'mothersname' || n === 'momname') {
     colMap.mother_name = i;
   }
 
-  else if (n === 'section') {
+  else if (n === 'section' || n === 'sec') {
     colMap.section = i;
   }
 
-  else if (n === 'class') {
+  else if (n === 'class' || n === 'classname' || n === 'grade') {
     colMap.class = i;
   }
 
-  else if (n === 'parentcontactnumber' || n === 'fathercontactnumber') {
+  else if (n === 'parentcontactnumber' || n === 'fathercontactnumber' || n === 'fathermobile' || n === 'fatherphone' || n === 'fathermobilenumber' || n === 'parentnumber' || n === 'parentmobile' || n === 'fatherno' || n === 'dadmobile') {
     colMap.parent_contact = i;
   }
 
-  else if (n === 'mothercontactnumber') {
+  else if (n === 'mothercontactnumber' || n === 'mothermobile' || n === 'motherphone' || n === 'mothermobilenumber' || n === 'motherno' || n === 'mommobile') {
     colMap.mother_contact = i;
   }
 });
@@ -330,8 +330,8 @@ headers.forEach((h, i) => {
       { key: 'mother_name', label: 'mother name' },
       { key: 'section', label: 'section' },
       { key: 'class', label: 'class' },
-      { key: 'parent_contact', label: 'father contact number' },
-      { key: 'mother_contact', label: 'mother contact number' },
+      { key: 'parent_contact', label: 'father mobile' },
+      { key: 'mother_contact', label: 'mother mobile' },
     ];
 
     const missingColumns = requiredColumns
@@ -340,7 +340,7 @@ headers.forEach((h, i) => {
 
     if (missingColumns.length > 0) {
       return res.status(400).json({
-        error: `Missing required columns: ${missingColumns.join(', ')}. Please use the import template with all required headers: student name, father name, mother name, section, class, father contact number, mother contact number.`
+        error: `Missing required columns: ${missingColumns.join(', ')}. Please use the import template with all required headers: student name, father name, mother name, section, class, father mobile, mother mobile.`
       });
     }
     const rows: any[][] = [];
