@@ -6,6 +6,37 @@ import { usePathname, useRouter } from 'next/navigation';
 import OakitLogo from '@/components/OakitLogo';
 import { clearToken, getToken } from '@/lib/auth';
 import { apiGet } from '@/lib/api';
+import {
+  LayoutDashboard,
+  Users,
+  School,
+  GraduationCap,
+  BarChart3,
+  Inbox,
+  FileText,
+  BookOpen,
+  Music,
+  CalendarDays,
+  ClipboardList,
+  DollarSign,
+  Tag,
+  CreditCard,
+  Pencil,
+  Gift,
+  Receipt,
+  Briefcase,
+  TrendingUp,
+  Megaphone,
+  Search,
+  AlertTriangle,
+  Bot,
+  FlaskConical,
+  Shirt,
+  Compass,
+  Settings,
+  LogOut,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // ── Finance permission helpers ────────────────────────────────────────────────
 // These mirror the backend PERMISSIONS constants.
@@ -24,45 +55,45 @@ const FIN_PERMS = {
 interface NavItem {
   href: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
   group: string;
   /** If set, item is only shown when user has this financial permission */
   requirePerm?: string;
 }
 
 const navItems: NavItem[] = [
-  { href: '/admin',                  label: 'Dashboard',        icon: '⊞',  group: 'main' },
-  { href: '/admin/users',            label: 'Users & Roles',    icon: '👥',  group: 'school' },
-  { href: '/admin/classes',          label: 'Classes',          icon: '🏫',  group: 'school' },
-  { href: '/admin/students',           label: 'Students',           icon: '🎒',  group: 'school' },
-  { href: '/admin/students/dashboard', label: 'Students Dashboard', icon: '📊',  group: 'school' },
-  { href: '/admin/enquiries',        label: 'Enquiries',        icon: '📬',  group: 'school' },
-  { href: '/admin/curriculum',       label: 'Curriculum',       icon: '📄',  group: 'content' },
-  { href: '/admin/textbook-planner', label: 'Textbook Planner', icon: '📚',  group: 'content' },
-  { href: '/admin/supplementary',    label: 'Activities',       icon: '🎵',  group: 'content' },
-  { href: '/admin/calendar',         label: 'Calendar',         icon: '📅',  group: 'content' },
-  { href: '/admin/plans',            label: 'Daily Planner',    icon: '🗓️', group: 'content' },
+  { href: '/admin',                  label: 'Dashboard',        icon: LayoutDashboard, group: 'main' },
+  { href: '/admin/users',            label: 'Users & Roles',    icon: Users,           group: 'school' },
+  { href: '/admin/classes',          label: 'Classes',          icon: School,          group: 'school' },
+  { href: '/admin/students',           label: 'Students',           icon: GraduationCap, group: 'school' },
+  { href: '/admin/students/dashboard', label: 'Students Dashboard', icon: BarChart3,     group: 'school' },
+  { href: '/admin/enquiries',        label: 'Enquiries',        icon: Inbox,           group: 'school' },
+  { href: '/admin/curriculum',       label: 'Curriculum',       icon: FileText,        group: 'content' },
+  { href: '/admin/textbook-planner', label: 'Textbook Planner', icon: BookOpen,        group: 'content' },
+  { href: '/admin/supplementary',    label: 'Activities',       icon: Music,           group: 'content' },
+  { href: '/admin/calendar',         label: 'Calendar',         icon: CalendarDays,    group: 'content' },
+  { href: '/admin/plans',            label: 'Daily Planner',    icon: ClipboardList,   group: 'content' },
   // Finance — each item gated by the relevant permission
-  { href: '/admin/finance',                label: 'Finance',          icon: '💰',  group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
-  { href: '/admin/finance/fee-structures', label: 'Fee Structures',   icon: '🏷️', group: 'finance', requirePerm: FIN_PERMS.MANAGE_FEE_STRUCTURE },
-  { href: '/admin/finance/fees',           label: 'Fee Collection',   icon: '💳',  group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
-  { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: '📝',  group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
-  { href: '/admin/finance/concessions',    label: 'Concessions',      icon: '🎁',  group: 'finance', requirePerm: FIN_PERMS.MANAGE_CONCESSION },
-  { href: '/admin/finance/expenses',       label: 'Expenses',         icon: '🧾',  group: 'finance', requirePerm: FIN_PERMS.VIEW_EXPENSE },
-  { href: '/admin/finance/salary',         label: 'Salary',           icon: '👔',  group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
-  { href: '/admin/finance/reports',        label: 'Reports',          icon: '📈',  group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
-  { href: '/admin/reports',          label: 'Reports',          icon: '📊',  group: 'insights' },
-  { href: '/admin/announcements',    label: 'Announcements',    icon: '📢',  group: 'insights' },
-  { href: '/admin/audit',            label: 'Audit Log',        icon: '🔍',  group: 'insights' },
-  { href: '/admin/smart-alerts',     label: 'Smart Alerts',     icon: '🚨',  group: 'insights' },
-  { href: '/admin/ai-usage',         label: 'Oakie Usage',      icon: '🤖',  group: 'insights' },
-  { href: '/admin/homework',         label: 'Homework',         icon: '📝',  group: 'school' },
-  { href: '/admin/quizzes',          label: 'Quizzes',          icon: '🧪',  group: 'school' },
-  { href: '/admin/uniform',          label: 'Uniform Sizing',   icon: '👕',  group: 'school' },
-  { href: '/admin/student-portal',   label: 'Student Portal',   icon: '🎓',  group: 'system' },
-  { href: '/admin/hr',               label: 'HR',               icon: '👔',  group: 'system' },
-  { href: '/admin/setup',            label: 'Setup Wizard',     icon: '🧭',  group: 'system' },
-  { href: '/admin/settings',         label: 'Settings',         icon: '⚙️', group: 'system' },
+  { href: '/admin/finance',                label: 'Finance',          icon: DollarSign,    group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
+  { href: '/admin/finance/fee-structures', label: 'Fee Structures',   icon: Tag,           group: 'finance', requirePerm: FIN_PERMS.MANAGE_FEE_STRUCTURE },
+  { href: '/admin/finance/fees',           label: 'Fee Collection',   icon: CreditCard,    group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
+  { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: Pencil,        group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
+  { href: '/admin/finance/concessions',    label: 'Concessions',      icon: Gift,          group: 'finance', requirePerm: FIN_PERMS.MANAGE_CONCESSION },
+  { href: '/admin/finance/expenses',       label: 'Expenses',         icon: Receipt,       group: 'finance', requirePerm: FIN_PERMS.VIEW_EXPENSE },
+  { href: '/admin/finance/salary',         label: 'Salary',           icon: Briefcase,     group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
+  { href: '/admin/finance/reports',        label: 'Reports',          icon: TrendingUp,    group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
+  { href: '/admin/reports',          label: 'Reports',          icon: BarChart3,       group: 'insights' },
+  { href: '/admin/announcements',    label: 'Announcements',    icon: Megaphone,       group: 'insights' },
+  { href: '/admin/audit',            label: 'Audit Log',        icon: Search,          group: 'insights' },
+  { href: '/admin/smart-alerts',     label: 'Smart Alerts',     icon: AlertTriangle,   group: 'insights' },
+  { href: '/admin/ai-usage',         label: 'Oakie Usage',      icon: Bot,             group: 'insights' },
+  { href: '/admin/homework',         label: 'Homework',         icon: Pencil,          group: 'school' },
+  { href: '/admin/quizzes',          label: 'Quizzes',          icon: FlaskConical,    group: 'school' },
+  { href: '/admin/uniform',          label: 'Uniform Sizing',   icon: Shirt,           group: 'school' },
+  { href: '/admin/student-portal',   label: 'Student Portal',   icon: GraduationCap,   group: 'system' },
+  { href: '/admin/hr',               label: 'HR',               icon: Briefcase,       group: 'system' },
+  { href: '/admin/setup',            label: 'Setup Wizard',     icon: Compass,         group: 'system' },
+  { href: '/admin/settings',         label: 'Settings',         icon: Settings,        group: 'system' },
 ];
 
 const NAV_GROUPS = [
@@ -108,6 +139,7 @@ function SidebarContent({ pathname, permissions, onClose }: { pathname: string; 
               )}
               {items.map(item => {
                 const isActive = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href));
+                const Icon = item.icon;
                 return (
                   <Link key={item.href} href={item.href} onClick={onClose}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
@@ -115,7 +147,9 @@ function SidebarContent({ pathname, permissions, onClose }: { pathname: string; 
                         ? 'bg-primary-50 text-primary-700'
                         : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
                     }`}>
-                    <span className="text-base w-5 text-center shrink-0">{item.icon}</span>
+                    <span className="w-5 text-center shrink-0 flex items-center justify-center">
+                      <Icon className="w-4 h-4" />
+                    </span>
                     <span className="truncate">{item.label}</span>
                   </Link>
                 );
@@ -129,7 +163,9 @@ function SidebarContent({ pathname, permissions, onClose }: { pathname: string; 
       <div className="px-3 py-4 border-t border-neutral-100">
         <button onClick={() => { clearToken(); router.push('/login'); }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-all">
-          <span className="text-base w-5 text-center shrink-0">↩</span>
+          <span className="w-5 text-center shrink-0 flex items-center justify-center">
+            <LogOut className="w-4 h-4" />
+          </span>
           <span>Sign out</span>
         </button>
       </div>
@@ -193,7 +229,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <span className="text-neutral-400 font-medium">Admin</span>
             <span className="text-neutral-300">/</span>
             <span className="text-neutral-700 font-semibold capitalize">
-              {pathname.split('/').filter(Boolean).slice(1).join(' › ') || 'Dashboard'}
+              {pathname.split('/').filter(Boolean).slice(1).join(' > ') || 'Dashboard'}
             </span>
           </div>
           <span className="lg:hidden text-sm font-semibold text-neutral-700">Admin Portal</span>
@@ -204,7 +240,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </span>
           <button onClick={() => { clearToken(); router.push('/login'); }}
             className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-800 font-medium px-3 py-1.5 rounded-xl hover:bg-neutral-100 transition-colors min-h-[36px] border border-transparent hover:border-neutral-200">
-            ↩ Sign out
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign out</span>
           </button>
         </div>
       </header>
@@ -222,7 +259,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <aside className="absolute left-0 top-0 h-full w-64 flex flex-col bg-white border-r border-neutral-200 animate-slide-in-right">
               <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
                 <OakitLogo size="xs" variant="dark" />
-                <button onClick={() => setDrawerOpen(false)} className="text-neutral-400 hover:text-neutral-700 w-8 h-8 flex items-center justify-center rounded-lg">✕</button>
+                <button onClick={() => setDrawerOpen(false)} className="text-neutral-400 hover:text-neutral-700 w-8 h-8 flex items-center justify-center rounded-lg">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                  </svg>
+                </button>
               </div>
               <SidebarContent pathname={pathname} permissions={finPerms} onClose={() => setDrawerOpen(false)} />
             </aside>
