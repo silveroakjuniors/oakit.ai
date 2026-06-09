@@ -312,18 +312,20 @@ export default function AdminDashboardPage() {
             [1,2,3,4].map(i => <div key={i} className="h-36 rounded-2xl bg-white border border-neutral-200/80 animate-pulse" />)
           ) : (
             <>
-              <StatCard onClick={() => setDrillModal('students')} label="Total Students" value={stats?.students ?? 'ÔÇö'}
-                sub={`${stats?.classes ?? 0} classes ┬À ${stats?.sections ?? 0} sections`}
+              <StatCard onClick={() => setDrillModal('students')} label="Total Students" value={stats?.students ?? '--'}
+                sub={`${stats?.classes ?? 0} classes - ${stats?.sections ?? 0} sections`}
                 icon={<Users className="w-4 h-4 text-blue-600" />}
                 accentColor="bg-blue-100"
               />
               <StatCard
-                label="Present Today" value={todaySnap?.students_present ?? 'ÔÇö'}
+                onClick={() => setDrillModal('attendance')}
+                label="Present Today" value={todaySnap?.students_present ?? '--'}
                 sub={`of ${stats?.students ?? '?'} enrolled`}
                 icon={<CheckSquare className="w-4 h-4 text-emerald-600" />}
                 accentColor="bg-emerald-100"
               />
               <StatCard
+                onClick={() => setDrillModal('attendance')}
                 label="Attendance Logged"
                 value={`${todaySnap?.sections_attendance_submitted ?? 0}/${todaySnap?.total_sections ?? 0}`}
                 sub={`${attPct}% sections submitted`}
@@ -332,6 +334,7 @@ export default function AdminDashboardPage() {
                 progress={attPct}
               />
               <StatCard
+                onClick={() => setDrillModal('plans')}
                 label="Plans Done"
                 value={`${todaySnap?.sections_plans_completed ?? 0}/${todaySnap?.total_sections ?? 0}`}
                 sub={`${planPct}% sections complete`}
