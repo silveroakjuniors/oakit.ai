@@ -15,7 +15,7 @@ export default function FirstLoginSetupPage() {
     school_code: string; mobile: string; name: string; child_name?: string; account_type: string;
   } | null>(null);
 
-  const [step, setStep] = useState<'password' | 'security'>('password');
+  const [step, setStep] = useState<'password' | 'security' | 'done'>('password');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [questions, setQuestions] = useState<SecurityQuestion[]>([]);
@@ -91,14 +91,16 @@ export default function FirstLoginSetupPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
 
-      // Store token and redirect
+      // Store token and show success before redirect
       setToken(token);
       setRole(context?.account_type === 'parent' ? 'parent' : 'teacher');
       setSchoolCode(context?.school_code || '');
       sessionStorage.removeItem('oakit_first_login');
+      setStep('done');
 
+      // Brief pause to show success, then redirect
       const redirect = context?.account_type === 'parent' ? '/parent' : '/teacher';
-      router.push(redirect);
+      setTimeout(() => router.push(redirect), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed');
     } finally { setLoading(false); }
@@ -183,6 +185,19 @@ export default function FirstLoginSetupPage() {
                 </button>
               </form>
             </>
+          )}
+
+          {step === 'done' && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                <ShieldCheck size={32} className="text-emerald-600" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">All set!</h2>
+              <p className="text-sm text-gray-500">Your account is ready. Redirecting you now...</p>
+              <div className="mt-4">
+                <Loader2 size={20} className="animate-spin text-emerald-600 mx-auto" />
+              </div>
+            </div>
           )}
         </div>
       </div>
