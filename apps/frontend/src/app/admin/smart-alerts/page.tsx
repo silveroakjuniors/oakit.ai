@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ClipboardList, TrendingDown, BookOpen, FlaskConical, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -47,12 +48,12 @@ interface AlertsData {
   generated_at: string;
 }
 
-const TYPE_ICONS: Record<string, string> = {
-  teacher_not_completing: '📋',
-  low_attendance_trend: '📉',
-  class_falling_behind: '📚',
-  weak_subject: '🧪',
-  low_teacher_performance: '⚠️',
+const TYPE_ICON_MAP: Record<string, typeof ClipboardList> = {
+  teacher_not_completing: ClipboardList,
+  low_attendance_trend: TrendingDown,
+  class_falling_behind: BookOpen,
+  weak_subject: FlaskConical,
+  low_teacher_performance: AlertTriangle,
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -119,7 +120,7 @@ export default function SmartAlertsPage() {
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               tab === t ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'text-gray-500 hover:bg-gray-50'
             }`}>
-            {t === 'alerts' ? '🚨 Alerts' : '📊 Teacher Scores'}
+            {t === 'alerts' ? 'Alerts' : 'Teacher Scores'}
           </button>
         ))}
       </div>
@@ -128,14 +129,14 @@ export default function SmartAlertsPage() {
         <div className="space-y-3">
           {!data?.alerts.length ? (
             <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-8 text-center">
-              <p className="text-2xl mb-2">✅</p>
+              <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
               <p className="font-semibold text-emerald-800">All clear!</p>
               <p className="text-sm text-emerald-600 mt-1">No alerts at this time.</p>
             </div>
           ) : data.alerts.map((alert, i) => (
             <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
               <div className="flex items-start gap-3">
-                <span className="text-xl mt-0.5">{TYPE_ICONS[alert.type] || '⚠️'}</span>
+                {(() => { const Icon = TYPE_ICON_MAP[alert.type] || AlertTriangle; return <Icon className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />; })()}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <p className="font-semibold text-gray-900 text-sm">{alert.title}</p>
