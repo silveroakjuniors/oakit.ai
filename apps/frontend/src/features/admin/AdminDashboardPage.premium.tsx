@@ -505,13 +505,19 @@ export default function AdminDashboardPage() {
           </Panel>
         )}
 
-        {/* ÔöÇÔöÇ CURRICULUM COVERAGE ÔöÇÔöÇ */}
+        {/* --- CURRICULUM COVERAGE --- */}
         <Panel>
           <PanelHeader
-            icon="­ƒôè"
+            icon={<BarChart3 className="w-4 h-4 text-emerald-600" />}
             title="Curriculum Coverage"
-            subtitle={coverage.length > 0 ? `${coverage.filter(r => r.band === 'green').length} on track ┬À ${coverage.filter(r => r.band === 'red').length} critical` : 'View coverage by section'}
-            badge={coverage.filter(r => r.alert).length > 0 ? `ÔÜá´©Å ${coverage.filter(r => r.alert).length} need attention` : undefined}
+            subtitle={coverage.length > 0
+              ? (coverage.every(r => r.coverage_pct < 5)
+                ? 'Just getting started - coverage will build over the coming weeks'
+                : `${coverage.filter(r => r.band === 'green').length} on track, ${coverage.filter(r => r.band === 'red').length} behind`)
+              : 'View coverage by section'}
+            badge={coverage.filter(r => r.alert).length > 0 && !coverage.every(r => r.coverage_pct < 5)
+              ? `${coverage.filter(r => r.alert).length} need attention`
+              : undefined}
             badgeColor="bg-red-100 text-red-700"
             expanded={coverageExpanded} onToggle={() => setCoverageExpanded(v => !v)}
           />
