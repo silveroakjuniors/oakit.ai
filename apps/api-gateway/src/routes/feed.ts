@@ -22,6 +22,10 @@ function getSupabase() {
 
 // ── Image compression (Req 1.3 — max 300KB) ──────────────────────────────────
 const MAX_IMAGE_BYTES = 300 * 1024; // 300 KB
+const MAX_VIDEO_SIZE = 25 * 1024 * 1024; // 25 MB (standard WhatsApp video size)
+const VIDEO_RETENTION_DAYS = 5; // Videos auto-delete after 5 days
+const VIDEO_MIMETYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp'];
+const IMAGE_MIMETYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 async function compressImage(inputPath: string, mimeType: string): Promise<Buffer> {
   try {
@@ -62,10 +66,10 @@ async function compressImage(inputPath: string, mimeType: string): Promise<Buffe
 
 const upload = multer({
   dest: UPLOAD_TMP,
-  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+  limits: { fileSize: MAX_VIDEO_SIZE, files: 5 },
   fileFilter: (_req, file, cb) => {
-    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Images must be JPEG, PNG or WebP'));
+    if ([...IMAGE_MIMETYPES, ...VIDEO_MIMETYPES].includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Files must be JPEG, PNG, WebP images or MP4, MOV, WebM videos'));
   },
 });
 
@@ -131,7 +135,8 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } | null 
 
 async function uploadFeedImage(
   localPath: string, schoolId: string, postId: string, scope: string,
-  sectionId: string | null, filename: string, mimeType: string
+  sectionId: string | null, filename: string, mimeType: string,
+  skipCompression: boolean = false
 ): Promise<{ storagePath: string; cdnUrl: string }> {
   const supabase = getSupabase();
   const ext = path.extname(filename) || '.jpg';
@@ -140,7 +145,10 @@ async function uploadFeedImage(
     ? `${schoolId}/memory-feed/school/${postId}/${safeName}`
     : `${schoolId}/memory-feed/sections/${sectionId}/${postId}/${safeName}`;
 
-  const buf = await compressImage(localPath, mimeType); // Req 1.3 — compress to ≤300KB
+  // Videos: upload raw (no compression). Images: compress to 300KB
+  const buf = skipCompression
+    ? fs.readFileSync(localPath)
+    : await compressImage(localPath, mimeType);
 
   if (!supabase) {
     const dir = path.resolve('./uploads/feed', postId);
@@ -265,8 +273,16 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
 
   try {
     if (files.length === 0) {
-      return res.status(400).json({ error: 'At least one image is required' });
+      return res.status(400).json({ error: 'At least one image or video is required' });
     }
+
+    // Validate: videos limited to 1 per post, max 25MB each
+    const videoFiles = files.filter(f => VIDEO_MIMETYPES.includes(f.mimetype));
+    const imageFiles = files.filter(f => IMAGE_MIMETYPES.includes(f.mimetype));
+    if (videoFiles.length > 1) {
+      return res.status(400).json({ error: 'Maximum 1 video per post' });
+    }
+    const hasVideo = videoFiles.length > 0;
 
     const caption = (req.body.caption || '').trim().slice(0, 500) || null;
     const isAdmin = user.role === 'admin' || user.role === 'principal';
@@ -334,7 +350,9 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
       }
     }
 
-    const expiresAt = new Date(Date.now() + settings.retention_days * 86400000);
+    // Videos get shorter retention (5 days), images use default (20 days)
+    const retentionDays = hasVideo ? VIDEO_RETENTION_DAYS : settings.retention_days;
+    const expiresAt = new Date(Date.now() + retentionDays * 86400000);
 
     const postResult = await pool.query(
       `INSERT INTO feed_posts
@@ -345,23 +363,25 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
     );
     const postId = postResult.rows[0].id;
 
-    const imageRows: { storagePath: string; cdnUrl: string; order: number }[] = [];
+    const imageRows: { storagePath: string; cdnUrl: string; order: number; mediaType: string }[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const isVideo = VIDEO_MIMETYPES.includes(file.mimetype);
       const { storagePath, cdnUrl } = await uploadFeedImage(
         file.path, user.school_id, postId, postScope, sectionId,
-        file.originalname || `image${i}.jpg`, file.mimetype
+        file.originalname || `media${i}${isVideo ? '.mp4' : '.jpg'}`, file.mimetype,
+        isVideo // skip compression for videos
       );
       uploadedPaths.push(storagePath);
-      imageRows.push({ storagePath, cdnUrl, order: i });
+      imageRows.push({ storagePath, cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });
       fs.unlink(file.path, () => {});
     }
 
     for (const img of imageRows) {
       await pool.query(
-        `INSERT INTO feed_post_images (post_id, storage_path, cdn_url, display_order)
-         VALUES ($1, $2, $3, $4)`,
-        [postId, img.storagePath, img.cdnUrl, img.order]
+        `INSERT INTO feed_post_images (post_id, storage_path, cdn_url, display_order, media_type)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [postId, img.storagePath, img.cdnUrl, img.order, img.mediaType]
       );
     }
 
