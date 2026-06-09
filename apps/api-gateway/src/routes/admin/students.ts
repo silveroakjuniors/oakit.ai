@@ -804,11 +804,12 @@ router.get('/dashboard/section/:section_id', roleGuard('admin', 'principal'), as
     // Get teachers assigned to this section
     const teachersRow = await pool.query(
       `SELECT u.id, u.name, u.mobile,
-              ts.is_class_teacher
+              CASE WHEN sec.class_teacher_id = u.id THEN true ELSE false END as is_class_teacher
        FROM teacher_sections ts
        JOIN users u ON u.id = ts.teacher_id
+       JOIN sections sec ON sec.id = ts.section_id
        WHERE ts.section_id = $1 AND u.is_active = true
-       ORDER BY ts.is_class_teacher DESC, u.name`,
+       ORDER BY (sec.class_teacher_id = u.id) DESC, u.name`,
       [section_id]
     );
 
