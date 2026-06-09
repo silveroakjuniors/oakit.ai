@@ -148,9 +148,15 @@ function drawTag(doc, x, y, student, day) {
   doc.fillColor('#E8960C').fontSize(9).font('Helvetica-Bold')
     .text(day, dayX, y + 5, { width: dayW, align: 'center', height: 11, lineBreak: false });
 
-  // "Welcome Back" (right side, below day, stylish dark green italic)
-  doc.fillColor('#1B4332').fontSize(7).font('Helvetica-BoldOblique')
-    .text('Welcome Back!', dayX, y + 18, { width: dayW, align: 'center', height: 9, lineBreak: false });
+  // "Welcome Back" (right side, below day, stylish dark green)
+  // Two-line stacked style with accent
+  doc.fillColor('#1B4332').fontSize(7.5).font('Helvetica-BoldOblique')
+    .text('~ Welcome ~', dayX, y + 17, { width: dayW, align: 'center', height: 9, lineBreak: false });
+  doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Oblique')
+    .text('Back', dayX, y + 27, { width: dayW, align: 'center', height: 8, lineBreak: false });
+  // Small decorative line under
+  const lineCenter = dayX + dayW / 2;
+  doc.moveTo(lineCenter - 14, y + 36).lineTo(lineCenter + 14, y + 36).lineWidth(0.4).stroke('#E8960C');
 
   // Center text area
   const textX = x + 5 + logoSize + 7;
