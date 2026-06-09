@@ -25,6 +25,21 @@ router.get('/', async (req: Request, res: Response) => {
     if (cached) return res.json(JSON.parse(cached));
 
     const today = await getToday(school_id);
+
+    // Check if school has enough data (at least 5 working days of completions)
+    const dataCheck = await pool.query(
+      `SELECT COUNT(DISTINCT completion_date)::int as days
+       FROM daily_completions WHERE school_id = $1`,
+      [school_id]
+    );
+    const workingDays = dataCheck.rows[0]?.days || 0;
+    if (workingDays < 5) {
+      // Not enough data yet — return empty alerts with a message
+      const result = { alerts: [], teacher_scores: [], message: 'Smart alerts will appear after 5 days of school activity.' };
+      await redis.set(cacheKey, JSON.stringify(result), { EX: 300 });
+      return res.json(result);
+    }
+
     const alerts: any[] = [];
 
     // ── 1. Teachers not completing plans ─────────────────────────────────
