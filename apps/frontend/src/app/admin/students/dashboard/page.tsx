@@ -84,16 +84,26 @@ export default function StudentsDashboardPage() {
   // Filters
   const [filterClassId, setFilterClassId] = useState('');
 
-  // Detail modal
+  // Detail modal (popup instead of inline panel)
   const [detailStatus, setDetailStatus] = useState<string | null>(null);
   const [detailStudents, setDetailStudents] = useState<StudentDetail[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activating, setActivating] = useState(false);
 
-  // Section detail panel
+  // Section detail modal
   const [selectedSection, setSelectedSection] = useState<any>(null);
   const [sectionLoading, setSectionLoading] = useState(false);
   const [transferring, setTransferring] = useState<string | null>(null);
+
+  // Confirmation modal
+  const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  // Toast notification
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  }
 
   async function loadSection(sectionId: string) {
     setSectionLoading(true);
@@ -121,7 +131,7 @@ export default function StudentsDashboardPage() {
       // Reload section and dashboard
       if (selectedSection) loadSection(selectedSection.section.id);
       load();
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Transfer failed'); }
+    } catch (e: unknown) { showToast(e instanceof Error ? e.message : 'Transfer failed', 'error'); }
     finally { setTransferring(null); }
   }
 
@@ -186,29 +196,33 @@ export default function StudentsDashboardPage() {
       const a = document.createElement('a');
       a.href = url; a.download = `students_export_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Export failed'); }
+    } catch (e: unknown) { showToast(e instanceof Error ? e.message : 'Export failed', 'error'); }
     finally { setExporting(false); }
   }
 
   async function handleActivateAll() {
     if (!detailStudents.length) return;
     const studentIds = detailStudents.map(s => s.id);
-    if (!confirm(`Activate parent logins for ${studentIds.length} students?`)) return;
-    setActivating(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/admin/students/bulk-activate-parents`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_ids: studentIds, relation: 'both' }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Activation failed');
-      alert(`Activated: ${d.activated}, Skipped: ${d.skipped}`);
-      // Refresh dashboard and detail list
-      load();
-      setDetailStatus(null);
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Activation failed'); }
-    finally { setActivating(false); }
+    setConfirmModal({
+      message: `Activate parent logins for ${studentIds.length} student${studentIds.length !== 1 ? 's' : ''}?`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setActivating(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/v1/admin/students/bulk-activate-parents`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student_ids: studentIds, relation: 'both' }),
+          });
+          const d = await res.json();
+          if (!res.ok) throw new Error(d.error || 'Activation failed');
+          showToast(`Activated: ${d.activated}, Skipped: ${d.skipped}`, 'success');
+          load();
+          setDetailStatus(null);
+        } catch (e: unknown) { showToast(e instanceof Error ? e.message : 'Activation failed', 'error'); }
+        finally { setActivating(false); }
+      },
+    });
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -324,56 +338,58 @@ export default function StudentsDashboardPage() {
         </button>
       </div>
 
-      {/* Detail Modal */}
+      {/* Detail Modal (Popup) */}
       {detailStatus && (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800 capitalize">
-              {detailStatus.replace(/_/g, ' ')} Students ({detailStudents.length})
-            </h3>
-            <div className="flex items-center gap-3">
-              {detailStatus === 'not_activated' && detailStudents.length > 0 && (
-                <button
-                  onClick={handleActivateAll}
-                  disabled={activating}
-                  className="px-4 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                >
-                  {activating ? 'Activating...' : `Activate All (${detailStudents.length})`}
-                </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setDetailStatus(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h3 className="text-sm font-semibold text-gray-800 capitalize">
+                {detailStatus.replace(/_/g, ' ')} Students ({detailStudents.length})
+              </h3>
+              <div className="flex items-center gap-3">
+                {detailStatus === 'not_activated' && detailStudents.length > 0 && (
+                  <button
+                    onClick={handleActivateAll}
+                    disabled={activating}
+                    className="px-4 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  >
+                    {activating ? 'Activating...' : `Activate All (${detailStudents.length})`}
+                  </button>
+                )}
+                <button onClick={() => setDetailStatus(null)} className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-xs">X</button>
+              </div>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto max-h-[60vh]">
+              {detailLoading ? (
+                <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
+              ) : detailStudents.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4 text-center">No students found</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Student</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Class</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Father</th>
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Mother</th>
+                      {detailStatus === 'logged_in' && <th className="text-left px-2 py-1.5 font-medium text-gray-600">Last Login</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailStudents.map(s => (
+                      <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="px-2 py-1.5 font-medium text-gray-900">{s.name}</td>
+                        <td className="px-2 py-1.5 text-gray-500">{s.class_name} {s.section_label}</td>
+                        <td className="px-2 py-1.5 text-gray-500">{s.father_name || '-'} <span className="text-gray-400">{s.parent_contact || ''}</span></td>
+                        <td className="px-2 py-1.5 text-gray-500">{s.mother_name || '-'} <span className="text-gray-400">{s.mother_contact || ''}</span></td>
+                        {detailStatus === 'logged_in' && <td className="px-2 py-1.5 text-gray-400">{s.last_login ? new Date(s.last_login).toLocaleDateString() : '-'}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
-              <button onClick={() => setDetailStatus(null)} className="text-xs text-gray-400 hover:text-gray-600">Close</button>
             </div>
           </div>
-          {detailLoading ? (
-            <p className="text-sm text-gray-400 py-4 text-center">Loading...</p>
-          ) : detailStudents.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No students found</p>
-          ) : (
-            <div className="max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Student</th>
-                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Class</th>
-                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Father</th>
-                    <th className="text-left px-2 py-1.5 font-medium text-gray-600">Mother</th>
-                    {detailStatus === 'logged_in' && <th className="text-left px-2 py-1.5 font-medium text-gray-600">Last Login</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailStudents.map(s => (
-                    <tr key={s.id} className="border-t border-gray-50 hover:bg-gray-50">
-                      <td className="px-2 py-1.5 font-medium text-gray-900">{s.name}</td>
-                      <td className="px-2 py-1.5 text-gray-500">{s.class_name} {s.section_label}</td>
-                      <td className="px-2 py-1.5 text-gray-500">{s.father_name || '-'} <span className="text-gray-400">{s.parent_contact || ''}</span></td>
-                      <td className="px-2 py-1.5 text-gray-500">{s.mother_name || '-'} <span className="text-gray-400">{s.mother_contact || ''}</span></td>
-                      {detailStatus === 'logged_in' && <td className="px-2 py-1.5 text-gray-400">{s.last_login ? new Date(s.last_login).toLocaleDateString() : '-'}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       )}
 
@@ -563,6 +579,39 @@ export default function StudentsDashboardPage() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-base font-bold text-gray-900 mb-2">Confirm Action</h3>
+            <p className="text-sm text-gray-600 mb-6">{confirmModal.message}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-[#1B4332] rounded-xl hover:bg-[#163828] transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium animate-[slideUp_0.3s_ease] ${
+          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toast.message}
         </div>
       )}
     </div>
