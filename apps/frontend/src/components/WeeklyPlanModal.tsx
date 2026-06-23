@@ -119,9 +119,9 @@ export default function WeeklyPlanModal({ open, onClose, token, sectionId, today
   const workingDays = days.filter(d => !d.holiday_label && !['holiday', 'special', 'no_plan'].includes(d.status) || d.chunks?.length > 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+      <div className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden animate-slide-up flex flex-col" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 shrink-0">
@@ -208,7 +208,7 @@ export default function WeeklyPlanModal({ open, onClose, token, sectionId, today
         </div>
 
         {/* Day list */}
-        <div className="flex-1 overflow-y-auto px-5 pb-3 flex flex-col gap-2">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-3 flex flex-col gap-2 -webkit-overflow-scrolling-touch">
           {loading ? (
             <div className="py-10 text-center text-sm text-neutral-400">Loading plan…</div>
           ) : days.length === 0 ? (
