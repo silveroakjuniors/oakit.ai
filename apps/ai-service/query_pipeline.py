@@ -46,13 +46,14 @@ async def _store_cached_plan(pool, chunk_ids: list, school_id: str, ai_text: str
     chunk_hash = _compute_chunk_hash(chunk_ids, plan_date)
     try:
         await pool.execute(
-            """INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text)
-               VALUES ($1, $2, $3, $4)
+            """INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text, plan_date)
+               VALUES ($1, $2, $3, $4, $5)
                ON CONFLICT (chunk_hash) DO NOTHING""",
             chunk_hash,
             UUID(school_id),
             [UUID(cid) for cid in chunk_ids],
             ai_text,
+            date_type.fromisoformat(plan_date) if plan_date else None,
         )
         print(f"[PlanCache] STORED — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks, date={plan_date}, {len(ai_text)} chars)")
     except Exception as e:
@@ -101,6 +102,16 @@ def _parse_date_from_text(text: str, fallback: str) -> str:
     if m:
         try:
             return str(date_type(today.year, months[m.group(1)], int(m.group(2))))
+        except (ValueError, KeyError):
+            pass
+    # Day-first without year: "25th june", "25 june", "3rd july"
+    m = re.search(
+        r'(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)',
+        t,
+    )
+    if m:
+        try:
+            return str(date_type(today.year, months[m.group(2)], int(m.group(1))))
         except (ValueError, KeyError):
             pass
     return fallback
@@ -2255,6 +2266,7 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                 )
                 if class_row:
                     ai_plan_mode = class_row["ai_plan_mode"] or "standard"
+                    print(f"[PlanMode] class-level: {ai_plan_mode}")
                 else:
                     settings_row = await pool.fetchrow(
                         "SELECT ai_plan_mode FROM school_settings WHERE school_id = $1",
@@ -2262,8 +2274,12 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                     )
                     if settings_row:
                         ai_plan_mode = settings_row["ai_plan_mode"] or "standard"
-            except Exception:
+                    print(f"[PlanMode] school-level: {ai_plan_mode}")
+            except Exception as e:
+                print(f"[PlanMode] ERROR: {e} — defaulting to standard")
                 pass  # default to standard if table doesn't exist yet
+
+            print(f"[PlanMode] FINAL ai_plan_mode={ai_plan_mode} for section={sec_id}")
 
             is_plan_request_only = any(p in text.lower() for p in [
                 "what is my plan", "what's my plan", "show me the plan", "give me the plan",
@@ -2280,9 +2296,17 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                     llm_provider = "cached"
                 else:
                     # Rich AI-generated plan with objectives, activities, offline support
-                    # Build week number for the header
-                    week_num = ((target_dt - target_dt.replace(day=1)).days // 7) + 1
-                    day_num_in_week = target_dt.weekday() + 1  # 1=Mon
+                    # Build the raw curriculum content exactly as stored
+                    raw_curriculum_lines = []
+                    for ch in chunks:
+                        label = ch.get("topic_label") or ""
+                        content = (ch.get("content") or "").strip()
+                        if content:
+                            raw_curriculum_lines.append(content)
+                        elif label:
+                            raw_curriculum_lines.append(label)
+
+                    raw_curriculum_text = "\n".join(raw_curriculum_lines)
 
                     subjects_list = []
                     for ch in chunks:
@@ -2291,53 +2315,49 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                             subjects_list.append(f"- {s['subject']}: {s['activity']}")
 
                     rich_system = (
-                        f"You are an expert early childhood curriculum planner for {class_full} ({age_info['age']}).\n"
-                        f"Generate a detailed, structured daily plan in the exact format shown.\n"
-                        f"Use emojis for section headers. Be specific and practical.\n"
-                        f"Output plain text only — no markdown bold, no tables.\n"
+                        f"You are a curriculum presenter for {class_full} ({age_info['age']}).\n"
+                        f"CRITICAL: You must preserve ALL page numbers, reference codes (Res., Ref., pg no.), "
+                        f"rhyme numbers, book names, and specific resources EXACTLY as written in the curriculum.\n"
+                        f"DO NOT replace them with your own suggestions.\n"
+                        f"You ADD teaching tips and activity suggestions ON TOP of the original content.\n"
+                        f"Use emojis for section headers. Plain text only — no markdown bold, no tables.\n"
                         f"Keep it teacher-friendly for mobile reading."
                     )
 
-                    rich_prompt = f"""Generate a detailed daily plan in this EXACT format:
+                    rich_prompt = f"""FORMAT the following curriculum content into a structured daily plan.
 
-🗓️ {class_full} – Week {week_num}: Day {day_num_in_week} Planner
-📅 Date: {date_label}
-Theme: [derive a theme from the topics below]
+CURRICULUM CONTENT (preserve EXACTLY — do not change page numbers, references, or resources):
+{raw_curriculum_text}
+
+FORMAT as:
+📅 {date_label} — {class_full}
 
 🎯 Objective:
-· [3-4 overall objectives for the day based on all subjects]
+· [2-3 objectives derived from the actual topics above]
 
-CRITICAL ORDERING RULE: The FIRST section must ALWAYS be the morning routine:
-⭕ Circle Time / Morning Meet
-Topic: Welcome & Morning Prayer
-Resources: Talking object (soft toy or ball), prayer card
+Then for EACH subject in the curriculum above, create a section:
+[emoji] [Subject Name]: [EXACT topic/page/reference from curriculum]
 Objective:
-· Welcome children warmly and start the day with a positive prayer
-· Build community — each child shares one thing they are happy about
-✅ Offline Support:
-· Begin with a welcome song, then a short prayer together
-· Pass the talking object — each child says one happy thought
-· Ask: "What are you looking forward to today?"
+· [1 specific learning objective for this subject]
+How to conduct:
+· [Step 1 — specific instruction]
+· [Step 2 — specific instruction]
+· [Step 3 — if needed]
+Offline Support:
+· [1-2 practical tips if there's no digital aid available]
 
-Then for EACH remaining subject below, create a section like this:
-[emoji] [Subject Name]
-Topic: [topic name]
-Resources: [suggest relevant resources]
-Objective:
-· [2 specific objectives]
-✅ Offline Support:
-· [2-3 specific classroom activities]
-
-Subjects for today (in this order after morning routine):
-{chr(10).join(subjects_list) if subjects_list else "General curriculum activities"}
+RULES:
+1. ALWAYS start with Circle Time / Morning Meet / Additional Activities as first section
+2. Keep EVERY page number (pg no. 8), reference code (Res. 1515), rhyme number (Rhyme - 1472), and book reference EXACTLY as written
+3. DO NOT invent new resources — only add teaching tips and objectives
+4. The "How to conduct" must be specific enough that ALL teachers do the activity the SAME way
+5. Add one 📝 Teacher Note at the end with 2-3 practical classroom management tips
+6. Under 600 words total
+7. No time slots, no bold, short lines for mobile
 
 {f"Pending from previous days: {', '.join(c['topic_label'] for c in pending_rows)}" if pending_rows else ""}
 
-📝 Teacher Note
-· [2-3 practical tips for the day]
-
-CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}
-Keep each section concise. Total under 500 words."""
+CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}"""
 
                     response_text, llm_provider = await _call_llm(rich_prompt, rich_system)
                     if not response_text:

@@ -415,13 +415,15 @@ router.post('/query', async (req: Request, res: Response) => {
     // ─────────────────────────────────────────────────────────────────────
 
     // ── Plan query — lookup by chunk_ids hash (single table, no duplication) ──
-    const isPlanQuery = /plan.*today|today.*plan|what.*plan|my plan|plan for tomorrow|tomorrow.*plan|plan for \d|plan.*\d{4}-\d{2}-\d{2}/i.test(cleanText);
+    // Plan query detection — used for gateway-level cache lookup
+    const isPlanQuery = /plan.*today|today.*plan|what.*plan|my plan|plan for tomorrow|tomorrow.*plan|plan for \d|plan.*\d{4}-\d{2}-\d{2}|plan.*\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b/i.test(cleanText);
     let classId: string | null = null;
     let planDate: string = today;
     let planChunkIds: string[] | null = null;
 
     // Detect date from query
-    const tomorrowMatch = /tomorrow/i.test(cleanText);
+    const dayAfterTomorrowMatch = /day after tomorrow/i.test(cleanText);
+    const tomorrowMatch = !dayAfterTomorrowMatch && /tomorrow/i.test(cleanText);
     const dateMatch = cleanText.match(/(\d{4}-\d{2}-\d{2})/);
     const monthNames: Record<string, number> = {
       january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
@@ -432,7 +434,12 @@ router.post('/query', async (req: Request, res: Response) => {
     const naturalDateMatch = cleanText.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/i)
       || cleanText.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i);
 
-    if (tomorrowMatch) {
+    if (dayAfterTomorrowMatch) {
+      const parts = today.split('-').map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      d.setDate(d.getDate() + 2);
+      planDate = d.toISOString().slice(0, 10);
+    } else if (tomorrowMatch) {
       const parts = today.split('-').map(Number);
       const d = new Date(parts[0], parts[1] - 1, parts[2]);
       d.setDate(d.getDate() + 1);
@@ -477,14 +484,14 @@ router.post('/query', async (req: Request, res: Response) => {
 
           if (planRow.rows.length > 0 && planRow.rows[0].chunk_ids?.length > 0) {
             planChunkIds = planRow.rows[0].chunk_ids;
-            // Create hash of chunk_ids for lookup
-            const sortedIds = [...planChunkIds].sort().join(',');
+            // Create hash of chunk_ids + date for lookup (date prevents cross-day collisions)
+            const sortedIds = [...planChunkIds].sort().join(',') + '|' + planDate;
             const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
 
             // Check ai_plan_cache for existing text
             const cached = await pool.query(
-              `SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1 AND school_id = $2`,
-              [chunkHash, school_id]
+              `SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1`,
+              [chunkHash]
             );
 
             if (cached.rows.length > 0) {
@@ -523,17 +530,17 @@ router.post('/query', async (req: Request, res: Response) => {
       // Cache per-user (10 sec) for deduplication of non-plan queries
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
 
-      // Store plan text in ai_plan_cache (one row per unique chunk set)
+      // Store plan text in ai_plan_cache (one row per unique chunk set + date)
       if (isPlanQuery && planChunkIds && planChunkIds.length > 0 && aiResp.data.response) {
-        const sortedIds = [...planChunkIds].sort().join(',');
+        const sortedIds = [...planChunkIds].sort().join(',') + '|' + planDate;
         const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
         pool.query(
-          `INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text)
-           VALUES ($1, $2, $3::uuid[], $4)
+          `INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text, plan_date)
+           VALUES ($1, $2, $3::uuid[], $4, $5::date)
            ON CONFLICT (chunk_hash) DO NOTHING`,
-          [chunkHash, school_id, planChunkIds, aiResp.data.response]
+          [chunkHash, school_id, planChunkIds, aiResp.data.response, planDate]
         ).then(r => {
-          console.log(`[ai.query] Plan cached: hash=${chunkHash.slice(0, 8)} rows=${r.rowCount}`);
+          console.log(`[ai.query] Plan cached: hash=${chunkHash.slice(0, 8)} date=${planDate} rows=${r.rowCount}`);
         }).catch(err => {
           console.error(`[ai.query] Cache insert failed:`, err.message);
         });
