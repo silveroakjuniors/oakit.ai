@@ -71,6 +71,8 @@ def _parse_date_from_text(text: str, fallback: str) -> str:
     if iso:
         return iso.group(1)
     today = date_type.fromisoformat(fallback)
+    if "day after tomorrow" in t:
+        return str(today + timedelta(days=2))
     if "tomorrow" in t:
         return str(today + timedelta(days=1))
     if "yesterday" in t:
@@ -114,6 +116,16 @@ def _parse_date_from_text(text: str, fallback: str) -> str:
             return str(date_type(today.year, months[m.group(2)], int(m.group(1))))
         except (ValueError, KeyError):
             pass
+    # Bare day number: "plan for 25th", "plan for 25", "what is the plan for 3rd"
+    m = re.search(r'\b(\d{1,2})(?:st|nd|rd|th)\b', t)
+    if m:
+        day_num = int(m.group(1))
+        if 1 <= day_num <= 31:
+            # Assume current month
+            try:
+                return str(date_type(today.year, today.month, day_num))
+            except ValueError:
+                pass
     return fallback
 
 
@@ -2315,11 +2327,12 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                             subjects_list.append(f"- {s['subject']}: {s['activity']}")
 
                     rich_system = (
-                        f"You are a curriculum presenter for {class_full} ({age_info['age']}).\n"
+                        f"You are a curriculum presenter for {class_name} ({age_info['age']}).\n"
                         f"CRITICAL: You must preserve ALL page numbers, reference codes (Res., Ref., pg no.), "
                         f"rhyme numbers, book names, and specific resources EXACTLY as written in the curriculum.\n"
                         f"DO NOT replace them with your own suggestions.\n"
                         f"You ADD teaching tips and activity suggestions ON TOP of the original content.\n"
+                        f"DO NOT mention any section label (A, B, C) — this plan is shared across all sections.\n"
                         f"Use emojis for section headers. Plain text only — no markdown bold, no tables.\n"
                         f"Keep it teacher-friendly for mobile reading."
                     )
@@ -2330,7 +2343,7 @@ CURRICULUM CONTENT (preserve EXACTLY — do not change page numbers, references,
 {raw_curriculum_text}
 
 FORMAT as:
-📅 {date_label} — {class_full}
+📅 {date_label} — {class_name}
 
 🎯 Objective:
 · [2-3 objectives derived from the actual topics above]
@@ -2351,13 +2364,14 @@ RULES:
 2. Keep EVERY page number (pg no. 8), reference code (Res. 1515), rhyme number (Rhyme - 1472), and book reference EXACTLY as written
 3. DO NOT invent new resources — only add teaching tips and objectives
 4. The "How to conduct" must be specific enough that ALL teachers do the activity the SAME way
-5. Add one 📝 Teacher Note at the end with 2-3 practical classroom management tips
-6. Under 600 words total
-7. No time slots, no bold, short lines for mobile
+5. DO NOT mention any section label (A, B, C) — this plan applies to all sections
+6. Add one 📝 Teacher Note at the end with 2-3 practical classroom management tips
+7. Under 600 words total
+8. No time slots, no bold, short lines for mobile
 
 {f"Pending from previous days: {', '.join(c['topic_label'] for c in pending_rows)}" if pending_rows else ""}
 
-CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}"""
+CLASS: {class_name} | AGE: {age_info['age']} | DATE: {date_label}"""
 
                     response_text, llm_provider = await _call_llm(rich_prompt, rich_system)
                     if not response_text:
