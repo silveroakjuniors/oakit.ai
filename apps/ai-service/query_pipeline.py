@@ -1,8 +1,59 @@
 ﻿import re
+import hashlib
 import traceback
 from datetime import date as date_type, timedelta
 from uuid import UUID
 from db import get_pool
+
+
+# ---------------------------------------------------------------------------
+# AI Plan Cache — ensures all teachers get the same plan for same chunks
+# ---------------------------------------------------------------------------
+
+def _compute_chunk_hash(chunk_ids: list) -> str:
+    """Compute MD5 hash of sorted chunk IDs — same chunks always produce same hash."""
+    sorted_ids = sorted(str(cid) for cid in chunk_ids)
+    return hashlib.md5("|".join(sorted_ids).encode()).hexdigest()
+
+
+async def _get_cached_plan(pool, chunk_ids: list, school_id: str) -> str | None:
+    """Check ai_plan_cache for an existing plan for these chunks."""
+    if not chunk_ids:
+        return None
+    chunk_hash = _compute_chunk_hash(chunk_ids)
+    try:
+        row = await pool.fetchrow(
+            "SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1",
+            chunk_hash,
+        )
+        if row and row["ai_text"]:
+            print(f"[PlanCache] HIT — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks)")
+            return row["ai_text"]
+    except Exception as e:
+        # Table might not exist yet (migration not run)
+        print(f"[PlanCache] read error: {e}")
+    return None
+
+
+async def _store_cached_plan(pool, chunk_ids: list, school_id: str, ai_text: str) -> None:
+    """Store AI-generated plan in ai_plan_cache for future reuse."""
+    if not chunk_ids or not ai_text:
+        return
+    chunk_hash = _compute_chunk_hash(chunk_ids)
+    try:
+        await pool.execute(
+            """INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (chunk_hash) DO NOTHING""",
+            chunk_hash,
+            UUID(school_id),
+            [UUID(cid) for cid in chunk_ids],
+            ai_text,
+        )
+        print(f"[PlanCache] STORED — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks, {len(ai_text)} chars)")
+    except Exception as e:
+        # Non-critical — plan still returns, just won't be cached
+        print(f"[PlanCache] write error: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -2217,26 +2268,33 @@ Plain text only, no bold, no markdown, short lines for mobile."""
             ])
 
             if ai_plan_mode == "ai_enhanced":
-                # Rich AI-generated plan with objectives, activities, offline support
-                # Build week number for the header
-                week_num = ((target_dt - target_dt.replace(day=1)).days // 7) + 1
-                day_num_in_week = target_dt.weekday() + 1  # 1=Mon
+                # ── Check plan cache first — same chunks = same plan for all teachers ──
+                plan_chunk_ids_for_cache = [str(c["id"]) for c in chunks]
+                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id)
+                if cached_plan:
+                    response_text = cached_plan
+                    llm_provider = "cached"
+                else:
+                    # Rich AI-generated plan with objectives, activities, offline support
+                    # Build week number for the header
+                    week_num = ((target_dt - target_dt.replace(day=1)).days // 7) + 1
+                    day_num_in_week = target_dt.weekday() + 1  # 1=Mon
 
-                subjects_list = []
-                for ch in chunks:
-                    subjects = _parse_subjects(ch["content"])
-                    for s in subjects:
-                        subjects_list.append(f"- {s['subject']}: {s['activity']}")
+                    subjects_list = []
+                    for ch in chunks:
+                        subjects = _parse_subjects(ch["content"])
+                        for s in subjects:
+                            subjects_list.append(f"- {s['subject']}: {s['activity']}")
 
-                rich_system = (
-                    f"You are an expert early childhood curriculum planner for {class_full} ({age_info['age']}).\n"
-                    f"Generate a detailed, structured daily plan in the exact format shown.\n"
-                    f"Use emojis for section headers. Be specific and practical.\n"
-                    f"Output plain text only — no markdown bold, no tables.\n"
-                    f"Keep it teacher-friendly for mobile reading."
-                )
+                    rich_system = (
+                        f"You are an expert early childhood curriculum planner for {class_full} ({age_info['age']}).\n"
+                        f"Generate a detailed, structured daily plan in the exact format shown.\n"
+                        f"Use emojis for section headers. Be specific and practical.\n"
+                        f"Output plain text only — no markdown bold, no tables.\n"
+                        f"Keep it teacher-friendly for mobile reading."
+                    )
 
-                rich_prompt = f"""Generate a detailed daily plan in this EXACT format:
+                    rich_prompt = f"""Generate a detailed daily plan in this EXACT format:
 
 🗓️ {class_full} – Week {week_num}: Day {day_num_in_week} Planner
 📅 Date: {date_label}
@@ -2277,24 +2335,34 @@ Subjects for today (in this order after morning routine):
 CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}
 Keep each section concise. Total under 500 words."""
 
-                response_text, llm_provider = await _call_llm(rich_prompt, rich_system)
-                if not response_text:
-                    response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
-                    llm_provider = "rule_based"
+                    response_text, llm_provider = await _call_llm(rich_prompt, rich_system)
+                    if not response_text:
+                        response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                        llm_provider = "rule_based"
+                    else:
+                        # Store in cache so all teachers with same chunks get this plan
+                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text)
 
             elif is_plan_request_only:
                 # Standard: build plan directly from chunks — no LLM cost
                 response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
                 llm_provider = "rule_based"
             else:
-                system_prompt = (
-                    f"You are a teaching assistant for {class_full} ({age_info['age']}).\n"
-                    f"Output plain text only — no markdown bold, no tables, no horizontal rules.\n"
-                    f"Use emojis to mark sections. Keep lines short for mobile reading.\n"
-                    f"Be direct and practical. Teachers read this on their phone in the classroom.\n"
-                    f"Never include direct URLs or YouTube links. If suggesting a video, say 'Search YouTube for: [title]'."
-                )
-                llm_prompt = f"""Teacher: "{text}"
+                # ── Check plan cache first — same chunks = same plan for all teachers ──
+                plan_chunk_ids_for_cache = [str(c["id"]) for c in chunks]
+                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id)
+                if cached_plan:
+                    response_text = cached_plan
+                    llm_provider = "cached"
+                else:
+                    system_prompt = (
+                        f"You are a teaching assistant for {class_full} ({age_info['age']}).\n"
+                        f"Output plain text only — no markdown bold, no tables, no horizontal rules.\n"
+                        f"Use emojis to mark sections. Keep lines short for mobile reading.\n"
+                        f"Be direct and practical. Teachers read this on their phone in the classroom.\n"
+                        f"Never include direct URLs or YouTube links. If suggesting a video, say 'Search YouTube for: [title]'."
+                    )
+                    llm_prompt = f"""Teacher: "{text}"
 
 CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}
 {f"NOTE: {carried_note}" if carried_note else ""}
@@ -2326,10 +2394,13 @@ Ask children: "[one specific question]"
 - No time slots, no bold text, no headers, no dashes, no markdown
 - Total response under 300 words"""
 
-                response_text, llm_provider = await _call_llm(llm_prompt, SYSTEM_HARDENING + system_prompt)
+                    response_text, llm_provider = await _call_llm(llm_prompt, SYSTEM_HARDENING + system_prompt)
 
-                if not response_text:
-                    response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                    if not response_text:
+                        response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                    else:
+                        # Store in cache so all teachers with same chunks get this plan
+                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text)
 
             return {
                 "response": response_text, "llm_provider": locals().get("llm_provider", "rule_based"),
