@@ -10,24 +10,28 @@ from db import get_pool
 # AI Plan Cache — ensures all teachers get the same plan for same chunks
 # ---------------------------------------------------------------------------
 
-def _compute_chunk_hash(chunk_ids: list) -> str:
-    """Compute MD5 hash of sorted chunk IDs — same chunks always produce same hash."""
+def _compute_chunk_hash(chunk_ids: list, plan_date: str = "") -> str:
+    """Compute MD5 hash of sorted chunk IDs + date — same chunks on same date = same hash.
+    Including date ensures plans for different days don't collide even if chunks are the same."""
     sorted_ids = sorted(str(cid) for cid in chunk_ids)
-    return hashlib.md5("|".join(sorted_ids).encode()).hexdigest()
+    key = "|".join(sorted_ids)
+    if plan_date:
+        key += f"|{plan_date}"
+    return hashlib.md5(key.encode()).hexdigest()
 
 
-async def _get_cached_plan(pool, chunk_ids: list, school_id: str) -> str | None:
-    """Check ai_plan_cache for an existing plan for these chunks."""
+async def _get_cached_plan(pool, chunk_ids: list, school_id: str, plan_date: str = "") -> str | None:
+    """Check ai_plan_cache for an existing plan for these chunks + date."""
     if not chunk_ids:
         return None
-    chunk_hash = _compute_chunk_hash(chunk_ids)
+    chunk_hash = _compute_chunk_hash(chunk_ids, plan_date)
     try:
         row = await pool.fetchrow(
             "SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1",
             chunk_hash,
         )
         if row and row["ai_text"]:
-            print(f"[PlanCache] HIT — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks)")
+            print(f"[PlanCache] HIT — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks, date={plan_date})")
             return row["ai_text"]
     except Exception as e:
         # Table might not exist yet (migration not run)
@@ -35,11 +39,11 @@ async def _get_cached_plan(pool, chunk_ids: list, school_id: str) -> str | None:
     return None
 
 
-async def _store_cached_plan(pool, chunk_ids: list, school_id: str, ai_text: str) -> None:
+async def _store_cached_plan(pool, chunk_ids: list, school_id: str, ai_text: str, plan_date: str = "") -> None:
     """Store AI-generated plan in ai_plan_cache for future reuse."""
     if not chunk_ids or not ai_text:
         return
-    chunk_hash = _compute_chunk_hash(chunk_ids)
+    chunk_hash = _compute_chunk_hash(chunk_ids, plan_date)
     try:
         await pool.execute(
             """INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text)
@@ -50,7 +54,7 @@ async def _store_cached_plan(pool, chunk_ids: list, school_id: str, ai_text: str
             [UUID(cid) for cid in chunk_ids],
             ai_text,
         )
-        print(f"[PlanCache] STORED — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks, {len(ai_text)} chars)")
+        print(f"[PlanCache] STORED — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks, date={plan_date}, {len(ai_text)} chars)")
     except Exception as e:
         # Non-critical — plan still returns, just won't be cached
         print(f"[PlanCache] write error: {e}")
@@ -2268,9 +2272,9 @@ Plain text only, no bold, no markdown, short lines for mobile."""
             ])
 
             if ai_plan_mode == "ai_enhanced":
-                # ── Check plan cache first — same chunks = same plan for all teachers ──
+                # ── Check plan cache first — same chunks + date = same plan for all teachers ──
                 plan_chunk_ids_for_cache = [str(c["id"]) for c in chunks]
-                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id)
+                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id, str(target_dt))
                 if cached_plan:
                     response_text = cached_plan
                     llm_provider = "cached"
@@ -2341,16 +2345,16 @@ Keep each section concise. Total under 500 words."""
                         llm_provider = "rule_based"
                     else:
                         # Store in cache so all teachers with same chunks get this plan
-                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text)
+                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text, str(target_dt))
 
             elif is_plan_request_only:
                 # Standard: build plan directly from chunks — no LLM cost
                 response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
                 llm_provider = "rule_based"
             else:
-                # ── Check plan cache first — same chunks = same plan for all teachers ──
+                # ── Check plan cache first — same chunks + date = same plan for all teachers ──
                 plan_chunk_ids_for_cache = [str(c["id"]) for c in chunks]
-                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id)
+                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id, str(target_dt))
                 if cached_plan:
                     response_text = cached_plan
                     llm_provider = "cached"
@@ -2400,7 +2404,7 @@ Ask children: "[one specific question]"
                         response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
                     else:
                         # Store in cache so all teachers with same chunks get this plan
-                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text)
+                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text, str(target_dt))
 
             return {
                 "response": response_text, "llm_provider": locals().get("llm_provider", "rule_based"),

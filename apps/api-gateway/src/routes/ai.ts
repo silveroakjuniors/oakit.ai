@@ -423,6 +423,15 @@ router.post('/query', async (req: Request, res: Response) => {
     // Detect date from query
     const tomorrowMatch = /tomorrow/i.test(cleanText);
     const dateMatch = cleanText.match(/(\d{4}-\d{2}-\d{2})/);
+    const monthNames: Record<string, number> = {
+      january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+      july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+      jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    // Match "25th June", "June 25", "25 june", "25th jun" etc.
+    const naturalDateMatch = cleanText.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/i)
+      || cleanText.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i);
+
     if (tomorrowMatch) {
       const parts = today.split('-').map(Number);
       const d = new Date(parts[0], parts[1] - 1, parts[2]);
@@ -430,6 +439,21 @@ router.post('/query', async (req: Request, res: Response) => {
       planDate = d.toISOString().slice(0, 10);
     } else if (dateMatch) {
       planDate = dateMatch[1];
+    } else if (naturalDateMatch) {
+      // Figure out which group is day and which is month
+      let dayNum: number, monthNum: number;
+      if (/^\d/.test(naturalDateMatch[1])) {
+        // "25th June" format
+        dayNum = parseInt(naturalDateMatch[1]);
+        monthNum = monthNames[naturalDateMatch[2].toLowerCase()];
+      } else {
+        // "June 25" format
+        monthNum = monthNames[naturalDateMatch[1].toLowerCase()];
+        dayNum = parseInt(naturalDateMatch[2]);
+      }
+      const yearNum = parseInt(today.split('-')[0]);
+      const d = new Date(yearNum, monthNum, dayNum);
+      planDate = d.toISOString().slice(0, 10);
     }
 
     if (isPlanQuery && role === 'teacher') {
