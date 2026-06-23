@@ -221,7 +221,7 @@ export default function WeeklyPlanModal({ open, onClose, token, sectionId, today
 
             return (
               <div key={day.date}
-                className={`rounded-2xl border overflow-hidden transition-all ${
+                className={`rounded-2xl border transition-all ${
                   day.is_today ? 'border-primary-300 ring-1 ring-primary-200' :
                   isHoliday ? 'border-red-200 bg-red-50/50' :
                   isSpecial ? 'border-blue-200 bg-blue-50/50' :
@@ -285,7 +285,7 @@ export default function WeeklyPlanModal({ open, onClose, token, sectionId, today
                       <div key={chunk.id} className="bg-neutral-50 rounded-xl px-3 py-2.5 border border-neutral-100">
                         <p className="text-xs font-semibold text-neutral-800 mb-1">{chunk.topic_label || `Topic ${i + 1}`}</p>
                         {chunk.content && (
-                          <p className="text-[11px] text-neutral-500 leading-relaxed whitespace-pre-wrap">{chunk.content}</p>
+                          <p className="text-[11px] text-neutral-500 leading-relaxed whitespace-pre-wrap break-words">{chunk.content}</p>
                         )}
                         {chunk.activity_ids?.length ? (
                           <p className="text-[10px] text-primary-600 mt-1">📎 {chunk.activity_ids.join(', ')}</p>
