@@ -414,6 +414,33 @@ router.post('/query', async (req: Request, res: Response) => {
     }
     // ─────────────────────────────────────────────────────────────────────
 
+    // ── Plan query class-level caching ────────────────────────────────────
+    // For "plan for today" queries, cache per class so all sections get the same text.
+    const isPlanQuery = /plan.*today|today.*plan|what.*plan|my plan/i.test(cleanText);
+    let classCacheKey: string | null = null;
+
+    if (isPlanQuery && role === 'teacher') {
+      // Get teacher's class_id for class-level caching
+      try {
+        const sectionRow = await pool.query(
+          `SELECT sec.class_id FROM sections sec
+           LEFT JOIN teacher_sections ts ON ts.section_id = sec.id
+           WHERE (sec.class_teacher_id = $1 OR ts.teacher_id = $1) AND sec.school_id = $2
+           LIMIT 1`,
+          [user_id, school_id]
+        );
+        if (sectionRow.rows.length > 0) {
+          const classId = sectionRow.rows[0].class_id;
+          classCacheKey = `ai:plan:${school_id}:${classId}:${today}`;
+          const classCached = await redis.get(classCacheKey);
+          if (classCached) {
+            return res.json(JSON.parse(classCached));
+          }
+        }
+      } catch { /* ignore — fall through to normal flow */ }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     const cacheKey = `ai:${user_id}:${crypto.createHash('md5').update(cleanText + today).digest('hex')}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
@@ -429,7 +456,14 @@ router.post('/query', async (req: Request, res: Response) => {
         ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
       }, AI_TIMEOUT_MS);
 
+      // Cache per-user (10 sec) for deduplication
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
+
+      // Cache per-class for plan queries (24 hours) — all teachers in same class get same plan
+      if (classCacheKey) {
+        await redis.setEx(classCacheKey, 86400, JSON.stringify(aiResp.data));
+      }
+
       return res.json(aiResp.data);
     } catch (err: unknown) {
       const requestId = crypto.randomBytes(6).toString('hex');
