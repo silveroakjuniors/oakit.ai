@@ -384,7 +384,31 @@ export default function CurriculumPage() {
                   {doc.ingestion_stage && doc.status === 'processing' && ` · ${STAGE_LABEL[doc.ingestion_stage] || doc.ingestion_stage}`}
                 </p>
               </div>
-              <Badge label={doc.status} variant={statusVariant(doc.status)} />
+              <div className="flex items-center gap-2">
+                {(doc.status === 'failed' || doc.status === 'processing' || doc.status === 'pending') && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await fetch(`${API_BASE}/api/v1/admin/curriculum/${doc.id}/retry`, {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        setPollingId(doc.id);
+                        setFlow('processing');
+                        setStage('extracting');
+                        setStagePercent(30);
+                        await load();
+                      } catch (err) {
+                        console.error('Retry failed', err);
+                      }
+                    }}
+                    className="text-xs px-2 py-1 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors"
+                  >
+                    ↺ Retry
+                  </button>
+                )}
+                <Badge label={doc.status} variant={statusVariant(doc.status)} />
+              </div>
             </div>
           ))}
           {docs.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No curricula uploaded yet</p>}

@@ -5,18 +5,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button, Card, Badge, Alert, GlassCard } from '@/UIComponents';
 import { OakieMessageText } from '@/UIComponents/teacher/OakieMessage';
 import { RawPlanModal } from '@/UIComponents/teacher/RawPlanModal';
+import WeeklyPlanModal from '@/components/WeeklyPlanModal';
 import { TopicsChecklist } from '@/UIComponents/teacher/TopicsChecklist';
 import HomeworkModal from '@/components/HomeworkModal';
 import PendingWorkList from '@/components/ui/PendingWorkList';
+import PhotoSuggestions from '@/components/PhotoSuggestions';
 import OakitLogo from '@/components/OakitLogo';
 import { useSessionManager } from '@/hooks/useSessionManager';
 import ThemeToggle from '@/components/ThemeToggle';
-import VoiceMicButton from '@/components/VoiceMicButton';
-import { useVoiceInput } from '@/hooks/useVoiceInput';
+import InlineMicButton from '@/components/InlineMicButton';
 import SessionRecorder from '@/components/SessionRecorder';
 import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
-import { getToken, clearToken, signOut } from '@/lib/auth';
+import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
@@ -43,7 +44,7 @@ interface Message {
   already_completed?: boolean;
   question_limit_reached?: boolean;
 }
-interface PendingDay { plan_date: string; chunks: { id: string; topic_label: string }[]; }
+interface PendingDay { plan_date: string; chunks: { id: string; topic_label: string }[]; is_special_day?: boolean; special_day_label?: string; special_day_type?: string; }
 
 type Tab = 'plan' | 'chat' | 'help';
 
@@ -162,12 +163,13 @@ export default function TeacherPlanner() {
   const router = useRouter();
   const token = getToken() || '';
   useSessionManager();
-  const [today, setToday] = useState(new Date().toISOString().split('T')[0]);
+  const [today, setToday] = useState('');
   const [plan, setPlan] = useState<DayPlan | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [sectionId, setSectionId] = useState('');
+  const [allSections, setAllSections] = useState<{ section_id: string; section_label: string; class_name: string; role: string }[]>([]);
   const [pendingWork, setPendingWork] = useState<PendingDay[]>([]);
   const [selectedChunks, setSelectedChunks] = useState<string[]>([]);
   const [submittingCompletion, setSubmittingCompletion] = useState(false);
@@ -183,7 +185,7 @@ export default function TeacherPlanner() {
   const [inlineSubmitting, setInlineSubmitting] = useState<string | null>(null);
   const [inlineMsg, setInlineMsg] = useState<Record<string, string>>({});
   const [exporting, setExporting] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('chat');
+  const [activeTab, setActiveTab] = useState<Tab>('plan');
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
   const [className, setClassName] = useState('');
   const [planVideos, setPlanVideos] = useState<{ topic: string; videoId: string; title: string }[]>([]);
@@ -208,8 +210,8 @@ export default function TeacherPlanner() {
   const [detailedPlanText, setDetailedPlanText] = useState<string | null>(null);
   const [fetchingDetailedPlan, setFetchingDetailedPlan] = useState(false);
   const [showRawPlanModal, setShowRawPlanModal] = useState(false);
+  const [showWeeklyPlanModal, setShowWeeklyPlanModal] = useState(false);
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
   // Per-chunk homework state (Req 1.1–1.3, 6.5)
@@ -217,13 +219,7 @@ export default function TeacherPlanner() {
   const [homeworkByChunk, setHomeworkByChunk] = useState<Record<string, HomeworkState>>({});
   const [homeworkModalChunk, setHomeworkModalChunk] = useState<{ chunkId: string; label: string; content: string } | null>(null);
 
-  // Voice input hook
-  const { state: voiceState, startRecording, stopRecording, isSupported: voiceSupported } = useVoiceInput({
-    token,
-    language: 'en',
-    onTranscript: (text) => setInput(text),
-  });
-  const showMic = voiceEnabled && voiceSupported;
+
   // Homework submission tracking state
   const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, 'completed' | 'partial' | 'not_submitted'>>({});
@@ -239,18 +235,24 @@ export default function TeacherPlanner() {
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
+    const role = getRole();
+    if (!role || !['teacher', 'class teacher', 'supporting teacher'].includes(role.toLowerCase())) {
+      router.replace('/login'); return;
+    }
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
     loadAll();
   }, []);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages]);
 
   async function loadAll() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
-    // Check voice feature status
-    apiGet<{ voice_enabled: boolean }>('/api/v1/ai/voice-status', token).then(d => setVoiceEnabled(d.voice_enabled)).catch(() => {});
     if (!todayCompletedRef.current) await autoShowDailyPlan(effectiveToday);
   }
 
@@ -335,14 +337,19 @@ export default function TeacherPlanner() {
         settling_total: res.settling_total, already_completed: res.already_completed,
       }]);
     } catch { /* ignore */ } finally { setAiLoading(false); }
-  }  }
+  }  
 
-  async function loadContext(): Promise<string> {
+  async function loadContext(switchToSectionId?: string): Promise<string> {
     try {
-      const data = await apiGet<any>('/api/v1/teacher/context', token);
+      const url = switchToSectionId
+        ? `/api/v1/teacher/context?section_id=${switchToSectionId}`
+        : '/api/v1/teacher/context';
+      const data = await apiGet<any>(url, token);
       setAttendancePrompt(data.attendance_prompt);
       setGreeting(data.greeting);
       if (data.class_name) setClassName(data.class_name);
+      if (data.section_id) setSectionId(data.section_id);
+      if (data.all_sections?.length) setAllSections(data.all_sections);
       setTodayCompleted(data.today_completed || false);
       todayCompletedRef.current = data.today_completed || false;
       setTomorrowPlan(data.tomorrow_plan || null);
@@ -357,9 +364,26 @@ export default function TeacherPlanner() {
     }
   }
 
-  async function loadPlan(effectiveToday?: string) {
+  // Switch to a different section — reload context + plan for that section
+  async function switchSection(newSectionId: string) {
+    setSectionId(newSectionId);
+    setPlan(null);
+    setSelectedChunks([]);
+    setCompletionMsg('');
+    const effectiveToday = await loadContext(newSectionId);
+    await Promise.all([
+      loadPlan(effectiveToday, newSectionId),
+      loadPending(newSectionId),
+      loadHomeworkAndNotes(newSectionId),
+    ]);
+  }
+
+  async function loadPlan(effectiveToday?: string, overrideSectionId?: string) {
     try {
-      const data = await apiGet<DayPlan & { section_id?: string }>('/api/v1/teacher/plan/today', token);
+      const planUrl = overrideSectionId
+        ? `/api/v1/teacher/plan/today?section_id=${overrideSectionId}`
+        : '/api/v1/teacher/plan/today';
+      const data = await apiGet<DayPlan & { section_id?: string }>(planUrl, token);
       setPlan(data);
       if (data.section_id) setSectionId(data.section_id);
       // Load per-chunk homework state (Req 1.2)
@@ -417,15 +441,21 @@ export default function TeacherPlanner() {
     }
   }
 
-  async function loadPending() {
-    try { setPendingWork(await apiGet<PendingDay[]>('/api/v1/teacher/completion/pending', token)); } catch { /* ignore */ }
+  async function loadPending(overrideSectionId?: string) {
+    try {
+      const url = overrideSectionId
+        ? `/api/v1/teacher/completion/pending?section_id=${overrideSectionId}`
+        : '/api/v1/teacher/completion/pending';
+      setPendingWork(await apiGet<PendingDay[]>(url, token));
+    } catch { /* ignore */ }
   }
 
-  async function loadHomeworkAndNotes() {
+  async function loadHomeworkAndNotes(overrideSectionId?: string) {
     try {
+      const suffix = overrideSectionId ? `?section_id=${overrideSectionId}` : '';
       const [hw, ns] = await Promise.all([
-        apiGet<any>(`/api/v1/teacher/notes/homework`, token).catch(() => null),
-        apiGet<any[]>(`/api/v1/teacher/notes`, token).catch(() => []),
+        apiGet<any>(`/api/v1/teacher/notes/homework${suffix}`, token).catch(() => null),
+        apiGet<any[]>(`/api/v1/teacher/notes${suffix}`, token).catch(() => []),
       ]);
       if (hw) { setExistingHomework(hw); setHomeworkText(hw.raw_text || ''); }
       setNotes(ns || []);
@@ -470,6 +500,19 @@ export default function TeacherPlanner() {
     finally { setSubmittingCompletion(false); }
   }
 
+  async function markSpecialDayComplete(planDate: string) {
+    try {
+      await apiPost('/api/v1/teacher/completion', {
+        covered_chunk_ids: [],
+        completion_date: planDate,
+        settling_day_note: 'Special day / event completed',
+        ...(sectionId ? { section_id: sectionId } : {}),
+      }, token);
+      setCompletionMsg('✅ Special day marked as completed.');
+      await loadPending();
+    } catch (err: unknown) { setCompletionMsg(err instanceof Error ? err.message : 'Failed'); }
+  }
+
   async function askSuggested(question: string) {
     if (aiLoading) return;
     setActiveTab('chat');
@@ -491,15 +534,18 @@ export default function TeacherPlanner() {
         const allChunkIds = plan?.chunks?.map((c: any) => c.id) || [];
         const coveredIds: string[] = res.covered_chunk_ids || [];
         const allCovered = allChunkIds.length > 0 && allChunkIds.every((id: string) => coveredIds.includes(id));
-        if ((allCovered || res.already_completed) && !res.already_completed && allChunkIds.length > 0) {
-          try {
-            await apiPost('/api/v1/teacher/completion', {
-              covered_chunk_ids: allChunkIds,
-              completion_date: res.plan_date || today,
-              ...(sectionId ? { section_id: sectionId } : {}),
-            }, token);
-            try { await apiPost('/api/v1/ai/reset-limit', {}, token); } catch { /* ignore */ }
-          } catch { /* ignore */ }
+        if (allCovered || res.already_completed) {
+          // Persist to DB only if not already saved
+          if (!res.already_completed && allChunkIds.length > 0) {
+            try {
+              await apiPost('/api/v1/teacher/completion', {
+                covered_chunk_ids: allChunkIds,
+                completion_date: res.plan_date || today,
+                ...(sectionId ? { section_id: sectionId } : {}),
+              }, token);
+              try { await apiPost('/api/v1/ai/reset-limit', {}, token); } catch { /* ignore */ }
+            } catch { /* ignore */ }
+          }
           const allSubjectKeys: string[] = [];
           (plan?.chunks || []).forEach((chunk: any) => {
             const subjects = extractSubjects([chunk]);
@@ -862,6 +908,11 @@ export default function TeacherPlanner() {
               );
             })()}
 
+            {/* Photo Suggestions */}
+            {!todayCompleted && plan?.chunks?.length > 0 && (
+              <PhotoSuggestions token={token} sectionId={sectionId} planDate={today} />
+            )}
+
             {/* Quick help chips */}
             <div className="flex flex-col gap-1.5">
               {[
@@ -915,12 +966,15 @@ export default function TeacherPlanner() {
         {/* Quick action cards */}
         <div className="grid grid-cols-2 gap-2 mt-1">
           {[
+            { label: 'Attendance', sub: attendancePrompt ? '⚠ Not marked yet' : 'View & update', icon: Users, gradient: attendancePrompt ? 'from-amber-500 to-orange-600' : 'from-blue-500 to-cyan-600', hover: attendancePrompt ? 'hover:border-amber-200 hover:bg-amber-50/40' : 'hover:border-blue-200 hover:bg-blue-50/40', path: '/teacher/attendance' },
             { label: 'Homework & Notes', sub: 'Send to parents', icon: BookOpen, gradient: 'from-primary-500 to-primary-700', hover: 'hover:border-primary-200 hover:bg-primary-50/40', path: '/teacher/homework' },
             { label: 'Child Journey', sub: 'Daily highlights', icon: BookOpen, gradient: 'from-emerald-500 to-teal-600', hover: 'hover:border-emerald-200 hover:bg-emerald-50/40', path: '/teacher/journey' },
             { label: 'Report Cards', sub: 'Generate for students', icon: ClipboardList, gradient: 'from-purple-500 to-indigo-600', hover: 'hover:border-purple-200 hover:bg-purple-50/40', path: '/teacher/reports' },
             { label: 'Class Feed', sub: 'Post photos', icon: Play, gradient: 'from-pink-500 to-rose-600', hover: 'hover:border-pink-200 hover:bg-pink-50/40', path: '/teacher/feed' },
             { label: 'Students', sub: 'Profiles & milestones', icon: Users, gradient: 'from-violet-500 to-purple-600', hover: 'hover:border-violet-200 hover:bg-violet-50/40', path: '/teacher/students' },
             { label: 'My HR', sub: 'Salary · Leave · Offer letter', icon: Wallet, gradient: 'from-teal-500 to-cyan-600', hover: 'hover:border-teal-200 hover:bg-teal-50/40', path: '/teacher/hr' },
+            { label: 'Calendar', sub: 'Holidays & special days', icon: CalendarDays, gradient: 'from-cyan-500 to-sky-600', hover: 'hover:border-cyan-200 hover:bg-cyan-50/40', path: '/teacher/calendar' },
+            { label: 'Class Performance', sub: 'Stats & insights', icon: TrendingUp, gradient: 'from-indigo-500 to-blue-600', hover: 'hover:border-indigo-200 hover:bg-indigo-50/40', path: '/teacher/class-performance' },
           ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
             <button key={path} onClick={() => router.push(path)}
               className={`flex items-center gap-3 p-3.5 bg-white border border-neutral-100 rounded-2xl transition-all shadow-sm group ${hover}`}>
@@ -943,9 +997,9 @@ export default function TeacherPlanner() {
                 <Clock className="w-3.5 h-3.5 text-amber-600" />
               </div>
               <h2 className="text-sm font-semibold text-neutral-800 flex-1">Pending from previous days</h2>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{pendingWork.reduce((s, d) => s + d.chunks.length, 0)}</span>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">{pendingWork.reduce((s, d) => s + (d.is_special_day ? 1 : d.chunks.length), 0)}</span>
             </div>
-            <PendingWorkList items={pendingWork} selectedChunks={selectedChunks} onToggleChunk={toggleChunk} />
+            <PendingWorkList items={pendingWork} selectedChunks={selectedChunks} onToggleChunk={toggleChunk} onMarkSpecialDayComplete={markSpecialDayComplete} />
             {selectedChunks.length > 0 && (
               <div className="mt-3 pt-3 border-t border-neutral-100">
                 {completionMsg && <p className="text-xs text-primary-600 mb-2 font-medium">{completionMsg}</p>}
@@ -987,6 +1041,14 @@ export default function TeacherPlanner() {
               <CalendarDays className="w-3.5 h-3.5" />
               Raw Plan
             </button>
+            {/* Weekly Plan */}
+            <button
+              onClick={() => setShowWeeklyPlanModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 border border-primary-200 bg-primary-50 rounded-lg text-xs text-primary-700 hover:bg-primary-100 transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Week Plan
+            </button>
             {/* Export Oakie's plan */}
             {oakiePlanText && (
               <button
@@ -1017,6 +1079,15 @@ export default function TeacherPlanner() {
             exportPdf(today, rawText);
             setShowRawPlanModal(false);
           }}
+        />
+
+        {/* Weekly Plan Modal */}
+        <WeeklyPlanModal
+          open={showWeeklyPlanModal}
+          onClose={() => setShowWeeklyPlanModal(false)}
+          token={token}
+          sectionId={sectionId}
+          today={today}
         />
 
         {/* Session Recorder Modal */}
@@ -1129,8 +1200,9 @@ export default function TeacherPlanner() {
         )}
 
         {/* Oakie chat — normal chat, no toggle */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3" style={{ paddingBottom: '8px', background: 'linear-gradient(160deg, #f8fffe 0%, #f0fdf8 50%, #f8fffe 100%)' }}>
-            <div className="flex-1" />
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3"
+          style={{ paddingBottom: '8px', background: 'linear-gradient(160deg, #f8fffe 0%, #f0fdf8 50%, #f8fffe 100%)', overflowAnchor: 'none' }}>
+            <div className="flex-1 min-h-4" />
             {messages.map((msg, i) => (
             <motion.div key={i}
               initial={{ opacity: 0, y: 8 }}
@@ -1183,7 +1255,7 @@ export default function TeacherPlanner() {
                           msg.chunk_ids && msg.chunk_ids.length > 0 &&
                           msg.completion_date && msg.completion_date <= today;
 
-                        if (!isCompletable) return <AiMessageText text={msg.text} onVideoHelp={handleVideoHelp} />;
+                        if (!isCompletable) return <AiMessageText text={msg.text} onVideoHelp={msg.chunk_ids?.length ? handleVideoHelp : undefined} />;
 
                         const subjectMap: SubjectCheckbox[] = [];
                         const seen = new Set<string>();
@@ -1226,12 +1298,15 @@ export default function TeacherPlanner() {
                         </Button>
                       </div>
                     )}
-                    {/* Settling complete button ? only for today or past */}
+                    {/* Settling complete button — only for today or past */}
                     {msg.is_settling && !msg.settling_gate && !msg.already_completed &&
                      !completedSettlingDates.has(msg.completion_date || '') &&
                      msg.completion_date && msg.completion_date <= today && (
                       <div className="border-t border-green-100 px-4 py-3 bg-green-50/60">
                         <p className="text-xs text-green-700 mb-2">When you're done with today's settling activities:</p>
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">
+                          <p className="text-[11px] text-amber-800 font-medium">📌 Special Day — all activities must be completed together. Individual activities cannot be marked separately and will not carry forward to the next day.</p>
+                        </div>
                         <div className="flex gap-2">
                           <Button size="sm" onClick={() => markSettlingComplete(msg.completion_date || today)} className="flex-1 bg-green-600 hover:bg-green-700 text-white border-0">
                              Mark Today as Completed
@@ -1293,14 +1368,7 @@ export default function TeacherPlanner() {
             </div>
           ) : null}
           <form onSubmit={sendMessage} className="flex gap-2 items-center pb-2">
-            {showMic && (
-              <VoiceMicButton
-                state={voiceState}
-                onStart={startRecording}
-                onStop={stopRecording}
-                size="sm"
-              />
-            )}
+            <InlineMicButton onTranscript={t => setInput(prev => prev ? prev + ' ' + t : t)} disabled={limitReached} />
             <div className="flex-1 relative">
               <input
                 className="w-full px-4 py-3 rounded-2xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300/40 focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-400 bg-neutral-50/50 transition-colors"
@@ -1403,7 +1471,7 @@ export default function TeacherPlanner() {
         <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-xl bg-amber-100 flex items-center justify-center">
-              <span className="text-sm">💡</span>
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
             </div>
             <p className="text-sm font-semibold text-amber-900">Good to know</p>
           </div>
@@ -1442,11 +1510,18 @@ export default function TeacherPlanner() {
         {/* Animated background blob */}
         <div className="absolute -top-8 right-1/3 w-32 h-32 rounded-full pointer-events-none opacity-20"
           style={{ background: 'radial-gradient(circle, #86efac, transparent)', animation: 'pulse 5s ease-in-out infinite' }} />
-        <div className="relative flex items-center gap-3">
+        <div className="relative flex flex-col gap-0.5">
           {greeting && (
-            <span className="text-sm text-white/90 font-medium truncate max-w-[200px] lg:max-w-xs animate-fade-in">
-              {greeting}
-            </span>
+            <>
+              <span className="text-sm text-white font-semibold truncate max-w-[220px] lg:max-w-xs animate-fade-in">
+                {greeting.split('\n')[0]}
+              </span>
+              {greeting.split('\n')[1] && (
+                <span className="text-[11px] text-white/70 font-normal truncate max-w-[220px] lg:max-w-sm">
+                  {greeting.split('\n')[1]}
+                </span>
+              )}
+            </>
           )}
         </div>
         <div className="relative flex items-center gap-2">
@@ -1487,6 +1562,20 @@ export default function TeacherPlanner() {
               <CheckCircle2 className="w-3 h-3" /> Done
             </span>
           )}
+          <button
+            onClick={() => router.push('/teacher/calendar')}
+            className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white/80 hover:text-white transition-colors active:scale-95 border border-white/20"
+            title="Calendar"
+          >
+            <CalendarDays className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => router.push('/teacher/class-performance')}
+            className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white/80 hover:text-white transition-colors active:scale-95 border border-white/20"
+            title="Class Performance"
+          >
+            <TrendingUp className="w-3.5 h-3.5" />
+          </button>
           <span className="text-xs text-white/70 hidden sm:block font-medium">{dateLabel}</span>
           <button
             onClick={() => { signOut().then(() => router.push('/login')); }}

@@ -464,11 +464,233 @@ function ParentPanel({ student, token, onRefresh }: { student: Student; token: s
   );
 }
 
+// --- Bulk Activate Parents Modal ------------------------------------------
+type BulkActivateRelation = 'father' | 'mother' | 'both';
+
+interface BulkActivateResult {
+  activated: number;
+  skipped: number;
+  details: {
+    activated: { student_name: string; mobile: string; relation: string }[];
+    skipped:   { student_name: string; reason: string }[];
+  };
+}
+
+function BulkActivateParentsModal({
+  students, token, onClose, onDone,
+}: {
+  students: Student[];
+  token: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [relation, setRelation] = useState<BulkActivateRelation>('both');
+  const [saving, setSaving]     = useState(false);
+  const [result, setResult]     = useState<BulkActivateResult | null>(null);
+  const [error, setError]       = useState('');
+
+  // Students that have at least one contact number
+  const withFather = students.filter(s => s.parent_contact && /^\d{10}$/.test(s.parent_contact));
+  const withMother = students.filter(s => s.mother_contact && /^\d{10}$/.test(s.mother_contact));
+  const eligible = relation === 'father' ? withFather
+                 : relation === 'mother' ? withMother
+                 : students.filter(s =>
+                     (s.parent_contact && /^\d{10}$/.test(s.parent_contact)) ||
+                     (s.mother_contact && /^\d{10}$/.test(s.mother_contact))
+                   );
+
+  async function submit() {
+    setSaving(true); setError('');
+    try {
+      const data = await apiPost<BulkActivateResult>(
+        '/api/v1/admin/students/bulk-activate-parents',
+        { student_ids: students.map(s => s.id), relation },
+        token,
+      );
+      setResult(data);
+      onDone();
+    } catch (e: any) {
+      setError(e.message || 'Failed to activate parents');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        {/* Header */}
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Bulk Activate Parent Logins</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{students.length} student{students.length !== 1 ? 's' : ''} selected</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-4">
+          {!result ? (
+            <>
+              {/* Info banner */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 text-xs text-blue-800 leading-relaxed">
+                <p className="font-semibold mb-0.5">How it works</p>
+                <p>Parent accounts are created using the mobile numbers already saved on each student. The initial password is set to their mobile number and they must change it on first login.</p>
+              </div>
+
+              {/* Relation selector */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Activate logins for</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['father', 'mother', 'both'] as BulkActivateRelation[]).map(r => (
+                    <button
+                      key={r}
+                      onClick={() => setRelation(r)}
+                      className={`py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                        relation === r
+                          ? 'bg-primary-600 text-white border-primary-600'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300'
+                      }`}
+                    >
+                      {r === 'father' ? '👨 Father' : r === 'mother' ? '👩 Mother' : '👨‍👩 Both'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Coverage summary */}
+              <div className="bg-gray-50 rounded-xl px-4 py-3 flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-gray-600">Coverage preview</p>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Students with valid father mobile</span>
+                  <span className="font-semibold text-gray-800">{withFather.length} / {students.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">Students with valid mother mobile</span>
+                  <span className="font-semibold text-gray-800">{withMother.length} / {students.length}</span>
+                </div>
+                <div className="h-px bg-gray-200 my-0.5" />
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-700 font-medium">Will be activated</span>
+                  <span className={`font-bold ${eligible.length > 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {eligible.length} student{eligible.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {students.length - eligible.length > 0 && (
+                  <p className="text-[11px] text-amber-600 mt-0.5">
+                    ⚠ {students.length - eligible.length} student{students.length - eligible.length !== 1 ? 's' : ''} will be skipped (missing contact numbers)
+                  </p>
+                )}
+              </div>
+
+              {/* Student list preview */}
+              <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
+                {students.map(s => {
+                  const fOk = s.parent_contact && /^\d{10}$/.test(s.parent_contact);
+                  const mOk = s.mother_contact && /^\d{10}$/.test(s.mother_contact);
+                  const willActivate = relation === 'father' ? fOk
+                                     : relation === 'mother' ? mOk
+                                     : fOk || mOk;
+                  return (
+                    <div key={s.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <p className="text-xs font-medium text-gray-700">{s.name}</p>
+                        <p className="text-[11px] text-gray-400">{s.class_name} {s.section_label}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5">
+                        {(relation === 'father' || relation === 'both') && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${fOk ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-600'}`}>
+                            👨 {fOk ? s.parent_contact : 'missing'}
+                          </span>
+                        )}
+                        {(relation === 'mother' || relation === 'both') && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${mOk ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-600'}`}>
+                            👩 {mOk ? s.mother_contact : 'missing'}
+                          </span>
+                        )}
+                        {!willActivate && (
+                          <span className="text-[10px] text-gray-400 italic">will skip</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+
+              <div className="flex gap-2 pb-2">
+                <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={submit}
+                  loading={saving}
+                  disabled={eligible.length === 0}
+                  className="flex-1"
+                >
+                  Activate {eligible.length > 0 ? `${eligible.length} Login${eligible.length !== 1 ? 's' : ''}` : ''}
+                </Button>
+              </div>
+            </>
+          ) : (
+            /* Results screen */
+            <>
+              <div className="flex flex-col items-center gap-2 py-2">
+                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-2xl">✅</div>
+                <p className="text-base font-bold text-gray-900">Done!</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-center">
+                  <p className="text-2xl font-black text-emerald-700">{result.activated}</p>
+                  <p className="text-xs text-emerald-600 font-medium mt-0.5">Activated</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-center">
+                  <p className="text-2xl font-black text-amber-700">{result.skipped}</p>
+                  <p className="text-xs text-amber-600 font-medium mt-0.5">Skipped</p>
+                </div>
+              </div>
+
+              {result.details.activated.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Activated</p>
+                  <div className="max-h-32 overflow-y-auto flex flex-col gap-1">
+                    {result.details.activated.map((a, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-emerald-50 rounded-lg">
+                        <span className="text-xs text-gray-700 font-medium">{a.student_name}</span>
+                        <span className="text-[11px] text-emerald-700 font-mono">{a.mobile}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result.details.skipped.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skipped</p>
+                  <div className="max-h-28 overflow-y-auto flex flex-col gap-1">
+                    {result.details.skipped.map((s, i) => (
+                      <div key={i} className="flex items-start justify-between px-3 py-1.5 bg-amber-50 rounded-lg gap-2">
+                        <span className="text-xs text-gray-700 font-medium shrink-0">{s.student_name}</span>
+                        <span className="text-[11px] text-amber-700 text-right">{s.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <Button onClick={onClose} className="w-full">Close</Button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Import Modal ----------------------------------------------------------
 function ImportModal({ token, onClose, onImported }: { token: string; onClose: () => void; onImported: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ created: number; skipped: any[] } | null>(null);
+  const [result, setResult] = useState<{ total?: number; created: number; updated?: number; skipped: any[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function downloadTemplate() {
@@ -506,7 +728,7 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
         <div className="px-5 py-4">
           {!result ? (
             <>
-              <p className="text-xs text-gray-500 mb-1">Columns: student name, father name, mother name, section, class, parent contact number, mother contact number</p>
+              <p className="text-xs text-gray-500 mb-1">Columns: student name, father name, mother name, section, class, father contact number, mother contact number</p>
               <button onClick={downloadTemplate} className="text-xs text-primary hover:underline mb-4 block">↓ Download template</button>
               <div className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center cursor-pointer mb-4" onClick={() => fileRef.current?.click()}>
                 <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
@@ -519,10 +741,141 @@ function ImportModal({ token, onClose, onImported }: { token: string; onClose: (
             </>
           ) : (
             <>
-              <p className="text-sm text-emerald-700 mb-2">✓ {result.created} students imported</p>
-              {result.skipped.length > 0 && <ul className="text-xs text-gray-500 list-disc pl-4 max-h-28 overflow-y-auto mb-4">{result.skipped.map((s: any, i: number) => <li key={i}>{s.studentName}: {s.reason}</li>)}</ul>}
+              {result.total && <p className="text-xs text-gray-400 mb-1">Total rows in file: {result.total}</p>}
+              <p className="text-sm text-emerald-700 mb-1">{result.created} new students inserted</p>
+              {(result.updated || 0) > 0 && <p className="text-sm text-blue-600 mb-1">{result.updated} existing students updated</p>}
+              {result.skipped.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs text-amber-600 font-medium mb-1">{result.skipped.length} skipped:</p>
+                  <ul className="text-xs text-gray-500 list-disc pl-4 max-h-28 overflow-y-auto">{result.skipped.map((s: any, i: number) => <li key={i}>{s.studentName}: {s.reason}</li>)}</ul>
+                </div>
+              )}
               <Button onClick={onClose} className="w-full">Done</Button>
             </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Bulk Change Section Modal --------------------------------------------
+function BulkChangeSectionModal({
+  students, classes, token, onClose, onDone,
+}: {
+  students: Student[]; classes: Class[]; token: string; onClose: () => void; onDone: () => void;
+}) {
+  const [classId, setClassId]     = useState('');
+  const [sectionId, setSectionId] = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
+  const [result, setResult]       = useState<{ updated: number; class_name: string; section_label: string } | null>(null);
+
+  const selectedClass = classes.find(c => c.id === classId);
+
+  async function submit() {
+    if (!classId || !sectionId) { setError('Select a class and section'); return; }
+    setSaving(true); setError('');
+    try {
+      const data = await apiPost<{ updated: number; class_name: string; section_label: string }>(
+        '/api/v1/admin/students/bulk-change-section',
+        { student_ids: students.map(s => s.id), class_id: classId, section_id: sectionId },
+        token,
+      );
+      setResult(data);
+      onDone();
+    } catch (e: any) {
+      setError(e.message || 'Failed to update section');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-y-auto max-h-[90vh]">
+        {/* Header */}
+        <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Bulk Change Section</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{students.length} student{students.length !== 1 ? 's' : ''} selected</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
+        </div>
+
+        <div className="px-5 py-4 flex flex-col gap-4">
+          {!result ? (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-800">
+                ⚠️ This moves all selected students to the chosen class and section immediately.
+              </div>
+
+              {/* Class picker */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-600">Target Class</label>
+                <select
+                  value={classId}
+                  onChange={e => { setClassId(e.target.value); setSectionId(''); }}
+                  className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40"
+                >
+                  <option value="">Select class</option>
+                  {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+
+              {/* Section picker */}
+              {selectedClass && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-gray-600">Target Section</label>
+                  <select
+                    value={sectionId}
+                    onChange={e => setSectionId(e.target.value)}
+                    className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-primary/40"
+                  >
+                    <option value="">Select section</option>
+                    {selectedClass.sections.map(s => (
+                      <option key={s.id} value={s.id}>Section {s.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Student preview */}
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                {students.map(s => (
+                  <div key={s.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs font-medium text-gray-700">{s.name}</p>
+                    <span className="text-[11px] text-gray-400">{s.class_name} {s.section_label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+
+              <div className="flex gap-2 pb-2">
+                <Button variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+                <Button
+                  onClick={submit}
+                  loading={saving}
+                  disabled={!classId || !sectionId}
+                  className="flex-1"
+                >
+                  Move {students.length} Student{students.length !== 1 ? 's' : ''}
+                </Button>
+              </div>
+            </>
+          ) : (
+            /* Result screen */
+            <div className="flex flex-col items-center gap-4 py-4">
+              <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center text-2xl">✅</div>
+              <div className="text-center">
+                <p className="text-base font-bold text-gray-900">{result.updated} student{result.updated !== 1 ? 's' : ''} moved</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  → {result.class_name} Section {result.section_label}
+                </p>
+              </div>
+              <Button onClick={onClose} className="w-full">Done</Button>
+            </div>
           )}
         </div>
       </div>
@@ -912,6 +1265,8 @@ export default function StudentsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showBulkPromote, setShowBulkPromote] = useState(false);
   const [showBulkTerminate, setShowBulkTerminate] = useState(false);
+  const [showBulkActivateParents, setShowBulkActivateParents] = useState(false);
+  const [showBulkChangeSection, setShowBulkChangeSection] = useState(false);
   const [changingClassStudent, setChangingClassStudent] = useState<Student | null>(null);
   const [historyStudent, setHistoryStudent] = useState<Student | null>(null);
 
@@ -1040,7 +1395,38 @@ export default function StudentsPage() {
           Students <span className="text-sm font-normal text-gray-400">{active.length}{inactive.length > 0 ? `, ${inactive.length} terminated` : ''}</span>
         </h1>
         <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              const params = new URLSearchParams();
+              if (filterSection) params.set('section_id', filterSection);
+              else if (filterClass) params.set('class_id', filterClass);
+              const res = await fetch(`${API_BASE}/api/v1/admin/students/login-cards?${params}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!res.ok) { alert((await res.json()).error || 'Failed'); return; }
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a'); a.href = url; a.download = 'parent-login-cards.pdf'; a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Login Cards
+          </button>
           <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>Import</Button>
+          <Button variant="secondary" size="sm" onClick={async () => {
+            const params = new URLSearchParams();
+            if (filterClass) params.set('class_id', filterClass);
+            if (filterSection) params.set('section_id', filterSection);
+            const res = await fetch(`${API_BASE}/api/v1/admin/students/export?${params.toString()}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) { alert('Export failed'); return; }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'students_export.xlsx'; a.click();
+            URL.revokeObjectURL(url);
+          }}>Export</Button>
           <Button size="sm" onClick={() => setShowAdd(true)}>+ Add</Button>
         </div>
       </div>
@@ -1052,6 +1438,14 @@ export default function StudentsPage() {
           <button onClick={() => setShowBulkPromote(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
             🎓 Promote
+          </button>
+          <button onClick={() => setShowBulkChangeSection(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+            🏫 Change Section
+          </button>
+          <button onClick={() => setShowBulkActivateParents(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            👨‍👩 Parent Logins
           </button>
           <button onClick={() => setShowBulkTerminate(true)}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">
@@ -1267,6 +1661,20 @@ export default function StudentsPage() {
         <BulkTerminateModal
           students={selectedStudents} token={token}
           onClose={() => setShowBulkTerminate(false)}
+          onDone={() => { setSelected(new Set()); load(); }}
+        />
+      )}
+      {showBulkActivateParents && selectedStudents.length > 0 && (
+        <BulkActivateParentsModal
+          students={selectedStudents} token={token}
+          onClose={() => setShowBulkActivateParents(false)}
+          onDone={() => { setSelected(new Set()); load(); }}
+        />
+      )}
+      {showBulkChangeSection && selectedStudents.length > 0 && (
+        <BulkChangeSectionModal
+          students={selectedStudents} classes={classes} token={token}
+          onClose={() => setShowBulkChangeSection(false)}
           onDone={() => { setSelected(new Set()); load(); }}
         />
       )}

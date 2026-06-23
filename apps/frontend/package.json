@@ -21,6 +21,13 @@
     "test:report": "node ../../node_modules/playwright/cli.js show-report playwright-report --host localhost --port 9323"
   },
   "dependencies": {
+    "@tiptap/extension-color": "^3.22.4",
+    "@tiptap/extension-text-align": "^3.22.4",
+    "@tiptap/extension-text-style": "^3.22.4",
+    "@tiptap/extension-underline": "^3.22.4",
+    "@tiptap/pm": "^3.22.4",
+    "@tiptap/react": "^3.22.4",
+    "@tiptap/starter-kit": "^3.22.4",
     "framer-motion": "^12.38.0",
     "js-cookie": "^3.0.5",
     "lucide-react": "^1.7.0",
@@ -29,6 +36,7 @@
     "pdfjs-dist": "^5.6.205",
     "react": "^18",
     "react-dom": "^18",
+    "recharts": "^3.8.1",
     "swr": "^2.2.5",
     "xlsx": "^0.18.5"
   },

@@ -24,11 +24,10 @@ export default function ChangePasswordPage() {
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
-    if (!isParent) {
-      apiGet<SecurityQuestion[]>('/api/v1/auth/security-questions', token)
-        .then(setQuestions)
-        .catch(console.error);
-    }
+    // Both parents and staff need security questions
+    apiGet<SecurityQuestion[]>('/api/v1/auth/security-questions', token)
+      .then(setQuestions)
+      .catch(console.error);
   }, []);
 
   async function handlePasswordChange(e: FormEvent) {
@@ -45,11 +44,8 @@ export default function ChangePasswordPage() {
     setLoading(true);
     try {
       await apiPost('/api/v1/auth/change-password', { new_password: newPassword }, token);
-      if (isParent) {
-        router.push('/parent');
-      } else {
-        setStep('security');
-      }
+      // All users (including parents) get the security question step
+      setStep('security');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to change password');
     } finally {
@@ -72,7 +68,7 @@ export default function ChangePasswordPage() {
       }, token);
       // Redirect based on role
       const redirectMap: Record<string, string> = {
-        admin: '/admin', principal: '/principal', teacher: '/teacher',
+        admin: '/admin', principal: '/principal', teacher: '/teacher', parent: '/parent',
       };
       router.push(redirectMap[role] || '/teacher');
     } catch (err: unknown) {
@@ -87,8 +83,14 @@ export default function ChangePasswordPage() {
       <div className="w-full max-w-md">
         {step === 'password' ? (
           <Card padding="lg">
-            <h1 className="text-xl font-semibold text-gray-800 mb-2">Change Your Password</h1>
-            <p className="text-sm text-gray-500 mb-6">You must set a new password before continuing.</p>
+            <h1 className="text-xl font-semibold text-gray-800 mb-2">
+              {isParent ? 'Welcome! Set Your Password' : 'Change Your Password'}
+            </h1>
+            <p className="text-sm text-gray-500 mb-6">
+              {isParent
+                ? 'Your account has been set up. Please create a new password to secure your account.'
+                : 'You must set a new password before continuing.'}
+            </p>
             <form onSubmit={handlePasswordChange} className="flex flex-col gap-4">
               <Input
                 label="New Password"
@@ -115,7 +117,11 @@ export default function ChangePasswordPage() {
         ) : (
           <Card padding="lg">
             <h1 className="text-xl font-semibold text-gray-800 mb-2">Set Security Question</h1>
-            <p className="text-sm text-gray-500 mb-6">This will be used to recover your account if you forget your password.</p>
+            <p className="text-sm text-gray-500 mb-6">
+              {isParent
+                ? 'Set a security question so you can reset your password if you ever forget it.'
+                : 'This will be used to recover your account if you forget your password.'}
+            </p>
             <form onSubmit={handleSecuritySetup} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-gray-700">Security Question</label>

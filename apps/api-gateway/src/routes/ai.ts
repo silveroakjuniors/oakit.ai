@@ -8,6 +8,7 @@ import { getToday } from '../lib/today';
 import { jwtVerify, schoolScope, roleGuard } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/rateLimit';
 import { checkAndDeductCredits } from '../lib/aiCredits';
+import { handleDataQuery } from '../lib/oakieDataQueries';
 import crypto from 'crypto';
 
 const router = Router();
@@ -125,11 +126,13 @@ function fallbackTeacherResponse(errorDetail?: string): {
   covered_chunk_ids: string[];
   activity_ids: string[];
 } {
-  const detail = errorDetail ? ` (${errorDetail})` : '';
+  // Don't leak raw HTTP error details to the user
+  const isWakingUp = errorDetail?.includes('429') || errorDetail?.includes('503') || errorDetail?.includes('ECONNREFUSED') || errorDetail?.includes('ETIMEDOUT');
+  const userMessage = isWakingUp
+    ? `Oakie is starting up — this usually takes about 20 seconds on the first request of the day. Please try again in a moment. 🌱\n\nIn the meantime, you can still use your plan and mark activities as completed.`
+    : `Oakie is temporarily unavailable. Please try again in 1-2 minutes.\n\nIn the meantime, you can still use your plan and mark activities as completed.`;
   return {
-    response:
-      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
-      `In the meantime, you can still use your plan and mark activities as completed.`,
+    response: userMessage,
     chunk_ids: [],
     covered_chunk_ids: [],
     activity_ids: [],
@@ -137,18 +140,39 @@ function fallbackTeacherResponse(errorDetail?: string): {
 }
 
 function fallbackParentResponse(errorDetail?: string): { response: string } {
-  const detail = errorDetail ? ` (${errorDetail})` : '';
-  return {
-    response:
-      `Oakie is temporarily unavailable${detail}. Please try again in 1-2 minutes.\n\n` +
-      `You can still check attendance, homework, and notes on this page.`,
-  };
+  const isWakingUp = errorDetail?.includes('429') || errorDetail?.includes('503') || errorDetail?.includes('ECONNREFUSED') || errorDetail?.includes('ETIMEDOUT');
+  const userMessage = isWakingUp
+    ? `Oakie is starting up — this usually takes about 20 seconds on the first request of the day. Please try again in a moment. 🌱\n\nYou can still check attendance, homework, and notes on this page.`
+    : `Oakie is temporarily unavailable. Please try again in 1-2 minutes.\n\nYou can still check attendance, homework, and notes on this page.`;
+  return { response: userMessage };
 }
 
 function getAiErrorMessage(err: unknown): string {
   if (!axios.isAxiosError(err)) return 'AI service unavailable';
   const detail = (err.response?.data as any)?.detail;
   return detail || err.message || 'AI service unavailable';
+}
+
+/** Call the AI service with one automatic retry on 429/503 (Render cold-start) */
+async function callAiWithRetry(
+  endpoint: string,
+  payload: object,
+  timeoutMs: number,
+): Promise<import('axios').AxiosResponse> {
+  try {
+    return await axios.post(endpoint, payload, { timeout: timeoutMs });
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const status = err.response?.status;
+      // Render free tier returns 429 or 503 while the service is waking up
+      if (status === 429 || status === 503 || !status) {
+        // Wait 5 seconds then try once more
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return axios.post(endpoint, payload, { timeout: timeoutMs });
+      }
+    }
+    throw err;
+  }
 }
 
 /** Detect and neutralize prompt injection attempts */
@@ -311,6 +335,14 @@ router.post('/query', async (req: Request, res: Response) => {
       return res.json({ response: OFF_TOPIC_RESPONSE, chunk_ids: [], covered_chunk_ids: [], activity_ids: [] });
     }
 
+    // 4. Structured data queries — answer directly from DB (fees, attendance, students, etc.)
+    //    Works for principal, admin, finance_manager. No AI service call needed.
+    const dataResult = await handleDataQuery(cleanText, school_id, role);
+    if (dataResult) {
+      await logAiQuery({ schoolId: school_id, actorId: user_id, actorRole: role, query: cleanText, outcome: 'allowed' });
+      return res.json(dataResult);
+    }
+
     // ── Question limit (teachers only, activity questions only) ──────────
     if (role === 'teacher' && !isAlwaysAllowed(cleanText)) {
       const countKey = `ai:qlimit:${user_id}:${today}`;
@@ -345,9 +377,9 @@ router.post('/query', async (req: Request, res: Response) => {
           return res.json(parsed);
         }
         try {
-          const aiResp = await axios.post(`${AI()}/internal/query`, {
+          const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
             teacher_id: user_id, school_id, text: cleanText, query_date: today, role,
-          }, { timeout: AI_TIMEOUT_MS });
+          }, AI_TIMEOUT_MS);
           const data = aiResp.data;
           data.response += `\n\n---\n💬 You've asked ${NUDGE_AT} questions today. When you're ready, mark your activities as completed using the checkboxes below.`;
           await redis.setEx(cacheKey, 10, JSON.stringify(data));
@@ -360,7 +392,7 @@ router.post('/query', async (req: Request, res: Response) => {
             endpoint: `${AI()}/internal/query`,
             message: errMsg,
           });
-          return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
+          return res.json(fallbackTeacherResponse(errMsg));
         }
       }
     }
@@ -382,12 +414,79 @@ router.post('/query', async (req: Request, res: Response) => {
     }
     // ─────────────────────────────────────────────────────────────────────
 
+    // ── Plan query — lookup by chunk_ids hash (single table, no duplication) ──
+    const isPlanQuery = /plan.*today|today.*plan|what.*plan|my plan|plan for tomorrow|tomorrow.*plan|plan for \d|plan.*\d{4}-\d{2}-\d{2}/i.test(cleanText);
+    let classId: string | null = null;
+    let planDate: string = today;
+    let planChunkIds: string[] | null = null;
+
+    // Detect date from query
+    const tomorrowMatch = /tomorrow/i.test(cleanText);
+    const dateMatch = cleanText.match(/(\d{4}-\d{2}-\d{2})/);
+    if (tomorrowMatch) {
+      const parts = today.split('-').map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      d.setDate(d.getDate() + 1);
+      planDate = d.toISOString().slice(0, 10);
+    } else if (dateMatch) {
+      planDate = dateMatch[1];
+    }
+
+    if (isPlanQuery && role === 'teacher') {
+      try {
+        const sectionRow = await pool.query(
+          `SELECT sec.class_id, sec.id as section_id FROM sections sec
+           LEFT JOIN teacher_sections ts ON ts.section_id = sec.id
+           WHERE (sec.class_teacher_id = $1 OR ts.teacher_id = $1) AND sec.school_id = $2
+           LIMIT 1`,
+          [user_id, school_id]
+        );
+        if (sectionRow.rows.length > 0) {
+          classId = sectionRow.rows[0].class_id;
+          const sectionId = sectionRow.rows[0].section_id;
+
+          // Get chunk_ids for this plan date
+          const planRow = await pool.query(
+            `SELECT chunk_ids FROM day_plans WHERE section_id = $1 AND plan_date = $2 AND school_id = $3`,
+            [sectionId, planDate, school_id]
+          );
+
+          if (planRow.rows.length > 0 && planRow.rows[0].chunk_ids?.length > 0) {
+            planChunkIds = planRow.rows[0].chunk_ids;
+            // Create hash of chunk_ids for lookup
+            const sortedIds = [...planChunkIds].sort().join(',');
+            const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
+
+            // Check ai_plan_cache for existing text
+            const cached = await pool.query(
+              `SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1 AND school_id = $2`,
+              [chunkHash, school_id]
+            );
+
+            if (cached.rows.length > 0) {
+              return res.json({
+                response: cached.rows[0].ai_text,
+                chunk_ids: planChunkIds,
+                covered_chunk_ids: [],
+                activity_ids: [],
+                plan_date: planDate,
+                from_cache: true,
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error('[ai.query] plan cache lookup error:', err.message);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     const cacheKey = `ai:${user_id}:${crypto.createHash('md5').update(cleanText + today).digest('hex')}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
 
     try {
-      const aiResp = await axios.post(`${AI()}/internal/query`, {
+      const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
         teacher_id: user_id,
         school_id,
         text: cleanText,
@@ -395,9 +494,27 @@ router.post('/query', async (req: Request, res: Response) => {
         role,
         history: Array.isArray(history) ? history.slice(-3) : [],
         ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
-      }, { timeout: AI_TIMEOUT_MS });
+      }, AI_TIMEOUT_MS);
 
+      // Cache per-user (10 sec) for deduplication of non-plan queries
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
+
+      // Store plan text in ai_plan_cache (one row per unique chunk set)
+      if (isPlanQuery && planChunkIds && planChunkIds.length > 0 && aiResp.data.response) {
+        const sortedIds = [...planChunkIds].sort().join(',');
+        const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
+        pool.query(
+          `INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text)
+           VALUES ($1, $2, $3::uuid[], $4)
+           ON CONFLICT (chunk_hash) DO NOTHING`,
+          [chunkHash, school_id, planChunkIds, aiResp.data.response]
+        ).then(r => {
+          console.log(`[ai.query] Plan cached: hash=${chunkHash.slice(0, 8)} rows=${r.rowCount}`);
+        }).catch(err => {
+          console.error(`[ai.query] Cache insert failed:`, err.message);
+        });
+      }
+
       return res.json(aiResp.data);
     } catch (err: unknown) {
       const requestId = crypto.randomBytes(6).toString('hex');
@@ -408,7 +525,7 @@ router.post('/query', async (req: Request, res: Response) => {
         ai_service_url: AI(),
         message: errMsg,
       });
-      return res.json(fallbackTeacherResponse(`AI service: ${errMsg}`));
+      return res.json(fallbackTeacherResponse(errMsg));
     }
 
   } catch (err: unknown) {
@@ -618,14 +735,14 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         if (nameRow.rows[0]?.name) studentFirstName = nameRow.rows[0].name.split(' ')[0];
       }
 
-      const aiResp = await axios.post(`${AI()}/internal/query`, {
+      const aiResp = await callAiWithRetry(`${AI()}/internal/query`, {
         teacher_id: section_teacher_id,
         school_id,
         text: cleanText,
         query_date: today,
         role: 'parent',
         context: `You are answering a parent's question about their child ${studentFirstName}.\nAlways use the child's name (${studentFirstName}) in your response — never say "your child".\nBe warm, reassuring, and specific. Keep the response under 100 words.\nIf the parent asks about absence, tell them exactly which subjects were covered that day and suggest they can help ${studentFirstName} catch up at home.\n\n${context}`,
-      }, { timeout: AI_TIMEOUT_MS });
+      }, AI_TIMEOUT_MS);
       await redis.setEx(cacheKey, 30, JSON.stringify(aiResp.data));
       return res.json(aiResp.data);
     } catch (err: unknown) {
@@ -636,7 +753,7 @@ router.post('/parent-query', async (req: Request, res: Response) => {
         endpoint: `${AI()}/internal/query`,
         message: getAiErrorMessage(err),
       });
-      return res.json(fallbackParentResponse());
+      return res.json(fallbackParentResponse(getAiErrorMessage(err)));
     }
 
   } catch (err: unknown) {
@@ -964,6 +1081,53 @@ router.post('/format-observation', async (req: Request, res: Response) => {
     console.error('[ai.format-observation]', err);
     // Graceful fallback — return original text
     return res.json({ formatted: req.body.text });
+  }
+});
+
+// POST /api/v1/ai/hr-terms — generate employment terms using Oakie (principal/admin only)
+router.post('/hr-terms', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id, role } = req.user!;
+    if (!['principal', 'admin'].includes(role)) return res.status(403).json({ error: 'Forbidden' });
+
+    const { school_name, designation, salary, context } = req.body;
+    // designation is required; school_name and salary are optional (template creation may not have them)
+    if (!designation || !String(designation).trim())
+      return res.status(400).json({ error: 'designation is required' });
+
+    // Check and deduct credits
+    const credit = await checkAndDeductCredits({
+      schoolId: school_id, actorId: user_id, actorRole: role, endpoint: 'hr-terms',
+    });
+    if (!credit.allowed) {
+      return res.status(402).json({ error: 'Insufficient AI credits', code: 'INSUFFICIENT_CREDITS' });
+    }
+
+    const salaryPart = salary ? ` Monthly salary: ₹${salary}.` : '';
+    const schoolPart = school_name ? ` at ${school_name}` : '';
+
+    try {
+      const aiResp = await axios.post(`${AI()}/internal/query`, {
+        text: `Generate professional employment terms and conditions for a ${designation} position${schoolPart}.${salaryPart} ${context || ''} Write formal, clear terms covering probation period, notice period, working hours, leave policy, and code of conduct. Return only the terms text, no preamble.`,
+        teacher_id: user_id,
+        school_id,
+        role,
+      }, { timeout: AI_TIMEOUT_MS });
+
+      return res.json({ terms: aiResp.data.response });
+    } catch (err: unknown) {
+      const requestId = crypto.randomBytes(6).toString('hex');
+      console.error(`[ai.hr-terms][${requestId}] upstream error`, {
+        user_id, school_id, role,
+        endpoint: `${AI()}/internal/query`,
+        message: getAiErrorMessage(err),
+      });
+      return res.status(503).json({ error: 'Oakie is temporarily unavailable', code: 'AI_UNAVAILABLE' });
+    }
+  } catch (err: unknown) {
+    const requestId = crypto.randomBytes(6).toString('hex');
+    console.error(`[ai.hr-terms][${requestId}] route error`, { message: getAiErrorMessage(err) });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -138,7 +138,7 @@ router.post('/submit', async (req: Request, res: Response) => {
       `INSERT INTO teacher_homework
          (school_id, section_id, teacher_id, homework_date, chunk_id, topic_label, raw_text, formatted_text, teacher_comments)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT ON CONSTRAINT teacher_homework_chunk_date_unique DO UPDATE
+       ON CONFLICT (section_id, chunk_id, homework_date) WHERE chunk_id IS NOT NULL DO UPDATE
        SET raw_text = EXCLUDED.raw_text,
            formatted_text = EXCLUDED.formatted_text,
            teacher_comments = EXCLUDED.teacher_comments,

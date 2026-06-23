@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiGet, apiPost, API_BASE } from '@/lib/api';
-import { getToken } from '@/lib/auth';
+import { getToken, getRole } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
 import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
@@ -18,8 +18,8 @@ interface Expense {
 }
 
 const CATEGORIES = [
-  'salaries', 'utilities', 'maintenance', 'supplies', 'transport',
-  'marketing', 'rent', 'food', 'events', 'other',
+  'rent', 'salary', 'utilities', 'marketing', 'maintenance',
+  'supplies', 'transport', 'food', 'events', 'miscellaneous', 'other',
 ];
 
 export default function ExpensesPage() {
@@ -166,8 +166,10 @@ export default function ExpensesPage() {
   }
 
   const canAdd = permissions.includes('ADD_EXPENSE');
-  // finance_manager cannot edit/delete (backend enforces; we mirror in UI)
-  const canEdit = canAdd;
+  // finance_manager cannot edit/delete (backend enforces; we mirror in UI).
+  // Principal and admin always can edit/delete when they have ADD_EXPENSE.
+  const role = getRole() || '';
+  const canEdit = canAdd && role !== 'finance_manager';
 
   if (permsLoaded && !permissions.includes('VIEW_EXPENSE')) {
     return (

@@ -1,54 +1,63 @@
-'use client';
+﻿'use client';
 
-import { useState } from 'react';
-import { API_BASE } from '@/lib/api';
+import { useState, useEffect } from 'react';
 
 const SCHOOL_CODE = 'sojs';
 const CLASS_OPTIONS = ['Play Group', 'Nursery', 'LKG', 'UKG', '1st STD', '2nd STD', '3rd STD'];
 
-const SIZES = ['20', '22', '24', '26', '28', '30', '32'];
-
-// Indian kids size guide shown to parents
-const SIZE_GUIDE = [
-  { size: '20', age: '3–4 yrs', height: '95–105 cm', chest: '48–52 cm' },
-  { size: '22', age: '4–5 yrs', height: '106–115 cm', chest: '53–57 cm' },
-  { size: '24', age: '5–6 yrs', height: '116–125 cm', chest: '58–62 cm' },
-  { size: '26', age: '6–7 yrs', height: '126–135 cm', chest: '63–67 cm' },
-  { size: '28', age: '7–8 yrs', height: '136–145 cm', chest: '68–72 cm' },
-  { size: '30', age: '8–9 yrs', height: '146–155 cm', chest: '73–77 cm' },
-  { size: '32', age: '9–10 yrs', height: '156–165 cm', chest: '78–82 cm' },
-];
+// Resolve API URL at runtime on the client
+function getApiBase() {
+  return (
+    (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_URL__) ||
+    (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/+$/, '') ||
+    'https://oakit-api-gateway.onrender.com'
+  );
+}
 
 interface FormState {
   child_name: string;
   class_name: string;
   parent_name: string;
   contact_number: string;
-  height_cm: string;
+  height_in: string;
   weight_kg: string;
-  chest_cm: string;
-  shirt_length_cm: string;
-  pant_length_cm: string;
+  chest_in: string;
+  shirt_length_in: string;
+  pant_length_in: string;
 }
 
-interface Result {
-  recommended_shirt_size: string | null;
-  recommended_pant_size: string | null;
+interface ExistingRecord {
+  id: string;
+  child_name: string;
+  class_name: string;
+  parent_name: string;
+  contact_number: string;
+  status: string;
+  created_at: string;
 }
+
+type Step = 'form' | 'duplicate' | 'done';
+
+const EMPTY_FORM: FormState = {
+  child_name: '', class_name: '', parent_name: '', contact_number: '',
+  height_in: '', weight_kg: '', chest_in: '', shirt_length_in: '', pant_length_in: '',
+};
 
 export default function UniformSizingPage() {
-  const [form, setForm] = useState<FormState>({
-    child_name: '', class_name: '', parent_name: '', contact_number: '',
-    height_cm: '', weight_kg: '', chest_cm: '', shirt_length_cm: '', pant_length_cm: '',
-  });
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<FormState>>({});
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
-  const [submitted, setSubmitted] = useState(false);
   const [apiError, setApiError] = useState('');
-  const [showGuide, setShowGuide] = useState(false);
+  const [step, setStep] = useState<Step>('form');
+  const [existing, setExisting] = useState<ExistingRecord | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
-  function set(field: keyof FormState, value: string) {
+  useEffect(() => {
+    document.body.style.overflow = lightboxOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [lightboxOpen]);
+
+  function setField(field: keyof FormState, value: string) {
     setForm(p => ({ ...p, [field]: value }));
     setErrors(p => ({ ...p, [field]: '' }));
   }
@@ -61,11 +70,13 @@ export default function UniformSizingPage() {
     const phone = form.contact_number.replace(/\D/g, '');
     if (!phone) e.contact_number = 'Contact number is required';
     else if (phone.length !== 10) e.contact_number = 'Enter a valid 10-digit number';
-    if (!form.height_cm && !form.chest_cm) {
-      e.height_cm = 'Please enter at least height or chest measurement';
-    }
     setErrors(e);
     return Object.keys(e).length === 0;
+  }
+
+  // inches -> cm helper
+  function inToCm(val: string) {
+    return val ? Math.round(Number(val) * 2.54 * 10) / 10 : undefined;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,7 +85,8 @@ export default function UniformSizingPage() {
     if (!validate()) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/public/uniform`, {
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/v1/public/uniform`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,17 +95,21 @@ export default function UniformSizingPage() {
           class_name: form.class_name,
           parent_name: form.parent_name.trim(),
           contact_number: form.contact_number.replace(/\D/g, ''),
-          height_cm: form.height_cm ? Number(form.height_cm) : undefined,
+          height_cm: inToCm(form.height_in),
           weight_kg: form.weight_kg ? Number(form.weight_kg) : undefined,
-          chest_cm: form.chest_cm ? Number(form.chest_cm) : undefined,
-          shirt_length_cm: form.shirt_length_cm ? Number(form.shirt_length_cm) : undefined,
-          pant_length_cm: form.pant_length_cm ? Number(form.pant_length_cm) : undefined,
+          chest_cm: inToCm(form.chest_in),
+          shirt_length_cm: inToCm(form.shirt_length_in),
+          pant_length_cm: inToCm(form.pant_length_in),
         }),
       });
       const data = await res.json();
+      if (res.status === 409 && data.duplicate) {
+        setExisting(data.existing);
+        setStep('duplicate');
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Submission failed');
-      setResult(data);
-      setSubmitted(true);
+      setStep('done');
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
@@ -101,73 +117,82 @@ export default function UniformSizingPage() {
     }
   }
 
-  const inputClass = (field: keyof FormState) =>
+  function reset() {
+    setForm(EMPTY_FORM);
+    setErrors({});
+    setApiError('');
+    setExisting(null);
+    setStep('form');
+  }
+
+  const inp = (field: keyof FormState) =>
     `w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 transition-colors bg-white ${
-      errors[field]
-        ? 'border-red-300 focus:ring-red-100'
-        : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
+      errors[field] ? 'border-red-300 focus:ring-red-100' : 'border-gray-200 focus:ring-emerald-100 focus:border-emerald-400'
     }`;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-green-50">
+
       {/* Header */}
-      <header className="w-full px-4 py-3 flex items-center justify-between border-b border-emerald-100 bg-white sticky top-0 z-10">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-white border border-gray-100 shadow-sm overflow-hidden flex items-center justify-center">
-            <img src="/school-logo.png" alt="Silver Oak Juniors" className="w-full h-full object-contain" />
-          </div>
-          <div>
-            <p className="font-bold text-gray-800 text-sm leading-tight">Silver Oak Juniors</p>
-            <p className="text-xs text-emerald-600 font-medium">Uniform Sizing</p>
-          </div>
+      <header className="w-full px-4 py-3 flex items-center gap-2.5 border-b border-emerald-100 bg-white sticky top-0 z-10">
+        <div className="w-9 h-9 rounded-xl bg-white border border-gray-100 shadow-sm overflow-hidden flex items-center justify-center shrink-0">
+          <img src="/school-logo.png" alt="Silver Oak Juniors" className="w-full h-full object-contain" />
         </div>
-        <button
-          onClick={() => setShowGuide(g => !g)}
-          className="text-xs font-semibold px-3 py-1.5 rounded-full border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors"
-        >
-          {showGuide ? 'Hide' : 'Size Guide'}
-        </button>
+        <div>
+          <p className="font-bold text-gray-800 text-sm leading-tight">Silver Oak Juniors</p>
+          <p className="text-xs text-emerald-600 font-medium">Uniform Sizing</p>
+        </div>
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-6">
 
-        {/* Size guide panel */}
-        {showGuide && (
-          <div className="mb-6 bg-white rounded-2xl border border-emerald-100 shadow-sm overflow-hidden">
-            <div className="bg-emerald-600 px-4 py-3">
-              <p className="text-white font-bold text-sm">Indian Kids Uniform Size Chart</p>
-              <p className="text-emerald-100 text-xs mt-0.5">Standard sizes 20–32 based on chest & height</p>
+        {/*  Duplicate warning  */}
+        {step === 'duplicate' && existing && (
+          <div className="py-4 space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+              <div className="flex items-start gap-3 mb-4">
+                <span className="text-2xl"></span>
+                <div>
+                  <p className="font-bold text-amber-900 text-sm">Already submitted</p>
+                  <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+                    A sizing request for <strong>{existing.child_name}</strong> with this contact number was already submitted on{' '}
+                    {new Date(existing.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.
+                  </p>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl border border-amber-100 p-3 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Child</span>
+                  <span className="font-semibold text-gray-800">{existing.child_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Class</span>
+                  <span className="font-semibold text-gray-800">{existing.class_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Parent</span>
+                  <span className="font-semibold text-gray-800">{existing.parent_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Status</span>
+                  <span className="font-semibold text-emerald-700 capitalize">{existing.status}</span>
+                </div>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-emerald-50">
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Size</th>
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Age</th>
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Height</th>
-                    <th className="px-3 py-2 text-left font-semibold text-emerald-800">Chest</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {SIZE_GUIDE.map((row, i) => (
-                    <tr key={row.size} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-3 py-2 font-bold text-emerald-700">{row.size}</td>
-                      <td className="px-3 py-2 text-gray-600">{row.age}</td>
-                      <td className="px-3 py-2 text-gray-600">{row.height}</td>
-                      <td className="px-3 py-2 text-gray-600">{row.chest}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <p className="text-xs text-gray-500 text-center px-4">
+              If this is a different child (sibling/twin), please use a different name. Contact the school to update an existing request.
+            </p>
+            <button onClick={reset}
+              className="w-full py-3 rounded-2xl font-semibold text-sm text-white bg-gradient-to-r from-emerald-600 to-green-500 shadow-md active:scale-[0.98] transition-all">
+              Go back &amp; edit
+            </button>
           </div>
         )}
 
-        {submitted && result ? (
-          /* ── Success screen ── */
-          <div className="py-4">
-            {/* Result card */}
-            <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-500 to-green-400 px-6 pt-8 pb-8 mb-5 text-center shadow-xl shadow-emerald-100">
+        {/*  Success  */}
+        {step === 'done' && (
+          <div className="py-4 space-y-4">
+            <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-500 to-green-400 px-6 pt-10 pb-8 text-center shadow-xl shadow-emerald-100">
               <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-white/10 -translate-y-8 translate-x-8" />
               <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full bg-white/10 translate-y-8 -translate-x-6" />
               <div className="relative z-10 w-14 h-14 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center mx-auto mb-4">
@@ -175,34 +200,20 @@ export default function UniformSizingPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <p className="relative z-10 text-white/80 text-xs font-semibold uppercase tracking-widest mb-2">Sizing Complete</p>
+              <p className="relative z-10 text-white/80 text-xs font-semibold uppercase tracking-widest mb-2">Submitted!</p>
               <h2 className="relative z-10 text-xl font-extrabold text-white leading-tight mb-1">
-                {form.child_name}&apos;s Recommended Sizes
+                {form.child_name}&apos;s measurements saved
               </h2>
-              <p className="relative z-10 text-white/80 text-sm mb-6">Based on the measurements provided</p>
-
-              <div className="relative z-10 grid grid-cols-2 gap-3">
-                <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 border border-white/30">
-                  <p className="text-white/70 text-xs font-semibold uppercase tracking-wider mb-1">Shirt Size</p>
-                  <p className="text-white font-extrabold text-4xl">{result.recommended_shirt_size ?? '—'}</p>
-                  <p className="text-white/60 text-xs mt-1">Indian Standard</p>
-                </div>
-                <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4 border border-white/30">
-                  <p className="text-white/70 text-xs font-semibold uppercase tracking-wider mb-1">Pant Size</p>
-                  <p className="text-white font-extrabold text-4xl">{result.recommended_pant_size ?? '—'}</p>
-                  <p className="text-white/60 text-xs mt-1">Indian Standard</p>
-                </div>
-              </div>
+              <p className="relative z-10 text-white/80 text-sm">Our team will contact you to confirm the uniform size.</p>
             </div>
 
-            {/* Info card */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">What happens next</p>
               <div className="space-y-3">
                 {[
-                  { icon: '📞', title: "We'll confirm with you", desc: 'Our team will call you to confirm the sizes and any adjustments needed.' },
-                  { icon: '👕', title: 'Uniform preparation', desc: 'Your child\'s uniform will be prepared in the recommended sizes.' },
-                  { icon: '🏫', title: 'Collect at school', desc: 'Uniforms can be collected from the school office on the designated date.' },
+                  { icon: '', title: "We'll call you", desc: 'Our team will call you to confirm the sizes.' },
+                  { icon: '', title: 'Uniform preparation', desc: "Your child's uniform will be prepared." },
+                  { icon: '', title: 'Collect at school', desc: 'Collect from the school office on the designated date.' },
                 ].map(s => (
                   <div key={s.title} className="flex items-start gap-3">
                     <span className="text-xl mt-0.5">{s.icon}</span>
@@ -215,23 +226,15 @@ export default function UniformSizingPage() {
               </div>
             </div>
 
-            {/* Size note */}
-            <div className="bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 mb-5">
-              <p className="text-xs font-semibold text-amber-800 mb-1">📏 Important Note</p>
-              <p className="text-xs text-amber-700 leading-relaxed">
-                These are recommended sizes based on standard measurements. We suggest going one size up if your child is between sizes or growing fast. Final confirmation will be done at the school.
-              </p>
-            </div>
-
-            <button
-              onClick={() => { setSubmitted(false); setResult(null); setForm({ child_name:'',class_name:'',parent_name:'',contact_number:'',height_cm:'',weight_kg:'',chest_cm:'',shirt_length_cm:'',pant_length_cm:'' }); }}
-              className="w-full py-3 rounded-2xl font-medium text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
-            >
+            <button onClick={reset}
+              className="w-full py-3 rounded-2xl font-medium text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
               Submit for another child
             </button>
           </div>
-        ) : (
-          /* ── Form ── */
+        )}
+
+        {/*  Form  */}
+        {step === 'form' && (
           <>
             <div className="text-center mb-6">
               <div className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 mb-3">
@@ -239,7 +242,7 @@ export default function UniformSizingPage() {
                 Uniform Sizing Form
               </div>
               <h1 className="text-xl font-bold text-gray-900 mb-1">Get Your Child&apos;s Uniform Size</h1>
-              <p className="text-sm text-gray-500">Enter measurements and we&apos;ll recommend the right size instantly.</p>
+              <p className="text-sm text-gray-500">Fill in the details and we&apos;ll get back to you with the right size.</p>
             </div>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
@@ -247,22 +250,20 @@ export default function UniformSizingPage() {
               {/* Child details */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-4">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Child Details</p>
-
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Child&apos;s Name <span className="text-red-400">*</span>
                   </label>
                   <input type="text" placeholder="Full name of the child" value={form.child_name}
-                    onChange={e => set('child_name', e.target.value)} className={inputClass('child_name')} />
+                    onChange={e => setField('child_name', e.target.value)} className={inp('child_name')} />
                   {errors.child_name && <p className="text-xs text-red-500 mt-1">{errors.child_name}</p>}
                 </div>
-
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Class <span className="text-red-400">*</span>
                   </label>
-                  <select value={form.class_name} onChange={e => set('class_name', e.target.value)}
-                    className={`${inputClass('class_name')} appearance-none`}>
+                  <select value={form.class_name} onChange={e => setField('class_name', e.target.value)}
+                    className={`${inp('class_name')} appearance-none`}>
                     <option value="">Select class...</option>
                     {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -273,83 +274,94 @@ export default function UniformSizingPage() {
               {/* Parent details */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-4">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Parent / Guardian</p>
-
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Parent Name <span className="text-red-400">*</span>
                   </label>
                   <input type="text" placeholder="Your full name" value={form.parent_name}
-                    onChange={e => set('parent_name', e.target.value)} className={inputClass('parent_name')} />
+                    onChange={e => setField('parent_name', e.target.value)} className={inp('parent_name')} />
                   {errors.parent_name && <p className="text-xs text-red-500 mt-1">{errors.parent_name}</p>}
                 </div>
-
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                     Contact Number <span className="text-red-400">*</span>
                   </label>
                   <input type="tel" placeholder="10-digit mobile number" maxLength={10}
                     value={form.contact_number}
-                    onChange={e => set('contact_number', e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    className={inputClass('contact_number')} />
+                    onChange={e => setField('contact_number', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    className={inp('contact_number')} />
                   {errors.contact_number && <p className="text-xs text-red-500 mt-1">{errors.contact_number}</p>}
                 </div>
               </div>
 
               {/* Measurements */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Measurements</p>
-                  <button type="button" onClick={() => setShowGuide(g => !g)}
-                    className="text-xs text-emerald-600 font-semibold hover:underline">
-                    View size chart
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Measurements</p>
+
+                {/* Reference image */}
+                <div className="rounded-xl overflow-hidden border border-emerald-100">
+                  <div className="bg-emerald-600 px-3 py-2 flex items-center justify-between">
+                    <div>
+                      <p className="text-white font-bold text-xs">Measurement Reference</p>
+                      <p className="text-emerald-100 text-[10px] mt-0.5">Tap image to enlarge</p>
+                    </div>
+                    <span className="text-emerald-200 text-[10px] flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+                      </svg>
+                      Zoom
+                    </span>
+                  </div>
+                  <button type="button" onClick={() => setLightboxOpen(true)}
+                    className="w-full block focus:outline-none active:opacity-80 cursor-zoom-in"
+                    aria-label="Tap to enlarge measurement reference chart">
+                    <img src="/uniform-size-chart.png" alt="Uniform measurement reference chart" className="w-full h-auto" />
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 -mt-2">All measurements in centimetres (cm) and kilograms (kg). Height or chest is required.</p>
+
+                <p className="text-xs text-gray-400">All measurements optional. Height/chest/lengths in inches. Weight in kg.</p>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                      Height (cm) <span className="text-red-400">*</span>
-                    </label>
-                    <input type="number" placeholder="e.g. 110" min="60" max="180" value={form.height_cm}
-                      onChange={e => set('height_cm', e.target.value)} className={inputClass('height_cm')} />
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Height (in)</label>
+                    <input type="number" placeholder="e.g. 43" min="24" max="71" step="0.1"
+                      value={form.height_in} onChange={e => setField('height_in', e.target.value)} className={inp('height_in')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Weight (kg)</label>
-                    <input type="number" placeholder="e.g. 18" min="5" max="80" value={form.weight_kg}
-                      onChange={e => set('weight_kg', e.target.value)} className={inputClass('weight_kg')} />
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Weight (kg)</label>
+                    <input type="number" placeholder="e.g. 18" min="5" max="80" step="0.1"
+                      value={form.weight_kg} onChange={e => setField('weight_kg', e.target.value)} className={inp('weight_kg')} />
                   </div>
                 </div>
-                {errors.height_cm && <p className="text-xs text-red-500 -mt-2">{errors.height_cm}</p>}
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Chest (cm)</label>
-                  <input type="number" placeholder="Measure around the fullest part of chest" min="40" max="100"
-                    value={form.chest_cm} onChange={e => set('chest_cm', e.target.value)} className={inputClass('chest_cm')} />
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Chest (in)</label>
+                  <input type="number" placeholder="Around fullest part of chest" min="16" max="40" step="0.1"
+                    value={form.chest_in} onChange={e => setField('chest_in', e.target.value)} className={inp('chest_in')} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Shirt Length (cm)</label>
-                    <input type="number" placeholder="Shoulder to hip" min="30" max="80" value={form.shirt_length_cm}
-                      onChange={e => set('shirt_length_cm', e.target.value)} className={inputClass('shirt_length_cm')} />
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Shirt Length (in)</label>
+                    <input type="number" placeholder="Shoulder to hip" min="12" max="32" step="0.1"
+                      value={form.shirt_length_in} onChange={e => setField('shirt_length_in', e.target.value)} className={inp('shirt_length_in')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pant Length (cm)</label>
-                    <input type="number" placeholder="Waist to ankle" min="30" max="100" value={form.pant_length_cm}
-                      onChange={e => set('pant_length_cm', e.target.value)} className={inputClass('pant_length_cm')} />
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Pant Length (in)</label>
+                    <input type="number" placeholder="Waist to ankle" min="12" max="40" step="0.1"
+                      value={form.pant_length_in} onChange={e => setField('pant_length_in', e.target.value)} className={inp('pant_length_in')} />
                   </div>
                 </div>
               </div>
 
-              {/* How to measure tip */}
+              {/* How to measure */}
               <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3">
-                <p className="text-xs font-semibold text-blue-800 mb-1">📐 How to measure</p>
+                <p className="text-xs font-semibold text-blue-800 mb-1"> How to measure</p>
                 <ul className="text-xs text-blue-700 space-y-1 leading-relaxed">
-                  <li><strong>Height:</strong> Stand straight against a wall, measure from floor to top of head</li>
-                  <li><strong>Chest:</strong> Measure around the fullest part of the chest, keep tape snug but not tight</li>
-                  <li><strong>Shirt length:</strong> From the base of the neck/shoulder down to the hip</li>
-                  <li><strong>Pant length:</strong> From the waist down to the ankle bone</li>
+                  <li><strong>Height:</strong> Stand straight, measure floor to top of head</li>
+                  <li><strong>Chest:</strong> Around the fullest part, tape snug but not tight</li>
+                  <li><strong>Shirt length:</strong> Shoulder/neck base down to the hip</li>
+                  <li><strong>Pant length:</strong> Waist down to the ankle bone</li>
                 </ul>
               </div>
 
@@ -367,9 +379,9 @@ export default function UniformSizingPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Getting your size...
+                    Submitting...
                   </span>
-                ) : 'Get Recommended Size →'}
+                ) : 'Submit '}
               </button>
 
               <p className="text-center text-xs text-gray-400 pb-2">
@@ -379,6 +391,28 @@ export default function UniformSizingPage() {
           </>
         )}
       </main>
+
+      {/* Lightbox */}
+      {lightboxOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setLightboxOpen(false)}
+          role="dialog" aria-modal="true">
+          <button type="button" onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
+            aria-label="Close">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="relative w-full max-w-2xl max-h-[90dvh] overflow-auto rounded-2xl shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <img src="/uniform-size-chart.png" alt="Uniform measurement reference chart — enlarged"
+              className="w-full h-auto rounded-2xl" />
+            <p className="text-center text-white/60 text-xs mt-3 pb-1">Tap outside to close</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

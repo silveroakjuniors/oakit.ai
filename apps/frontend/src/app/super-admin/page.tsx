@@ -38,7 +38,7 @@ export default function SuperAdminDashboard() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Platform Overview</h1>
-        <p className="text-white/40 text-sm mt-1">Real-time stats across all schools</p>
+        <p className="text-white/40 text-sm mt-1">Real-time stats across all schools on Oakit.ai</p>
       </div>
 
       {loading && (
@@ -49,48 +49,67 @@ export default function SuperAdminDashboard() {
       )}
 
       {error && (
-        <div className="rounded-2xl px-4 py-3 text-sm text-red-400"
+        <div className="rounded-2xl px-4 py-3 text-sm text-red-400 mb-6"
           style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
-          {error}
+          {error} — check that the backend is running and your session is valid.
         </div>
       )}
 
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {tiles.map(({ label, value, icon: Icon, color, bg, border }) => (
-            <div key={label} className="rounded-2xl p-5 transition-all hover:scale-[1.02]"
-              style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid rgba(255,255,255,0.08)` }}>
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
-                style={{ background: bg, border: `1px solid ${border}` }}>
-                <Icon size={18} style={{ color }} />
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+            {tiles.map(({ label, value, icon: Icon, color, bg, border }) => (
+              <div key={label} className="rounded-2xl p-5 transition-all hover:scale-[1.02]"
+                style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid rgba(255,255,255,0.08)` }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
+                  style={{ background: bg, border: `1px solid ${border}` }}>
+                  <Icon size={18} style={{ color }} />
+                </div>
+                <p className="text-3xl font-black text-white leading-none">{value.toLocaleString()}</p>
+                <p className="text-xs font-medium mt-2" style={{ color: 'rgba(255,255,255,0.4)' }}>{label}</p>
               </div>
-              <p className="text-3xl font-black text-white leading-none">{value.toLocaleString()}</p>
-              <p className="text-xs font-medium mt-2" style={{ color: 'rgba(255,255,255,0.4)' }}>{label}</p>
+            ))}
+          </div>
+
+          <div className="rounded-2xl p-5 mb-6"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <TrendingUp size={16} style={{ color: 'rgba(255,255,255,0.3)' }} />
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                Platform Health
+              </p>
             </div>
-          ))}
-        </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                <div className="h-2 rounded-full transition-all"
+                  style={{ width: `${Math.round((stats.active_schools / Math.max(stats.total_schools, 1)) * 100)}%`, background: 'linear-gradient(90deg,#10B981,#34D399)' }} />
+              </div>
+              <span className="text-sm font-bold text-white/60">
+                {Math.round((stats.active_schools / Math.max(stats.total_schools, 1)) * 100)}% active
+              </span>
+            </div>
+          </div>
+        </>
       )}
 
-      {stats && (
-        <div className="mt-8 rounded-2xl p-5"
-          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp size={16} style={{ color: 'rgba(255,255,255,0.3)' }} />
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              Platform Health
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-              <div className="h-2 rounded-full transition-all"
-                style={{ width: `${Math.round((stats.active_schools / Math.max(stats.total_schools, 1)) * 100)}%`, background: 'linear-gradient(90deg,#10B981,#34D399)' }} />
-            </div>
-            <span className="text-sm font-bold text-white/60">
-              {Math.round((stats.active_schools / Math.max(stats.total_schools, 1)) * 100)}% active
-            </span>
-          </div>
-        </div>
-      )}
+      {/* Quick links */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {[
+          { href: '/super-admin/schools', label: 'Manage Schools', icon: '🏫', desc: 'Create, activate, impersonate' },
+          { href: '/super-admin/franchises', label: 'Franchises', icon: '🏢', desc: 'Groups, admins, wallets' },
+          { href: '/super-admin/billing', label: 'AI Billing', icon: '🤖', desc: 'Credits, recharge, pricing' },
+          { href: '/super-admin/finance', label: 'Finance Module', icon: '💰', desc: 'Enable/disable per school' },
+          { href: '/super-admin/stats', label: 'Analytics', icon: '📊', desc: 'Usage trends, daily stats' },
+        ].map(q => (
+          <a key={q.href} href={q.href}
+            className="rounded-2xl p-4 transition-all hover:scale-[1.02] block"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <span className="text-2xl block mb-2">{q.icon}</span>
+            <p className="text-sm font-semibold text-white">{q.label}</p>
+            <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{q.desc}</p>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }

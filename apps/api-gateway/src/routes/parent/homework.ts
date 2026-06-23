@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, forceResetGuard, schoolScope, roleGuard } from '../../middleware/auth';
+import { verifyParentOwnsStudent } from '../../lib/parentAuth';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('parent'));
@@ -15,13 +16,8 @@ router.get('/history', async (req: Request, res: Response) => {
     if (!student_id) return res.status(400).json({ error: 'student_id is required' });
 
     // Verify parent owns this student
-    const link = await pool.query(
-      `SELECT 1 FROM parent_student_links psl
-       JOIN students s ON s.id = psl.student_id
-       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3`,
-      [user_id, student_id, school_id]
-    );
-    if (link.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+    if (!(await verifyParentOwnsStudent(user_id, student_id, school_id)))
+      return res.status(403).json({ error: 'Not authorized' });
 
     const result = await pool.query(
       `SELECT hs.homework_date, hs.status, hs.teacher_note, hs.recorded_at,
@@ -48,12 +44,8 @@ router.get('/missed', async (req: Request, res: Response) => {
     const { student_id } = req.query as Record<string, string>;
     if (!student_id) return res.status(400).json({ error: 'student_id is required' });
 
-    const link = await pool.query(
-      `SELECT 1 FROM parent_student_links psl JOIN students s ON s.id = psl.student_id
-       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3`,
-      [user_id, student_id, school_id]
-    );
-    if (link.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+    if (!(await verifyParentOwnsStudent(user_id, student_id, school_id)))
+      return res.status(403).json({ error: 'Not authorized' });
 
     const result = await pool.query(
       `SELECT hs.homework_date, hs.status, hs.teacher_note,

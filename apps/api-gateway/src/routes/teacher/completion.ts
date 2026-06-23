@@ -7,6 +7,40 @@ import { getToday } from '../../lib/today';
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
 
+/** Update a teacher's streak — called for both the submitting teacher and all co-assigned teachers */
+async function updateTeacherStreak(teacherId: string, schoolId: string, today: string) {
+  const existing = await pool.query(
+    `SELECT current_streak, best_streak, last_completed_date FROM teacher_streaks WHERE teacher_id = $1 AND school_id = $2`,
+    [teacherId, schoolId]
+  );
+  const prev = existing.rows[0];
+  if (prev) {
+    if (prev.last_completed_date === today) return; // already counted today
+    const lastDate = prev.last_completed_date ? new Date(prev.last_completed_date) : null;
+    const todayDate = new Date(today);
+    const diffDays = lastDate ? Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000) : 999;
+    const current = diffDays <= 3 ? prev.current_streak + 1 : 1;
+    const best = Math.max(prev.best_streak, current);
+    await pool.query(
+      `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (teacher_id, school_id) DO UPDATE
+       SET current_streak = $3, best_streak = $4, last_completed_date = $5, updated_at = now()`,
+      [teacherId, schoolId, current, best, today]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
+       VALUES ($1, $2, 1, 1, $3, now()) ON CONFLICT DO NOTHING`,
+      [teacherId, schoolId, today]
+    );
+  }
+  try {
+    const { redis } = await import('../../lib/redis');
+    await redis.del(`streak:${teacherId}`);
+  } catch { /* ignore */ }
+}
+
 async function resolveSection(
   sections: { section_id: string }[],
   querySectionId?: string
@@ -92,39 +126,24 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Update teacher streak (fire-and-forget — non-critical)
     if (date === today) {
+      // Update streak for the submitting teacher
       try {
-        const existing = await pool.query(
-          `SELECT current_streak, best_streak, last_completed_date FROM teacher_streaks WHERE teacher_id = $1 AND school_id = $2`,
-          [user_id, school_id]
+        await updateTeacherStreak(user_id, school_id, today);
+      } catch { /* non-critical */ }
+
+      // Also update streaks for supporting teachers (and class teacher if submitted by supporting)
+      try {
+        // Get all teachers assigned to this section
+        const allTeachers = await pool.query(
+          `SELECT DISTINCT teacher_id FROM (
+            SELECT class_teacher_id AS teacher_id FROM sections WHERE id = $1 AND class_teacher_id IS NOT NULL
+            UNION
+            SELECT teacher_id FROM teacher_sections WHERE section_id = $1
+          ) t WHERE teacher_id != $2`,
+          [section_id, user_id]
         );
-        const prev = existing.rows[0];
-        let current = 1;
-        let best = 1;
-        if (prev) {
-          if (prev.last_completed_date === today) {
-            // already counted today
-          } else {
-            const lastDate = prev.last_completed_date ? new Date(prev.last_completed_date) : null;
-            const todayDate = new Date(today);
-            const diffDays = lastDate ? Math.floor((todayDate.getTime() - lastDate.getTime()) / 86400000) : 999;
-            current = diffDays <= 3 ? prev.current_streak + 1 : 1;
-            best = Math.max(prev.best_streak, current);
-            await pool.query(
-              `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
-               VALUES ($1, $2, $3, $4, $5, now())
-               ON CONFLICT (teacher_id, school_id) DO UPDATE
-               SET current_streak = $3, best_streak = $4, last_completed_date = $5, updated_at = now()`,
-              [user_id, school_id, current, best, today]
-            );
-            const { redis } = await import('../../lib/redis');
-            await redis.del(`streak:${user_id}`);
-          }
-        } else {
-          await pool.query(
-            `INSERT INTO teacher_streaks (teacher_id, school_id, current_streak, best_streak, last_completed_date, updated_at)
-             VALUES ($1, $2, 1, 1, $3, now()) ON CONFLICT DO NOTHING`,
-            [user_id, school_id, today]
-          );
+        for (const row of allTeachers.rows) {
+          await updateTeacherStreak(row.teacher_id, school_id, today);
         }
       } catch { /* non-critical */ }
     }
@@ -189,15 +208,16 @@ router.get('/pending', async (req: Request, res: Response) => {
     }
     const { section_id } = resolved;
 
-    // Get all past day plans that have chunk_ids
+    // Get all past day plans (including special days without chunks)
     const plans = await pool.query(
-      `SELECT dp.id, dp.plan_date::text AS plan_date, dp.chunk_ids
+      `SELECT dp.id, dp.plan_date::text AS plan_date, dp.chunk_ids, dp.status,
+              sd.label as special_day_label, sd.day_type as special_day_type
        FROM day_plans dp
+       LEFT JOIN special_days sd ON sd.school_id = $3 AND sd.day_date = dp.plan_date
        WHERE dp.section_id = $1 AND dp.plan_date < $2::date
          AND dp.status NOT IN ('holiday', 'weekend')
-         AND dp.chunk_ids IS NOT NULL AND dp.chunk_ids != '{}'
        ORDER BY dp.plan_date ASC`,
-      [section_id, today]
+      [section_id, today, school_id]
     );
 
     if (plans.rows.length === 0) return res.json([]);
@@ -219,16 +239,30 @@ router.get('/pending', async (req: Request, res: Response) => {
       const planDate = (plan.plan_date || '').split('T')[0];
       if (completedDates.has(planDate)) continue;
 
-      const chunkIds: string[] = Array.isArray(plan.chunk_ids) ? plan.chunk_ids : [];
-      const uncovered = chunkIds.filter((id: string) => !coveredIds.has(id));
-      if (uncovered.length === 0) continue;
+      const chunkIds: string[] = Array.isArray(plan.chunk_ids) ? plan.chunk_ids.filter(Boolean) : [];
 
-      const chunks = await pool.query(
-        'SELECT id, topic_label, content FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
-        [uncovered]
-      );
-      if (chunks.rows.length > 0) {
-        pending.push({ plan_date: planDate, chunks: chunks.rows });
+      if (chunkIds.length > 0) {
+        // Normal day with curriculum chunks — show uncovered chunks
+        const uncovered = chunkIds.filter((id: string) => !coveredIds.has(id));
+        if (uncovered.length === 0) continue;
+
+        const chunks = await pool.query(
+          'SELECT id, topic_label, content FROM curriculum_chunks WHERE id = ANY($1::uuid[]) ORDER BY chunk_index',
+          [uncovered]
+        );
+        if (chunks.rows.length > 0) {
+          pending.push({ plan_date: planDate, chunks: chunks.rows });
+        }
+      } else {
+        // Special day / event / settling day — no chunks but still needs completion
+        const label = plan.special_day_label || plan.status || 'Special Day';
+        pending.push({
+          plan_date: planDate,
+          is_special_day: true,
+          special_day_label: label,
+          special_day_type: plan.special_day_type || plan.status,
+          chunks: [],
+        });
       }
     }
 

@@ -30,23 +30,37 @@ router.get('/', async (req: Request, res: Response) => {
          c.name                                                         AS class_name,
          -- class teacher
          ct.name                                                        AS class_teacher_name,
-         -- curriculum coverage
-         COUNT(DISTINCT cc.id)::int                                     AS total_chunks,
-         COUNT(DISTINCT dc_chunks.chunk_id)::int                        AS covered_chunks,
+         -- day-based completion
+         (SELECT COUNT(*)::int FROM day_plans dp
+          WHERE dp.section_id = s.id AND dp.school_id = $1
+            AND dp.status NOT IN ('holiday', 'weekend')
+            AND dp.plan_date <= CURRENT_DATE)                           AS total_planned_days,
+         (SELECT COUNT(*)::int FROM daily_completions dc
+          WHERE dc.section_id = s.id AND dc.school_id = $1)            AS days_completed,
          CASE
-           WHEN COUNT(DISTINCT cc.id) = 0 THEN 0
+           WHEN (SELECT COUNT(*) FROM day_plans dp
+                 WHERE dp.section_id = s.id AND dp.school_id = $1
+                   AND dp.status NOT IN ('holiday', 'weekend')
+                   AND dp.plan_date <= CURRENT_DATE) = 0 THEN 0
            ELSE ROUND(
-             COUNT(DISTINCT dc_chunks.chunk_id)::numeric /
-             COUNT(DISTINCT cc.id)::numeric * 100, 1
+             (SELECT COUNT(*)::numeric FROM daily_completions dc
+              WHERE dc.section_id = s.id AND dc.school_id = $1) /
+             (SELECT COUNT(*)::numeric FROM day_plans dp
+              WHERE dp.section_id = s.id AND dp.school_id = $1
+                AND dp.status NOT IN ('holiday', 'weekend')
+                AND dp.plan_date <= CURRENT_DATE) * 100, 1
            )
          END                                                            AS coverage_pct,
+         -- curriculum info
+         COUNT(DISTINCT cc.id)::int                                     AS total_chunks,
+         COUNT(DISTINCT dc_chunks.chunk_id)::int                        AS covered_chunks,
          CASE WHEN COUNT(DISTINCT cc.id) = 0 THEN false ELSE true END  AS has_curriculum,
-         MAX(dc.completion_date)                                        AS last_completion_date,
+         MAX(dc_all.completion_date)                                    AS last_completion_date,
          -- this week: count of day plans
          COUNT(DISTINCT dp_week.id)::int                                AS plans_this_week,
          -- this week: special days
          COUNT(DISTINCT sd_week.id)::int                                AS special_days_this_week,
-         -- flagging (only if migration 019 applied)
+         -- flagging
          COALESCE(s.flagged, false)                                     AS flagged,
          s.flag_note
        FROM sections s
@@ -57,9 +71,9 @@ router.get('/', async (req: Request, res: Response) => {
        LEFT JOIN curriculum_documents cd
          ON cd.class_id = s.class_id AND cd.school_id = $1 AND cd.status = 'ready'
        LEFT JOIN curriculum_chunks cc ON cc.document_id = cd.id
-       -- all completions
-       LEFT JOIN daily_completions dc ON dc.section_id = s.id
-       -- covered chunk ids
+       -- all completions (for last_completion_date)
+       LEFT JOIN daily_completions dc_all ON dc_all.section_id = s.id
+       -- covered chunk ids (for chunk stats)
        LEFT JOIN LATERAL (
          SELECT unnest(dc2.covered_chunk_ids) AS chunk_id
          FROM daily_completions dc2

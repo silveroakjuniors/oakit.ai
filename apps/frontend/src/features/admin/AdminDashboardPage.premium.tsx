@@ -16,26 +16,27 @@ import {
 } from '@/features/admin/types';
 import { getToken, signOut } from '@/lib/auth';
 import { apiGet, apiPost } from '@/lib/api';
-import { ChevronDown, X, Send, TrendingUp, Users, BookOpen, CheckSquare, AlertTriangle, Brain, Cake, Megaphone, Clock, Zap } from 'lucide-react';
+import { ChevronDown, X, Send, TrendingUp, Users, BookOpen, CheckSquare, AlertTriangle, Brain, Cake, Megaphone, Clock, Zap, GraduationCap, School, FileText, Music, CalendarDays, ClipboardList, Wand2, BarChart3, ScrollText } from 'lucide-react';
 import StatDrillModal from '@/features/admin/components/StatDrillModal';
 import BirthdayWishModal from '@/features/admin/components/BirthdayWishModal';
+import FeeSummaryCard from '@/features/admin/fees/FeeSummaryCard';
 
 /* ÔöÇÔöÇÔöÇ Local types ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 interface Announcement { id: string; title: string; body: string; target_audience: string; created_at: string; author_name: string; }
 
-/* ÔöÇÔöÇÔöÇ Quick links ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* --- Quick links --- */
 const quickLinks = [
-  { href: '/admin/users',            icon: '­ƒæÑ', label: 'Users',       desc: 'Staff accounts',   bg: 'bg-blue-50',   iconBg: 'bg-blue-100',   text: 'text-blue-700' },
-  { href: '/admin/classes',          icon: '­ƒÅ½', label: 'Classes',     desc: 'Sections',         bg: 'bg-indigo-50', iconBg: 'bg-indigo-100', text: 'text-indigo-700' },
-  { href: '/admin/students',         icon: '­ƒÄô', label: 'Students',    desc: 'All students',     bg: 'bg-violet-50', iconBg: 'bg-violet-100', text: 'text-violet-700' },
-  { href: '/admin/curriculum',       icon: '­ƒôä', label: 'Curriculum',  desc: 'Upload PDFs',      bg: 'bg-emerald-50',iconBg: 'bg-emerald-100',text: 'text-emerald-700' },
-  { href: '/admin/supplementary',    icon: '­ƒÄÁ', label: 'Activities',  desc: 'Rhymes & stories', bg: 'bg-teal-50',   iconBg: 'bg-teal-100',   text: 'text-teal-700' },
-  { href: '/admin/calendar',         icon: '­ƒôà', label: 'Calendar',    desc: 'Holidays',         bg: 'bg-cyan-50',   iconBg: 'bg-cyan-100',   text: 'text-cyan-700' },
-  { href: '/admin/plans',            icon: '­ƒôï', label: 'Plans',       desc: 'View & export',    bg: 'bg-amber-50',  iconBg: 'bg-amber-100',  text: 'text-amber-700' },
-  { href: '/admin/textbook-planner', icon: '­ƒôÜ', label: 'Planner',     desc: 'AI wizard',        bg: 'bg-orange-50', iconBg: 'bg-orange-100', text: 'text-orange-700' },
-  { href: '/admin/reports',          icon: '­ƒôè', label: 'Reports',     desc: 'Progress reports', bg: 'bg-rose-50',   iconBg: 'bg-rose-100',   text: 'text-rose-700' },
-  { href: '/admin/announcements',    icon: '­ƒôó', label: 'Announce',    desc: 'Broadcast',        bg: 'bg-pink-50',   iconBg: 'bg-pink-100',   text: 'text-pink-700' },
-  { href: '/admin/audit',            icon: '­ƒöì', label: 'Audit Log',   desc: 'AI queries',       bg: 'bg-slate-50',  iconBg: 'bg-slate-100',  text: 'text-slate-700' },
+  { href: '/admin/users',            Icon: Users,          label: 'Users',       desc: 'Staff accounts',   bg: 'bg-blue-50',   iconBg: 'bg-blue-100',   text: 'text-blue-700' },
+  { href: '/admin/classes',          Icon: School,         label: 'Classes',     desc: 'Sections',         bg: 'bg-indigo-50', iconBg: 'bg-indigo-100', text: 'text-indigo-700' },
+  { href: '/admin/students',         Icon: GraduationCap,  label: 'Students',    desc: 'All students',     bg: 'bg-violet-50', iconBg: 'bg-violet-100', text: 'text-violet-700' },
+  { href: '/admin/curriculum',       Icon: BookOpen,       label: 'Curriculum',  desc: 'Upload PDFs',      bg: 'bg-emerald-50',iconBg: 'bg-emerald-100',text: 'text-emerald-700' },
+  { href: '/admin/supplementary',    Icon: Music,          label: 'Activities',  desc: 'Rhymes & stories', bg: 'bg-teal-50',   iconBg: 'bg-teal-100',   text: 'text-teal-700' },
+  { href: '/admin/calendar',         Icon: CalendarDays,   label: 'Calendar',    desc: 'Holidays',         bg: 'bg-cyan-50',   iconBg: 'bg-cyan-100',   text: 'text-cyan-700' },
+  { href: '/admin/plans',            Icon: ClipboardList,  label: 'Plans',       desc: 'View & export',    bg: 'bg-amber-50',  iconBg: 'bg-amber-100',  text: 'text-amber-700' },
+  { href: '/admin/textbook-planner', Icon: Wand2,          label: 'Planner',     desc: 'AI wizard',        bg: 'bg-orange-50', iconBg: 'bg-orange-100', text: 'text-orange-700' },
+  { href: '/admin/reports',          Icon: BarChart3,      label: 'Reports',     desc: 'Progress reports', bg: 'bg-rose-50',   iconBg: 'bg-rose-100',   text: 'text-rose-700' },
+  { href: '/admin/announcements',    Icon: Megaphone,      label: 'Announce',    desc: 'Broadcast',        bg: 'bg-pink-50',   iconBg: 'bg-pink-100',   text: 'text-pink-700' },
+  { href: '/admin/audit',            Icon: ScrollText,     label: 'Audit Log',   desc: 'AI queries',       bg: 'bg-slate-50',  iconBg: 'bg-slate-100',  text: 'text-slate-700' },
 ];
 
 /* ÔöÇÔöÇÔöÇ Reusable primitives ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
@@ -311,18 +312,20 @@ export default function AdminDashboardPage() {
             [1,2,3,4].map(i => <div key={i} className="h-36 rounded-2xl bg-white border border-neutral-200/80 animate-pulse" />)
           ) : (
             <>
-              <StatCard onClick={() => setDrillModal('students')} label="Total Students" value={stats?.students ?? 'ÔÇö'}
-                sub={`${stats?.classes ?? 0} classes ┬À ${stats?.sections ?? 0} sections`}
+              <StatCard onClick={() => setDrillModal('students')} label="Total Students" value={stats?.students ?? '--'}
+                sub={`${stats?.classes ?? 0} classes - ${stats?.sections ?? 0} sections`}
                 icon={<Users className="w-4 h-4 text-blue-600" />}
                 accentColor="bg-blue-100"
               />
               <StatCard
-                label="Present Today" value={todaySnap?.students_present ?? 'ÔÇö'}
+                onClick={() => setDrillModal('attendance')}
+                label="Present Today" value={todaySnap?.students_present ?? '--'}
                 sub={`of ${stats?.students ?? '?'} enrolled`}
                 icon={<CheckSquare className="w-4 h-4 text-emerald-600" />}
                 accentColor="bg-emerald-100"
               />
               <StatCard
+                onClick={() => setDrillModal('attendance')}
                 label="Attendance Logged"
                 value={`${todaySnap?.sections_attendance_submitted ?? 0}/${todaySnap?.total_sections ?? 0}`}
                 sub={`${attPct}% sections submitted`}
@@ -331,6 +334,7 @@ export default function AdminDashboardPage() {
                 progress={attPct}
               />
               <StatCard
+                onClick={() => setDrillModal('plans')}
                 label="Plans Done"
                 value={`${todaySnap?.sections_plans_completed ?? 0}/${todaySnap?.total_sections ?? 0}`}
                 sub={`${planPct}% sections complete`}
@@ -342,7 +346,10 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
-        {/* ÔöÇÔöÇ PENDING + BIRTHDAYS ÔöÇÔöÇ */}
+        {/* ── FEE SUMMARY ── */}
+        <FeeSummaryCard token={token} />
+
+        {/* ── PENDING + BIRTHDAYS ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Pending Today ÔÇö only shown when there are pending items */}
           {todaySnap && (pendingAtt > 0 || pendingPlan > 0) && (
@@ -498,13 +505,19 @@ export default function AdminDashboardPage() {
           </Panel>
         )}
 
-        {/* ÔöÇÔöÇ CURRICULUM COVERAGE ÔöÇÔöÇ */}
+        {/* --- CURRICULUM COVERAGE --- */}
         <Panel>
           <PanelHeader
-            icon="­ƒôè"
+            icon={<BarChart3 className="w-4 h-4 text-emerald-600" />}
             title="Curriculum Coverage"
-            subtitle={coverage.length > 0 ? `${coverage.filter(r => r.band === 'green').length} on track ┬À ${coverage.filter(r => r.band === 'red').length} critical` : 'View coverage by section'}
-            badge={coverage.filter(r => r.alert).length > 0 ? `ÔÜá´©Å ${coverage.filter(r => r.alert).length} need attention` : undefined}
+            subtitle={coverage.length > 0
+              ? (coverage.every(r => r.coverage_pct < 5)
+                ? 'Just getting started - coverage will build over the coming weeks'
+                : `${coverage.filter(r => r.band === 'green').length} on track, ${coverage.filter(r => r.band === 'red').length} behind`)
+              : 'View coverage by section'}
+            badge={coverage.filter(r => r.alert).length > 0 && !coverage.every(r => r.coverage_pct < 5)
+              ? `${coverage.filter(r => r.alert).length} need attention`
+              : undefined}
             badgeColor="bg-red-100 text-red-700"
             expanded={coverageExpanded} onToggle={() => setCoverageExpanded(v => !v)}
           />
@@ -668,7 +681,7 @@ export default function AdminDashboardPage() {
                             <span className="text-[10px] text-neutral-400">­ƒô▒ {p.mobile}</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{p.activity_status === 'active' ? '­ƒƒó Active' : p.activity_status === 'never_logged_in' ? '­ƒö┤ Never logged in' : '­ƒƒí Inactive'}</span>
                           </div>
-                          <p className="text-[11px] text-neutral-500 mt-1">­ƒæÂ {p.children_names || 'No children linked'}</p>
+                          <p className="text-[11px] text-neutral-500 mt-1">­ƒæ... {p.children_names || 'No children linked'}</p>
                           <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500"><span>­ƒÆ¼ {p.messages_sent_30d} msgs</span><span>­ƒöö {p.notifications_read_30d} read</span>{p.unread_notifications > 0 && <span className="text-amber-600 font-medium">ÔÜá {p.unread_notifications} unread</span>}</div>
                         </div>
                       ))}
@@ -764,10 +777,12 @@ export default function AdminDashboardPage() {
         <div>
           <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3">Quick Access</p>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            {quickLinks.map(({ href, icon, label, desc, bg, iconBg, text }) => (
+            {quickLinks.map(({ href, Icon, label, desc, bg, iconBg, text }) => (
               <Link key={href} href={href}>
                 <div className={`group ${bg} border border-neutral-200/60 rounded-2xl p-3.5 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex flex-col items-center text-center gap-2.5`}>
-                  <div className={`w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center text-xl group-hover:scale-110 transition-transform duration-200`}>{icon}</div>
+                  <div className={`w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center group-hover:scale-110 transition-transform duration-200`}>
+                    <Icon className={`w-5 h-5 ${text}`} />
+                  </div>
                   <div>
                     <p className={`text-[11px] font-bold ${text} leading-tight`}>{label}</p>
                     <p className="text-[10px] text-neutral-400 mt-0.5 leading-tight">{desc}</p>
@@ -782,7 +797,7 @@ export default function AdminDashboardPage() {
         {tm && (
           <Panel>
             <div className="px-5 py-4 flex items-center gap-3 border-b border-neutral-100">
-              <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-[18px]">­ƒò░´©Å</div>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center"><Clock className="w-4 h-4 text-amber-600" /></div>
               <div className="flex-1"><p className="text-[13px] font-semibold text-neutral-800">Time Machine</p><p className="text-[11px] text-neutral-400">Test the system with a different date</p></div>
               {tm.active && <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-200">Active ┬À {Math.ceil((tm.ttl_seconds ?? 0) / 3600)}h left</span>}
             </div>
@@ -836,3 +851,4 @@ function AttendanceTrendChart({ data }: { data: TrendRow[] }) {
     </div>
   );
 }
+

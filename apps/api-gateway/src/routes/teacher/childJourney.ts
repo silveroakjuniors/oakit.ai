@@ -9,7 +9,7 @@ router.use(jwtVerify, schoolScope);
 
 const AI_SERVICE_URL = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-// ÔöÇÔöÇÔöÇ POST /teacher/child-journey ÔÇö create/update entry ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- POST /teacher/child-journey - create/update entry -----------------------
 router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
@@ -47,32 +47,45 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
 
     const date = entry_date || today;
 
-    // Upsert ÔÇö one entry per student per date per type
-    const r = await pool.query(
-      `INSERT INTO child_journey_entries
-         (school_id, student_id, section_id, teacher_id, entry_date, entry_type, raw_text, beautified_text, is_sent_to_parent, sent_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (student_id, entry_date, entry_type)
-       DO UPDATE SET raw_text = EXCLUDED.raw_text, beautified_text = EXCLUDED.beautified_text,
-                     is_sent_to_parent = EXCLUDED.is_sent_to_parent, sent_at = EXCLUDED.sent_at,
-                     updated_at = now()
-       RETURNING *`,
-      [school_id, student_id, student.section_id, user_id, date, entry_type, raw_text, beautified_text,
-       send_to_parent, send_to_parent ? new Date() : null]
-    );
+    // Upsert — one entry per student per date per type
+    let r;
+    try {
+      r = await pool.query(
+        `INSERT INTO child_journey_entries
+           (school_id, student_id, section_id, teacher_id, entry_date, entry_type, raw_text, beautified_text, is_sent_to_parent, sent_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (student_id, entry_date, entry_type)
+         DO UPDATE SET raw_text = EXCLUDED.raw_text, beautified_text = EXCLUDED.beautified_text,
+                       is_sent_to_parent = EXCLUDED.is_sent_to_parent, sent_at = EXCLUDED.sent_at,
+                       updated_at = now()
+         RETURNING *`,
+        [school_id, student_id, student.section_id, user_id, date, entry_type, raw_text, beautified_text,
+         send_to_parent, send_to_parent ? new Date() : null]
+      );
+    } catch (upsertErr: any) {
+      if (upsertErr.code === '23505') {
+        // Unique constraint mismatch — fallback to manual update
+        r = await pool.query(
+          `UPDATE child_journey_entries
+           SET raw_text = $1, beautified_text = $2, is_sent_to_parent = $3, sent_at = $4, updated_at = now()
+           WHERE student_id = $5 AND entry_date = $6 AND entry_type = $7 AND school_id = $8
+           RETURNING *`,
+          [raw_text, beautified_text, send_to_parent, send_to_parent ? new Date() : null,
+           student_id, date, entry_type, school_id]
+        );
+      } else {
+        throw upsertErr;
+      }
+    }
 
     return res.status(201).json({ ...r.rows[0], student_name: student.name });
   } catch (err: any) {
-    if (err.code === '23505') {
-      // Unique constraint ÔÇö update instead
-      return res.status(409).json({ error: 'Entry already exists for this date. Use PUT to update.' });
-    }
     console.error('[childJourney] POST', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ÔöÇÔöÇÔöÇ GET /teacher/child-journey?section_id=&date= ÔÇö list entries for section ÔöÇ
+// --- GET /teacher/child-journey?section_id=&date= - list entries for section -
 router.get('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -100,9 +113,85 @@ router.get('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   }
 });
 
-// ÔöÇÔöÇÔöÇ GET /parent/child-journey/:studentId/snapshot ÔÇö daily AI snapshot ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// ─── PUT /teacher/child-journey/:id — edit an existing entry ───────────────
+router.put('/:id', roleGuard('teacher'), async (req: Request, res: Response) => {
+  try {
+    const { school_id, user_id } = req.user!;
+    const { raw_text, send_to_parent } = req.body;
+
+    if (!raw_text?.trim()) {
+      return res.status(400).json({ error: 'raw_text is required' });
+    }
+
+    // Verify ownership
+    const existing = await pool.query(
+      `SELECT cj.*, s.name as student_name, sec.label as section_label, c.name as class_name
+       FROM child_journey_entries cj
+       JOIN students s ON s.id = cj.student_id
+       JOIN sections sec ON sec.id = cj.section_id
+       JOIN classes c ON c.id = sec.class_id
+       WHERE cj.id = $1 AND cj.school_id = $2 AND cj.teacher_id = $3`,
+      [req.params.id, school_id, user_id]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Entry not found or not yours to edit' });
+    }
+    const entry = existing.rows[0];
+
+    // Re-beautify with AI
+    let beautified_text = raw_text.trim();
+    try {
+      const aiResp = await axios.post(`${AI_SERVICE_URL()}/internal/beautify-child-journey`, {
+        raw_text,
+        student_name: entry.student_name,
+        class_level: entry.class_name,
+        entry_type: entry.entry_type,
+        entry_date: entry.entry_date,
+      }, { timeout: 15000 });
+      beautified_text = aiResp.data.beautified_text || raw_text.trim();
+    } catch { /* fallback to raw */ }
+
+    const sendToParent = send_to_parent !== undefined ? send_to_parent : entry.is_sent_to_parent;
+
+    const r = await pool.query(
+      `UPDATE child_journey_entries
+       SET raw_text = $1, beautified_text = $2, is_sent_to_parent = $3,
+           sent_at = CASE WHEN $3 AND NOT is_sent_to_parent THEN now() ELSE sent_at END,
+           updated_at = now()
+       WHERE id = $4 AND school_id = $5 AND teacher_id = $6
+       RETURNING *`,
+      [raw_text.trim(), beautified_text, sendToParent, req.params.id, school_id, user_id]
+    );
+    return res.json({ ...r.rows[0], student_name: entry.student_name });
+  } catch (err) {
+    console.error('[childJourney] PUT', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── DELETE /teacher/child-journey/:id — delete an entry ───────────────────
+router.delete('/:id', roleGuard('teacher'), async (req: Request, res: Response) => {
+  try {
+    const { school_id, user_id } = req.user!;
+    const r = await pool.query(
+      `DELETE FROM child_journey_entries
+       WHERE id = $1 AND school_id = $2 AND teacher_id = $3
+       RETURNING id`,
+      [req.params.id, school_id, user_id]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Entry not found or not yours to delete' });
+    }
+    return res.json({ deleted: true, id: req.params.id });
+  } catch (err) {
+    console.error('[childJourney] DELETE', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /parent/child-journey/:studentId/snapshot — daily AI snapshot ───────────────────────
 // Generates a warm 3-sentence child snapshot based on age + recent journey entries.
-// Cached per student per day ÔÇö regenerates next day automatically.
+// Cached per student per day - regenerates next day automatically.
 router.get('/parent/:studentId/snapshot', async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
@@ -195,8 +284,8 @@ Write exactly 3 sentences:
 
 Rules:
 - Warm, personal, parent-friendly tone
-- No bullet points, no headings ÔÇö flowing sentences only
-- Do NOT mention "Oakie" or "AI" ÔÇö write as if from the school
+- No bullet points, no headings - flowing sentences only
+- Do NOT mention "Oakie" or "AI" - write as if from the school
 - Keep it under 80 words total
 - Always positive and encouraging`;
 
@@ -216,7 +305,7 @@ Rules:
     // Fallback if AI unavailable
     if (!snapshot) {
       const firstName = student.name.split(' ')[0];
-      snapshot = `At ${ageText || 'this age'}, children like ${firstName} are developing curiosity, language, and social skills rapidly ÔÇö every day brings new discoveries. ${recentHighlights ? `${firstName} has been showing wonderful engagement in the classroom recently.` : `${firstName} is settling in beautifully and growing every day.`} Keep encouraging conversations about school ÔÇö your involvement makes all the difference!`;
+      snapshot = `At ${ageText || 'this age'}, children like ${firstName} are developing curiosity, language, and social skills rapidly - every day brings new discoveries. ${recentHighlights ? `${firstName} has been showing wonderful engagement in the classroom recently.` : `${firstName} is settling in beautifully and growing every day.`} Keep encouraging conversations about school - your involvement makes all the difference!`;
     }
 
     const result = { snapshot, student_name: student.name, age: ageText, generated_at: today };
@@ -233,7 +322,7 @@ Rules:
   }
 });
 
-// ÔöÇÔöÇÔöÇ GET /parent/child-journey/:studentId ÔÇö parent views child's journey ÔöÇÔöÇÔöÇÔöÇÔöÇ
+// --- GET /parent/child-journey/:studentId - parent views child's journey -----
 router.get('/parent/:studentId', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
@@ -277,3 +366,4 @@ router.get('/parent/:studentId', async (req: Request, res: Response) => {
 });
 
 export default router;
+

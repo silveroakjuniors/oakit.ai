@@ -123,4 +123,60 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// PUT /api/v1/teacher/observations/:id — edit observation text
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { obs_text, categories, share_with_parent } = req.body;
+
+    if (!obs_text?.trim()) return res.status(400).json({ error: 'obs_text is required' });
+    if (obs_text.length > 500) return res.status(400).json({ error: 'Note must be 500 characters or less.' });
+
+    const updates: string[] = ['obs_text = $1', 'updated_at = now()'];
+    const params: any[] = [obs_text.trim()];
+
+    if (categories !== undefined) {
+      const invalidCats = categories.filter((c: string) => !VALID_CATEGORIES.includes(c));
+      if (invalidCats.length > 0) return res.status(400).json({ error: `Invalid categories: ${invalidCats.join(', ')}` });
+      params.push(categories);
+      updates.push(`categories = $${params.length}`);
+    }
+    if (share_with_parent !== undefined) {
+      params.push(share_with_parent);
+      updates.push(`share_with_parent = $${params.length}`);
+    }
+
+    params.push(req.params.id, user_id, school_id);
+    const result = await pool.query(
+      `UPDATE student_observations SET ${updates.join(', ')}
+       WHERE id = $${params.length - 2} AND teacher_id = $${params.length - 1} AND school_id = $${params.length}
+       RETURNING *`,
+      params
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Observation not found or not yours to edit' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[observations] PUT', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/v1/teacher/observations/:id — delete an observation
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const result = await pool.query(
+      `DELETE FROM student_observations
+       WHERE id = $1 AND teacher_id = $2 AND school_id = $3
+       RETURNING id`,
+      [req.params.id, user_id, school_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Observation not found or not yours to delete' });
+    return res.json({ deleted: true, id: req.params.id });
+  } catch (err) {
+    console.error('[observations] DELETE', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

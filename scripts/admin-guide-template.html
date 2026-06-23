@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Oakit.ai Admin Guide</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', -apple-system, sans-serif; color: #111827; font-size: 12px; line-height: 1.5; }
+
+.page { width: 210mm; min-height: 297mm; padding: 12mm 15mm 18mm 15mm; position: relative; page-break-after: always; }
+.page:last-child { page-break-after: avoid; }
+
+/* Header */
+.header { background: #1B4332; padding: 10px 15mm; display: flex; align-items: center; justify-content: space-between; position: absolute; top: 0; left: 0; right: 0; height: 44px; }
+.header .logo { color: #fff; font-size: 16px; font-weight: 700; }
+.header .logo .ai { color: #E8960C; }
+.header .subtitle { color: #86efac; font-size: 9px; margin-top: 2px; }
+.header .mascot { height: 38px; }
+
+/* Footer */
+.footer { background: #1B4332; padding: 7px 15mm; position: absolute; bottom: 0; left: 0; right: 0; height: 26px; text-align: center; color: #fff; font-size: 9px; display: flex; align-items: center; justify-content: center; }
+
+/* Content area */
+.content { padding-top: 48px; }
+
+/* Cover */
+.cover { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 260mm; text-align: center; }
+.cover .brand { font-size: 42px; font-weight: 800; color: #1B4332; }
+.cover .brand .ai { color: #E8960C; }
+.cover .tagline { color: #6b7280; font-size: 13px; margin-top: 8px; }
+.cover .mascot-img { width: 120px; margin: 40px 0; }
+.cover h1 { font-size: 26px; color: #1B4332; margin-bottom: 8px; }
+.cover .sub { color: #6b7280; font-size: 12px; }
+.cover .school-info { color: #9ca3af; font-size: 9px; margin-top: 40px; }
+
+/* Typography */
+h2 { font-size: 16px; color: #1B4332; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 2px solid #E8960C; border-bottom-width: 2px; display: inline-block; }
+h3 { font-size: 11px; color: #1B4332; margin: 10px 0 4px; font-weight: 700; }
+h4 { font-size: 9.5px; color: #374151; margin: 6px 0 2px; font-weight: 600; }
+p { margin: 3px 0 6px; color: #374151; font-size: 9px; }
+ul { margin: 3px 0 8px 14px; }
+li { margin: 2px 0; color: #374151; font-size: 8.5px; }
+
+/* Steps */
+.steps { margin: 6px 0; }
+.step { display: flex; gap: 8px; margin: 4px 0; align-items: flex-start; }
+.step-num { background: #1B4332; color: #fff; min-width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; flex-shrink: 0; }
+.step-content { flex: 1; }
+.step-content strong { font-size: 9px; color: #111827; }
+.step-content span { font-size: 8px; color: #6b7280; display: block; }
+
+/* Feature grid */
+.feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+.feature-grid.three-col { grid-template-columns: 1fr 1fr 1fr; }
+.feature-card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; border-left: 3px solid; }
+.feature-card.green { border-left-color: #10b981; }
+.feature-card.blue { border-left-color: #3b82f6; }
+.feature-card.violet { border-left-color: #8b5cf6; }
+.feature-card.amber { border-left-color: #f59e0b; }
+.feature-card.rose { border-left-color: #f43f5e; }
+.feature-card.cyan { border-left-color: #06b6d4; }
+.feature-card.teal { border-left-color: #14b8a6; }
+.feature-card h4 { font-size: 9px; color: #111827; margin-bottom: 2px; }
+.feature-card p { font-size: 7.5px; color: #6b7280; margin: 0; }
+
+/* Tip/Warning boxes */
+.tip { background: #ecfdf5; border-left: 3px solid #10b981; padding: 5px 8px; margin: 6px 0; border-radius: 4px; font-size: 8px; color: #065f46; }
+.warn { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 5px 8px; margin: 6px 0; border-radius: 4px; font-size: 8px; color: #92400e; }
+.info { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 5px 8px; margin: 6px 0; border-radius: 4px; font-size: 8px; color: #1e40af; }
+
+/* TOC */
+.toc-item { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dotted #e5e7eb; }
+.toc-item span:first-child { font-size: 9.5px; }
+.toc-item .page-num { font-size: 9.5px; color: #6b7280; font-weight: 500; }
+
+/* Nav sidebar */
+.nav-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+.nav-group { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; }
+.nav-group h4 { font-size: 9px; color: #1B4332; margin-bottom: 3px; border-bottom: 1px solid #e5e7eb; padding-bottom: 2px; }
+.nav-group li { font-size: 7.5px; margin: 1px 0; }
+
+/* Flow diagram */
+.flow { display: flex; align-items: center; gap: 4px; margin: 8px 0; flex-wrap: wrap; justify-content: center; }
+.flow-step { background: #ecfdf5; border: 1.5px solid #10b981; border-radius: 6px; padding: 5px 8px; text-align: center; min-width: 70px; }
+.flow-step .num { background: #1B4332; color: #fff; width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; margin-bottom: 2px; }
+.flow-step .label { font-size: 8px; font-weight: 600; color: #1B4332; }
+.flow-step .desc { font-size: 7px; color: #6b7280; margin-top: 1px; }
+.flow-arrow { color: #d1d5db; font-size: 14px; }
+
+/* Section divider */
+.section-divider { border-top: 1px solid #e5e7eb; margin: 12px 0 8px; padding-top: 4px; }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE (Page 1) -->
+<div class="page">
+  <div class="cover">
+    <div class="brand">oakit<span class="ai">.ai</span></div>
+    <div class="tagline">AI Mentor for Silver Oak Juniors</div>
+    <img src="OAKIE_PATH" class="mascot-img" alt="Oakie">
+    <h1>Admin Guide</h1>
+    <div class="sub">Complete administration guide for managing your school on Oakit.ai</div>
+    <div class="school-info">Silver Oak Juniors | AI-Integrated Preschool<br>oakit.silveroakjuniors.in | School Code: soj</div>
+  </div>
+</div>
+
+<!-- TABLE OF CONTENTS (Page 2) -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>Table of Contents</h2>
+    <div style="margin-top:10px">
+      <div class="toc-item"><span><strong>1.</strong> Dashboard Overview</span><span class="page-num">3</span></div>
+      <div class="toc-item"><span><strong>2.</strong> Login & Navigation</span><span class="page-num">3</span></div>
+      <div class="toc-item"><span><strong>3.</strong> Users & Roles Management</span><span class="page-num">4</span></div>
+      <div class="toc-item"><span><strong>4.</strong> Classes & Sections</span><span class="page-num">5</span></div>
+      <div class="toc-item"><span><strong>5.</strong> Student Management</span><span class="page-num">6</span></div>
+      <div class="toc-item"><span><strong>6.</strong> Curriculum & Textbook Planner</span><span class="page-num">7</span></div>
+      <div class="toc-item"><span><strong>7.</strong> Supplementary Activities</span><span class="page-num">8</span></div>
+      <div class="toc-item"><span><strong>8.</strong> Calendar & Daily Planner</span><span class="page-num">9</span></div>
+      <div class="toc-item"><span><strong>9.</strong> Finance Module</span><span class="page-num">10</span></div>
+      <div class="toc-item"><span><strong>10.</strong> Fee Structures & Collection</span><span class="page-num">11</span></div>
+      <div class="toc-item"><span><strong>11.</strong> Salary & Expenses</span><span class="page-num">12</span></div>
+      <div class="toc-item"><span><strong>12.</strong> Reports & Report Cards</span><span class="page-num">13</span></div>
+      <div class="toc-item"><span><strong>13.</strong> Smart Alerts & AI Usage</span><span class="page-num">14</span></div>
+      <div class="toc-item"><span><strong>14.</strong> Announcements & Audit Log</span><span class="page-num">15</span></div>
+      <div class="toc-item"><span><strong>15.</strong> HR, Homework & Quizzes</span><span class="page-num">16</span></div>
+      <div class="toc-item"><span><strong>16.</strong> Settings & Setup Wizard</span><span class="page-num">17</span></div>
+    </div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 2</div>
+</div>
+
+<!-- PAGE 3: DASHBOARD + LOGIN -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>1. Dashboard Overview</h2>
+    <p>The admin dashboard gives you a real-time snapshot of your entire school's operations.</p>
+
+    <h3>What You See on the Dashboard</h3>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>Today's Attendance</h4><p>Students present today, sections that submitted attendance, late submissions</p></div>
+      <div class="feature-card blue"><h4>Curriculum Coverage</h4><p>Per-section coverage % with color bands: Green (75%+), Amber (40-75%), Red (&lt;40%)</p></div>
+      <div class="feature-card violet"><h4>Teacher Engagement</h4><p>Active/low/inactive teachers, plan completion rates, AI usage stats</p></div>
+      <div class="feature-card amber"><h4>Parent Engagement</h4><p>Active parents, homework views, message stats, never-logged-in count</p></div>
+      <div class="feature-card rose"><h4>Fee Summary</h4><p>Per-class fee assignment stats, pending collections, today's receipts</p></div>
+      <div class="feature-card cyan"><h4>Birthdays & Alerts</h4><p>Upcoming student birthdays with AI-generated wishes, fee alerts</p></div>
+    </div>
+
+    <h3>Dashboard Actions</h3>
+    <ul>
+      <li>Click any section's coverage to drill down into individual topics</li>
+      <li>Click teacher names to see their daily breakdown</li>
+      <li>Send birthday wishes directly to parents from the dashboard</li>
+      <li>View sections that haven't submitted attendance yet</li>
+    </ul>
+
+    <div class="section-divider"></div>
+
+    <h2>2. Login & Navigation</h2>
+    <h3>How to Login</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Open browser: oakit.silveroakjuniors.in</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Enter School Code: soj</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enter your mobile number and password</strong><span>Default password = your mobile number (change on first login)</span></div></div>
+    </div>
+
+    <h3>Navigation Sidebar</h3>
+    <div class="nav-sidebar">
+      <div class="nav-group"><h4>School</h4><ul>
+        <li>Dashboard</li><li>Users & Roles</li><li>Classes</li><li>Students</li><li>Enquiries</li><li>Homework</li><li>Quizzes</li><li>Uniform</li>
+      </ul></div>
+      <div class="nav-group"><h4>Content</h4><ul>
+        <li>Curriculum</li><li>Textbook Planner</li><li>Activities</li><li>Calendar</li><li>Daily Planner</li>
+      </ul></div>
+      <div class="nav-group"><h4>Finance</h4><ul>
+        <li>Finance Dashboard</li><li>Fee Structures</li><li>Fee Collection</li><li>Concessions</li><li>Expenses</li><li>Salary</li><li>Reports</li>
+      </ul></div>
+      <div class="nav-group"><h4>Insights & System</h4><ul>
+        <li>Reports</li><li>Announcements</li><li>Audit Log</li><li>Smart Alerts</li><li>Oakie Usage</li><li>HR</li><li>Settings</li>
+      </ul></div>
+    </div>
+    <div class="tip">Finance items only appear if you have the relevant permissions enabled for your role.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 3</div>
+</div>
+
+<!-- PAGE 4: USERS & ROLES -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>3. Users & Roles Management</h2>
+    <p>Manage all staff accounts, assign roles, and control access permissions.</p>
+
+    <h3>Creating a New User</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Users & Roles from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Add User"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enter name, mobile number, email</strong><span>Mobile number becomes their login ID</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Select role (Teacher, Principal, Admin, Staff)</strong></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Assign sections (for teachers)</strong><span>Select which class/section they teach</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Save</strong><span>Initial password = their mobile number</span></div></div>
+    </div>
+
+    <h3>Managing Existing Users</h3>
+    <ul>
+      <li><strong>Reset Password:</strong> Click user > Reset Password. Resets to their mobile number.</li>
+      <li><strong>Change Role:</strong> Click user > Edit > Change role dropdown</li>
+      <li><strong>Reassign Sections:</strong> Click user > Edit > Update section assignments</li>
+      <li><strong>Deactivate:</strong> Click user > Deactivate. User can no longer login.</li>
+      <li><strong>Class Teacher:</strong> Assign one teacher as "Class Teacher" per section (manages parent communication)</li>
+    </ul>
+
+    <h3>Custom Roles & Permissions</h3>
+    <p>Create custom roles with specific permissions:</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Users & Roles > Roles tab</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Create Role"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Name the role and select permissions</strong><span>e.g., "Accountant" with only finance permissions</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Set portal access level</strong><span>Which portal the user sees when they login</span></div></div>
+    </div>
+
+    <h3>Available Permissions</h3>
+    <div class="feature-grid three-col">
+      <div class="feature-card green"><h4>Finance</h4><p>View fees, collect payments, manage structures, view salary, manage expenses, view reports</p></div>
+      <div class="feature-card blue"><h4>School</h4><p>Manage students, classes, curriculum, calendar, announcements</p></div>
+      <div class="feature-card violet"><h4>System</h4><p>User management, settings, audit logs, HR operations</p></div>
+    </div>
+
+    <div class="warn">Only admins can create other admin accounts. Teachers cannot access the admin panel.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 4</div>
+</div>
+
+<!-- PAGE 5: CLASSES & SECTIONS -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>4. Classes & Sections</h2>
+    <p>Set up your school's class structure with sections and teacher assignments.</p>
+
+    <h3>Creating a Class</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Classes from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Add Class"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enter class name</strong><span>e.g., "Nursery", "LKG", "UKG", "Grade 1"</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Save the class</strong></div></div>
+    </div>
+
+    <h3>Adding Sections to a Class</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Click on the class name to expand</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Add Section"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enter section label</strong><span>e.g., "A", "B", "Morning", "Afternoon"</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Save</strong><span>Plans from existing sections can be auto-copied to new ones</span></div></div>
+    </div>
+
+    <h3>Assigning Teachers</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Click on a section</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Assign Teacher"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Select teacher from dropdown</strong><span>Only shows teachers not already assigned to this section</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Optionally mark as "Class Teacher"</strong><span>Class teacher handles parent communication for this section</span></div></div>
+    </div>
+
+    <h3>Class Settings</h3>
+    <ul>
+      <li><strong>Day Start/End Time:</strong> Set school hours for each class (affects attendance timing alerts)</li>
+      <li><strong>Remove Teacher:</strong> Unassign a teacher from a section</li>
+      <li><strong>Delete Section:</strong> Remove a section (only if no students assigned)</li>
+    </ul>
+
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">Create Class</div><div class="desc">Nursery, LKG...</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">Add Sections</div><div class="desc">A, B, C...</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Assign Teachers</div><div class="desc">Per section</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">4</div><div class="label">Add Students</div><div class="desc">Enroll</div></div>
+    </div>
+
+    <div class="tip">Set up classes and sections first before adding students or uploading curriculum. The order matters.</div>
+    <div class="warn">Deleting a section removes all associated plans and data. This cannot be undone.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 5</div>
+</div>
+
+<!-- PAGE 6: STUDENT MANAGEMENT -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>5. Student Management</h2>
+    <p>Add, manage, and organize all students in your school.</p>
+
+    <h3>Adding a Single Student</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Students from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Add Student"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Fill in student details</strong><span>Name, date of birth, gender, class, section</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Add parent details</strong><span>Father/Mother name, mobile number, email</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Save</strong><span>Fee structure is validated automatically based on class</span></div></div>
+    </div>
+
+    <h3>Bulk Import via Excel</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Click "Import Students"</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Download the Excel template</strong><span>Pre-formatted with required columns</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Fill in student data in the template</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Upload the filled Excel file</strong></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Review import preview and confirm</strong><span>System shows errors if any rows have issues</span></div></div>
+    </div>
+
+    <h3>Student Photos</h3>
+    <ul>
+      <li>Click on a student > Upload Photo</li>
+      <li>Photos are stored in Supabase Storage</li>
+      <li>Visible to parents in their portal</li>
+    </ul>
+
+    <h3>Parent Login Activation</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Select students (checkbox)</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Activate Parent Login"</strong><span>Creates login credentials for parents using their mobile number</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Parents can now login</strong><span>Username = mobile number, Password = mobile number (first time)</span></div></div>
+    </div>
+    <div class="info">Use "Bulk Activate" to enable parent logins for an entire section at once.</div>
+
+    <h3>Student Dashboard</h3>
+    <ul>
+      <li>Per-class and per-section student counts</li>
+      <li>Contact completeness (students missing parent mobile/email)</li>
+      <li>Filter: incomplete parents, no photo, inactive parents</li>
+    </ul>
+
+    <h3>Other Actions</h3>
+    <ul>
+      <li><strong>Reset Parent Password:</strong> Resets to parent's mobile number</li>
+      <li><strong>Link/Unlink Parent:</strong> Change parent association</li>
+      <li><strong>Transfer Section:</strong> Move student to a different section</li>
+    </ul>
+    <div class="warn">Always verify parent mobile numbers before activating logins. Wrong numbers mean wrong parents get access.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 6</div>
+</div>
+
+<!-- PAGE 7: CURRICULUM & TEXTBOOK PLANNER -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>6. Curriculum & Textbook Planner</h2>
+
+    <h3>Curriculum Upload (PDF Ingestion)</h3>
+    <p>Upload textbook PDFs so Oakie can generate lesson plans from your actual curriculum.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Curriculum from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Select the class</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Click "Upload PDF"</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Select your textbook PDF file</strong></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Preview extraction (Week 1 sample)</strong><span>System shows a sample of extracted content before full processing</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Confirm to start full ingestion</strong><span>AI extracts, chunks, and embeds the entire textbook</span></div></div>
+    </div>
+    <div class="info">Ingestion takes 5-15 minutes depending on PDF size. You can monitor progress on the same page.</div>
+
+    <h3>Managing Curriculum Chunks</h3>
+    <ul>
+      <li>View extracted chunks by class or section</li>
+      <li>Edit topic labels and content if extraction was imperfect</li>
+      <li>Retry failed ingestions</li>
+      <li>Delete and re-upload if needed</li>
+    </ul>
+
+    <div class="section-divider"></div>
+
+    <h3>Textbook Planner</h3>
+    <p>Create structured day-by-day teaching plans from textbook chapters.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Textbook Planner from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Create a planning session</strong><span>Select class and academic year</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Add subjects to the session</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Upload textbook PDF per subject</strong><span>AI extracts table of contents into chapters automatically</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Review and edit chapters</strong><span>Reorder, rename, delete, or add chapters manually</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Set planning parameters</strong><span>School hours, teaching minutes per day, days per week</span></div></div>
+      <div class="step"><div class="step-num">7</div><div class="step-content"><strong>Generate plans</strong><span>AI creates day-by-day teaching schedule based on chapter weights</span></div></div>
+    </div>
+
+    <h3>Additional Options</h3>
+    <ul>
+      <li><strong>Import from Excel:</strong> Upload chapters from a spreadsheet instead of PDF</li>
+      <li><strong>Append TOC Pages:</strong> Add more pages from the PDF if initial extraction missed some</li>
+      <li><strong>Chapter Weights:</strong> Adjust how many days each chapter gets based on difficulty</li>
+    </ul>
+
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">Upload PDF</div><div class="desc">Textbook</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">Extract TOC</div><div class="desc">AI reads chapters</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Edit Chapters</div><div class="desc">Reorder/rename</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">4</div><div class="label">Generate Plans</div><div class="desc">Day-by-day</div></div>
+    </div>
+    <div class="warn">Upload curriculum before generating plans. Plans depend on curriculum chunks being available.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 7</div>
+</div>
+
+<!-- PAGE 8: SUPPLEMENTARY ACTIVITIES -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>7. Supplementary Activities</h2>
+    <p>Manage extra-curricular activities like Music, Art, PE, Dance, and Yoga with automatic scheduling.</p>
+
+    <h3>Creating an Activity Pool</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Activities from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Create Pool"</strong><span>e.g., "Music Activities", "Art Projects", "PE Games"</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Add activities to the pool</strong><span>Each activity has a name and optional description</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Reorder activities</strong><span>Drag to set the rotation order</span></div></div>
+    </div>
+
+    <h3>Assigning Pools to Classes</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Select a pool</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Assign to Class"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Select class and sections</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Set frequency</strong><span>Weekly (e.g., every Monday) or interval-based (every 3 days)</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Save assignment</strong><span>Activities auto-rotate through the pool in order</span></div></div>
+    </div>
+
+    <h3>How Rotation Works</h3>
+    <ul>
+      <li>Activities cycle through the pool in the order you set</li>
+      <li>Each section gets the next activity in sequence on their scheduled day</li>
+      <li>The system tracks a "rotation cursor" per section</li>
+      <li>If a day is a holiday, the activity shifts to the next working day</li>
+    </ul>
+
+    <h3>Managing the Schedule</h3>
+    <ul>
+      <li><strong>View Monthly Schedule:</strong> See which activity is assigned to which section on each day</li>
+      <li><strong>Reschedule:</strong> Move an activity to a different day if needed</li>
+      <li><strong>Pool Summary:</strong> View all pools with their current rotation position</li>
+      <li><strong>Delete Activity:</strong> Remove from pool (shifts remaining activities up)</li>
+    </ul>
+
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">Create Pool</div><div class="desc">Music, Art...</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">Add Activities</div><div class="desc">Songs, crafts...</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Assign Class</div><div class="desc">Set frequency</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">4</div><div class="label">Auto-Schedule</div><div class="desc">Rotates daily</div></div>
+    </div>
+
+    <div class="tip">Teachers see the scheduled activity in their daily plan automatically. No manual assignment needed each day.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 8</div>
+</div>
+
+<!-- PAGE 9: CALENDAR & DAILY PLANNER -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>8. Calendar & Daily Planner</h2>
+
+    <h3>Academic Calendar Setup</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Calendar from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Set academic year start and end dates</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Set working days</strong><span>Select which days of the week are school days (e.g., Mon-Sat)</span></div></div>
+    </div>
+
+    <h3>Managing Holidays</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Click "Add Holiday"</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Enter date, name, and type</strong><span>Types: National Holiday, Festival, School Event, Vacation</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Save</strong><span>Plans are automatically skipped on holidays</span></div></div>
+    </div>
+    <ul>
+      <li><strong>Bulk Import:</strong> Upload holidays from a spreadsheet (date + name columns)</li>
+      <li><strong>PDF Export:</strong> Download the full year calendar as a PDF for printing</li>
+      <li><strong>Special Days:</strong> Mark celebration days (not holidays but special events)</li>
+    </ul>
+
+    <h3>How Calendar Affects Plans</h3>
+    <ul>
+      <li>No plans are generated for holidays</li>
+      <li>Teachers cannot mark attendance on holidays</li>
+      <li>Homework cannot be sent on holidays</li>
+      <li>Activities auto-shift to next working day</li>
+    </ul>
+
+    <div class="section-divider"></div>
+
+    <h3>Daily Planner</h3>
+    <p>View and manage AI-generated day plans across all sections.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Daily Planner from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Select class and section</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>View generated plans by date</strong><span>See topics, activities, and completion status</span></div></div>
+    </div>
+
+    <h3>Plan Management Actions</h3>
+    <ul>
+      <li><strong>Generate Plans:</strong> Trigger plan generation for a date range</li>
+      <li><strong>Edit Plans:</strong> Modify topics or activities for a specific day</li>
+      <li><strong>Delete Plans:</strong> Remove plans for a date range (regenerate later)</li>
+      <li><strong>View Completion:</strong> See which teachers have marked their plans as done</li>
+    </ul>
+
+    <div class="tip">Plans are generated automatically based on curriculum and calendar. You only need to intervene if something needs adjustment.</div>
+    <div class="warn">Deleting plans removes teacher completion records for those days. Use with caution.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 9</div>
+</div>
+
+<!-- PAGE 10: FINANCE MODULE OVERVIEW -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>9. Finance Module</h2>
+    <p>Complete financial management for your school - fees, salary, expenses, and reporting. Access is permission-gated.</p>
+
+    <h3>Finance Dashboard</h3>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>Today's Collections</h4><p>Total fees collected today across all payment modes</p></div>
+      <div class="feature-card blue"><h4>Total Pending</h4><p>Outstanding fee balance across all students</p></div>
+      <div class="feature-card violet"><h4>Reconciliation</h4><p>Cash and online payments pending reconciliation</p></div>
+      <div class="feature-card amber"><h4>Recent Transactions</h4><p>Latest payment receipts with student name, amount, mode</p></div>
+    </div>
+
+    <h3>Finance Navigation</h3>
+    <ul>
+      <li><strong>Fee Structures</strong> - Define what fees each class pays</li>
+      <li><strong>Fee Collection</strong> - Record payments from parents</li>
+      <li><strong>Admissions</strong> - Financial tracking for new admissions</li>
+      <li><strong>Concessions</strong> - Manage discounts and waivers</li>
+      <li><strong>Expenses</strong> - Track school expenditures</li>
+      <li><strong>Salary</strong> - Staff salary management (PIN-protected)</li>
+      <li><strong>Reports</strong> - Financial reports and analytics</li>
+      <li><strong>Reconciliation</strong> - Match payments with bank records</li>
+      <li><strong>Profitability</strong> - Revenue vs expense analysis</li>
+    </ul>
+
+    <div class="section-divider"></div>
+
+    <h3>Enabling the Finance Module</h3>
+    <p>The finance module must be enabled in Settings before it appears in the sidebar:</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Settings</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Find "Financial Module" toggle</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enable it</strong><span>Finance items now appear in the sidebar for users with finance permissions</span></div></div>
+    </div>
+
+    <h3>Permission Requirements</h3>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>VIEW_FEES</h4><p>See fee dashboard, student balances</p></div>
+      <div class="feature-card blue"><h4>COLLECT_PAYMENT</h4><p>Record fee payments, issue receipts</p></div>
+      <div class="feature-card violet"><h4>MANAGE_FEE_STRUCTURE</h4><p>Create/edit fee structures</p></div>
+      <div class="feature-card amber"><h4>MANAGE_CONCESSION</h4><p>Grant fee discounts to students</p></div>
+      <div class="feature-card rose"><h4>VIEW_SALARY</h4><p>Access salary records (PIN required)</p></div>
+      <div class="feature-card cyan"><h4>VIEW_REPORTS</h4><p>Access financial reports and analytics</p></div>
+    </div>
+
+    <div class="warn">Salary data is additionally protected by a PIN. Even with VIEW_SALARY permission, users must enter the salary PIN to access records.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 10</div>
+</div>
+
+<!-- PAGE 11: FEE STRUCTURES & COLLECTION -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>10. Fee Structures & Collection</h2>
+
+    <h3>Creating a Fee Structure</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Finance > Fee Structures</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Create Fee Structure"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Select class and academic year</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Add fee heads</strong><span>e.g., Tuition, Admission, Transport, Books, Uniform, Activity</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Set amount for each head</strong><span>Monthly, quarterly, or annual amounts</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Save structure</strong><span>Automatically assigned to students in that class</span></div></div>
+    </div>
+
+    <h3>Collecting Fees</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Finance > Fee Collection</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Search for student by name or class</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>View pending balance</strong><span>Broken down by fee head and month</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Enter payment amount</strong></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Select payment mode</strong><span>Cash, UPI, Bank Transfer, Cheque, Online</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Submit payment</strong><span>Receipt generated automatically</span></div></div>
+    </div>
+
+    <h3>Managing Concessions</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Finance > Concessions</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Select student</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Choose concession type</strong><span>Percentage discount, fixed amount, or specific fee head waiver</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Enter amount/percentage and reason</strong></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Approve and save</strong><span>Student's pending balance updates automatically</span></div></div>
+    </div>
+
+    <h3>Cash Reconciliation</h3>
+    <ul>
+      <li>End of day: reconcile cash collected vs system records</li>
+      <li>Record any variance with explanation</li>
+      <li>Online reconciliation: match bank credits with system payments</li>
+    </ul>
+
+    <div class="tip">Set up fee structures before adding students to a class. New students automatically get the class fee structure assigned.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 11</div>
+</div>
+
+<!-- PAGE 12: SALARY & EXPENSES -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>11. Salary & Expenses</h2>
+
+    <h3>Salary Management</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Finance > Salary</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Enter salary PIN</strong><span>Additional security layer for sensitive data</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>View staff salary records</strong><span>Monthly breakdown per staff member</span></div></div>
+    </div>
+
+    <h3>Salary Configuration</h3>
+    <ul>
+      <li><strong>Set base salary</strong> per staff member</li>
+      <li><strong>Add components:</strong> Basic, HRA, DA, Conveyance, Special Allowance</li>
+      <li><strong>Deductions:</strong> PF, ESI, Professional Tax, TDS</li>
+      <li><strong>Generate payslips:</strong> Monthly salary slips for each staff member</li>
+      <li><strong>Salary computation:</strong> Auto-calculate based on attendance and leave</li>
+    </ul>
+
+    <div class="info">Staff members can view their own salary slips from their "My HR" section. They cannot see other staff salaries.</div>
+
+    <div class="section-divider"></div>
+
+    <h3>Expense Tracking</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Finance > Expenses</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Add Expense"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enter details</strong><span>Date, category, amount, description, vendor</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Attach receipt (optional)</strong><span>Upload photo or PDF of the bill</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Save expense</strong></div></div>
+    </div>
+
+    <h3>Expense Categories</h3>
+    <div class="feature-grid three-col">
+      <div class="feature-card green"><h4>Operations</h4><p>Rent, utilities, maintenance, cleaning</p></div>
+      <div class="feature-card blue"><h4>Supplies</h4><p>Stationery, books, teaching materials</p></div>
+      <div class="feature-card violet"><h4>Staff</h4><p>Salary, bonuses, training, travel</p></div>
+      <div class="feature-card amber"><h4>Events</h4><p>Celebrations, field trips, competitions</p></div>
+      <div class="feature-card rose"><h4>Infrastructure</h4><p>Furniture, equipment, repairs</p></div>
+      <div class="feature-card cyan"><h4>Other</h4><p>Miscellaneous, petty cash</p></div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <h3>Financial Reports</h3>
+    <ul>
+      <li><strong>Daily Collection Report:</strong> All payments received today with mode breakdown</li>
+      <li><strong>Student Pending Report:</strong> Outstanding balances per student/class</li>
+      <li><strong>Reconciliation Report:</strong> Cash vs system variance history</li>
+      <li><strong>Profitability:</strong> Revenue (fees) vs Expenses analysis by month</li>
+    </ul>
+    <div class="tip">Run the profitability report monthly to track school financial health.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 12</div>
+</div>
+
+<!-- PAGE 13: REPORTS & REPORT CARDS -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>12. Reports & Report Cards</h2>
+
+    <h3>Student Reports</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Reports from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Select report type</strong><span>Individual Student / Section / School-wide</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Choose class, section, and date range</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Generate report</strong><span>Shows attendance, coverage, milestones, observations</span></div></div>
+    </div>
+
+    <h3>Report Types</h3>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>Individual Student</h4><p>Complete profile: attendance %, topics covered, milestones achieved, teacher observations, parent engagement</p></div>
+      <div class="feature-card blue"><h4>Section Report</h4><p>All students in a section with comparative stats, attendance trends, coverage progress</p></div>
+      <div class="feature-card violet"><h4>School Summary</h4><p>School-wide metrics: total students, avg attendance, coverage by class, teacher performance</p></div>
+      <div class="feature-card amber"><h4>Report Cards</h4><p>AI-generated progress reports with rich learning summaries for parents</p></div>
+    </div>
+
+    <h3>Generating Report Cards</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Reports > Report Cards</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Select class, section, and term</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Check observation readiness</strong><span>System shows which students have enough observations</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Generate report cards</strong><span>AI creates personalized progress summaries per student</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Review and approve</strong><span>Edit AI-generated text if needed</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Share with parents</strong><span>Download PDF or send directly through the app</span></div></div>
+    </div>
+
+    <h3>Observation Categories for Report Cards</h3>
+    <ul>
+      <li><strong>Cognitive:</strong> Problem-solving, memory, logical thinking</li>
+      <li><strong>Language:</strong> Vocabulary, communication, reading readiness</li>
+      <li><strong>Social:</strong> Sharing, cooperation, group participation</li>
+      <li><strong>Emotional:</strong> Self-regulation, confidence, empathy</li>
+      <li><strong>Motor Skills:</strong> Fine motor (writing, cutting) and gross motor (running, jumping)</li>
+      <li><strong>Creativity:</strong> Art, imagination, original thinking</li>
+      <li><strong>Participation:</strong> Class engagement, following instructions</li>
+      <li><strong>Behavior:</strong> Discipline, respect, peer interaction</li>
+    </ul>
+
+    <div class="warn">Report cards require teachers to have added observations throughout the term. Alert teachers early if observations are missing.</div>
+    <div class="tip">Reports are saved to the database and can be accessed later without regenerating.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 13</div>
+</div>
+
+<!-- PAGE 14: SMART ALERTS & AI USAGE -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>13. Smart Alerts & AI Usage</h2>
+
+    <h3>Smart Alerts</h3>
+    <p>AI-computed intelligence alerts that highlight issues requiring your attention.</p>
+
+    <h3>Alert Categories</h3>
+    <div class="feature-grid">
+      <div class="feature-card rose"><h4>Teachers Not Completing Plans</h4><p>Teachers with broken streaks, unlogged days, or consistently late completions</p></div>
+      <div class="feature-card amber"><h4>Low Attendance Trends</h4><p>Sections where 7-day rolling attendance drops below 70%</p></div>
+      <div class="feature-card violet"><h4>Curriculum Behind Schedule</h4><p>Classes with coverage below 40% - falling behind on syllabus</p></div>
+      <div class="feature-card blue"><h4>Weak Subject Detection</h4><p>Subjects where quiz average scores are below 50%</p></div>
+    </div>
+
+    <h3>Teacher Performance Scores</h3>
+    <p>Multi-factor scoring for each teacher based on:</p>
+    <ul>
+      <li><strong>Plan Compliance:</strong> % of days with plans marked as done</li>
+      <li><strong>Attendance Marking:</strong> Timeliness and consistency</li>
+      <li><strong>Homework Sent:</strong> Frequency of homework communication</li>
+      <li><strong>Teaching Streak:</strong> Consecutive days of completion</li>
+      <li><strong>AI Engagement:</strong> How often they use Oakie for teaching help</li>
+      <li><strong>Observations:</strong> Number of student observations recorded</li>
+      <li><strong>Parent Communication:</strong> Journey notes and messages sent</li>
+    </ul>
+
+    <h3>Teacher Performance Drill-Down</h3>
+    <ul>
+      <li>Click any teacher to see daily breakdown</li>
+      <li>View homework submissions by week</li>
+      <li>AI usage patterns (which questions they ask)</li>
+      <li>Engagement metrics over time</li>
+    </ul>
+
+    <div class="section-divider"></div>
+
+    <h3>Oakie AI Usage</h3>
+    <p>Monitor and manage your school's AI credit consumption.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Oakie Usage from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>View credit wallet balance</strong><span>Current credits remaining</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Check usage breakdown</strong><span>Monthly call count, cost per call, usage by endpoint</span></div></div>
+    </div>
+
+    <h3>What You See</h3>
+    <ul>
+      <li><strong>Wallet Balance:</strong> Current AI credits available</li>
+      <li><strong>Lifetime Usage:</strong> Total credits consumed since school onboarding</li>
+      <li><strong>Daily Chart:</strong> 30-day usage graph showing daily AI calls</li>
+      <li><strong>By Endpoint:</strong> Which features consume the most credits (chat, plans, formatting)</li>
+      <li><strong>Recharge History:</strong> Past credit purchases and dates</li>
+    </ul>
+
+    <div class="tip">Monitor AI usage weekly. If credits are running low, teachers will be unable to use Oakie chat.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 14</div>
+</div>
+
+<!-- PAGE 15: ANNOUNCEMENTS & AUDIT LOG -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>14. Announcements & Audit Log</h2>
+
+    <h3>Creating Announcements</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Announcements from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Click "Create Announcement"</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Enter title and message</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Select target audience</strong><span>All users, Teachers only, Parents only, or specific class</span></div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-content"><strong>Set expiry date (optional)</strong><span>Announcement auto-hides after this date</span></div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-content"><strong>Publish</strong><span>Appears immediately for the target audience</span></div></div>
+    </div>
+
+    <h3>Managing Announcements</h3>
+    <ul>
+      <li>Edit published announcements (updates immediately)</li>
+      <li>Delete announcements that are no longer relevant</li>
+      <li>View which announcements are active vs expired</li>
+    </ul>
+
+    <div class="section-divider"></div>
+
+    <h3>Audit Log</h3>
+    <p>Complete activity log for oversight and compliance.</p>
+
+    <h3>What the Audit Log Tracks</h3>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>File Uploads</h4><p>All PDF uploads, student photos, attachments with user and timestamp</p></div>
+      <div class="feature-card blue"><h4>Messages</h4><p>Parent-teacher messages for admin oversight (content visible)</p></div>
+      <div class="feature-card violet"><h4>AI Queries</h4><p>All Oakie chat queries with user attribution and responses</p></div>
+      <div class="feature-card amber"><h4>Safety Alerts</h4><p>Flagged AI queries that may contain inappropriate content</p></div>
+    </div>
+
+    <h3>How to Use the Audit Log</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Audit Log from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Select log type</strong><span>Uploads / Messages / AI Queries / Safety Alerts</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Filter by date range or user</strong></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Review entries</strong></div></div>
+    </div>
+
+    <h3>Safety Alerts</h3>
+    <ul>
+      <li>AI automatically flags queries that may be inappropriate</li>
+      <li>Review flagged queries and dismiss false positives</li>
+      <li>Take action if a teacher/student is misusing the AI</li>
+    </ul>
+
+    <h3>File Cleanup</h3>
+    <ul>
+      <li>View expired uploads (class notes older than 14 days)</li>
+      <li>Manually trigger cleanup to free storage space</li>
+    </ul>
+
+    <div class="tip">Review safety alerts weekly. Most are false positives, but it's important to catch genuine misuse early.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 15</div>
+</div>
+
+<!-- PAGE 16: HR, HOMEWORK & QUIZZES -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>15. HR, Homework & Quizzes</h2>
+
+    <h3>HR Management</h3>
+    <p>Manage leave requests, offer letters, and resignations.</p>
+
+    <h4>Leave Requests</h4>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to HR from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>View pending leave requests</strong><span>Shows staff name, dates, leave type, reason</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Approve or Reject</strong><span>Add a review note explaining your decision</span></div></div>
+    </div>
+
+    <h4>Offer Letters</h4>
+    <ul>
+      <li>View all generated offer letters</li>
+      <li>Download as PDF</li>
+      <li>Track status (draft, sent, accepted)</li>
+    </ul>
+
+    <h4>Resignations</h4>
+    <ul>
+      <li>View resignation submissions from staff</li>
+      <li>Acknowledge receipt</li>
+      <li>Track notice period and last working day</li>
+    </ul>
+
+    <div class="section-divider"></div>
+
+    <h3>Homework Oversight</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Homework from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Filter by date, class, or section</strong></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>View all homework sent by teachers</strong><span>See content, time sent, and which teacher sent it</span></div></div>
+    </div>
+    <p>This gives you visibility into what teachers are sending to parents without interfering with their workflow.</p>
+
+    <div class="section-divider"></div>
+
+    <h3>Quizzes</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Quizzes from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>View all quizzes across the school</strong><span>Question count, total attempts, average score</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Click a quiz to see per-student results</strong><span>Individual scores, time taken, correct/incorrect breakdown</span></div></div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <h3>Uniform Sizing</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Uniform from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>View sizing requests from parents</strong><span>Student name, size selected, date requested</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Update status</strong><span>Pending > Confirmed > Dispatched > Delivered</span></div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-content"><strong>Add admin notes if needed</strong></div></div>
+    </div>
+
+    <div class="tip">Use the homework view to ensure teachers are sending age-appropriate, well-formatted homework to parents.</div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 16</div>
+</div>
+
+<!-- PAGE 17: SETTINGS & SETUP WIZARD -->
+<div class="page">
+  <div class="header"><div><span class="logo">oakit<span class="ai">.ai</span></span><div class="subtitle">Admin Guide</div></div><img src="OAKIE_PATH" class="mascot" alt=""></div>
+  <div class="content">
+    <h2>16. Settings & Setup Wizard</h2>
+
+    <h3>Setup Wizard (First-Time Onboarding)</h3>
+    <p>Guided step-by-step setup for new schools:</p>
+    <div class="flow">
+      <div class="flow-step"><div class="num">1</div><div class="label">School Profile</div><div class="desc">Name, contact</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">2</div><div class="label">Classes</div><div class="desc">Add sections</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">3</div><div class="label">Staff</div><div class="desc">Create accounts</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">4</div><div class="label">Curriculum</div><div class="desc">Upload PDFs</div></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step"><div class="num">5</div><div class="label">Calendar</div><div class="desc">Set holidays</div></div>
+    </div>
+    <p>The wizard tracks completion progress. You can skip steps and return later.</p>
+
+    <div class="section-divider"></div>
+
+    <h3>School Settings</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Settings from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>Configure school profile and features</strong></div></div>
+    </div>
+
+    <h3>Available Settings</h3>
+    <div class="feature-grid">
+      <div class="feature-card green"><h4>School Profile</h4><p>School name, contact number, address, email</p></div>
+      <div class="feature-card blue"><h4>Branding</h4><p>Upload school logo, set primary color, tagline, Instagram handle</p></div>
+      <div class="feature-card violet"><h4>AI Plan Mode</h4><p>Standard vs AI-enhanced plans. Can override per class.</p></div>
+      <div class="feature-card amber"><h4>Feature Toggles</h4><p>Enable/disable: Voice input, Translation, Financial module, Student portal</p></div>
+      <div class="feature-card rose"><h4>Notes Expiry</h4><p>Set how many days class notes are kept before auto-deletion (default: 14)</p></div>
+      <div class="feature-card cyan"><h4>Terms</h4><p>Define school terms with date ranges (Term 1, Term 2, Annual)</p></div>
+    </div>
+
+    <h3>AI Plan Mode Options</h3>
+    <ul>
+      <li><strong>Standard:</strong> Plans generated from textbook planner chapters only</li>
+      <li><strong>AI-Enhanced:</strong> Plans enriched with AI-suggested activities, games, and teaching tips</li>
+      <li><strong>Per-Class Override:</strong> Set different modes for different classes</li>
+    </ul>
+
+    <h3>Time Machine (Testing Only)</h3>
+    <ul>
+      <li>Override the system date for testing purposes</li>
+      <li>Useful for testing plan generation, attendance rules, and calendar logic</li>
+      <li>Set a mock date with TTL (auto-expires after set time)</li>
+      <li>Clear override to return to real date</li>
+    </ul>
+    <div class="warn">Time Machine is for testing only. Never use in production with real teacher/parent data active.</div>
+
+    <div class="section-divider"></div>
+
+    <h3>Enquiries</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-content"><strong>Go to Enquiries from sidebar</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-content"><strong>View all admission enquiries</strong><span>Status: Open, Converted, Closed</span></div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-content"><strong>Update status and add follow-up notes</strong></div></div>
+    </div>
+
+    <div style="margin-top:16px;text-align:center;padding:10px;background:#ecfdf5;border-radius:8px">
+      <p style="font-size:10px;color:#1B4332;font-weight:600;margin:0">You're all set to manage your school with Oakit.ai!</p>
+      <p style="font-size:8px;color:#6b7280;margin:3px 0 0">For support, contact the Oakit team or use Oakie chat for quick help.</p>
+    </div>
+  </div>
+  <div class="footer">oakit.ai | Admin Guide | Page 17</div>
+</div>
+
+</body>
+</html>

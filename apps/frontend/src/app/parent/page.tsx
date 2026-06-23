@@ -12,7 +12,7 @@ import {
   Umbrella, Pencil, Activity, Megaphone, PartyPopper, FileText, GraduationCap
 } from 'lucide-react';
 import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
-import { getToken, clearToken, signOut } from '@/lib/auth';
+import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
 import ReportCardGenerator from '@/components/ReportCardGenerator';
 import { useSessionManager } from '@/hooks/useSessionManager';
@@ -218,7 +218,7 @@ const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
 ];
 
 function defaultChat(name?: string): ChatMsg[] {
-  return [{ role: 'ai', text: `Hi! I'm Oakie ?? Ask me anything about ${name ? name.split(' ')[0] : 'your child'} � what they studied today, attendance, or progress.`, ts: 0 }];
+  return [{ role: 'ai', text: `Hi! I'm Oakie - Ask me anything about ${name ? name.split(' ')[0] : 'your child'} � what they studied today, attendance, or progress.`, ts: 0 }];
 }
 
 function ChildAvatar({ child, size = 'md', token, onUploaded }: {
@@ -362,7 +362,7 @@ export default function ParentPage() {
   const unreadMessages = messageThreads.reduce((s, t) => s + Number(t.unread_count), 0);
   const unreadNotifs = notifications.length;
 
-  useEffect(() => { if (!token) { router.push('/login'); return; } init(); }, []);
+  useEffect(() => { if (!token) { router.push('/login'); return; } const role = getRole(); if (!role || role.toLowerCase() !== 'parent') { router.replace('/login'); return; } init(); }, []);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs]);
   // Close profile dropdown on outside click
   useEffect(() => {
@@ -440,67 +440,13 @@ export default function ParentPage() {
             if (settings.translation_settings) setTranslationSettings(settings.translation_settings);
           }
         } catch (e) {
-          // fallback to mock data for other features
-          loadMockFeaturesData(true);
+          // API failed — leave defaults (empty arrays/null) rather than showing fake data
         }
       })();
       
       if (kids.length > 0) { setActiveChildId(kids[0].id); await fetchChildData(kids[0].id, kids); }
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }
-
-  // --- Mock Data for New Features ---------------------------------------------
-  function loadMockFeaturesData(includeEmergency = true) {
-    // Emergency Contacts
-    if (includeEmergency) {
-      setEmergencyContacts([
-        { id: '1', name: 'John Doe', relation: 'Father', phone: '+91-9876543210', priority: 1, available: true },
-        { id: '2', name: 'Jane Doe', relation: 'Mother', phone: '+91-9876543211', priority: 2, available: false },
-        { id: '3', name: 'Grandma', relation: 'Grandmother', phone: '+91-9876543212', priority: 3, available: true },
-      ]);
-    }
-
-    // Notification Preferences
-    setNotificationPrefs([
-      { type: 'homework', enabled: true, channels: ['push', 'email'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
-      { type: 'attendance', enabled: true, channels: ['push'], quietHours: null, frequency: 'daily' },
-      { type: 'progress', enabled: true, channels: ['email'], quietHours: null, frequency: 'weekly' },
-      { type: 'messages', enabled: true, channels: ['push', 'sms'], quietHours: { start: '22:00', end: '07:00' }, frequency: 'immediate' },
-      { type: 'announcements', enabled: false, channels: ['email'], quietHours: null, frequency: 'weekly' },
-    ]);
-
-    // Calendar Events � now loaded from real API in CalendarTab, no mock needed
-
-    // Parent Insights
-    setParentInsights({
-      attendanceTrend: 'improving',
-      participationScore: 85,
-      strengths: ['Mathematics', 'Reading Comprehension', 'Class Participation'],
-      areasForImprovement: ['Handwriting', 'Physical Education'],
-      teacherFeedback: ['Excellent progress in math this month', 'Shows great enthusiasm for learning'],
-      predictions: {
-        nextWeekAttendance: 95,
-        endOfMonthProgress: 88,
-        areasNeedingAttention: ['Practice handwriting daily']
-      },
-      goals: {
-        academic: [
-          { id: '1', title: 'Improve Math Grade', description: 'Achieve 90% or higher in mathematics', target: '90%', current: '85%', deadline: '2026-06-30', status: 'in_progress', category: 'academic' },
-          { id: '2', title: 'Complete Reading Program', description: 'Finish all assigned reading comprehension exercises', target: '100%', current: '75%', deadline: '2026-05-15', status: 'in_progress', category: 'academic' },
-        ],
-        behavioral: [
-          { id: '3', title: 'Class Participation', description: 'Actively participate in 80% of class activities', target: '80%', current: '65%', deadline: '2026-04-30', status: 'in_progress', category: 'behavioral' },
-        ],
-        attendance: [
-          { id: '4', title: 'Perfect Attendance Month', description: 'Attend all classes for the entire month', target: '100%', current: '92%', deadline: '2026-04-30', status: 'in_progress', category: 'attendance' },
-        ]
-      }
-    });
-
-    // Integration Settings
-    setCalendarSyncEnabled(localStorage.getItem('calendar_sync') === 'true');
-    setAssistantReminders(localStorage.getItem('assistant_reminders') === 'true');
   }
 
   const fetchChildData = useCallback(async (childId: string, childList?: Child[]) => {
@@ -527,7 +473,11 @@ export default function ParentPage() {
           .catch(() => {});
       }
       apiGet<any>(`/api/v1/parent/fees/invoice/${childId}`, token)
-        .then(setInvoice).catch(() => {});
+        .then(setInvoice)
+        .catch((err) => {
+          console.error('[parent fees invoice]', err?.message || err);
+          setInvoice(null);
+        });
     } finally { setChildLoading(false); }
   }, [cache, token, children]);
 
@@ -1379,19 +1329,29 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
               <p className="text-xs font-bold text-gray-600 mb-1.5 flex items-center gap-1.5">
                 <ClipboardList size={12} className="text-gray-400" /> Teacher Notes
               </p>
-              {feed.notes.slice(0, 1).map(note => {
+              {feed.notes.slice(0, 2).map(note => {
                 const dl = Math.ceil((new Date(note.expires_at).getTime() - Date.now()) / 86400000);
+                // File notes — direct download link
+                if (note.file_name) {
+                  return (
+                    <a key={note.id}
+                      href={`${API_BASE}/api/v1/parent/notes/${note.id}/download`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="w-full text-left bg-gray-50 hover:bg-emerald-50 rounded-xl px-3 py-2 transition-colors border border-gray-100 hover:border-emerald-200 flex items-center gap-2 mb-1.5">
+                      <Download size={12} className="text-emerald-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        {note.note_text && <p className="text-xs text-gray-700 line-clamp-1 mb-0.5">{note.note_text}</p>}
+                        <p className="text-xs text-emerald-600 font-medium truncate">{note.file_name}</p>
+                      </div>
+                      <p className={`text-[10px] shrink-0 ${dl <= 3 ? 'text-red-500' : 'text-gray-400'}`}>{dl}d</p>
+                    </a>
+                  );
+                }
+                // Text notes — tap to open modal
                 return (
                   <button key={note.id} onClick={() => onNoteClick(note)}
-                    className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2 transition-colors border border-gray-100">
-                    {note.note_text && <p className="text-xs text-gray-700 line-clamp-1">{note.note_text}</p>}
-                    {note.file_name && (
-                      <div className="flex items-center gap-1.5">
-                        <Paperclip size={11} className="text-gray-400" />
-                        <p className="text-xs text-gray-500 truncate flex-1">{note.file_name}</p>
-                        <Download size={11} className="text-emerald-500" />
-                      </div>
-                    )}
+                    className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-xl px-3 py-2 transition-colors border border-gray-100 mb-1.5">
+                    <p className="text-xs text-gray-700 line-clamp-2">{note.note_text}</p>
                     <p className={`text-[10px] mt-0.5 ${dl <= 3 ? 'text-red-500' : 'text-gray-400'}`}>Expires in {dl}d</p>
                   </button>
                 );
@@ -2361,7 +2321,7 @@ function MilestonesTab({ activeChild, token }: { activeChild: Child | null; toke
             <div className="flex items-center justify-between px-5 py-4 bg-emerald-50 border-b border-emerald-100">
               <div>
                 <p className="text-sm font-bold text-neutral-800">Add Progress Note</p>
-                <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{noteModal.description}</p>
+                <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{noteModal.description.replace(/\[Student'?s? ?Name\]/gi, childFirst)}</p>
               </div>
               <button onClick={() => { setNoteModal(null); setNoteText(''); setNoteMsg(''); }}
                 className="w-8 h-8 rounded-full bg-white/60 hover:bg-white flex items-center justify-center text-neutral-500">
@@ -2470,7 +2430,7 @@ function MilestonesTab({ activeChild, token }: { activeChild: Child | null; toke
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm leading-snug ${isAchieved ? 'text-gray-600 line-through decoration-emerald-400' : 'text-gray-800 font-medium'}`}>
-                          {m.description}
+                          {m.description.replace(/\[Student'?s? ?Name\]/gi, childFirst)}
                         </p>
                         {m.term && (
                           <span className="inline-block mt-1 text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{m.term}</span>
@@ -2843,7 +2803,7 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
   const catIcons: Record<string, string> = {
     'English & Language': 'EN', 'Math & Numbers': 'MA', 'Art & Craft': 'AR',
     'Science & Nature': 'SC', 'Circle Time & GK': 'GK', 'Fine Motor & Writing': 'FM',
-    'Special Days & Events': '??', 'Other Activities': '?',
+    'Special Days & Events': 'SD', 'Other Activities': 'OT',
   };
 
   // Clean raw "Week X Day Y" labels
@@ -2900,18 +2860,18 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
               <p className="text-sm text-white/60 mt-0.5">{data.covered} of {data.total_chunks} topics completed this term</p>
             ) : <p className="text-white/50 text-sm">No curriculum assigned yet</p>}
             {milestoneData && (
-              <p className="text-xs text-white/50 mt-1">?? {milestoneData.achieved}/{milestoneData.total} milestones � {milestoneData.completion_pct}%</p>
+              <p className="text-xs text-white/50 mt-1">{milestoneData.achieved}/{milestoneData.total} milestones · {milestoneData.completion_pct}%</p>
             )}
             {termData && (
               <div className="mt-1 space-y-0.5">
                 {(termData as any).settling_days > 0 && (
-                  <p className="text-xs text-white/50">?? {(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed</p>
+                  <p className="text-xs text-white/50">{(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed</p>
                 )}
                 {(termData as any).curriculum_days > 0 && (
-                  <p className="text-xs text-white/40">?? {(termData as any).curriculum_days} curriculum day{(termData as any).curriculum_days !== 1 ? 's' : ''} � {termData.completion_days} total school days</p>
+                  <p className="text-xs text-white/40">{(termData as any).curriculum_days} curriculum day{(termData as any).curriculum_days !== 1 ? 's' : ''} · {termData.completion_days} total school days</p>
                 )}
                 {(termData as any).curriculum_days === 0 && termData.completion_days > 0 && (
-                  <p className="text-xs text-white/40">?? {termData.completion_days} school day{termData.completion_days !== 1 ? 's' : ''} completed</p>
+                  <p className="text-xs text-white/40">{termData.completion_days} school day{termData.completion_days !== 1 ? 's' : ''} completed</p>
                 )}
               </div>
             )}
@@ -2954,8 +2914,8 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
       {/* Show settling days count even if no notes */}
       {(termData as any)?.settling_days > 0 && (!termData?.settling_notes || termData.settling_notes.length === 0) && (
         <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
-          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">?? Settling Period</p>
-          <p className="text-sm text-amber-800">{(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed � {activeChild?.name.split(' ')[0]} is getting comfortable in the classroom.</p>
+          <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">Settling Period</p>
+          <p className="text-sm text-amber-800">{(termData as any).settling_days} settling day{(termData as any).settling_days !== 1 ? 's' : ''} completed · {activeChild?.name.split(' ')[0]} is getting comfortable in the classroom.</p>
         </div>
       )}
 
@@ -3829,9 +3789,9 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
             {/* Feature list */}
             <div className="w-full space-y-2 my-1">
               {[
-                { icon: '??', label: 'Google Calendar & Apple Calendar sync' },
-                { icon: '??', label: 'Oakie AI reminders � smart nudges before deadlines' },
-                { icon: '??', label: 'Never miss a homework due date or school event' },
+                { icon: 'calendar', label: 'Google Calendar & Apple Calendar sync' },
+                { icon: 'bell', label: 'Oakie AI reminders � smart nudges before deadlines' },
+                { icon: 'clock', label: 'Never miss a homework due date or school event' },
               ].map(f => (
                 <div key={f.label} className="flex items-center gap-3 bg-white border border-purple-100 rounded-xl px-4 py-2.5 text-left">
                   <span className="text-lg shrink-0">{f.icon}</span>
@@ -3941,6 +3901,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
     </div>
   );
 }
+
 
 
 

@@ -2,10 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Button, Card } from '@/components/ui';
-import { apiGet, apiPost } from '@/lib/api';
+import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Holiday { id: string; holiday_date: string; event_name: string; }
 interface SpecialDay { id: string; day_date: string; day_type: string; label: string; }
@@ -439,6 +437,15 @@ export default function CalendarPage() {
   const [calSummary, setCalSummary] = useState<{ working_day_count: number; holiday_count: number; special_days: Record<string, number> } | null>(null);
   const academicYear = savedCalendar?.academic_year || '';
 
+  // Term date configuration
+  const [terms, setTerms] = useState<{ id?: string; term_name: string; start_date: string; end_date: string }[]>([
+    { term_name: 'Term 1', start_date: '', end_date: '' },
+    { term_name: 'Term 2', start_date: '', end_date: '' },
+    { term_name: 'Term 3', start_date: '', end_date: '' },
+  ]);
+  const [savingTerms, setSavingTerms] = useState(false);
+  const [termMsg, setTermMsg] = useState('');
+
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [specialDays, setSpecialDays] = useState<SpecialDayGroup[]>([]);
   const [newHoliday, setNewHoliday] = useState({ holiday_date: '', event_name: '' });
@@ -446,6 +453,7 @@ export default function CalendarPage() {
   const [newSpecialDay, setNewSpecialDay] = useState({ from_date: '', to_date: '', day_type: 'settling', custom_day_type: '', label: '', activity_note: '', start_time: '', end_time: '', duration_type: 'full_day' as 'full_day' | 'half_day', revision_topics: [] as string[] });
   const [revisionTopicInput, setRevisionTopicInput] = useState('');
   const [showHolidayList, setShowHolidayList] = useState(false);
+  const [showSpecialDaysList, setShowSpecialDaysList] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [exportingHolidays, setExportingHolidays] = useState(false);
   const [refreshingPlanner, setRefreshingPlanner] = useState(false);
@@ -469,6 +477,15 @@ export default function CalendarPage() {
     }).catch(() => { setEditing(true); setCalendarLoaded(true); });
     apiGet<any>('/api/v1/admin/calendar/summary', token).then(s => { if (s) setCalSummary(s); }).catch(console.error);
     apiGet<any[]>('/api/v1/admin/classes', token).then(setClasses).catch(console.error);
+    // Load term dates
+    apiGet<any[]>('/api/v1/admin/terms', token).then(saved => {
+      if (saved.length > 0) {
+        setTerms(['Term 1', 'Term 2', 'Term 3'].map(name => {
+          const found = saved.find(t => t.term_name === name);
+          return { term_name: name, start_date: found?.start_date?.split('T')[0] || '', end_date: found?.end_date?.split('T')[0] || '', id: found?.id };
+        }));
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { if (academicYear) { loadHolidays(); loadSpecialDays(); } }, [academicYear]);
@@ -486,6 +503,17 @@ export default function CalendarPage() {
       apiGet<any>('/api/v1/admin/calendar/summary', token).then(s => { if (s) setCalSummary(s); }).catch(console.error);
     } catch (err: unknown) { setSaveMsg(err instanceof Error ? err.message : 'Failed'); }
     finally { setSaving(false); }
+  }
+
+  async function saveTerms() {
+    const filled = terms.filter(t => t.start_date && t.end_date);
+    if (filled.length === 0) { setTermMsg('Please set at least one term date range.'); return; }
+    setSavingTerms(true); setTermMsg('');
+    try {
+      await apiPost('/api/v1/admin/terms', { terms: filled }, token);
+      setTermMsg('✓ Term dates saved');
+    } catch (e: unknown) { setTermMsg(e instanceof Error ? e.message : 'Failed'); }
+    finally { setSavingTerms(false); }
   }
 
   function toggleDay(day: number) { setForm(f => ({ ...f, working_days: f.working_days.includes(day) ? f.working_days.filter(d => d !== day) : [...f.working_days, day].sort() })); }
@@ -687,6 +715,48 @@ export default function CalendarPage() {
         )}
       </Card>
 
+      {/* Term Date Configuration */}
+      {savedCalendar && (
+        <Card className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Term Dates</p>
+              <p className="text-xs text-gray-400 mt-0.5">Define Term 1, 2, 3 date ranges — used to filter milestones and track progress by term</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {terms.map((t, i) => (
+              <div key={t.term_name} className="grid grid-cols-3 gap-3 items-center">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${i === 0 ? 'bg-blue-400' : i === 1 ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span className="text-sm font-medium text-gray-700">{t.term_name}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">Start</label>
+                  <input type="date" value={t.start_date}
+                    min={savedCalendar.start_date?.split('T')[0]}
+                    max={savedCalendar.end_date?.split('T')[0]}
+                    onChange={e => setTerms(prev => prev.map((x, j) => j === i ? { ...x, start_date: e.target.value } : x))}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">End</label>
+                  <input type="date" value={t.end_date}
+                    min={t.start_date || savedCalendar.start_date?.split('T')[0]}
+                    max={savedCalendar.end_date?.split('T')[0]}
+                    onChange={e => setTerms(prev => prev.map((x, j) => j === i ? { ...x, end_date: e.target.value } : x))}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+              </div>
+            ))}
+          </div>
+          {termMsg && <p className={`text-xs mt-3 font-medium ${termMsg.startsWith('✓') ? 'text-emerald-600' : 'text-red-500'}`}>{termMsg}</p>}
+          <div className="mt-4">
+            <Button onClick={saveTerms} loading={savingTerms} size="sm">Save Term Dates</Button>
+          </div>
+        </Card>
+      )}
+
       {/* Holidays */}
       <Card className="mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -738,7 +808,14 @@ export default function CalendarPage() {
 
       {/* Special Days */}
       <Card className="mb-6">
-        <h2 className="text-sm font-medium text-gray-700 mb-1">Special Days — {academicYear}</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-medium text-gray-700">Special Days — {academicYear}</h2>
+          {specialDays.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setShowSpecialDaysList(true)}>
+              View All ({specialDays.reduce((s, g) => s + g.count, 0)} days)
+            </Button>
+          )}
+        </div>
         <p className="text-xs text-gray-400 mb-4">School days where no curriculum is assigned. Plans on these days are automatically shifted forward.</p>
         <div className="flex gap-2 mb-2 flex-wrap">
           <div className="flex flex-col gap-1"><label className="text-xs font-medium text-gray-600">From Date</label><input type="date" className="px-3 py-2 rounded-lg border border-gray-300 text-sm" value={newSpecialDay.from_date} onChange={e => setNewSpecialDay(s => ({ ...s, from_date: e.target.value }))} /></div>
@@ -884,6 +961,57 @@ export default function CalendarPage() {
       )}
 
       {showImportModal && <HolidayImportModal year={academicYear} token={token} onClose={() => setShowImportModal(false)} onImported={loadHolidays} />}
+
+      {/* Special Days Full Year List Modal */}
+      {showSpecialDaysList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowSpecialDaysList(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">All Special Days — {academicYear}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{specialDays.reduce((s, g) => s + g.count, 0)} total days planned</p>
+              </div>
+              <button onClick={() => setShowSpecialDaysList(false)} className="w-8 h-8 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-400">X</button>
+            </div>
+            <div className="overflow-y-auto max-h-[65vh] px-6 py-4">
+              {specialDays.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">No special days planned yet</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Date</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Type</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Label</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {specialDays
+                      .sort((a, b) => a.from_date.localeCompare(b.from_date))
+                      .map((g, i) => {
+                        const dateStr = g.from_date === g.to_date
+                          ? new Date(g.from_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', weekday: 'short' })
+                          : `${new Date(g.from_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - ${new Date(g.to_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+                        return (
+                          <tr key={i} className="border-t border-gray-50 hover:bg-gray-50">
+                            <td className="px-3 py-2.5 font-medium text-gray-900">{dateStr}</td>
+                            <td className="px-3 py-2.5">
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium capitalize">{g.day_type}</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-700">{g.label || '-'}</td>
+                            <td className="px-3 py-2.5 text-gray-500 text-xs">{g.duration_type === 'half_day' ? 'Half day' : 'Full day'} ({g.count} {g.count === 1 ? 'day' : 'days'})</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

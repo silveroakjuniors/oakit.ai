@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken, clearToken } from '@/lib/auth';
+import { getToken, getRole, clearToken } from '@/lib/auth';
 import { API_BASE } from '@/lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -240,6 +240,8 @@ export default function FranchiseAdminPage() {
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
+    const role = getRole();
+    if (!role || role.toLowerCase() !== 'franchise_admin') { router.replace('/login'); return; }
     Promise.all([
       fetch(`${API_BASE}/api/v1/franchise/dashboard`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
       fetch(`${API_BASE}/api/v1/franchise/schools`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),

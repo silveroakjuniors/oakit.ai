@@ -13,6 +13,8 @@ interface LoginResponse {
   token: string;
   role: string;
   force_password_reset?: boolean;
+  also_parent?: boolean;
+  also_staff_role?: string | null;
 }
 
 export default function LoginPage() {
@@ -28,6 +30,38 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [aiStatus, setAiStatus] = useState<'checking' | 'up' | 'down'>('checking');
   const [sessionMsg, setSessionMsg] = useState('');
+  const [dualRole, setDualRole] = useState<{ token: string; primaryRole: string; secondaryRole: string } | null>(null);
+  const [showFirstLoginHint, setShowFirstLoginHint] = useState(false);
+  const [checkingFirstLogin, setCheckingFirstLogin] = useState(false);
+
+  async function handlePasswordFocus() {
+    if (mobile.length !== 10 || password || checkingFirstLogin) return;
+    setCheckingFirstLogin(true);
+    try {
+      const code = isSuperAdminLogin ? 'platform' : (schoolCode || getSchoolCode());
+      if (!code) { setShowFirstLoginHint(true); setCheckingFirstLogin(false); return; }
+      const res = await fetch(`${API_BASE}/api/v1/auth/check-first-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ school_code: code.trim().toLowerCase(), mobile: mobile.trim() }),
+      });
+      const data = await res.json();
+      if (data.is_first_login) {
+        // Store context for the setup page
+        sessionStorage.setItem('oakit_first_login', JSON.stringify({
+          school_code: code.trim().toLowerCase(),
+          mobile: mobile.trim(),
+          name: data.name,
+          child_name: data.child_name,
+          account_type: data.account_type,
+        }));
+        router.push('/auth/first-login-setup');
+        return;
+      }
+      setShowFirstLoginHint(true);
+    } catch { setShowFirstLoginHint(true); }
+    finally { setCheckingFirstLogin(false); }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -88,13 +122,92 @@ export default function LoginPage() {
         if (s.ok) { const sd = await s.json(); if (sd.primary_color) applyBrandColor(sd.primary_color); if (sd.tagline !== undefined) saveTagline(sd.tagline || ''); }
       } catch { /* non-critical */ }
       if (data.force_password_reset) { router.push('/auth/change-password'); return; }
+
+      // Check for dual-role (teacher who is also a parent, or parent who is also staff)
+      const hasSecondRole = data.also_parent || data.also_staff_role;
+      if (hasSecondRole) {
+        const secondaryRole = data.also_parent ? 'parent' : (data.also_staff_role || '');
+        setDualRole({ token: data.token, primaryRole: data.role, secondaryRole });
+        setLoading(false);
+        return; // Show role picker instead of auto-redirecting
+      }
+
+      // Wake the AI service directly — bypasses the gateway so it works even when gateway is cold
+      const aiServiceUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'https://oakit-ai-service.onrender.com';
+      fetch(`${aiServiceUrl}/health`, { cache: 'no-store' }).catch(() => {});
       router.push(getRoleRedirect(data.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid credentials');
     } finally { setLoading(false); }
   }
 
+  async function handleRoleChoice(chosenRole: string) {
+    if (!dualRole) return;
+    if (chosenRole === dualRole.primaryRole) {
+      // Already have the token for this role
+      router.push(getRoleRedirect(dualRole.primaryRole));
+    } else {
+      // Need to switch to the other role
+      try {
+        const switchData = await apiPost<{ token: string; role: string }>('/api/v1/auth/switch-role', {
+          token: dualRole.token,
+          target_role: chosenRole === 'parent' ? 'parent' : 'staff',
+        });
+        setToken(switchData.token);
+        setRole(switchData.role);
+        router.push(getRoleRedirect(switchData.role));
+      } catch {
+        // Fallback: just use the primary role
+        router.push(getRoleRedirect(dualRole.primaryRole));
+      }
+    }
+  }
+
   if (!mounted) return <div className="min-h-screen" style={{ background: '#0D1F14' }} />;
+
+  // ── Dual-role picker ─────────────────────────────────────────────────
+  if (dualRole) {
+    const roleLabels: Record<string, { label: string; icon: string; desc: string }> = {
+      teacher: { label: 'Teacher Portal', icon: '👩‍🏫', desc: 'Manage your class, plans & curriculum' },
+      parent: { label: 'Parent Portal', icon: '👨‍👩‍👧', desc: 'View your child\'s progress & updates' },
+      admin: { label: 'Admin Portal', icon: '🏫', desc: 'School administration & management' },
+      principal: { label: 'Principal Portal', icon: '👔', desc: 'Oversight & teacher management' },
+    };
+    const primary = roleLabels[dualRole.primaryRole] || { label: dualRole.primaryRole, icon: '👤', desc: '' };
+    const secondary = roleLabels[dualRole.secondaryRole] || { label: dualRole.secondaryRole, icon: '👤', desc: '' };
+
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #0D1F14 0%, #1B4332 100%)' }}>
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6">
+          <div className="text-center mb-6">
+            <OakitLogo size="md" />
+            <p className="text-sm text-neutral-600 mt-3 font-medium">Welcome! You have access to multiple portals.</p>
+            <p className="text-xs text-neutral-400 mt-1">Choose where you'd like to go:</p>
+          </div>
+          <div className="flex flex-col gap-3">
+            <button onClick={() => handleRoleChoice(dualRole.primaryRole)}
+              className="w-full flex items-center gap-4 p-4 bg-primary-50 border-2 border-primary-200 rounded-2xl hover:bg-primary-100 hover:border-primary-400 transition-all text-left group">
+              <span className="text-3xl">{primary.icon}</span>
+              <div>
+                <p className="text-sm font-bold text-neutral-800 group-hover:text-primary-700">{primary.label}</p>
+                <p className="text-xs text-neutral-500">{primary.desc}</p>
+              </div>
+              <ArrowRight className="w-4 h-4 text-neutral-300 group-hover:text-primary-500 ml-auto" />
+            </button>
+            <button onClick={() => handleRoleChoice(dualRole.secondaryRole)}
+              className="w-full flex items-center gap-4 p-4 bg-neutral-50 border-2 border-neutral-200 rounded-2xl hover:bg-neutral-100 hover:border-neutral-400 transition-all text-left group">
+              <span className="text-3xl">{secondary.icon}</span>
+              <div>
+                <p className="text-sm font-bold text-neutral-800 group-hover:text-neutral-900">{secondary.label}</p>
+                <p className="text-xs text-neutral-500">{secondary.desc}</p>
+              </div>
+              <ArrowRight className="w-4 h-4 text-neutral-300 group-hover:text-neutral-500 ml-auto" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Super-admin: dark platform login ─────────────────────────────────
   if (isSuperAdminLogin) {
@@ -269,12 +382,19 @@ export default function LoginPage() {
                   <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
                   <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password}
                     onChange={e => setPassword(e.target.value)} required
+                    onFocus={handlePasswordFocus}
+                    onBlur={() => setShowFirstLoginHint(false)}
                     className="w-full pl-11 pr-11 py-3.5 rounded-2xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-900 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 focus:border-emerald-500 transition-all" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors">
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {showFirstLoginHint && (
+                  <p className="text-xs text-emerald-600 mt-1.5 font-medium">
+                    First time? Your default password is your mobile number.
+                  </p>
+                )}
               </div>
 
               {sessionMsg && (

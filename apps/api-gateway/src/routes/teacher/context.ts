@@ -3,7 +3,7 @@ import axios from 'axios';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { getTeacherSections } from '../../lib/teacherSection';
-import { getToday } from '../../lib/today';
+import { getToday, getNowIST } from '../../lib/today';
 import { redis } from '../../lib/redis';
 
 const router = Router();
@@ -20,9 +20,36 @@ router.get('/', async (req: Request, res: Response) => {
     const userRow = await pool.query('SELECT name FROM users WHERE id = $1', [user_id]);
     const teacher_name = userRow.rows[0]?.name || 'Teacher';
 
-    // Resolve sections using unified helper (class teacher + supporting)
+    // Resolve ALL sections for this teacher (class teacher + supporting)
     const sections = await getTeacherSections(user_id, school_id);
-    const section_id = sections[0]?.section_id || null;
+
+    // Honour ?section_id= param so teacher can switch between their sections
+    const requestedSectionId = req.query.section_id as string | undefined;
+    let section_id: string | null = null;
+    if (requestedSectionId && sections.some(s => s.section_id === requestedSectionId)) {
+      section_id = requestedSectionId;
+    } else {
+      section_id = sections[0]?.section_id || null;
+    }
+
+    // Build all_sections list with class names for the switcher UI
+    let all_sections: { section_id: string; section_label: string; class_name: string; role: string }[] = [];
+    if (sections.length > 0) {
+      const sectionIds = sections.map(s => s.section_id);
+      const secRows = await pool.query(
+        `SELECT s.id, s.label, c.name AS class_name
+         FROM sections s JOIN classes c ON c.id = s.class_id
+         WHERE s.id = ANY($1::uuid[])`,
+        [sectionIds]
+      );
+      const secMap = new Map(secRows.rows.map((r: any) => [r.id, { label: r.label, class_name: r.class_name }]));
+      all_sections = sections.map(s => ({
+        section_id: s.section_id,
+        section_label: secMap.get(s.section_id)?.label ?? '',
+        class_name: secMap.get(s.section_id)?.class_name ?? '',
+        role: s.role,
+      }));
+    }
 
     // Check attendance for today (time machine aware)
     const today = await getToday(school_id);
@@ -36,8 +63,28 @@ router.get('/', async (req: Request, res: Response) => {
         [section_id, today]
       );
       const mockActive = !!(await redis.get(`time_machine:${school_id}`));
-      const hour = mockActive ? 9 : new Date().getHours();
-      attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17;
+      const hour = mockActive ? 9 : getNowIST().getHours();
+
+      // Check if today is a working day before showing attendance prompt
+      let isWorkingDay = true;
+      try {
+        const calCheck = await pool.query(
+          `SELECT working_days, holidays FROM school_calendar
+           WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+          [school_id, today]
+        );
+        if (calCheck.rows.length > 0) {
+          const cal = calCheck.rows[0];
+          const todayDate = new Date(today + 'T12:00:00');
+          const dayOfWeek = todayDate.getDay();
+          const workingDays: number[] = cal.working_days || [1, 2, 3, 4, 5];
+          if (!workingDays.includes(dayOfWeek)) isWorkingDay = false;
+          const holidays: string[] = (cal.holidays || []).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+          if (holidays.includes(today)) isWorkingDay = false;
+        }
+      } catch { /* non-critical */ }
+
+      attendance_prompt = attRow.rows.length === 0 && hour >= 7 && hour < 17 && isWorkingDay;
 
       // Check if today is already completed
       const completionRow = await pool.query(
@@ -90,24 +137,32 @@ router.get('/', async (req: Request, res: Response) => {
     // Get greeting from AI service
     let greeting = `Good morning, ${teacher_name}!`;
     let thought_for_day = 'Every day is a new opportunity to inspire a young mind.';
-    try {
-      const aiResp = await axios.get(`${AI()}/internal/greeting`, {
-        params: { teacher_name, teacher_id: user_id },
-        timeout: 5000,
-      });
-      greeting = aiResp.data.greeting || greeting;
-      thought_for_day = aiResp.data.thought_for_day || thought_for_day;
-    } catch { /* use defaults */ }
 
-    // Get class name for the teacher's primary section
+    // Get class name and student count for the greeting
     let class_name = '';
+    let student_count = 0;
     if (section_id) {
       const classRow = await pool.query(
         `SELECT c.name FROM sections s JOIN classes c ON c.id = s.class_id WHERE s.id = $1`,
         [section_id]
       );
       class_name = classRow.rows[0]?.name || '';
+
+      const countRow = await pool.query(
+        `SELECT COUNT(*)::int AS cnt FROM students WHERE section_id = $1 AND is_active = true`,
+        [section_id]
+      );
+      student_count = countRow.rows[0]?.cnt || 0;
     }
+
+    try {
+      const aiResp = await axios.get(`${AI()}/internal/greeting`, {
+        params: { teacher_name, teacher_id: user_id, class_name, student_count },
+        timeout: 5000,
+      });
+      greeting = aiResp.data.greeting || greeting;
+      thought_for_day = aiResp.data.thought_for_day || thought_for_day;
+    } catch { /* use defaults */ }
 
     // Check report readiness reminder — if any student in section has 0 observations
     let readiness_reminder = false;
@@ -127,7 +182,58 @@ router.get('/', async (req: Request, res: Response) => {
       } catch { /* non-critical */ }
     }
 
-    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count });
+    // Check if tomorrow has a holiday or special day (for alert popup)
+    let tomorrow_event: { date: string; label: string; type: string } | null = null;
+    let tomorrow_birthdays: { name: string; date_of_birth: string }[] = [];
+    try {
+      const todayDate = new Date(today + 'T12:00:00');
+      const tomorrowDate = new Date(todayDate);
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      // Skip weekends
+      while (tomorrowDate.getDay() === 0 || tomorrowDate.getDay() === 6) {
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+      }
+      const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+
+      const calCheck = await pool.query(
+        `SELECT academic_year FROM school_calendar WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+        [school_id, tomorrowStr]
+      );
+      if (calCheck.rows.length > 0) {
+        const ay = calCheck.rows[0].academic_year;
+        const hol = await pool.query(
+          `SELECT event_name AS label FROM holidays WHERE school_id = $1 AND academic_year = $2 AND holiday_date = $3`,
+          [school_id, ay, tomorrowStr]
+        );
+        if (hol.rows.length > 0) {
+          tomorrow_event = { date: tomorrowStr, label: hol.rows[0].label, type: 'holiday' };
+        } else {
+          const sp = await pool.query(
+            `SELECT label, day_type FROM special_days WHERE school_id = $1 AND academic_year = $2 AND day_date = $3`,
+            [school_id, ay, tomorrowStr]
+          );
+          if (sp.rows.length > 0) {
+            tomorrow_event = { date: tomorrowStr, label: sp.rows[0].label, type: sp.rows[0].day_type };
+          }
+        }
+      }
+
+      // Check for student birthdays tomorrow (in teacher's section)
+      if (section_id) {
+        const tomorrowMonth = tomorrowDate.getMonth() + 1;
+        const tomorrowDay = tomorrowDate.getDate();
+        const bdayRows = await pool.query(
+          `SELECT name, date_of_birth::text FROM students
+           WHERE section_id = $1 AND is_active = true AND date_of_birth IS NOT NULL
+             AND EXTRACT(MONTH FROM date_of_birth) = $2
+             AND EXTRACT(DAY FROM date_of_birth) = $3`,
+          [section_id, tomorrowMonth, tomorrowDay]
+        );
+        tomorrow_birthdays = bdayRows.rows;
+      }
+    } catch { /* non-critical */ }
+
+    return res.json({ greeting, thought_for_day, attendance_prompt, today, time_machine_active: !!(await redis.get(`time_machine:${school_id}`)), today_completed, tomorrow_plan, section_id, class_name, readiness_reminder, readiness_miss_count, all_sections, tomorrow_event, tomorrow_birthdays });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
