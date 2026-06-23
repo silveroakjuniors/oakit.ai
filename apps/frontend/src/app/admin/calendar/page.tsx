@@ -453,6 +453,7 @@ export default function CalendarPage() {
   const [newSpecialDay, setNewSpecialDay] = useState({ from_date: '', to_date: '', day_type: 'settling', custom_day_type: '', label: '', activity_note: '', start_time: '', end_time: '', duration_type: 'full_day' as 'full_day' | 'half_day', revision_topics: [] as string[] });
   const [revisionTopicInput, setRevisionTopicInput] = useState('');
   const [showHolidayList, setShowHolidayList] = useState(false);
+  const [showSpecialDaysList, setShowSpecialDaysList] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [exportingHolidays, setExportingHolidays] = useState(false);
   const [refreshingPlanner, setRefreshingPlanner] = useState(false);
@@ -807,7 +808,14 @@ export default function CalendarPage() {
 
       {/* Special Days */}
       <Card className="mb-6">
-        <h2 className="text-sm font-medium text-gray-700 mb-1">Special Days — {academicYear}</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-medium text-gray-700">Special Days — {academicYear}</h2>
+          {specialDays.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setShowSpecialDaysList(true)}>
+              View All ({specialDays.reduce((s, g) => s + g.count, 0)} days)
+            </Button>
+          )}
+        </div>
         <p className="text-xs text-gray-400 mb-4">School days where no curriculum is assigned. Plans on these days are automatically shifted forward.</p>
         <div className="flex gap-2 mb-2 flex-wrap">
           <div className="flex flex-col gap-1"><label className="text-xs font-medium text-gray-600">From Date</label><input type="date" className="px-3 py-2 rounded-lg border border-gray-300 text-sm" value={newSpecialDay.from_date} onChange={e => setNewSpecialDay(s => ({ ...s, from_date: e.target.value }))} /></div>
@@ -953,6 +961,57 @@ export default function CalendarPage() {
       )}
 
       {showImportModal && <HolidayImportModal year={academicYear} token={token} onClose={() => setShowImportModal(false)} onImported={loadHolidays} />}
+
+      {/* Special Days Full Year List Modal */}
+      {showSpecialDaysList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowSpecialDaysList(false)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">All Special Days — {academicYear}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{specialDays.reduce((s, g) => s + g.count, 0)} total days planned</p>
+              </div>
+              <button onClick={() => setShowSpecialDaysList(false)} className="w-8 h-8 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-400">X</button>
+            </div>
+            <div className="overflow-y-auto max-h-[65vh] px-6 py-4">
+              {specialDays.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">No special days planned yet</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Date</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Type</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Label</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {specialDays
+                      .sort((a, b) => a.from_date.localeCompare(b.from_date))
+                      .map((g, i) => {
+                        const dateStr = g.from_date === g.to_date
+                          ? new Date(g.from_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', weekday: 'short' })
+                          : `${new Date(g.from_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - ${new Date(g.to_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+                        return (
+                          <tr key={i} className="border-t border-gray-50 hover:bg-gray-50">
+                            <td className="px-3 py-2.5 font-medium text-gray-900">{dateStr}</td>
+                            <td className="px-3 py-2.5">
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium capitalize">{g.day_type}</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-700">{g.label || '-'}</td>
+                            <td className="px-3 py-2.5 text-gray-500 text-xs">{g.duration_type === 'half_day' ? 'Half day' : 'Full day'} ({g.count} {g.count === 1 ? 'day' : 'days'})</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
