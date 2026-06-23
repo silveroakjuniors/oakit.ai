@@ -425,7 +425,9 @@ router.post('/query', async (req: Request, res: Response) => {
     const tomorrowMatch = /tomorrow/i.test(cleanText);
     const dateMatch = cleanText.match(/(\d{4}-\d{2}-\d{2})/);
     if (tomorrowMatch) {
-      const d = new Date(today); d.setDate(d.getDate() + 1);
+      const parts = today.split('-').map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      d.setDate(d.getDate() + 1);
       planDate = d.toISOString().slice(0, 10);
     } else if (dateMatch) {
       planDate = dateMatch[1];
@@ -487,12 +489,19 @@ router.post('/query', async (req: Request, res: Response) => {
 
       // Store plan text in DB for all sections of this class (permanent)
       if (isPlanQuery && classId && aiResp.data.response) {
+        console.log(`[ai.query] Storing plan text: class=${classId} school=${school_id} date=${planDate} text_length=${aiResp.data.response.length}`);
         pool.query(
           `UPDATE day_plans SET ai_plan_text = $1
            WHERE section_id IN (SELECT id FROM sections WHERE class_id = $2 AND school_id = $3)
            AND plan_date = $4 AND (ai_plan_text IS NULL OR ai_plan_text = '')`,
           [aiResp.data.response, classId, school_id, planDate]
-        ).catch(() => {});
+        ).then(r => {
+          console.log(`[ai.query] Plan text stored: ${r.rowCount} rows updated`);
+        }).catch(err => {
+          console.error(`[ai.query] Failed to store plan text:`, err.message);
+        });
+      } else if (isPlanQuery) {
+        console.log(`[ai.query] Plan query but NOT storing: classId=${classId} hasResponse=${!!aiResp.data.response} planDate=${planDate}`);
       }
 
       return res.json(aiResp.data);
