@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { getTeacherSections } from '../../lib/teacherSection';
-import { getToday } from '../../lib/today';
+import { getToday, getNowIST } from '../../lib/today';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
@@ -54,7 +54,7 @@ router.get('/today', async (req: Request, res: Response) => {
     );
     const startTime = classRow.rows[0]?.day_start_time || '09:30:00';
     const [sh, sm] = startTime.split(':').map(Number);
-    const now = new Date();
+    const now = getNowIST();
     const schoolStartMinutes = sh * 60 + sm;
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const minutesLate = nowMinutes - schoolStartMinutes;
@@ -73,7 +73,7 @@ router.post('/today', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
     const today = await getToday(school_id);
-    const now = new Date();
+    const now = getNowIST();
 
     const sections = await getTeacherSections(user_id, school_id);
     const resolved = await resolveSection(sections, req.query.section_id as string | undefined);
@@ -83,22 +83,80 @@ router.post('/today', async (req: Request, res: Response) => {
     const { records, confirm_holiday } = req.body;
     if (!Array.isArray(records)) return res.status(400).json({ error: 'records array is required' });
 
-    // Check if today is a holiday
+    // ── Validate against school calendar ──
     const calRow = await pool.query(
-      `SELECT sc.academic_year FROM school_calendar sc
+      `SELECT sc.working_days, sc.start_date, sc.end_date, sc.holidays, sc.academic_year
+       FROM school_calendar sc
        WHERE sc.school_id = $1 AND sc.start_date <= $2 AND sc.end_date >= $2 LIMIT 1`,
       [school_id, today]
     );
+
     if (calRow.rows.length > 0) {
+      const cal = calRow.rows[0];
+      const todayDate = new Date(today + 'T12:00:00');
+      const dayOfWeek = todayDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+      // Check if today is a working day (working_days is an array like [1,2,3,4,5])
+      const workingDays: number[] = cal.working_days || [1, 2, 3, 4, 5];
+      if (!workingDays.includes(dayOfWeek)) {
+        return res.status(400).json({
+          error: 'Today is not a working day. Attendance cannot be marked on weekends/off days.',
+          reason: 'non_working_day',
+          day: dayOfWeek,
+        });
+      }
+
+      // Check if today is a holiday
+      const holidays: string[] = (cal.holidays || []).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+      if (holidays.includes(today)) {
+        // Allow if teacher explicitly confirms (confirm_holiday flag)
+        if (!confirm_holiday) {
+          // Check holidays table for the name
+          const holidayRow = await pool.query(
+            'SELECT event_name FROM holidays WHERE school_id = $1 AND academic_year = $2 AND holiday_date = $3',
+            [school_id, cal.academic_year, today]
+          );
+          const holidayName = holidayRow.rows[0]?.event_name || 'a scheduled holiday';
+          return res.status(400).json({
+            error: `Today is ${holidayName}. Are you sure you want to mark attendance?`,
+            reason: 'holiday',
+            holiday_name: holidayName,
+            confirm_required: true,
+          });
+        }
+      }
+    } else {
+      // No calendar found — check if today is before any academic year starts
+      const anyCalRow = await pool.query(
+        `SELECT start_date, end_date FROM school_calendar WHERE school_id = $1 ORDER BY start_date DESC LIMIT 1`,
+        [school_id]
+      );
+      if (anyCalRow.rows.length > 0) {
+        const { start_date, end_date } = anyCalRow.rows[0];
+        if (today < start_date) {
+          return res.status(400).json({
+            error: `Academic year hasn't started yet. It begins on ${start_date}.`,
+            reason: 'before_academic_year',
+          });
+        }
+        if (today > end_date) {
+          return res.status(400).json({
+            error: `Academic year has ended (${end_date}). Please contact admin to update the calendar.`,
+            reason: 'after_academic_year',
+          });
+        }
+      }
+    }
+
+    // Check if today is a holiday (informational note for confirmed submissions)
+    let holiday_note: string | null = null;
+    if (calRow.rows.length > 0 && confirm_holiday) {
       const holidayRow = await pool.query(
         'SELECT event_name FROM holidays WHERE school_id = $1 AND academic_year = $2 AND holiday_date = $3',
         [school_id, calRow.rows[0].academic_year, today]
       );
-      if (holidayRow.rows.length > 0 && !confirm_holiday) {
-        return res.status(409).json({
-          warning: 'Date is a holiday',
-          holiday_name: holidayRow.rows[0].event_name,
-        });
+      if (holidayRow.rows.length > 0) {
+        holiday_note = `Today is ${holidayRow.rows[0].event_name}. Attendance recorded as requested.`;
       }
     }
 
@@ -117,6 +175,8 @@ router.post('/today', async (req: Request, res: Response) => {
       : null;
 
     // Upsert attendance records
+    // Rule: once a student is marked present, they cannot be moved back to absent.
+    // Only absent → present transitions are allowed after initial submission.
     for (const rec of records) {
       const { student_id, status } = rec;
       if (!student_id || !['present', 'absent'].includes(status)) continue;
@@ -125,12 +185,17 @@ router.post('/today', async (req: Request, res: Response) => {
            (school_id, section_id, student_id, teacher_id, attend_date, status, submitted_at, first_submitted_at)
          VALUES ($1, $2, $3, $4, $5, $6, now(), now())
          ON CONFLICT (section_id, student_id, attend_date) DO UPDATE
-           SET status = EXCLUDED.status, submitted_at = now()`,
+           SET status = CASE
+                 -- Never move present → absent once submitted
+                 WHEN attendance_records.status = 'present' THEN 'present'
+                 ELSE EXCLUDED.status
+               END,
+               submitted_at = now()`,
         [school_id, section_id, student_id, user_id, today, status]
       );
     }
 
-    return res.json({ message: 'Attendance submitted', date: today, late_marking_warning });
+    return res.json({ message: 'Attendance submitted', date: today, late_marking_warning, holiday_note });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -154,6 +219,19 @@ router.patch('/today/:student_id', async (req: Request, res: Response) => {
     const resolved = await resolveSection(sections, req.query.section_id as string | undefined);
     if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
     const { section_id } = resolved;
+
+    // Rule: once a student is marked present, they cannot be moved back to absent
+    if (status === 'absent') {
+      const currentRow = await pool.query(
+        'SELECT status FROM attendance_records WHERE student_id = $1 AND attend_date = $2 AND section_id = $3',
+        [student_id, today, section_id]
+      );
+      if (currentRow.rows[0]?.status === 'present') {
+        return res.status(400).json({
+          error: 'Cannot mark a present student as absent. Attendance can only be updated from absent to present (late arrival).',
+        });
+      }
+    }
 
     // Verify student belongs to this section
     const studentRow = await pool.query(

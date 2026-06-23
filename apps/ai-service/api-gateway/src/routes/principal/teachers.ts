@@ -23,21 +23,32 @@ router.get('/activity', async (req: Request, res: Response) => {
     );
     const isWorkingDay = workingDayRow.rows[0]?.is_working ?? true;
 
-    // Get all teachers with at least one active section
+    // Get all teachers with at least one active section (class teachers + supporting)
     const result = await pool.query(
       `SELECT
          u.id          AS teacher_id,
          u.name        AS teacher_name,
          s.id          AS section_id,
          s.label        AS section_name,
+         c.name        AS class_name,
          dc.id         AS completion_id,
-         COALESCE(array_length(dc.covered_chunk_ids, 1), 0) AS chunks_covered
+         COALESCE(array_length(dc.covered_chunk_ids, 1), 0) AS chunks_covered,
+         CASE WHEN s.class_teacher_id = u.id THEN 'class_teacher' ELSE 'supporting' END AS teacher_role
        FROM users u
-       JOIN teacher_sections ts ON ts.teacher_id = u.id
-       JOIN sections s ON s.id = ts.section_id AND s.school_id = $1
+       JOIN (
+         -- Class teachers
+         SELECT class_teacher_id AS teacher_id, id AS section_id FROM sections
+         WHERE school_id = $1 AND class_teacher_id IS NOT NULL
+         UNION
+         -- Supporting teachers
+         SELECT ts.teacher_id, ts.section_id FROM teacher_sections ts
+         JOIN sections s2 ON s2.id = ts.section_id AND s2.school_id = $1
+       ) assigned ON assigned.teacher_id = u.id
+       JOIN sections s ON s.id = assigned.section_id
+       JOIN classes c ON c.id = s.class_id
        LEFT JOIN daily_completions dc ON dc.section_id = s.id AND dc.completion_date = $2
-       WHERE u.school_id = $1 AND u.role = 'teacher'
-       ORDER BY u.name, s.label`,
+       WHERE u.school_id = $1 AND u.is_active = true
+       ORDER BY c.name, s.label, u.name`,
       [school_id, today]
     );
 
@@ -60,6 +71,8 @@ router.get('/activity', async (req: Request, res: Response) => {
       teacher.sections.push({
         section_id: row.section_id,
         section_name: row.section_name,
+        class_name: row.class_name,
+        teacher_role: row.teacher_role,
         status,
         chunks_covered: row.chunks_covered,
       });

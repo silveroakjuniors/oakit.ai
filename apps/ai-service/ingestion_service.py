@@ -96,8 +96,12 @@ async def ingest_document(document_id: str) -> dict:
         return {"chunks_created": len(chunks), "failed_pages": failed_pages}
 
     except Exception as e:
+        import traceback
+        error_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        print(f"[ingestion_service] FAILED for {document_id}: {error_msg}")
         await pool.execute(
-            "UPDATE curriculum_documents SET status = 'failed', ingestion_stage = 'failed' WHERE id = $1",
+            "UPDATE curriculum_documents SET status = 'failed', ingestion_stage = 'failed', error_message = $1 WHERE id = $2",
+            error_msg[:2000],  # cap at 2000 chars
             UUID(document_id)
         )
         raise e

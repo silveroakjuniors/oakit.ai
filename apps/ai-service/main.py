@@ -136,7 +136,45 @@ async def _run_ingest(document_id: str):
         result = await ingest_document(document_id)
         print(f"Ingestion complete for {document_id}: {result}")
     except Exception as e:
-        print(f"Ingestion failed for {document_id}: {e}")
+        import traceback
+        print(f"Ingestion failed for {document_id}: {e}\n{traceback.format_exc()}")
+        # Always mark as failed so the document doesn't stay stuck in 'processing'
+        try:
+            from db import get_pool
+            from uuid import UUID
+            pool = await get_pool()
+            await pool.execute(
+                "UPDATE curriculum_documents SET status = 'failed', ingestion_stage = 'failed' WHERE id = $1",
+                UUID(document_id)
+            )
+        except Exception as db_err:
+            print(f"Failed to update status to failed for {document_id}: {db_err}")
+
+
+# POST /internal/retry-ingest — re-trigger ingestion for a stuck/failed document
+class RetryIngestRequest(BaseModel):
+    document_id: str
+
+@app.post("/internal/retry-ingest")
+async def retry_ingest(req: RetryIngestRequest, background_tasks: BackgroundTasks):
+    """Re-trigger ingestion for a document stuck in processing or failed state."""
+    try:
+        from db import get_pool
+        from uuid import UUID
+        pool = await get_pool()
+        # Reset status back to pending so it can be re-processed
+        result = await pool.fetchrow(
+            "UPDATE curriculum_documents SET status = 'pending', ingestion_stage = 'queued' WHERE id = $1 RETURNING id, file_path",
+            UUID(req.document_id)
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail="Document not found")
+        background_tasks.add_task(_run_ingest, req.document_id)
+        return {"message": "Re-ingestion started", "document_id": req.document_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Query ---
@@ -169,12 +207,17 @@ class PlanRequest(BaseModel):
 
 @app.post("/internal/generate-plans")
 async def generate_plans(req: PlanRequest):
-    from planner_service import generate_plans
-    count = await generate_plans(
-        req.class_id, req.section_id, req.school_id, req.academic_year,
-        month=req.month, plan_year=req.plan_year
-    )
-    return {"plans_created": count}
+    import traceback
+    try:
+        from planner_service import generate_plans as _generate_plans
+        count = await _generate_plans(
+            req.class_id, req.section_id, req.school_id, req.academic_year,
+            month=req.month, plan_year=req.plan_year
+        )
+        return {"plans_created": count}
+    except Exception as e:
+        print(f"[generate-plans] ERROR section={req.section_id}: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Coverage analysis ---
@@ -359,8 +402,14 @@ async def export_holiday_pdf(req: HolidayExportRequest):
     y -= 0.6 * cm
     c.setFont("Helvetica", 9)
     c.setFillColorRGB(0.5, 0.5, 0.5)
-    from datetime import datetime
-    c.drawString(2 * cm, y, f"Generated on {datetime.now().strftime('%d %B %Y')}   ·   {len(req.holidays)} holidays")
+    from datetime import datetime, timezone, timedelta
+    try:
+        from zoneinfo import ZoneInfo
+        gen_date = datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%d %B %Y')
+    except Exception:
+        IST = timezone(timedelta(hours=5, minutes=30))
+        gen_date = datetime.now(IST).strftime('%d %B %Y')
+    c.drawString(2 * cm, y, f"Generated on {gen_date}   ·   {len(req.holidays)} holidays")
     c.setFillColorRGB(0, 0, 0)
     y -= 0.4 * cm
     c.line(2 * cm, y, width - 2 * cm, y)
@@ -718,8 +767,15 @@ async def export_pdf(req: ExportPdfRequest):
 # --- Greeting ---
 
 @app.get("/internal/greeting")
-async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
-    now = datetime.now()
+async def greeting(teacher_name: str = "Teacher", teacher_id: str = "", class_name: str = "", student_count: int = 0):
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    except Exception:
+        # Fallback: manual IST offset (UTC+5:30)
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+        now = datetime.now(IST)
     hour = now.hour
 
     if 5 <= hour < 12:
@@ -730,6 +786,23 @@ async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
         salutation = "Good evening"
 
     greeting_text = f"{salutation}, {teacher_name}!"
+
+    # Add meaningful subtitle with class info and student count
+    if student_count > 0 and class_name:
+        # Rotate subtitle phrases by date for variety
+        date_seed = now.strftime('%Y-%m-%d') + teacher_id
+        subtitle_idx = int(hashlib.md5(date_seed.encode()).hexdigest(), 16) % 6
+        subtitles = [
+            f"You're shaping {student_count} young minds in {class_name} today ✨",
+            f"Your {student_count} little stars in {class_name} are waiting for you 🌟",
+            f"{student_count} curious learners in {class_name} — let's make today count!",
+            f"Rooted fearlessly — nurturing {student_count} futures in {class_name} 🌱",
+            f"Today's mission: inspire {student_count} hearts in {class_name} 💚",
+            f"{student_count} bright minds in {class_name} are ready to grow with you 🌿",
+        ]
+        greeting_text += f"\n{subtitles[subtitle_idx]}"
+    elif student_count > 0:
+        greeting_text += f"\n{student_count} little learners are counting on you today 🌟"
 
     # Early arrival (before 7am)
     if hour < 7:

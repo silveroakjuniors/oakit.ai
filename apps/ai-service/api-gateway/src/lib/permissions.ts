@@ -66,12 +66,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, Permission[]> = {
   principal: Object.values(PERMISSIONS) as Permission[],
 
   // Admin: fee collection + fee structures + view fees + reports + reminders
-  // NO salary, NO expenses, NO reconciliation, NO concession approval by default
+  // NO salary, NO expenses, NO reconciliation by default
   admin: [
     'VIEW_FEES',
     'COLLECT_PAYMENT',
     'MANAGE_FEE_STRUCTURE',
-    'MANAGE_CONCESSION',   // can create concessions; approval is separate
+    'MANAGE_CONCESSION',
+    'APPROVE_CONCESSION',  // admin can approve concessions
     'VIEW_REPORTS',
     'SEND_REMINDER',
   ],

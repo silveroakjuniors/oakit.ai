@@ -72,27 +72,24 @@ router.get('/', async (req: Request, res: Response) => {
     );
     const completedSectionIds = new Set(completionResult.rows.map((r: any) => r.section_id));
 
-    // Curriculum coverage per section (last 30 days)
+    // Day-based completion coverage per section
     const coverageResult = await pool.query(
       `SELECT
          sec.id as section_id,
-         COUNT(DISTINCT cc.id)::int as total_chunks,
-         COUNT(DISTINCT dc_chunks.chunk_id)::int as covered_chunks
+         (SELECT COUNT(*)::int FROM day_plans dp
+          WHERE dp.section_id = sec.id AND dp.school_id = $1
+            AND dp.status NOT IN ('holiday', 'weekend')
+            AND dp.plan_date <= CURRENT_DATE) as total_planned,
+         (SELECT COUNT(*)::int FROM daily_completions dc
+          WHERE dc.section_id = sec.id AND dc.school_id = $1) as days_completed
        FROM sections sec
-       LEFT JOIN curriculum_documents cd ON cd.class_id = sec.class_id AND cd.school_id = $1
-       LEFT JOIN curriculum_chunks cc ON cc.document_id = cd.id
-       LEFT JOIN (
-         SELECT unnest(covered_chunk_ids) as chunk_id, section_id
-         FROM daily_completions WHERE school_id = $1
-       ) dc_chunks ON dc_chunks.chunk_id = cc.id AND dc_chunks.section_id = sec.id
-       WHERE sec.school_id = $1
-       GROUP BY sec.id`,
+       WHERE sec.school_id = $1`,
       [school_id]
     );
     const coverageMap: Record<string, { total: number; covered: number; pct: number }> = {};
     for (const r of coverageResult.rows) {
-      const pct = r.total_chunks > 0 ? Math.round((r.covered_chunks / r.total_chunks) * 100) : 0;
-      coverageMap[r.section_id] = { total: r.total_chunks, covered: r.covered_chunks, pct };
+      const pct = r.total_planned > 0 ? Math.round((r.days_completed / r.total_planned) * 100) : 0;
+      coverageMap[r.section_id] = { total: r.total_planned, covered: r.days_completed, pct };
     }
 
     // Teacher streaks
@@ -260,6 +257,187 @@ router.get('/sections', async (req: Request, res: Response) => {
     );
     return res.json(result.rows);
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/principal/insights — comprehensive dashboard insights
+// Returns: fee assignment, instalment status, concessions, parent activity, teacher activity
+router.get('/insights', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const today = await getToday(school_id!);
+    const thirtyDaysAgo = new Date(new Date(today).getTime() - 30 * 86400000).toISOString().split('T')[0];
+
+    const [
+      feeAssignment,
+      instalments,
+      concessions,
+      parentActivity,
+      teacherActivity,
+    ] = await Promise.all([
+
+      // ── Fee assignment: how many students have fee assigned ──
+      pool.query(
+        `SELECT
+           COUNT(DISTINCT s.id)::int                                          AS total_students,
+           COUNT(DISTINCT sfa.student_id)::int                                AS students_with_fee,
+           COUNT(DISTINCT s.id) - COUNT(DISTINCT sfa.student_id)::int         AS students_without_fee,
+           COALESCE(SUM(sfa.assigned_amount), 0)                              AS total_assigned,
+           COALESCE(SUM(sfa.outstanding_balance), 0)                          AS total_outstanding,
+           COALESCE(SUM(sfa.assigned_amount - sfa.outstanding_balance), 0)    AS total_collected
+         FROM students s
+         LEFT JOIN student_fee_accounts sfa
+           ON sfa.student_id = s.id AND sfa.school_id = $1 AND sfa.deleted_at IS NULL
+         WHERE s.school_id = $1 AND s.is_active = true`,
+        [school_id]
+      ),
+
+      // ── Instalment-wise collected vs assigned ──
+      pool.query(
+        `SELECT
+           COALESCE(fi.label, 'Instalment ' || fi.instalment_number) AS label,
+           fi.instalment_number,
+           fi.due_date,
+           fh.name AS fee_head_name,
+           COUNT(DISTINCT sfa.student_id)::int AS student_count,
+           COALESCE(SUM(fi.amount * 1), 0) AS per_student_amount
+         FROM fee_instalments fi
+         JOIN fee_heads fh ON fh.id = fi.fee_head_id AND fh.school_id = $1 AND fh.deleted_at IS NULL
+         JOIN student_fee_accounts sfa ON sfa.fee_head_id = fi.fee_head_id
+           AND sfa.school_id = $1 AND sfa.deleted_at IS NULL
+         GROUP BY fi.id, fi.instalment_number, fi.label, fi.due_date, fi.amount, fh.name
+         ORDER BY fi.due_date ASC NULLS LAST, fi.instalment_number ASC
+         LIMIT 12`,
+        [school_id]
+      ),
+
+      // ── Concessions summary ──
+      pool.query(
+        `SELECT
+           status,
+           COUNT(*)::int AS count,
+           COALESCE(SUM(CASE WHEN type = 'fixed' THEN value ELSE 0 END), 0) AS fixed_total,
+           COALESCE(SUM(CASE WHEN type = 'percentage' THEN value ELSE 0 END), 0) AS pct_total
+         FROM concessions
+         WHERE school_id = $1 AND deleted_at IS NULL
+         GROUP BY status`,
+        [school_id]
+      ),
+
+      // ── Parent activity (last 30 days) ──
+      pool.query(
+        `SELECT
+           pu.id, pu.name, pu.mobile,
+           COUNT(DISTINCT psl.student_id)::int AS children_count,
+           STRING_AGG(DISTINCT st.name, ', ') AS children_names,
+           COUNT(DISTINCT m.id)::int AS messages_sent_30d,
+           CASE
+             WHEN pu.force_password_reset = true THEN 'never_logged_in'
+             WHEN COUNT(DISTINCT m.id) > 0 THEN 'active'
+             ELSE 'inactive'
+           END AS activity_status
+         FROM parent_users pu
+         LEFT JOIN parent_student_links psl ON psl.parent_id = pu.id
+         LEFT JOIN students st ON st.id = psl.student_id
+         LEFT JOIN messages m ON m.parent_id = pu.id
+           AND m.school_id = pu.school_id
+           AND m.sent_at >= $2
+         WHERE pu.school_id = $1 AND pu.is_active = true
+         GROUP BY pu.id, pu.name, pu.mobile, pu.force_password_reset
+         ORDER BY messages_sent_30d DESC, pu.name`,
+        [school_id, thirtyDaysAgo]
+      ).catch(() => ({ rows: [] })),
+
+      // ── Teacher activity (last 30 days) ──
+      pool.query(
+        `SELECT
+           u.id, u.name,
+           COUNT(DISTINCT dc.completion_date)::int AS plans_30d,
+           COUNT(DISTINCT ar.attend_date)::int AS attendance_30d,
+           COUNT(DISTINCT th.homework_date)::int AS homework_30d,
+           MAX(dc.completion_date)::text AS last_plan,
+           COALESCE(ts.current_streak, 0) AS streak,
+           CASE
+             WHEN MAX(dc.completion_date) >= ($2::date - INTERVAL '3 days') THEN 'active'
+             WHEN MAX(dc.completion_date) >= ($2::date - INTERVAL '7 days') THEN 'low'
+             ELSE 'inactive'
+           END AS activity_status
+         FROM users u
+         JOIN roles r ON r.id = u.role_id AND r.name = 'teacher'
+         LEFT JOIN daily_completions dc ON dc.teacher_id = u.id
+           AND dc.school_id = u.school_id AND dc.completion_date >= $3
+         LEFT JOIN attendance_records ar ON ar.teacher_id = u.id
+           AND ar.school_id = u.school_id AND ar.attend_date >= $3
+         LEFT JOIN teacher_homework th ON th.teacher_id = u.id
+           AND th.school_id = u.school_id AND th.homework_date >= $3
+         LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = u.school_id
+         WHERE u.school_id = $1 AND u.is_active = true
+         GROUP BY u.id, u.name, ts.current_streak
+         ORDER BY plans_30d DESC, u.name`,
+        [school_id, today, thirtyDaysAgo]
+      ).catch(() => ({ rows: [] })),
+    ]);
+
+    const fa = feeAssignment.rows[0] || {};
+
+    // Aggregate concessions by status
+    const concessionSummary = { pending: 0, approved: 0, rejected: 0, approved_amount: 0, pending_count: 0 };
+    for (const row of concessions.rows) {
+      if (row.status === 'approved') {
+        concessionSummary.approved = row.count;
+        concessionSummary.approved_amount = parseFloat(row.fixed_total);
+      } else if (row.status === 'pending_approval') {
+        concessionSummary.pending = row.count;
+        concessionSummary.pending_count = row.count;
+      } else if (row.status === 'rejected') {
+        concessionSummary.rejected = row.count;
+      }
+    }
+
+    // Parent activity summary
+    const parents = parentActivity.rows;
+    const parentSummary = {
+      total: parents.length,
+      active: parents.filter((p: any) => p.activity_status === 'active').length,
+      inactive: parents.filter((p: any) => p.activity_status === 'inactive').length,
+      never_logged_in: parents.filter((p: any) => p.activity_status === 'never_logged_in').length,
+      list: parents,
+    };
+
+    // Teacher activity summary
+    const teachers = teacherActivity.rows;
+    const teacherSummary = {
+      total: teachers.length,
+      active: teachers.filter((t: any) => t.activity_status === 'active').length,
+      low: teachers.filter((t: any) => t.activity_status === 'low').length,
+      inactive: teachers.filter((t: any) => t.activity_status === 'inactive').length,
+      list: teachers,
+    };
+
+    return res.json({
+      fee_assignment: {
+        total_students:       parseInt(fa.total_students) || 0,
+        students_with_fee:    parseInt(fa.students_with_fee) || 0,
+        students_without_fee: parseInt(fa.students_without_fee) || 0,
+        total_assigned:       parseFloat(fa.total_assigned) || 0,
+        total_outstanding:    parseFloat(fa.total_outstanding) || 0,
+        total_collected:      parseFloat(fa.total_collected) || 0,
+      },
+      instalments: instalments.rows.map((r: any) => ({
+        label:            r.label,
+        instalment_number: r.instalment_number,
+        due_date:         r.due_date,
+        fee_head_name:    r.fee_head_name,
+        student_count:    r.student_count,
+        total_due:        parseFloat(r.per_student_amount) * r.student_count,
+      })),
+      concessions: concessionSummary,
+      parents: parentSummary,
+      teachers: teacherSummary,
+    });
+  } catch (err: any) {
+    console.error('[principal/insights]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, forceResetGuard, schoolScope, roleGuard } from '../../middleware/auth';
+import { verifyParentOwnsStudent } from '../../lib/parentAuth';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('parent'));
@@ -18,12 +19,8 @@ router.get('/:studentId', async (req: Request, res: Response) => {
     const { studentId } = req.params;
 
     // Verify parent owns this student
-    const link = await pool.query(
-      `SELECT 1 FROM parent_student_links psl JOIN students s ON s.id = psl.student_id
-       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3`,
-      [user_id, studentId, school_id]
-    );
-    if (link.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+    if (!(await verifyParentOwnsStudent(user_id, studentId, school_id)))
+      return res.status(403).json({ error: 'Not authorized' });
 
     const studentRow = await pool.query(
       `SELECT s.id, c.name as class_name FROM students s JOIN classes c ON c.id = s.class_id
@@ -75,12 +72,8 @@ router.post('/:studentId/:milestoneId/note', async (req: Request, res: Response)
     if (!note?.trim()) return res.status(400).json({ error: 'note is required' });
 
     // Verify parent owns this student
-    const link = await pool.query(
-      `SELECT 1 FROM parent_student_links psl JOIN students s ON s.id = psl.student_id
-       WHERE psl.parent_id = $1 AND psl.student_id = $2 AND s.school_id = $3`,
-      [user_id, studentId, school_id]
-    );
-    if (link.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+    if (!(await verifyParentOwnsStudent(user_id, studentId, school_id)))
+      return res.status(403).json({ error: 'Not authorized' });
 
     // Upsert — create a student_milestone record if it doesn't exist (not achieved yet, just noted)
     await pool.query(

@@ -9,6 +9,7 @@ import adminClassesRouter from './routes/admin/classes';
 import adminClassTeacherRouter from './routes/admin/classTeacher';
 import adminCurriculumRouter from './routes/admin/curriculum';
 import adminCalendarRouter from './routes/admin/calendar';
+import adminTermsRouter from './routes/admin/terms';
 import adminStudentsRouter from './routes/admin/students';
 import adminSupplementaryRouter from './routes/admin/supplementary';
 import adminSettingsRouter from './routes/admin/settings';
@@ -28,6 +29,7 @@ import teacherContextRouter from './routes/teacher/context';
 import teacherSectionsRouter from './routes/teacher/sections';
 import teacherNotesRouter from './routes/teacher/notes';
 import teacherStreaksRouter from './routes/teacher/streaks';
+import teacherCalendarRouter from './routes/teacher/calendar';
 import teacherHomeworkRouter from './routes/teacher/homework';
 import teacherSupplementaryRouter from './routes/teacher/supplementary';
 import teacherObservationsRouter from './routes/teacher/observations';
@@ -38,6 +40,8 @@ import teacherResourcesRouter from './routes/teacher/resources';
 import teacherSuggestionsRouter from './routes/teacher/suggestions';
 import teacherVideosRouter from './routes/teacher/videos';
 import teacherHrRouter from './routes/teacher/hr';
+import teacherInsightsRouter from './routes/teacher/insights';
+import teacherClassPerformanceRouter from './routes/teacher/classPerformance';
 import principalDashboardRouter from './routes/principal/dashboard';
 import principalAttendanceRouter from './routes/principal/attendance';
 import principalTeachersRouter from './routes/principal/teachers';
@@ -53,6 +57,7 @@ import superAdminStatsRouter from './routes/super-admin/stats';
 import superAdminImpersonateRouter from './routes/super-admin/impersonate';
 import superAdminBillingRouter from './routes/super-admin/billing';
 import superAdminFranchisesRouter from './routes/super-admin/franchises';
+import platformBillingRouter from './routes/super-admin/platformBilling';
 import adminAiUsageRouter from './routes/admin/aiUsage';
 import franchiseDashboardRouter from './routes/franchise/dashboard';
 import franchiseCurriculumRouter from './routes/franchise/curriculum';
@@ -75,6 +80,7 @@ import parentClassComparisonRouter from './routes/parent/classComparison';
 import adminStudentPortalRouter from './routes/admin/studentPortal';
 import adminQuizzesRouter from './routes/admin/quizzes';
 import adminSmartAlertsRouter from './routes/admin/smartAlerts';
+import adminUniformRouter from './routes/admin/uniform';
 import textbookPlannerRouter from './routes/admin/textbookPlanner';
 import adminEnquiriesRouter from './routes/admin/enquiries';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
@@ -84,7 +90,9 @@ import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
 import publicEnquiriesRouter from './routes/public/enquiries';
+import publicUniformRouter from './routes/public/uniform';
 import { apiRateLimit, authRateLimit } from './middleware/rateLimit';
+import { jwtVerify, roleGuard } from './middleware/auth';
 import { piiGuard } from './middleware/piiGuard';
 import { chunkGuard } from './middleware/chunkGuard';
 import { financialModuleGuard } from './middleware/financialModuleGuard';
@@ -104,6 +112,7 @@ import financialSalaryRecordsRouter from './routes/financial/salary/records';
 import financialUsageRecordsRouter from './routes/financial/usageRecords';
 import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
+import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
@@ -236,6 +245,7 @@ app.get('/health/ai', async (_req, res) => {
 
 // Public routes — no authentication required
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
+app.use('/api/v1/public/uniform', publicUniformRouter);
 
 // Shared (any authenticated role)
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
@@ -252,6 +262,7 @@ app.use('/api/v1/admin/classes', adminClassesRouter);
 app.use('/api/v1/admin/classes', adminClassTeacherRouter);
 app.use('/api/v1/admin/curriculum', adminCurriculumRouter);
 app.use('/api/v1/admin/calendar', adminCalendarRouter);
+app.use('/api/v1/admin/terms', adminTermsRouter);
 app.use('/api/v1/admin/students', adminStudentsRouter);
 app.use('/api/v1/admin/supplementary', adminSupplementaryRouter);
 app.use('/api/v1/admin/settings', adminSettingsRouter);
@@ -275,8 +286,11 @@ app.use('/api/v1/teacher/notes', teacherNotesRouter);
 app.use('/api/v1/teacher/homework', teacherHomeworkRouter);
 app.use('/api/v1/teacher/supplementary', teacherSupplementaryRouter);
 app.use('/api/v1/teacher/streaks', teacherStreaksRouter);
+app.use('/api/v1/teacher/calendar', teacherCalendarRouter);
 app.use('/api/v1/teacher/observations', teacherObservationsRouter);
 app.use('/api/v1/teacher/milestones', teacherMilestonesRouter);
+app.use('/api/v1/teacher/insights', teacherInsightsRouter);
+app.use('/api/v1/teacher/class-performance', teacherClassPerformanceRouter);
 app.use('/api/v1/teacher/child-journey', childJourneyRouter);
 app.use('/api/v1/parent/child-journey', childJourneyRouter);
 app.use('/api/v1/teacher/messages', teacherMessagesRouter);
@@ -306,6 +320,7 @@ app.use('/api/v1/super-admin/stats', superAdminStatsRouter);
 app.use('/api/v1/super-admin/impersonate', superAdminImpersonateRouter);
 app.use('/api/v1/super-admin/billing', superAdminBillingRouter);
 app.use('/api/v1/super-admin/franchises', superAdminFranchisesRouter);
+app.use('/api/v1/super-admin/platform-billing', platformBillingRouter);
 
 // Admin AI usage (admin + principal)
 app.use('/api/v1/admin/ai-usage', adminAiUsageRouter);
@@ -316,7 +331,7 @@ app.use('/api/v1/franchise', franchiseCurriculumRouter);
 app.use('/api/v1/franchise/schools', franchiseSchoolsRouter);
 
 // School franchise privacy status (Req 7.3) — accessible to admin + principal
-app.get('/api/v1/schools/:school_id/franchise-privacy-status', async (req, res) => {
+app.get('/api/v1/schools/:school_id/franchise-privacy-status', jwtVerify, roleGuard('admin', 'principal'), async (req, res) => {
   try {
     const { school_id } = req.params;
     const membership = await (await import('./lib/db')).pool.query(
@@ -363,6 +378,7 @@ app.use('/api/v1/admin/student-portal', adminStudentPortalRouter);
 app.use('/api/v1/admin/textbook-planner', textbookPlannerRouter);
 app.use('/api/v1/admin/quizzes', adminQuizzesRouter);
 app.use('/api/v1/admin/smart-alerts', adminSmartAlertsRouter);
+app.use('/api/v1/admin/uniform', adminUniformRouter);
 app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 
 // Teacher — Student Credentials, Quiz & Report Card
@@ -395,6 +411,7 @@ app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalar
 app.use('/api/v1/financial/salary',         financialModuleGuard, financialSalaryRecordsRouter);
 app.use('/api/v1/financial/usage-records',  financialModuleGuard, financialUsageRecordsRouter);
 app.use('/api/v1/financial/reports',        financialModuleGuard, financialReportsRouter);
+app.use('/api/v1/financial/reminders',      financialModuleGuard, financialRemindersRouter);
 app.use('/api/v1/financial',                financialModuleGuard, financialInsightsRouter);
 
 // Parent fees (guarded by financialModuleGuard)

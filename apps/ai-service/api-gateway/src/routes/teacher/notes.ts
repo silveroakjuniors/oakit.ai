@@ -44,6 +44,24 @@ router.post('/homework', async (req: Request, res: Response) => {
 
     if (!raw_text?.trim()) return res.status(400).json({ error: 'Homework text is required' });
 
+    // Validate working day
+    const dateObj = new Date(date + 'T12:00:00');
+    const dow = dateObj.getDay();
+    const calRow = await pool.query(
+      `SELECT working_days, holidays FROM school_calendar WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+      [school_id, date]
+    );
+    if (calRow.rows.length > 0) {
+      const workingDays: number[] = calRow.rows[0].working_days || [1, 2, 3, 4, 5];
+      if (!workingDays.includes(dow)) {
+        return res.status(400).json({ error: 'Cannot send homework on a non-working day.' });
+      }
+      const holidays: string[] = (calRow.rows[0].holidays || []).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+      if (holidays.includes(date)) {
+        return res.status(400).json({ error: 'Cannot send homework on a holiday.' });
+      }
+    }
+
     const section_id = await resolveSection(user_id, school_id, reqSectionId);
     if (!section_id) return res.status(404).json({ error: 'No section assigned' });
 
@@ -60,15 +78,32 @@ router.post('/homework', async (req: Request, res: Response) => {
     const result = await pool.query(
       `INSERT INTO teacher_homework (school_id, section_id, teacher_id, homework_date, raw_text, formatted_text)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (section_id, homework_date) DO UPDATE
+       ON CONFLICT (section_id, homework_date) WHERE chunk_id IS NULL DO UPDATE
        SET raw_text = EXCLUDED.raw_text, formatted_text = EXCLUDED.formatted_text, updated_at = now()
        RETURNING *`,
       [school_id, section_id, user_id, date, raw_text.trim(), formatted_text]
     );
     return res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (err: any) {
+    console.error('[homework POST]', err?.message || err);
+    // Handle unique constraint violation gracefully
+    if (err?.code === '23505') {
+      // Try update instead
+      try {
+        const { user_id, school_id } = req.user!;
+        const today = await getToday(school_id);
+        const { raw_text, section_id: reqSectionId, homework_date } = req.body;
+        const date = homework_date || today;
+        const section_id = await resolveSection(user_id, school_id, reqSectionId);
+        const result = await pool.query(
+          `UPDATE teacher_homework SET raw_text = $1, formatted_text = $1, updated_at = now()
+           WHERE section_id = $2 AND homework_date = $3 RETURNING *`,
+          [raw_text?.trim(), section_id, date]
+        );
+        if (result.rows.length > 0) return res.json(result.rows[0]);
+      } catch { /* fall through */ }
+    }
+    return res.status(500).json({ error: 'Failed to save homework. Please try again.' });
   }
 });
 

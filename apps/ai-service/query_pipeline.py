@@ -207,7 +207,15 @@ SUBJECT_TIPS = {
 }
 
 AGE_GROUPS = {
+    "playgroup": {"age": "2-3 years", "style": "toddlers"},
+    "nursery": {"age": "2.5-3.5 years", "style": "very young children"},
+    "jr.kg": {"age": "3-4 years", "style": "very young children"},
+    "jr.k.g": {"age": "3-4 years", "style": "very young children"},
+    "juniorkg": {"age": "3-4 years", "style": "very young children"},
     "lkg":   {"age": "3-4 years", "style": "very young children"},
+    "sr.kg": {"age": "4-5 years", "style": "young children"},
+    "sr.k.g": {"age": "4-5 years", "style": "young children"},
+    "seniorkg": {"age": "4-5 years", "style": "young children"},
     "ukg":   {"age": "4-5 years", "style": "young children"},
     "prep1": {"age": "5-6 years", "style": "early primary children"},
     "prep2": {"age": "6-7 years", "style": "primary children"},
@@ -1789,6 +1797,34 @@ If the data doesn't contain the answer, say so clearly."""
                 sec_id, target_dt,
             )
             if not plan:
+                # Check if today is a special day even without a day_plan row
+                special_no_plan = await pool.fetchrow(
+                    "SELECT label, day_type, activity_note FROM special_days WHERE school_id=$1 AND day_date=$2",
+                    sid, target_dt,
+                )
+                if special_no_plan:
+                    day_type = special_no_plan["day_type"]
+                    label = special_no_plan["label"] or day_type.replace("_", " ").title()
+                    activity_note = special_no_plan["activity_note"]
+                    note_line = f"\nAdmin note: {activity_note}" if activity_note else ""
+
+                    if day_type == "settling":
+                        class_name_lower = class_name.lower() if class_name else "playgroup"
+                        age_info = _CLASS_SETTLING_PROFILE.get(class_name_lower, _CLASS_SETTLING_PROFILE.get("playgroup", ""))
+                        return {
+                            "response": _settling_response(date_label, target_dt.strftime("%A"), label, class_name or "Class", {"age": "preschool age"}),
+                            "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": [],
+                            "is_settling": True, "settling_day": True,
+                            "settling_total": 1, "plan_date": target_dt.isoformat()[:10],
+                        }
+                    else:
+                        guidance = _SPECIAL_DAY_GUIDANCE.get(day_type, "")
+                        return {
+                            "response": f"🎉 {date_label} — **{label}**{note_line}\n\n{guidance}\n\nThis is a special day — no curriculum topics are assigned. Ask me for activity ideas!",
+                            "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": [],
+                            "plan_date": target_dt.isoformat()[:10],
+                        }
+
                 return {"response": (
                     f"No plan has been generated for {date_label} yet.\n\n"
                     f"Ask your admin to generate plans for {target_dt.strftime('%B %Y')} "

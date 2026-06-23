@@ -69,7 +69,7 @@ router.post(
 );
 
 // ── GET /api/v1/financial/enquiries ──────────────────────────────────────────
-// Lists enquiries for the school, with optional status filter.
+// Lists enquiries for the school, with optional status filter + serial numbers.
 router.get(
   '/',
   permissionGuard('VIEW_FEES'),
@@ -84,20 +84,45 @@ router.get(
         });
       }
 
-      let query = `SELECT * FROM enquiries WHERE school_id = $1`;
       const params: any[] = [schoolId];
+      let filter = '';
+      if (status) { filter = ` AND status = $2`; params.push(status); }
 
-      if (status) {
-        query += ` AND status = $2`;
-        params.push(status);
-      }
-
-      query += ` ORDER BY created_at DESC`;
-
-      const result = await pool.query(query, params);
+      const result = await pool.query(
+        `SELECT
+           ROW_NUMBER() OVER (ORDER BY created_at DESC) AS sl_no,
+           *
+         FROM enquiries
+         WHERE school_id = $1${filter}
+         ORDER BY created_at DESC`,
+        params
+      );
       return res.json(result.rows);
     } catch (err) {
       console.error('[enquiries GET /]', err);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// ── GET /api/v1/financial/enquiries/:id ───────────────────────────────────────
+// Get a single enquiry by ID.
+router.get(
+  '/:id',
+  permissionGuard('VIEW_FEES'),
+  async (req, res) => {
+    try {
+      const schoolId = req.user!.school_id;
+      const { id } = req.params;
+      const result = await pool.query(
+        `SELECT * FROM enquiries WHERE id = $1 AND school_id = $2`,
+        [id, schoolId]
+      );
+      if (result.rows.length === 0)
+        return res.status(404).json({ error: 'Enquiry not found' });
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error('[enquiries GET /:id]', err);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }

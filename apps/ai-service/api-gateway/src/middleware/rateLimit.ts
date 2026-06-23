@@ -14,10 +14,10 @@ function loginKey(req: Request) {
   return `${schoolCode}:${identifier}:${req.ip || 'unknown'}`;
 }
 
-/** Global API rate limit — 200 req / 15 min per IP */
+/** Global API rate limit — 500 req / 15 min per IP */
 export const apiRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },

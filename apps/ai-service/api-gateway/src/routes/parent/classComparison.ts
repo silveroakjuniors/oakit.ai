@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, forceResetGuard, schoolScope, roleGuard } from '../../middleware/auth';
 import { getToday } from '../../lib/today';
+import { verifyParentOwnsStudent } from '../../lib/parentAuth';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('parent'));
