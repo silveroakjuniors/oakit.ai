@@ -414,15 +414,14 @@ router.post('/query', async (req: Request, res: Response) => {
     }
     // ─────────────────────────────────────────────────────────────────────
 
-    // ── Plan query class-level caching ────────────────────────────────────
-    // For "plan for today" queries, cache per class so all sections get the same text.
-    // Stage 1: Check DB (permanent). Stage 2: Check Redis (temporary). Stage 3: Call AI and store.
+    // ── Plan query — DB-only caching (no Redis for plans) ────────────────
+    // For plan queries, check day_plans.ai_plan_text first.
+    // If empty → call AI → store in DB. Same text served to everyone forever.
     const isPlanQuery = /plan.*today|today.*plan|what.*plan|my plan|plan for tomorrow|tomorrow.*plan|plan for \d|plan.*\d{4}-\d{2}-\d{2}/i.test(cleanText);
-    let classCacheKey: string | null = null;
     let classId: string | null = null;
     let planDate: string = today;
 
-    // Detect date from query (tomorrow, specific date, etc.)
+    // Detect date from query
     const tomorrowMatch = /tomorrow/i.test(cleanText);
     const dateMatch = cleanText.match(/(\d{4}-\d{2}-\d{2})/);
     if (tomorrowMatch) {
@@ -445,7 +444,7 @@ router.post('/query', async (req: Request, res: Response) => {
           classId = sectionRow.rows[0].class_id;
           const sectionId = sectionRow.rows[0].section_id;
 
-          // Check if ai_plan_text already exists in day_plans for this section+date
+          // Check DB for stored plan text
           const existingPlan = await pool.query(
             `SELECT ai_plan_text, chunk_ids FROM day_plans
              WHERE section_id = $1 AND plan_date = $2 AND school_id = $3
@@ -454,34 +453,17 @@ router.post('/query', async (req: Request, res: Response) => {
           );
 
           if (existingPlan.rows.length > 0) {
-            // Return stored plan text — same for everyone
-            const plan = existingPlan.rows[0];
             return res.json({
-              response: plan.ai_plan_text,
-              chunk_ids: plan.chunk_ids || [],
+              response: existingPlan.rows[0].ai_plan_text,
+              chunk_ids: existingPlan.rows[0].chunk_ids || [],
               covered_chunk_ids: [],
               activity_ids: [],
               plan_date: planDate,
               from_cache: true,
             });
           }
-
-          // Also check Redis (for recent generation within the same day)
-          classCacheKey = `ai:plan:${school_id}:${classId}:${planDate}`;
-          const redisCached = await redis.get(classCacheKey);
-          if (redisCached) {
-            const parsed = JSON.parse(redisCached);
-            // Also persist to DB for future requests
-            await pool.query(
-              `UPDATE day_plans SET ai_plan_text = $1
-               WHERE section_id IN (SELECT id FROM sections WHERE class_id = $2 AND school_id = $3)
-               AND plan_date = $4 AND ai_plan_text IS NULL`,
-              [parsed.response, classId, school_id, planDate]
-            ).catch(() => {});
-            return res.json(parsed);
-          }
         }
-      } catch { /* ignore — fall through to normal flow */ }
+      } catch { /* fall through to AI call */ }
     }
     // ─────────────────────────────────────────────────────────────────────
 
@@ -500,13 +482,11 @@ router.post('/query', async (req: Request, res: Response) => {
         ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
       }, AI_TIMEOUT_MS);
 
-      // Cache per-user (10 sec) for deduplication
+      // Cache per-user (10 sec) for deduplication of non-plan queries
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
 
-      // Cache per-class for plan queries — persist to DB so it's permanent
-      if (classCacheKey && classId) {
-        await redis.setEx(classCacheKey, 86400, JSON.stringify(aiResp.data));
-        // Store in day_plans.ai_plan_text for ALL sections of this class on this date
+      // Store plan text in DB for all sections of this class (permanent)
+      if (isPlanQuery && classId && aiResp.data.response) {
         pool.query(
           `UPDATE day_plans SET ai_plan_text = $1
            WHERE section_id IN (SELECT id FROM sections WHERE class_id = $2 AND school_id = $3)
