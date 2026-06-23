@@ -414,12 +414,11 @@ router.post('/query', async (req: Request, res: Response) => {
     }
     // ─────────────────────────────────────────────────────────────────────
 
-    // ── Plan query — DB-only caching (no Redis for plans) ────────────────
-    // For plan queries, check day_plans.ai_plan_text first.
-    // If empty → call AI → store in DB. Same text served to everyone forever.
+    // ── Plan query — lookup by chunk_ids hash (single table, no duplication) ──
     const isPlanQuery = /plan.*today|today.*plan|what.*plan|my plan|plan for tomorrow|tomorrow.*plan|plan for \d|plan.*\d{4}-\d{2}-\d{2}/i.test(cleanText);
     let classId: string | null = null;
     let planDate: string = today;
+    let planChunkIds: string[] | null = null;
 
     // Detect date from query
     const tomorrowMatch = /tomorrow/i.test(cleanText);
@@ -446,26 +445,39 @@ router.post('/query', async (req: Request, res: Response) => {
           classId = sectionRow.rows[0].class_id;
           const sectionId = sectionRow.rows[0].section_id;
 
-          // Check DB for stored plan text
-          const existingPlan = await pool.query(
-            `SELECT ai_plan_text, chunk_ids FROM day_plans
-             WHERE section_id = $1 AND plan_date = $2 AND school_id = $3
-             AND ai_plan_text IS NOT NULL AND ai_plan_text != ''`,
+          // Get chunk_ids for this plan date
+          const planRow = await pool.query(
+            `SELECT chunk_ids FROM day_plans WHERE section_id = $1 AND plan_date = $2 AND school_id = $3`,
             [sectionId, planDate, school_id]
           );
 
-          if (existingPlan.rows.length > 0) {
-            return res.json({
-              response: existingPlan.rows[0].ai_plan_text,
-              chunk_ids: existingPlan.rows[0].chunk_ids || [],
-              covered_chunk_ids: [],
-              activity_ids: [],
-              plan_date: planDate,
-              from_cache: true,
-            });
+          if (planRow.rows.length > 0 && planRow.rows[0].chunk_ids?.length > 0) {
+            planChunkIds = planRow.rows[0].chunk_ids;
+            // Create hash of chunk_ids for lookup
+            const sortedIds = [...planChunkIds].sort().join(',');
+            const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
+
+            // Check ai_plan_cache for existing text
+            const cached = await pool.query(
+              `SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1 AND school_id = $2`,
+              [chunkHash, school_id]
+            );
+
+            if (cached.rows.length > 0) {
+              return res.json({
+                response: cached.rows[0].ai_text,
+                chunk_ids: planChunkIds,
+                covered_chunk_ids: [],
+                activity_ids: [],
+                plan_date: planDate,
+                from_cache: true,
+              });
+            }
           }
         }
-      } catch { /* fall through to AI call */ }
+      } catch (err: any) {
+        console.error('[ai.query] plan cache lookup error:', err.message);
+      }
     }
     // ─────────────────────────────────────────────────────────────────────
 
@@ -487,21 +499,20 @@ router.post('/query', async (req: Request, res: Response) => {
       // Cache per-user (10 sec) for deduplication of non-plan queries
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
 
-      // Store plan text in DB for all sections of this class (permanent)
-      if (isPlanQuery && classId && aiResp.data.response) {
-        console.log(`[ai.query] Storing plan text: class=${classId} school=${school_id} date=${planDate} text_length=${aiResp.data.response.length}`);
+      // Store plan text in ai_plan_cache (one row per unique chunk set)
+      if (isPlanQuery && planChunkIds && planChunkIds.length > 0 && aiResp.data.response) {
+        const sortedIds = [...planChunkIds].sort().join(',');
+        const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
         pool.query(
-          `UPDATE day_plans SET ai_plan_text = $1
-           WHERE section_id IN (SELECT id FROM sections WHERE class_id = $2 AND school_id = $3)
-           AND plan_date = $4 AND (ai_plan_text IS NULL OR ai_plan_text = '')`,
-          [aiResp.data.response, classId, school_id, planDate]
+          `INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text)
+           VALUES ($1, $2, $3::uuid[], $4)
+           ON CONFLICT (chunk_hash) DO NOTHING`,
+          [chunkHash, school_id, planChunkIds, aiResp.data.response]
         ).then(r => {
-          console.log(`[ai.query] Plan text stored: ${r.rowCount} rows updated`);
+          console.log(`[ai.query] Plan cached: hash=${chunkHash.slice(0, 8)} rows=${r.rowCount}`);
         }).catch(err => {
-          console.error(`[ai.query] Failed to store plan text:`, err.message);
+          console.error(`[ai.query] Cache insert failed:`, err.message);
         });
-      } else if (isPlanQuery) {
-        console.log(`[ai.query] Plan query but NOT storing: classId=${classId} hasResponse=${!!aiResp.data.response} planDate=${planDate}`);
       }
 
       return res.json(aiResp.data);
