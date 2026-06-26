@@ -511,11 +511,11 @@ export default function AdminDashboardPage() {
             icon={<BarChart3 className="w-4 h-4 text-emerald-600" />}
             title="Curriculum Coverage"
             subtitle={coverage.length > 0
-              ? (coverage.every(r => r.coverage_pct < 5)
+              ? (coverage.every(r => r.coverage_pct < 15)
                 ? 'Just getting started - coverage will build over the coming weeks'
                 : `${coverage.filter(r => r.band === 'green').length} on track, ${coverage.filter(r => r.band === 'red').length} behind`)
               : 'View coverage by section'}
-            badge={coverage.filter(r => r.alert).length > 0 && !coverage.every(r => r.coverage_pct < 5)
+            badge={coverage.filter(r => r.alert).length > 0 && !coverage.every(r => r.coverage_pct < 15)
               ? `${coverage.filter(r => r.alert).length} need attention`
               : undefined}
             badgeColor="bg-red-100 text-red-700"
@@ -530,7 +530,7 @@ export default function AdminDashboardPage() {
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-neutral-50 transition-colors text-left group">
                   <div className="text-[12px] font-semibold text-neutral-600 w-28 shrink-0 truncate">{row.class_name} {row.section_label}</div>
                   <div className="flex-1 bg-neutral-100 rounded-full h-4 overflow-hidden">
-                    <div className="h-4 rounded-full transition-all duration-500" style={{ width: `${Math.max(Math.min(row.coverage_pct, 100), 2)}%`, backgroundColor: row.coverage_pct >= 75 ? '#10b981' : row.coverage_pct >= 40 ? '#f59e0b' : '#ef4444' }} />
+                    <div className="h-4 rounded-full transition-all duration-500" style={{ width: `${Math.max(Math.min(row.coverage_pct, 100), 2)}%`, backgroundColor: row.band === 'green' ? '#10b981' : row.band === 'amber' ? '#f59e0b' : '#ef4444' }} />
                   </div>
                   <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0 ${row.band === 'green' ? 'bg-emerald-100 text-emerald-700' : row.band === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{row.coverage_pct}%</span>
                   <ChevronDown className="w-3.5 h-3.5 text-neutral-300 group-hover:text-neutral-500 shrink-0 -rotate-90" />
