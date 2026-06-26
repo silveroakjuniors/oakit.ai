@@ -578,7 +578,7 @@ export default function AdminDashboardPage() {
                         <div className="divide-y divide-neutral-50">
                           {doc.topics.map(t => (
                             <div key={t.id} className={`flex items-center gap-3 px-4 py-2.5 ${t.covered ? 'bg-emerald-50/40' : ''}`}>
-                              <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[10px] ${t.covered ? 'bg-emerald-500 text-white' : 'border-2 border-neutral-200'}`}>{t.covered ? 'Ô£ô' : ''}</span>
+                              <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[10px] ${t.covered ? 'bg-emerald-500 text-white' : 'border-2 border-neutral-200'}`}>{t.covered ? '\u2713' : ''}</span>
                               <span className={`text-[11px] flex-1 ${t.covered ? 'text-emerald-700' : 'text-neutral-600'}`}>{t.label}</span>
                               {t.covered && t.completion_date && <span className="text-[10px] text-neutral-400 shrink-0">{(() => { const d = new Date(t.completion_date); return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); })()}</span>}
                             </div>
@@ -703,7 +703,7 @@ export default function AdminDashboardPage() {
                         return (
                           <div key={i} className="bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3">
                             <div className="flex items-center justify-between mb-1.5">
-                              <div><span className="text-[12px] font-semibold text-neutral-700">{raw ? new Date(raw + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}</span><span className="text-[10px] text-neutral-400 ml-2">{hw.class_name} {hw.section_label} ┬À {hw.teacher_name}</span></div>
+                              <div><span className="text-[12px] font-semibold text-neutral-700">{raw ? new Date(raw + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}</span><span className="text-[10px] text-neutral-400 ml-2">{hw.class_name} {hw.section_label} - {hw.teacher_name}</span></div>
                               <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{pct}%</span>
                             </div>
                             <div className="flex gap-3 text-[11px]"><span className="text-emerald-600">{hw.completed} done</span><span className="text-amber-600">{hw.partial} partial</span><span className="text-red-500">{hw.not_submitted} missed</span></div>
