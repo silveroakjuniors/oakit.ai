@@ -656,7 +656,7 @@ export default function AdminDashboardPage() {
  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${t.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : t.activity_status === 'low' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{t.activity_status === 'active' ? ' Active' : t.activity_status === 'low' ? ' Low' : '> Inactive'}</span>
  </div>
  <div className="flex flex-wrap gap-3 mt-1.5 text-[11px] text-neutral-500">
- <span> {t.days_completed_30d} completions</span><span> {t.homework_sent_30d} HW</span><span>Ä {t.notes_sent_30d} notes</span><span>¼ {t.messages_sent_30d} msgs</span><span> {t.streak}d streak</span>
+ <span> {t.days_completed_30d} completions</span><span> {t.homework_sent_30d} HW</span><span> {t.notes_sent_30d} notes</span><span> {t.messages_sent_30d} msgs</span><span> {t.streak}d streak</span>
  </div>
  {(() => { const pct = Math.min(Math.round((t.days_completed_30d / 22) * 100), 100); return (<div className="mt-2"><div className="w-full bg-neutral-200 rounded-full h-1 overflow-hidden"><div className={`h-1 rounded-full ${pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${pct}%` }} /></div><p className="text-[10px] text-neutral-400 mt-0.5">{pct}% activity rate</p></div>); })()}
  </div>
@@ -678,11 +678,11 @@ export default function AdminDashboardPage() {
  <div key={p.id} className={`rounded-xl border px-4 py-3 ${p.activity_status === 'active' ? 'bg-emerald-50/60 border-emerald-100' : p.activity_status === 'never_logged_in' ? 'bg-red-50/60 border-red-100' : 'bg-amber-50/60 border-amber-100'}`}>
  <div className="flex items-center gap-2 flex-wrap">
  <p className="text-[13px] font-semibold text-neutral-800">{p.name || 'Unknown'}</p>
- <span className="text-[10px] text-neutral-400">▒ {p.mobile}</span>
+ <span className="text-[10px] text-neutral-400">{p.mobile}</span>
  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{p.activity_status === 'active' ? ' Active' : p.activity_status === 'never_logged_in' ? '> Never logged in' : ' Inactive'}</span>
  </div>
  <p className="text-[11px] text-neutral-500 mt-1"> {p.children_names || 'No children linked'}</p>
- <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500"><span>¼ {p.messages_sent_30d} msgs</span><span> {p.notifications_read_30d} read</span>{p.unread_notifications > 0 && <span className="text-amber-600 font-medium"> {p.unread_notifications} unread</span>}</div>
+ <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500"><span>{p.messages_sent_30d} msgs</span><span>{p.notifications_read_30d} read</span>{p.unread_notifications > 0 && <span className="text-amber-600 font-medium">{p.unread_notifications} unread</span>}</div>
  </div>
  ))}
  </div>
