@@ -21,7 +21,7 @@ import StatDrillModal from '@/features/admin/components/StatDrillModal';
 import BirthdayWishModal from '@/features/admin/components/BirthdayWishModal';
 import FeeSummaryCard from '@/features/admin/fees/FeeSummaryCard';
 
-/* ÔöÇÔöÇÔöÇ Local types ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* --- Local types ----------------------------------------------- */
 interface Announcement { id: string; title: string; body: string; target_audience: string; created_at: string; author_name: string; }
 
 /* --- Quick links --- */
@@ -39,7 +39,7 @@ const quickLinks = [
   { href: '/admin/audit',            Icon: ScrollText,     label: 'Audit Log',   desc: 'AI queries',       bg: 'bg-slate-50',  iconBg: 'bg-slate-100',  text: 'text-slate-700' },
 ];
 
-/* ÔöÇÔöÇÔöÇ Reusable primitives ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* --- Reusable primitives --------------------------------------- */
 function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`bg-white rounded-2xl border border-neutral-200/80 shadow-sm ${className}`}>
@@ -73,7 +73,7 @@ function PanelHeader({ icon, title, subtitle, badge, badgeColor = 'bg-neutral-10
   return <div>{inner}</div>;
 }
 
-/* Stat card ÔÇö Apple-style: white bg, large number, colored accent bar */
+/* Stat card  Apple-style: white bg, large number, colored accent bar */
 function StatCard({ label, value, sub, icon, accentColor, progress, onClick }: {
   label: string; value: string | number; sub: string;
   icon: React.ReactNode; accentColor: string; progress?: number; onClick?: () => void;
@@ -108,7 +108,7 @@ function StatCard({ label, value, sub, icon, accentColor, progress, onClick }: {
   );
 }
 
-/* ÔöÇÔöÇÔöÇ Main component ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* --- Main component -------------------------------------------- */
 export default function AdminDashboardPage() {
   const token = getToken() || '';
   useSessionManager();
@@ -210,7 +210,7 @@ export default function AdminDashboardPage() {
     <>
     <div className="min-h-screen bg-neutral-50/80">
 
-      {/* ÔöÇÔöÇ PAGE HEADER ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */}
+      {/* -- PAGE HEADER ------------------------------------------- */}
       <div className="bg-white border-b border-neutral-200/80 px-6 sm:px-8 lg:px-10 py-6">
         <div className="max-w-7xl mx-auto flex items-end justify-between gap-4">
           <div>
@@ -237,10 +237,10 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* ÔöÇÔöÇ BODY ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */}
+      {/* -- BODY ---------------------------------------------------- */}
       <div className="px-6 sm:px-8 lg:px-10 py-7 max-w-7xl mx-auto space-y-6">
 
-        {/* ÔöÇÔöÇ SAFETY ALERTS ÔöÇÔöÇ */}
+        {/* -- SAFETY ALERTS -- */}
         {safetyAlerts.length > 0 && (
           <div className="rounded-2xl overflow-hidden border border-red-200 bg-red-50">
             <button onClick={() => setAlertsExpanded(v => !v)}
@@ -254,7 +254,7 @@ export default function AdminDashboardPage() {
                     <p className="text-[13px] font-semibold text-red-900">Security Alert</p>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-600 text-white">{safetyAlerts.length}</span>
                   </div>
-                  <p className="text-[11px] text-red-600 mt-0.5">Inappropriate content detected ÔÇö review required</p>
+                  <p className="text-[11px] text-red-600 mt-0.5">Inappropriate content detected  review required</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -267,7 +267,7 @@ export default function AdminDashboardPage() {
               <div className="border-t border-red-200 divide-y divide-red-100 max-h-72 overflow-y-auto">
                 {safetyAlerts.map(a => (
                   <div key={a.id} className="flex items-start gap-3 px-5 py-3 bg-white/70">
-                    <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5 text-xs">ÔÜá´©Å</div>
+                    <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5 text-xs">´©Å</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[13px] font-semibold text-red-800">{a.actor_name}</span>
@@ -280,18 +280,18 @@ export default function AdminDashboardPage() {
                   </div>
                 ))}
                 <div className="px-5 py-2.5 bg-red-50/60">
-                  <p className="text-[11px] text-red-600">Full history in <Link href="/admin/audit" className="font-bold underline">Audit Log ÔåÆ AI Queries</Link></p>
+                  <p className="text-[11px] text-red-600">Full history in <Link href="/admin/audit" className="font-bold underline">Audit Log  AI Queries</Link></p>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* ÔöÇÔöÇ SETUP BANNER ÔöÇÔöÇ */}
+        {/* -- SETUP BANNER -- */}
         {setupStatus && !setupStatus.complete && (
           <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50/60 px-5 py-3.5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <span className="text-xl shrink-0">­ƒº¡</span>
+              <span className="text-xl shrink-0">¡</span>
               <div className="min-w-0">
                 <p className="text-[13px] font-semibold text-amber-900">Complete School Setup</p>
                 <p className="text-[11px] text-amber-600 mt-0.5">{setupStatus.completed_steps.length} of {setupStatus.all_steps.length} steps done</p>
@@ -301,12 +301,12 @@ export default function AdminDashboardPage() {
               <div className="w-28 bg-amber-200 rounded-full h-1.5 hidden sm:block">
                 <div className="h-1.5 rounded-full bg-amber-500 transition-all" style={{ width: `${(setupStatus.completed_steps.length / setupStatus.all_steps.length) * 100}%` }} />
               </div>
-              <Link href="/admin/setup" className="text-[11px] font-bold text-amber-700 hover:text-amber-900 whitespace-nowrap">View all ÔåÆ</Link>
+              <Link href="/admin/setup" className="text-[11px] font-bold text-amber-700 hover:text-amber-900 whitespace-nowrap">View all </Link>
             </div>
           </div>
         )}
 
-        {/* ÔöÇÔöÇ STAT CARDS ÔöÇÔöÇ */}
+        {/* -- STAT CARDS -- */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {statsLoading ? (
             [1,2,3,4].map(i => <div key={i} className="h-36 rounded-2xl bg-white border border-neutral-200/80 animate-pulse" />)
@@ -351,7 +351,7 @@ export default function AdminDashboardPage() {
 
         {/* ── PENDING + BIRTHDAYS ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Pending Today ÔÇö only shown when there are pending items */}
+          {/* Pending Today  only shown when there are pending items */}
           {todaySnap && (pendingAtt > 0 || pendingPlan > 0) && (
             <Panel>
               <PanelHeader icon={<Clock className="w-4 h-4 text-amber-500" />} title="Pending Today" subtitle="Actions still needed across sections" />
@@ -359,7 +359,7 @@ export default function AdminDashboardPage() {
                 <div className="pt-3 space-y-2.5">
                   {pendingAtt > 0 && (
                     <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-                      <span className="text-xl shrink-0">­ƒôï</span>
+                      <Users className="w-5 h-5 text-amber-500 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-[12px] font-semibold text-amber-800">{pendingAtt} section{pendingAtt > 1 ? 's' : ''} haven't marked attendance</p>
                         <div className="flex items-center gap-2 mt-1.5">
@@ -371,7 +371,7 @@ export default function AdminDashboardPage() {
                   )}
                   {pendingPlan > 0 && (
                     <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
-                      <span className="text-xl shrink-0">­ƒôÜ</span>
+                      <ClipboardList className="w-5 h-5 text-blue-500 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-[12px] font-semibold text-blue-800">{pendingPlan} section{pendingPlan > 1 ? 's' : ''} haven't completed plans</p>
                         <div className="flex items-center gap-2 mt-1.5">
@@ -386,19 +386,19 @@ export default function AdminDashboardPage() {
             </Panel>
           )}
 
-          {/* Birthdays ÔÇö always shown */}
+          {/* Birthdays  always shown */}
           <Panel>
             <PanelHeader
               icon={<Cake className="w-4 h-4 text-pink-500" />}
               title="Birthdays"
               subtitle="Next 7 days"
-              badge={todayBdays.length > 0 ? `${todayBdays.length} today ­ƒÄë` : birthdays.length > 0 ? `${birthdays.length} upcoming` : undefined}
+              badge={todayBdays.length > 0 ? `${todayBdays.length} today ` : birthdays.length > 0 ? `${birthdays.length} upcoming` : undefined}
               badgeColor={todayBdays.length > 0 ? 'bg-pink-100 text-pink-700' : 'bg-neutral-100 text-neutral-500'}
             />
             <div className="px-5 pb-5 pt-3 border-t border-neutral-100">
               {birthdays.length === 0 ? (
                 <div className="flex flex-col items-center py-6 text-center">
-                  <span className="text-3xl mb-2">­ƒÄé</span>
+                  <span className="text-3xl mb-2"></span>
                   <p className="text-[12px] font-semibold text-neutral-600">No birthdays in the next 7 days</p>
                   <p className="text-[11px] text-neutral-400 mt-1">Check back soon!</p>
                 </div>
@@ -408,20 +408,20 @@ export default function AdminDashboardPage() {
                     <div key={b.student_id}
                       onClick={b.days_until === 0 ? () => setBirthdayModal(true) : undefined}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${b.days_until === 0 ? 'bg-pink-50 border-pink-200 cursor-pointer hover:bg-pink-100 hover:shadow-sm' : 'bg-neutral-50 border-neutral-100'}`}>
-                      <span className="text-base">{b.days_until === 0 ? '­ƒÄë' : '­ƒÄê'}</span>
+                      <span className="text-base">{b.days_until === 0 ? '' : ''}</span>
                       <div>
                         <p className="text-[11px] font-semibold text-neutral-800 leading-tight">{b.name}</p>
                         <p className="text-[10px] text-neutral-400">{b.class_name} {b.section_label}</p>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${b.days_until === 0 ? 'bg-pink-500 text-white' : 'bg-neutral-200 text-neutral-600'}`}>
-                        {b.days_until === 0 ? 'Today! ­ƒÄü' : `in ${b.days_until}d`}
+                        {b.days_until === 0 ? 'Today! ' : `in ${b.days_until}d`}
                       </span>
                     </div>
                   ))}
                   {todayBdays.length > 0 && (
                     <button onClick={() => setBirthdayModal(true)}
                       className="w-full mt-1 text-xs font-bold text-pink-600 hover:text-pink-800 py-2 rounded-xl hover:bg-pink-50 transition-colors">
-                      Ô£¿ Send birthday wishes to parents ÔåÆ
+                      Ô£¿ Send birthday wishes to parents 
                     </button>
                   )}
                 </div>
@@ -430,15 +430,15 @@ export default function AdminDashboardPage() {
           </Panel>
         </div>
 
-        {/* ÔöÇÔöÇ SCHOOL INTELLIGENCE ÔöÇÔöÇ */}
+        {/* -- SCHOOL INTELLIGENCE -- */}
         {(smartAlertsLoading || smartAlerts) && (
           <Panel>
             <PanelHeader
               icon={<Brain className="w-4 h-4 text-violet-500" />}
               title="School Intelligence"
               subtitle="Oakie-detected issues across teachers, attendance & curriculum"
-              badge={smartAlerts ? (smartAlerts.summary.high > 0 ? `${smartAlerts.summary.high} urgent` : `${smartAlerts.summary.total_alerts} alerts`) : 'AnalysingÔÇª'}
-              badgeColor={smartAlerts && smartAlerts.summary.high > 0 ? 'bg-red-100 text-red-700' : 'bg-violet-100 text-violet-700'}
+              badge={smartAlerts?.summary ? (smartAlerts.summary.high > 0 ? `${smartAlerts.summary.high} urgent` : `${smartAlerts.summary.total_alerts} alerts`) : 'Analysing...'}
+              badgeColor={smartAlerts?.summary?.high > 0 ? 'bg-red-100 text-red-700' : 'bg-violet-100 text-violet-700'}
               expanded={smartAlertsExpanded} onToggle={() => setSmartAlertsExpanded(v => !v)}
             />
             {smartAlertsExpanded && smartAlerts && (
@@ -448,14 +448,14 @@ export default function AdminDashboardPage() {
                 ) : (
                   <div className="divide-y divide-neutral-50">
                     {smartAlerts.alerts.map((a, i) => {
-                      const icons: Record<string, string> = { teacher_not_completing: '­ƒôï', low_attendance_trend: '­ƒôë', class_falling_behind: 'ÔÅ│', weak_subject: '­ƒôØ', low_teacher_performance: '­ƒæ®ÔÇì­ƒÅ½' };
+                      const icons: Record<string, string> = { teacher_not_completing: '', low_attendance_trend: '', class_falling_behind: 'ÔÅ│', weak_subject: 'Ø', low_teacher_performance: '®' };
                       return (
                         <div key={i} className={`flex items-start gap-3 px-5 py-3.5 ${a.severity === 'high' ? 'bg-red-50/50' : ''}`}>
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 mt-0.5 ${a.severity === 'high' ? 'bg-red-100' : 'bg-amber-100'}`}>{icons[a.type] || 'ÔÜá´©Å'}</div>
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 mt-0.5 ${a.severity === 'high' ? 'bg-red-100' : 'bg-amber-100'}`}>{icons[a.type] || '´©Å'}</div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="text-[13px] font-semibold text-neutral-800">{a.title}</p>
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${a.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{a.severity === 'high' ? '­ƒö┤ URGENT' : '­ƒƒí WATCH'}</span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${a.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{a.severity === 'high' ? '┤ URGENT' : ' WATCH'}</span>
                             </div>
                             <p className="text-[11px] text-neutral-500 mt-0.5 leading-relaxed">{a.detail}</p>
                           </div>
@@ -474,7 +474,7 @@ export default function AdminDashboardPage() {
                           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-black shrink-0 ${t.band === 'green' ? 'bg-emerald-100 text-emerald-700' : t.band === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{t.performance_score}</div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2"><p className="text-[12px] font-semibold text-neutral-700 truncate">{t.teacher_name}</p><span className="text-[10px] text-neutral-400 shrink-0">{t.class_name} {t.section_label}</span></div>
-                            <div className="flex gap-3 text-[10px] text-neutral-400 mt-0.5"><span>­ƒôï {t.compliance_pct}%</span><span>­ƒöÑ {t.current_streak}d</span><span>­ƒÆ¼ {t.ai_queries_7d} AI</span><span>­ƒôÜ {t.homework_days_sent} HW</span></div>
+                            <div className="flex gap-3 text-[10px] text-neutral-400 mt-0.5"><span> {t.compliance_pct}%</span><span> {t.current_streak}d</span><span>¼ {t.ai_queries_7d} AI</span><span> {t.homework_days_sent} HW</span></div>
                           </div>
                           <div className="w-16 bg-neutral-100 rounded-full h-1.5 shrink-0"><div className={`h-1.5 rounded-full ${t.band === 'green' ? 'bg-emerald-500' : t.band === 'amber' ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${Math.min(t.performance_score, 100)}%` }} /></div>
                           <span className="text-neutral-300 text-xs shrink-0">ÔÇ║</span>
@@ -484,7 +484,7 @@ export default function AdminDashboardPage() {
                     {teacherDrillDown && (
                       <div className="mt-3 bg-white border border-neutral-200 rounded-xl overflow-hidden">
                         <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-100 flex items-center justify-between">
-                          <div><p className="text-[13px] font-bold text-neutral-800">{teacherDrillDown.teacher_name} ÔÇö Score Breakdown</p><p className="text-[11px] text-neutral-400">{teacherDrillDown.class_name} ┬À {teacherDrillDown.section_label} ┬À Last 30 days</p></div>
+                          <div><p className="text-[13px] font-bold text-neutral-800">{teacherDrillDown.teacher_name}  Score Breakdown</p><p className="text-[11px] text-neutral-400">{teacherDrillDown.class_name} ┬À {teacherDrillDown.section_label} ┬À Last 30 days</p></div>
                           <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-black ${teacherDrillDown.band === 'green' ? 'bg-emerald-100 text-emerald-700' : teacherDrillDown.band === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{teacherDrillDown.performance_score}</div>
                         </div>
                         <div className="divide-y divide-neutral-50">
@@ -538,8 +538,8 @@ export default function AdminDashboardPage() {
               ))}
               {coverage.length > 0 && (
                 <div className="flex gap-4 pt-2 text-[11px] text-neutral-400">
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />ÔëÑ75%</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />40ÔÇô74%</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />75%</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />4074%</span>
                   <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" />&lt;40%</span>
                 </div>
               )}
@@ -547,13 +547,13 @@ export default function AdminDashboardPage() {
           )}
         </Panel>
 
-        {/* ÔöÇÔöÇ DRILL-DOWN ÔöÇÔöÇ */}
+        {/* -- DRILL-DOWN -- */}
         {(drillDown || drillLoading) && (
           <Panel>
             <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
               <div>
-                {drillDown && <><p className="text-[13px] font-bold text-neutral-800">{drillDown.class_name} {drillDown.section_label} ÔÇö Topic Breakdown</p><p className="text-[11px] text-neutral-400 mt-0.5">{drillDown.teacher_name ? `­ƒæ®ÔÇì­ƒÅ½ ${drillDown.teacher_name} ┬À ` : ''}{drillDown.covered_chunks}/{drillDown.total_chunks} topics covered ({drillDown.coverage_pct}%)</p></>}
-                {drillLoading && <p className="text-[13px] text-neutral-400">LoadingÔÇª</p>}
+                {drillDown && <><p className="text-[13px] font-bold text-neutral-800">{drillDown.class_name} {drillDown.section_label}  Topic Breakdown</p><p className="text-[11px] text-neutral-400 mt-0.5">{drillDown.teacher_name ? `® ${drillDown.teacher_name} ┬À ` : ''}{drillDown.covered_chunks}/{drillDown.total_chunks} topics covered ({drillDown.coverage_pct}%)</p></>}
+                {drillLoading && <p className="text-[13px] text-neutral-400">Loading...</p>}
               </div>
               <button onClick={() => setDrillDown(null)} className="w-8 h-8 rounded-xl hover:bg-neutral-100 flex items-center justify-center transition-colors"><X className="w-4 h-4 text-neutral-400" /></button>
             </div>
@@ -568,7 +568,7 @@ export default function AdminDashboardPage() {
                     <div key={doc.title} className="border border-neutral-100 rounded-xl overflow-hidden">
                       <button onClick={() => setExpandedDocs(p => { const n = new Set(p); n.has(doc.title) ? n.delete(doc.title) : n.add(doc.title); return n; })}
                         className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-50 hover:bg-neutral-100 transition-colors text-left">
-                        <span className="text-[13px] font-medium text-neutral-700 flex-1 truncate">­ƒôä {doc.title}</span>
+                        <span className="text-[13px] font-medium text-neutral-700 flex-1 truncate"> {doc.title}</span>
                         <span className="text-[11px] text-neutral-400 shrink-0">{doc.covered}/{doc.total}</span>
                         <div className="w-20 bg-neutral-200 rounded-full h-1.5 shrink-0"><div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444' }} /></div>
                         <span className="text-[11px] font-bold text-neutral-500 w-8 text-right shrink-0">{pct}%</span>
@@ -593,11 +593,11 @@ export default function AdminDashboardPage() {
           </Panel>
         )}
 
-        {/* ÔöÇÔöÇ ATTENDANCE TREND ÔöÇÔöÇ */}
+        {/* -- ATTENDANCE TREND -- */}
         <Panel>
           <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-100">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center text-[18px]">­ƒôê</div>
+              <div className="w-9 h-9 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center text-[18px]">ê</div>
               <div><p className="text-[13px] font-semibold text-neutral-800">Attendance Trend</p><p className="text-[11px] text-neutral-400">Last 30 days</p></div>
             </div>
             <div className="flex items-center gap-4 text-[11px] text-neutral-400">
@@ -611,23 +611,23 @@ export default function AdminDashboardPage() {
           </div>
         </Panel>
 
-        {/* ÔöÇÔöÇ ENGAGEMENT INTELLIGENCE ÔöÇÔöÇ */}
+        {/* -- ENGAGEMENT INTELLIGENCE -- */}
         <Panel>
           <PanelHeader
             icon={<Zap className="w-4 h-4 text-amber-500" />}
             title="Engagement Intelligence"
             subtitle="Last 30 days ┬À Teachers, Parents, Homework, Messages"
-            badge={engagementLoading ? 'LoadingÔÇª' : undefined}
+            badge={engagementLoading ? 'Loading...' : undefined}
             expanded={engagementExpanded} onToggle={() => setEngagementExpanded(v => !v)}
           />
           {engagementExpanded && engagement && (
             <div className="border-t border-neutral-100">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-4 border-b border-neutral-100">
                 {([
-                  { key: 'teachers', icon: '­ƒæ®ÔÇì­ƒÅ½', label: 'Teachers', val: engagement.teachers.active, sub: `${engagement.teachers.inactive} inactive` },
-                  { key: 'parents',  icon: '­ƒæ¿ÔÇì­ƒæ®ÔÇì­ƒæº', label: 'Parents',  val: engagement.parents.active,  sub: `${engagement.parents.never_logged_in} never logged in` },
-                  { key: 'homework', icon: '­ƒôÜ',    label: 'Homework', val: engagement.homework.days_sent, sub: `${engagement.homework.completed} completed` },
-                  { key: 'messages', icon: '­ƒÆ¼',    label: 'Messages', val: engagement.messages.total,    sub: `${engagement.messages.active_threads} threads` },
+                  { key: 'teachers', icon: '®', label: 'Teachers', val: engagement.teachers.active, sub: `${engagement.teachers.inactive} inactive` },
+                  { key: 'parents',  icon: '¿®', label: 'Parents',  val: engagement.parents.active,  sub: `${engagement.parents.never_logged_in} never logged in` },
+                  { key: 'homework', icon: '',    label: 'Homework', val: engagement.homework.days_sent, sub: `${engagement.homework.completed} completed` },
+                  { key: 'messages', icon: '¼',    label: 'Messages', val: engagement.messages.total,    sub: `${engagement.messages.active_threads} threads` },
                 ] as const).map(tab => (
                   <button key={tab.key} onClick={() => setEngagementTab(tab.key)}
                     className={`rounded-xl p-3 text-left transition-all border ${engagementTab === tab.key ? 'border-neutral-900 bg-neutral-900 shadow-sm' : 'border-neutral-100 bg-neutral-50 hover:bg-neutral-100'}`}>
@@ -643,7 +643,7 @@ export default function AdminDashboardPage() {
                     <div className="flex gap-2 mb-3 flex-wrap">
                       {(['all', 'active', 'low', 'inactive'] as const).map(f => (
                         <button key={f} onClick={() => setEngagementFilter(f)} className={`text-[11px] px-3 py-1.5 rounded-full font-semibold transition-colors ${engagementFilter === f ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>
-                          {f === 'all' ? `All (${engagement.teachers.total})` : f === 'active' ? `­ƒƒó Active (${engagement.teachers.active})` : f === 'low' ? `­ƒƒí Low (${engagement.teachers.low})` : `­ƒö┤ Inactive (${engagement.teachers.inactive})`}
+                          {f === 'all' ? `All (${engagement.teachers.total})` : f === 'active' ? ` Active (${engagement.teachers.active})` : f === 'low' ? ` Low (${engagement.teachers.low})` : `┤ Inactive (${engagement.teachers.inactive})`}
                         </button>
                       ))}
                     </div>
@@ -653,10 +653,10 @@ export default function AdminDashboardPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-[13px] font-semibold text-neutral-800">{t.name}</p>
                             <span className="text-[10px] text-neutral-400">{t.class_name} {t.section_label}</span>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${t.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : t.activity_status === 'low' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{t.activity_status === 'active' ? '­ƒƒó Active' : t.activity_status === 'low' ? '­ƒƒí Low' : '­ƒö┤ Inactive'}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${t.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : t.activity_status === 'low' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{t.activity_status === 'active' ? ' Active' : t.activity_status === 'low' ? ' Low' : '┤ Inactive'}</span>
                           </div>
                           <div className="flex flex-wrap gap-3 mt-1.5 text-[11px] text-neutral-500">
-                            <span>­ƒôï {t.days_completed_30d} completions</span><span>­ƒôÜ {t.homework_sent_30d} HW</span><span>­ƒôÄ {t.notes_sent_30d} notes</span><span>­ƒÆ¼ {t.messages_sent_30d} msgs</span><span>­ƒÅå {t.streak}d streak</span>
+                            <span> {t.days_completed_30d} completions</span><span> {t.homework_sent_30d} HW</span><span>Ä {t.notes_sent_30d} notes</span><span>¼ {t.messages_sent_30d} msgs</span><span> {t.streak}d streak</span>
                           </div>
                           {(() => { const pct = Math.min(Math.round((t.days_completed_30d / 22) * 100), 100); return (<div className="mt-2"><div className="w-full bg-neutral-200 rounded-full h-1 overflow-hidden"><div className={`h-1 rounded-full ${pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${pct}%` }} /></div><p className="text-[10px] text-neutral-400 mt-0.5">{pct}% activity rate</p></div>); })()}
                         </div>
@@ -669,7 +669,7 @@ export default function AdminDashboardPage() {
                     <div className="flex gap-2 mb-3 flex-wrap">
                       {(['all', 'active', 'inactive', 'never_logged_in'] as const).map(f => (
                         <button key={f} onClick={() => setEngagementFilter(f)} className={`text-[11px] px-3 py-1.5 rounded-full font-semibold transition-colors ${engagementFilter === f ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>
-                          {f === 'all' ? `All (${engagement.parents.total})` : f === 'active' ? `­ƒƒó Active (${engagement.parents.active})` : f === 'inactive' ? `­ƒƒí Inactive (${engagement.parents.inactive})` : `­ƒö┤ Never logged in (${engagement.parents.never_logged_in})`}
+                          {f === 'all' ? `All (${engagement.parents.total})` : f === 'active' ? ` Active (${engagement.parents.active})` : f === 'inactive' ? ` Inactive (${engagement.parents.inactive})` : `┤ Never logged in (${engagement.parents.never_logged_in})`}
                         </button>
                       ))}
                     </div>
@@ -678,11 +678,11 @@ export default function AdminDashboardPage() {
                         <div key={p.id} className={`rounded-xl border px-4 py-3 ${p.activity_status === 'active' ? 'bg-emerald-50/60 border-emerald-100' : p.activity_status === 'never_logged_in' ? 'bg-red-50/60 border-red-100' : 'bg-amber-50/60 border-amber-100'}`}>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-[13px] font-semibold text-neutral-800">{p.name || 'Unknown'}</p>
-                            <span className="text-[10px] text-neutral-400">­ƒô▒ {p.mobile}</span>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{p.activity_status === 'active' ? '­ƒƒó Active' : p.activity_status === 'never_logged_in' ? '­ƒö┤ Never logged in' : '­ƒƒí Inactive'}</span>
+                            <span className="text-[10px] text-neutral-400">▒ {p.mobile}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{p.activity_status === 'active' ? ' Active' : p.activity_status === 'never_logged_in' ? '┤ Never logged in' : ' Inactive'}</span>
                           </div>
-                          <p className="text-[11px] text-neutral-500 mt-1">­ƒæ... {p.children_names || 'No children linked'}</p>
-                          <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500"><span>­ƒÆ¼ {p.messages_sent_30d} msgs</span><span>­ƒöö {p.notifications_read_30d} read</span>{p.unread_notifications > 0 && <span className="text-amber-600 font-medium">ÔÜá {p.unread_notifications} unread</span>}</div>
+                          <p className="text-[11px] text-neutral-500 mt-1"> {p.children_names || 'No children linked'}</p>
+                          <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500"><span>¼ {p.messages_sent_30d} msgs</span><span> {p.notifications_read_30d} read</span>{p.unread_notifications > 0 && <span className="text-amber-600 font-medium"> {p.unread_notifications} unread</span>}</div>
                         </div>
                       ))}
                     </div>
@@ -703,7 +703,7 @@ export default function AdminDashboardPage() {
                         return (
                           <div key={i} className="bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3">
                             <div className="flex items-center justify-between mb-1.5">
-                              <div><span className="text-[12px] font-semibold text-neutral-700">{raw ? new Date(raw + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : 'ÔÇö'}</span><span className="text-[10px] text-neutral-400 ml-2">{hw.class_name} {hw.section_label} ┬À {hw.teacher_name}</span></div>
+                              <div><span className="text-[12px] font-semibold text-neutral-700">{raw ? new Date(raw + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}</span><span className="text-[10px] text-neutral-400 ml-2">{hw.class_name} {hw.section_label} ┬À {hw.teacher_name}</span></div>
                               <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{pct}%</span>
                             </div>
                             <div className="flex gap-3 text-[11px]"><span className="text-emerald-600">Ô£ô {hw.completed}</span><span className="text-amber-600">┬¢ {hw.partial}</span><span className="text-red-500">Ô£ù {hw.not_submitted}</span></div>
@@ -717,8 +717,8 @@ export default function AdminDashboardPage() {
                 {engagementTab === 'messages' && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="bg-neutral-50 border border-neutral-100 rounded-xl p-4 text-center"><p className="text-[22px] font-black text-neutral-800" style={{ letterSpacing: '-0.04em' }}>{engagement.messages.total}</p><p className="text-[11px] text-neutral-500 mt-0.5">Total</p></div>
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center"><p className="text-[22px] font-black text-blue-700" style={{ letterSpacing: '-0.04em' }}>{engagement.messages.teacher_sent}</p><p className="text-[11px] text-neutral-500 mt-0.5">­ƒæ®ÔÇì­ƒÅ½ Teachers</p></div>
-                    <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 text-center"><p className="text-[22px] font-black text-purple-700" style={{ letterSpacing: '-0.04em' }}>{engagement.messages.parent_sent}</p><p className="text-[11px] text-neutral-500 mt-0.5">­ƒæ¿ÔÇì­ƒæ®ÔÇì­ƒæº Parents</p></div>
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center"><p className="text-[22px] font-black text-blue-700" style={{ letterSpacing: '-0.04em' }}>{engagement.messages.teacher_sent}</p><p className="text-[11px] text-neutral-500 mt-0.5">® Teachers</p></div>
+                    <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 text-center"><p className="text-[22px] font-black text-purple-700" style={{ letterSpacing: '-0.04em' }}>{engagement.messages.parent_sent}</p><p className="text-[11px] text-neutral-500 mt-0.5">¿® Parents</p></div>
                     <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center"><p className="text-[22px] font-black text-emerald-700" style={{ letterSpacing: '-0.04em' }}>{engagement.messages.active_threads}</p><p className="text-[11px] text-neutral-500 mt-0.5">Active threads</p></div>
                   </div>
                 )}
@@ -727,7 +727,7 @@ export default function AdminDashboardPage() {
           )}
         </Panel>
 
-        {/* ÔöÇÔöÇ ANNOUNCEMENTS ÔöÇÔöÇ */}
+        {/* -- ANNOUNCEMENTS -- */}
         <Panel>
           <PanelHeader
             icon={<Megaphone className="w-4 h-4 text-purple-500" />}
@@ -741,13 +741,13 @@ export default function AdminDashboardPage() {
                 <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Post New Announcement</p>
                 <input type="text" placeholder="Title (max 100 chars)" value={newAnnTitle} onChange={e => setNewAnnTitle(e.target.value)} maxLength={100}
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-neutral-400 bg-white" />
-                <textarea placeholder="Message bodyÔÇª" value={newAnnBody} onChange={e => setNewAnnBody(e.target.value)} maxLength={1000} rows={3}
+                <textarea placeholder="Message body..." value={newAnnBody} onChange={e => setNewAnnBody(e.target.value)} maxLength={1000} rows={3}
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-neutral-400 bg-white resize-none" />
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] text-neutral-400">Sent to all teachers & parents</p>
                   <button onClick={postAnnouncement} disabled={!newAnnTitle.trim() || !newAnnBody.trim() || annPosting}
                     className="flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white text-[12px] font-bold rounded-xl hover:bg-neutral-800 transition-colors disabled:opacity-40">
-                    <Send className="w-3 h-3" />{annPosting ? 'PostingÔÇª' : 'Post'}
+                    <Send className="w-3 h-3" />{annPosting ? 'Posting...' : 'Post'}
                   </button>
                 </div>
               </div>
@@ -766,14 +766,14 @@ export default function AdminDashboardPage() {
                       </div>
                     </div>
                   ))}
-                  <Link href="/admin/announcements" className="block text-center text-[11px] text-neutral-500 font-semibold hover:text-neutral-800 transition-colors pt-1">Manage all ÔåÆ</Link>
+                  <Link href="/admin/announcements" className="block text-center text-[11px] text-neutral-500 font-semibold hover:text-neutral-800 transition-colors pt-1">Manage all </Link>
                 </div>
               )}
             </div>
           )}
         </Panel>
 
-        {/* ÔöÇÔöÇ QUICK ACCESS ÔöÇÔöÇ */}
+        {/* -- QUICK ACCESS -- */}
         <div>
           <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3">Quick Access</p>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -793,7 +793,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* ÔöÇÔöÇ TIME MACHINE ÔöÇÔöÇ */}
+        {/* -- TIME MACHINE -- */}
         {tm && (
           <Panel>
             <div className="px-5 py-4 flex items-center gap-3 border-b border-neutral-100">
@@ -804,14 +804,14 @@ export default function AdminDashboardPage() {
             <div className="px-5 py-4">
               {tm.active ? (
                 <div className="flex items-center justify-between gap-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                  <div><p className="text-[13px] font-semibold text-amber-800">Using <strong>{tm.mock_date}</strong> as today</p><p className="text-[11px] text-amber-600 mt-0.5">Resets at {tm.expires_at ? new Date(tm.expires_at).toLocaleString('en-IN') : 'ÔÇö'}</p></div>
-                  <button onClick={deactivateTmHandler} disabled={tmLoading} className="px-4 py-2 bg-red-600 text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50">{tmLoading ? 'ÔÇª' : 'Disable'}</button>
+                  <div><p className="text-[13px] font-semibold text-amber-800">Using <strong>{tm.mock_date}</strong> as today</p><p className="text-[11px] text-amber-600 mt-0.5">Resets at {tm.expires_at ? new Date(tm.expires_at).toLocaleString('en-IN') : ''}</p></div>
+                  <button onClick={deactivateTmHandler} disabled={tmLoading} className="px-4 py-2 bg-red-600 text-white text-[12px] font-bold rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50">{tmLoading ? '...' : 'Disable'}</button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div><label className="text-[11px] font-semibold text-neutral-500 mb-1.5 block">Mock Date</label><input type="date" value={tmDate} onChange={e => setTmDate(e.target.value)} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-neutral-400" /></div>
                   <div><label className="text-[11px] font-semibold text-neutral-500 mb-1.5 block">Duration</label><select value={tmHours} onChange={e => setTmHours(Number(e.target.value))} className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-[13px] focus:outline-none">{[1,4,8,24,48,72].map(h => <option key={h} value={h}>{h}h</option>)}</select></div>
-                  <div className="flex items-end"><button onClick={activateTm} disabled={!tmDate || tmLoading} className="w-full px-4 py-2.5 bg-neutral-900 text-white text-[13px] font-bold rounded-xl hover:bg-neutral-800 transition-colors disabled:opacity-40">{tmLoading ? 'LoadingÔÇª' : 'Activate'}</button></div>
+                  <div className="flex items-end"><button onClick={activateTm} disabled={!tmDate || tmLoading} className="w-full px-4 py-2.5 bg-neutral-900 text-white text-[13px] font-bold rounded-xl hover:bg-neutral-800 transition-colors disabled:opacity-40">{tmLoading ? 'Loading...' : 'Activate'}</button></div>
                 </div>
               )}
             </div>
@@ -821,7 +821,7 @@ export default function AdminDashboardPage() {
       </div>
     </div>
 
-    {/* ÔöÇÔöÇ MODALS ÔöÇÔöÇ */}
+    {/* -- MODALS -- */}
     {drillModal && (
       <StatDrillModal type={drillModal} todaySnap={todaySnap} stats={stats} onClose={() => setDrillModal(null)} />
     )}
@@ -833,7 +833,7 @@ export default function AdminDashboardPage() {
 }
 
 
-/* ÔöÇÔöÇ Attendance chart ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
+/* -- Attendance chart ------------------------------------------- */
 function AttendanceTrendChart({ data }: { data: TrendRow[] }) {
   const maxVal = Math.max(...data.map(d => Number(d.present) + Number(d.absent)), 1);
   const W = 600; const H = 80; const pad = 4;
