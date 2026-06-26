@@ -91,7 +91,7 @@ function StatCard({ label, value, sub, icon, accentColor, progress, onClick }: {
               {progress}%
             </span>
           )}
-          {onClick && <span className="text-[10px] text-neutral-300 font-medium">tap ÔÇ║</span>}
+          {onClick && <span className="text-[10px] text-neutral-300 font-medium">tap</span>}
         </div>
       </div>
       <div>
@@ -301,7 +301,7 @@ export default function AdminDashboardPage() {
               <div className="w-28 bg-amber-200 rounded-full h-1.5 hidden sm:block">
                 <div className="h-1.5 rounded-full bg-amber-500 transition-all" style={{ width: `${(setupStatus.completed_steps.length / setupStatus.all_steps.length) * 100}%` }} />
               </div>
-              <Link href="/admin/setup" className="text-[11px] font-bold text-amber-700 hover:text-amber-900 whitespace-nowrap">View all </Link>
+              <Link href="/admin/setup" className="text-[11px] font-bold text-amber-700 hover:text-amber-900 whitespace-nowrap">View all</Link>
             </div>
           </div>
         )}
@@ -448,10 +448,10 @@ export default function AdminDashboardPage() {
                 ) : (
                   <div className="divide-y divide-neutral-50">
                     {smartAlerts.alerts.map((a, i) => {
-                      const icons: Record<string, string> = { teacher_not_completing: '', low_attendance_trend: '', class_falling_behind: 'ÔÅ│', weak_subject: 'Ø', low_teacher_performance: '®' };
+                      const icons: Record<string, string> = { teacher_not_completing: '', low_attendance_trend: '', class_falling_behind: '', weak_subject: '', low_teacher_performance: '' };
                       return (
                         <div key={i} className={`flex items-start gap-3 px-5 py-3.5 ${a.severity === 'high' ? 'bg-red-50/50' : ''}`}>
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 mt-0.5 ${a.severity === 'high' ? 'bg-red-100' : 'bg-amber-100'}`}>{icons[a.type] || '´©Å'}</div>
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 mt-0.5 ${a.severity === 'high' ? 'bg-red-100' : 'bg-amber-100'}`}>{icons[a.type] || '!'}</div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="text-[13px] font-semibold text-neutral-800">{a.title}</p>
@@ -624,10 +624,10 @@ export default function AdminDashboardPage() {
             <div className="border-t border-neutral-100">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-5 py-4 border-b border-neutral-100">
                 {([
-                  { key: 'teachers', icon: '®', label: 'Teachers', val: engagement.teachers.active, sub: `${engagement.teachers.inactive} inactive` },
-                  { key: 'parents',  icon: '¿®', label: 'Parents',  val: engagement.parents.active,  sub: `${engagement.parents.never_logged_in} never logged in` },
-                  { key: 'homework', icon: '',    label: 'Homework', val: engagement.homework.days_sent, sub: `${engagement.homework.completed} completed` },
-                  { key: 'messages', icon: '¼',    label: 'Messages', val: engagement.messages.total,    sub: `${engagement.messages.active_threads} threads` },
+                  { key: 'teachers', icon: '', label: 'Teachers', val: engagement.teachers.active, sub: `${engagement.teachers.inactive} inactive` },
+                  { key: 'parents',  icon: '', label: 'Parents',  val: engagement.parents.active,  sub: `${engagement.parents.never_logged_in} never logged in` },
+                  { key: 'homework', icon: '', label: 'Homework', val: engagement.homework.days_sent, sub: `${engagement.homework.completed} completed` },
+                  { key: 'messages', icon: '', label: 'Messages', val: engagement.messages.total,    sub: `${engagement.messages.active_threads} threads` },
                 ] as const).map(tab => (
                   <button key={tab.key} onClick={() => setEngagementTab(tab.key)}
                     className={`rounded-xl p-3 text-left transition-all border ${engagementTab === tab.key ? 'border-neutral-900 bg-neutral-900 shadow-sm' : 'border-neutral-100 bg-neutral-50 hover:bg-neutral-100'}`}>
