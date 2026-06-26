@@ -230,7 +230,7 @@ export default function AdminDashboardPage() {
             {tm?.active && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200">
                 <Clock className="w-3 h-3 text-amber-600" />
-                <span className="text-[11px] font-semibold text-amber-700">Time Machine ┬À {tm.mock_date}</span>
+                <span className="text-[11px] font-semibold text-amber-700">Time Machine - {tm.mock_date}</span>
               </div>
             )}
           </div>
@@ -538,8 +538,8 @@ export default function AdminDashboardPage() {
               ))}
               {coverage.length > 0 && (
                 <div className="flex gap-4 pt-2 text-[11px] text-neutral-400">
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />75%</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />4074%</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />75%+</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />40-74%</span>
                   <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" />&lt;40%</span>
                 </div>
               )}
@@ -552,7 +552,7 @@ export default function AdminDashboardPage() {
           <Panel>
             <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
               <div>
-                {drillDown && <><p className="text-[13px] font-bold text-neutral-800">{drillDown.class_name} {drillDown.section_label}  Topic Breakdown</p><p className="text-[11px] text-neutral-400 mt-0.5">{drillDown.teacher_name ? `® ${drillDown.teacher_name} ┬À ` : ''}{drillDown.covered_chunks}/{drillDown.total_chunks} topics covered ({drillDown.coverage_pct}%)</p></>}
+                {drillDown && <><p className="text-[13px] font-bold text-neutral-800">{drillDown.class_name} {drillDown.section_label} Topic Breakdown</p><p className="text-[11px] text-neutral-400 mt-0.5">{drillDown.teacher_name ? `${drillDown.teacher_name} - ` : ''}{drillDown.covered_chunks}/{drillDown.total_chunks} topics covered ({drillDown.coverage_pct}%)</p></>}
                 {drillLoading && <p className="text-[13px] text-neutral-400">Loading...</p>}
               </div>
               <button onClick={() => setDrillDown(null)} className="w-8 h-8 rounded-xl hover:bg-neutral-100 flex items-center justify-center transition-colors"><X className="w-4 h-4 text-neutral-400" /></button>
@@ -706,7 +706,7 @@ export default function AdminDashboardPage() {
                               <div><span className="text-[12px] font-semibold text-neutral-700">{raw ? new Date(raw + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}</span><span className="text-[10px] text-neutral-400 ml-2">{hw.class_name} {hw.section_label} ┬À {hw.teacher_name}</span></div>
                               <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{pct}%</span>
                             </div>
-                            <div className="flex gap-3 text-[11px]"><span className="text-emerald-600">Ô£ô {hw.completed}</span><span className="text-amber-600">┬¢ {hw.partial}</span><span className="text-red-500">Ô£ù {hw.not_submitted}</span></div>
+                            <div className="flex gap-3 text-[11px]"><span className="text-emerald-600">{hw.completed} done</span><span className="text-amber-600">{hw.partial} partial</span><span className="text-red-500">{hw.not_submitted} missed</span></div>
                             <div className="w-full bg-neutral-200 rounded-full h-1 mt-2"><div className="h-1 rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div>
                           </div>
                         );
