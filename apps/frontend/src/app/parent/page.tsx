@@ -1751,7 +1751,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
  </p>
  {hasTopics && (
  <p className="text-[10px] text-gray-400 mt-0.5 truncate">
- {isCoveredDay ? '? ' : ''}{firstTopicClean}
+ {isCoveredDay ? '' : ''}{firstTopicClean}
  </p>
  )}
  </div>
