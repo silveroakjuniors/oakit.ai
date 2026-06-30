@@ -1172,7 +1172,6 @@ function BulkTerminateModal({ students, token, onClose, onDone }: {
   const [error, setError] = useState('');
 
   async function submit() {
-    if (!confirm(`Terminate ${students.length} student(s)? Their parent accounts will also be deactivated if they have no other active children.`)) return;
     setSaving(true); setError('');
     try {
       const res = await fetch(`${API_BASE}/api/v1/admin/students/bulk-terminate`, {
@@ -1259,6 +1258,7 @@ export default function StudentsPage() {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [search, setSearch] = useState('');
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const token = getToken() || '';
 
   // Selection for bulk actions
@@ -1336,31 +1336,42 @@ export default function StudentsPage() {
   }
 
   async function resetCredential(student: Student) {
-    if (!confirm(`Reset ${student.name}'s password to 123456?`)) return;
-    setGeneratingId(student.id); setNewCred(null);
-    try {
-      const res = await apiPost<{ username: string; password: string; is_new: boolean }>(
-        `/api/v1/teacher/students/credentials/reset/${student.id}`,
-        {}, token,
-      );
-      setNewCred({ studentId: student.id, username: res.username, password: res.password });
-    } catch (e: any) { alert(e.message || 'Failed to reset'); }
-    finally { setGeneratingId(null); }
+    setConfirmModal({
+      message: `Reset ${student.name}'s password to 123456?`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setGeneratingId(student.id); setNewCred(null);
+        try {
+          const res = await apiPost<{ username: string; password: string; is_new: boolean }>(
+            `/api/v1/teacher/students/credentials/reset/${student.id}`,
+            {}, token,
+          );
+          setNewCred({ studentId: student.id, username: res.username, password: res.password });
+        } catch (e: any) { setConfirmModal({ message: e.message || 'Failed to reset', onConfirm: () => setConfirmModal(null) }); }
+        finally { setGeneratingId(null); }
+      },
+    });
   }
 
   async function toggleActive(student: Student) {
-    if (!confirm(student.is_active
+    const msg = student.is_active
       ? `Terminate ${student.name}? They will no longer appear in active lists.`
-      : `Reactivate ${student.name}?`)) return;
-    setTogglingId(student.id);
-    try {
-      await apiPost(
-        `/api/v1/admin/students/${student.id}/${student.is_active ? 'terminate' : 'reactivate'}`,
-        {}, token,
-      );
-      await load();
-    } catch (e: any) { alert(e.message || 'Failed'); }
-    finally { setTogglingId(null); }
+      : `Reactivate ${student.name}?`;
+    setConfirmModal({
+      message: msg,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setTogglingId(student.id);
+        try {
+          await apiPost(
+            `/api/v1/admin/students/${student.id}/${student.is_active ? 'terminate' : 'reactivate'}`,
+            {}, token,
+          );
+          await load();
+        } catch (e: any) { setConfirmModal({ message: e.message || 'Failed', onConfirm: () => setConfirmModal(null) }); }
+        finally { setTogglingId(null); }
+      },
+    });
   }
 
   const selectedClass = classes.find(c => c.id === filterClass);
@@ -1677,6 +1688,19 @@ export default function StudentsPage() {
           onClose={() => setShowBulkChangeSection(false)}
           onDone={() => { setSelected(new Set()); load(); }}
         />
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setConfirmModal(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <p className="text-sm text-gray-700 mb-5">{confirmModal.message}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2.5 text-sm font-medium rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button onClick={confirmModal.onConfirm} className="flex-1 px-4 py-2.5 text-sm font-medium rounded-xl bg-red-600 text-white hover:bg-red-700">Confirm</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
