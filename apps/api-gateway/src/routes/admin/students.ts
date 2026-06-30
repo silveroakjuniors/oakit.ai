@@ -1170,6 +1170,7 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
     const student = studentRow.rows[0];
 
     await client.query('BEGIN');
+    console.log('[terminate] Step 1: deactivating student');
 
     // 1. Soft-terminate the student
     await client.query(
@@ -1178,9 +1179,10 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
        WHERE id = $2 AND school_id = $3`,
       [user_id, studentId, school_id]
     );
+    console.log('[terminate] Step 1 done');
 
     // 2. Save academic history record
-    // Determine current academic year from school settings (fall back to current calendar year)
+    console.log('[terminate] Step 2: academic history');
     const ayRow = await client.query(
       `SELECT label FROM academic_years
        WHERE school_id = $1 AND is_current = true LIMIT 1`,
@@ -1188,45 +1190,69 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
     );
     const academicYear = ayRow.rows[0]?.label ||
       `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(2)}`;
+    console.log('[terminate] academic year:', academicYear);
 
-    await client.query(
-      `INSERT INTO student_academic_history
-         (school_id, student_id, academic_year, class_id, section_id,
-          class_name, section_label, outcome, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'terminated',$8)
-       ON CONFLICT (student_id, academic_year)
-       DO UPDATE SET outcome = 'terminated', created_by = EXCLUDED.created_by`,
-      [school_id, studentId, academicYear,
-       student.class_id, student.section_id,
-       student.class_name, student.section_label, user_id]
-    );
+    try {
+      await client.query(
+        `INSERT INTO student_academic_history
+           (school_id, student_id, academic_year, class_id, section_id,
+            class_name, section_label, outcome, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'terminated',$8)
+         ON CONFLICT (student_id, academic_year)
+         DO UPDATE SET outcome = 'terminated', created_by = EXCLUDED.created_by`,
+        [school_id, studentId, academicYear,
+         student.class_id, student.section_id,
+         student.class_name, student.section_label, user_id]
+      );
+      console.log('[terminate] Step 2 done');
+    } catch (e: any) {
+      console.error('[terminate] Step 2 FAILED:', e.message, e.detail);
+      throw e;
+    }
 
     // 3. Mark outstanding fee accounts as status='terminated'
-    //    Preserves payment history but flags the account so it's excluded from
-    //    active collection reports. Outstanding balance is kept for audit purposes.
-    await client.query(
-      `UPDATE student_fee_accounts
-       SET status = 'terminated', updated_at = now()
-       WHERE student_id = $1 AND school_id = $2
-         AND deleted_at IS NULL AND status != 'paid'`,
-      [studentId, school_id]
-    );
+    console.log('[terminate] Step 3: fee accounts');
+    try {
+      await client.query(
+        `UPDATE student_fee_accounts
+         SET status = 'terminated', updated_at = now()
+         WHERE student_id = $1 AND school_id = $2
+           AND deleted_at IS NULL AND status != 'paid'`,
+        [studentId, school_id]
+      );
+      console.log('[terminate] Step 3 done');
+    } catch (e: any) {
+      console.error('[terminate] Step 3 FAILED:', e.message, e.detail);
+      throw e;
+    }
 
     // 4. Cancel any pending fee reminders for this student
-    await client.query(
-      `UPDATE fee_reminders
-       SET status = 'cancelled'
-       WHERE student_id = $1 AND school_id = $2 AND status = 'pending'`,
-      [studentId, school_id]
-    ).catch(() => { /* fee_reminders table may not exist in all deployments */ });
+    try {
+      await client.query('SAVEPOINT sp_reminders');
+      await client.query(
+        `UPDATE fee_reminders
+         SET status = 'cancelled'
+         WHERE student_id = $1 AND school_id = $2 AND status = 'pending'`,
+        [studentId, school_id]
+      );
+      await client.query('RELEASE SAVEPOINT sp_reminders');
+    } catch {
+      await client.query('ROLLBACK TO SAVEPOINT sp_reminders');
+    }
 
     // 5. Abandon any in-progress quiz attempts
-    await client.query(
-      `UPDATE quiz_attempts
-       SET status = 'abandoned'
-       WHERE student_id = $1 AND school_id = $2 AND status = 'in_progress'`,
-      [studentId, school_id]
-    ).catch(() => { /* ignore if table doesn't exist */ });
+    try {
+      await client.query('SAVEPOINT sp_quiz');
+      await client.query(
+        `UPDATE quiz_attempts
+         SET status = 'abandoned'
+         WHERE student_id = $1 AND school_id = $2 AND status = 'in_progress'`,
+        [studentId, school_id]
+      );
+      await client.query('RELEASE SAVEPOINT sp_quiz');
+    } catch {
+      await client.query('ROLLBACK TO SAVEPOINT sp_quiz');
+    }
 
     // 6. Delete student portal account
     await client.query(
