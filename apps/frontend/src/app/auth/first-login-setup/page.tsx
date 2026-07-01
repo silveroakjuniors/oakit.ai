@@ -64,9 +64,19 @@ export default function FirstLoginSetupPage() {
       const changeData = await changeRes.json();
       if (!changeRes.ok) throw new Error(changeData.error || 'Failed to change password');
 
+      // Re-login with new password to get fresh token (force_password_reset = false)
+      const reLoginRes = await fetch(`${API_BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ school_code: context.school_code, mobile: context.mobile, password: newPassword }),
+      });
+      const reLoginData = await reLoginRes.json();
+      const freshToken = (reLoginRes.ok && reLoginData.token) ? reLoginData.token : authToken;
+      setLocalToken(freshToken);
+
       // Load security questions
       const qRes = await fetch(`${API_BASE}/api/v1/auth/security-questions`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Authorization: `Bearer ${freshToken}` },
       });
       const qData = await qRes.json();
       if (qRes.ok && Array.isArray(qData)) setQuestions(qData);
