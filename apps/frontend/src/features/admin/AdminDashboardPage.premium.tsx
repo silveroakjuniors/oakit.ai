@@ -455,7 +455,7 @@ export default function AdminDashboardPage() {
  <div className="flex-1 min-w-0">
  <div className="flex items-center gap-2 flex-wrap">
  <p className="text-[13px] font-semibold text-neutral-800">{a.title}</p>
- <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${a.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{a.severity === 'high' ? '> URGENT' : ' WATCH'}</span>
+ <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${a.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{a.severity === 'high' ? 'URGENT' : ' WATCH'}</span>
  </div>
  <p className="text-[11px] text-neutral-500 mt-0.5 leading-relaxed">{a.detail}</p>
  </div>
@@ -477,7 +477,7 @@ export default function AdminDashboardPage() {
  <div className="flex gap-3 text-[10px] text-neutral-400 mt-0.5"><span> {t.compliance_pct}%</span><span> {t.current_streak}d</span><span>¼ {t.ai_queries_7d} AI</span><span> {t.homework_days_sent} HW</span></div>
  </div>
  <div className="w-16 bg-neutral-100 rounded-full h-1.5 shrink-0"><div className={`h-1.5 rounded-full ${t.band === 'green' ? 'bg-emerald-500' : t.band === 'amber' ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${Math.min(t.performance_score, 100)}%` }} /></div>
- <span className="text-neutral-300 text-xs shrink-0">></span>
+ <span className="text-neutral-300 text-xs shrink-0">&gt;</span>
  </button>
  ))}
  </div>
@@ -572,7 +572,7 @@ export default function AdminDashboardPage() {
  <span className="text-[11px] text-neutral-400 shrink-0">{doc.covered}/{doc.total}</span>
  <div className="w-20 bg-neutral-200 rounded-full h-1.5 shrink-0"><div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: pct >= 75 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444' }} /></div>
  <span className="text-[11px] font-bold text-neutral-500 w-8 text-right shrink-0">{pct}%</span>
- <span className={`text-neutral-400 text-xs shrink-0 transition-transform ${isExp ? 'rotate-90' : ''}`}>></span>
+ <span className={`text-neutral-400 text-xs shrink-0 transition-transform ${isExp ? 'rotate-90' : ''}`}>&gt;</span>
  </button>
  {isExp && (
  <div className="divide-y divide-neutral-50">
@@ -653,7 +653,7 @@ export default function AdminDashboardPage() {
  <div className="flex items-center gap-2 flex-wrap">
  <p className="text-[13px] font-semibold text-neutral-800">{t.name}</p>
  <span className="text-[10px] text-neutral-400">{t.class_name} {t.section_label}</span>
- <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${t.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : t.activity_status === 'low' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{t.activity_status === 'active' ? ' Active' : t.activity_status === 'low' ? ' Low' : '> Inactive'}</span>
+ <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${t.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : t.activity_status === 'low' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>{t.activity_status === 'active' ? ' Active' : t.activity_status === 'low' ? ' Low' : 'Inactive'}</span>
  </div>
  <div className="flex flex-wrap gap-3 mt-1.5 text-[11px] text-neutral-500">
  <span> {t.days_completed_30d} completions</span><span> {t.homework_sent_30d} HW</span><span> {t.notes_sent_30d} notes</span><span> {t.messages_sent_30d} msgs</span><span> {t.streak}d streak</span>
@@ -679,7 +679,7 @@ export default function AdminDashboardPage() {
  <div className="flex items-center gap-2 flex-wrap">
  <p className="text-[13px] font-semibold text-neutral-800">{p.name || 'Unknown'}</p>
  <span className="text-[10px] text-neutral-400">{p.mobile}</span>
- <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{p.activity_status === 'active' ? ' Active' : p.activity_status === 'never_logged_in' ? '> Never logged in' : ' Inactive'}</span>
+ <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${p.activity_status === 'active' ? 'bg-emerald-100 text-emerald-700' : p.activity_status === 'never_logged_in' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{p.activity_status === 'active' ? ' Active' : p.activity_status === 'never_logged_in' ? 'Never logged in' : ' Inactive'}</span>
  </div>
  <p className="text-[11px] text-neutral-500 mt-1"> {p.children_names || 'No children linked'}</p>
  <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-neutral-500"><span>{p.messages_sent_30d} msgs</span><span>{p.notifications_read_30d} read</span>{p.unread_notifications > 0 && <span className="text-amber-600 font-medium">{p.unread_notifications} unread</span>}</div>
@@ -691,9 +691,9 @@ export default function AdminDashboardPage() {
  {engagementTab === 'homework' && (
  <div>
  <div className="grid grid-cols-3 gap-3 mb-4">
- <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center"><p className="text-[22px] font-black text-emerald-700" style={{ letterSpacing: '-0.04em' }}>{engagement.homework.completed}</p><p className="text-[11px] text-neutral-500 mt-0.5">Ô£ô Completed</p></div>
+ <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center"><p className="text-[22px] font-black text-emerald-700" style={{ letterSpacing: '-0.04em' }}>{engagement.homework.completed}</p><p className="text-[11px] text-neutral-500 mt-0.5"> Completed</p></div>
  <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center"><p className="text-[22px] font-black text-amber-700" style={{ letterSpacing: '-0.04em' }}>{engagement.homework.partial}</p><p className="text-[11px] text-neutral-500 mt-0.5"> Partial</p></div>
- <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center"><p className="text-[22px] font-black text-red-600" style={{ letterSpacing: '-0.04em' }}>{engagement.homework.not_submitted}</p><p className="text-[11px] text-neutral-500 mt-0.5">Ô£ù Not submitted</p></div>
+ <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center"><p className="text-[22px] font-black text-red-600" style={{ letterSpacing: '-0.04em' }}>{engagement.homework.not_submitted}</p><p className="text-[11px] text-neutral-500 mt-0.5"> Not submitted</p></div>
  </div>
  <div className="space-y-2">
  {engagement.homework.history.slice(0, 10).map((hw, i) => {
