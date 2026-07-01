@@ -152,8 +152,8 @@ export default function ClassPerformancePage() {
 
   const parentPie = data ? [
     { name: 'Active', value: data.parents.active, color: '#10b981' },
-    { name: 'Inactive', value: data.parents.inactive, color: '#f59e0b' },
-    { name: 'Never logged in', value: data.parents.never_logged_in, color: '#f87171' },
+    { name: 'Not active', value: data.parents.inactive, color: '#f59e0b' },
+    { name: 'Not logged in', value: data.parents.never_logged_in, color: '#f87171' },
   ].filter(d => d.value > 0) : [];
 
   const mySection = data?.school_comparison.find(s => s.section_id === selectedSection);
@@ -564,8 +564,8 @@ export default function ClassPerformancePage() {
               {([
                 { key: 'all', label: 'All', count: data.parents.total, color: 'bg-neutral-600' },
                 { key: 'active', label: 'Active', count: data.parents.active, color: 'bg-emerald-500' },
-                { key: 'inactive', label: 'Inactive', count: data.parents.inactive, color: 'bg-amber-500' },
-                { key: 'never_logged_in', label: 'Never logged in', count: data.parents.never_logged_in, color: 'bg-red-500' },
+                { key: 'inactive', label: 'Not active', count: data.parents.inactive, color: 'bg-amber-500' },
+                { key: 'never_logged_in', label: 'Not logged in', count: data.parents.never_logged_in, color: 'bg-red-500' },
               ] as const).map(tab => (
                 <button key={tab.key} onClick={() => setParentFilter(tab.key)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap ${
