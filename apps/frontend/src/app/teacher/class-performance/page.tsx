@@ -151,8 +151,7 @@ export default function ClassPerformancePage() {
   if (!token) return null;
 
   const parentPie = data ? [
-    { name: 'Active', value: data.parents.active, color: '#10b981' },
-    { name: 'Not active', value: data.parents.inactive, color: '#f59e0b' },
+    { name: 'Logged in', value: data.parents.active + data.parents.inactive, color: '#10b981' },
     { name: 'Not logged in', value: data.parents.never_logged_in, color: '#f87171' },
   ].filter(d => d.value > 0) : [];
 
@@ -563,9 +562,8 @@ export default function ClassPerformancePage() {
             <div className="flex gap-1 px-5 py-3 border-b border-neutral-50 shrink-0 overflow-x-auto">
               {([
                 { key: 'all', label: 'All', count: data.parents.total, color: 'bg-neutral-600' },
-                { key: 'active', label: 'Active', count: data.parents.active, color: 'bg-emerald-500' },
-                { key: 'inactive', label: 'Not active', count: data.parents.inactive, color: 'bg-amber-500' },
-                { key: 'never_logged_in', label: 'Not logged in', count: data.parents.never_logged_in, color: 'bg-red-500' },
+                { key: 'active', label: 'Logged in', count: data.parents.active + data.parents.inactive, color: 'bg-emerald-500' },
+                { key: 'never_logged_in', label: 'Not logged in', count: data.parents.never_logged_in, color: 'bg-red-400' },
               ] as const).map(tab => (
                 <button key={tab.key} onClick={() => setParentFilter(tab.key)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap ${
@@ -589,8 +587,7 @@ export default function ClassPerformancePage() {
                   <div key={parent.id} className="flex items-center gap-3 p-3 rounded-xl bg-neutral-50 border border-neutral-100">
                     {/* Status dot */}
                     <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                      parent.status === 'active' ? 'bg-emerald-400' :
-                      parent.status === 'inactive' ? 'bg-amber-400' : 'bg-red-400'
+                      parent.status === 'never_logged_in' ? 'bg-red-400' : 'bg-emerald-400'
                     }`} />
                     {/* Info */}
                     <div className="flex-1 min-w-0">
@@ -599,9 +596,7 @@ export default function ClassPerformancePage() {
                         Child: {parent.student_name}
                       </p>
                       <p className="text-[10px] text-neutral-400 mt-0.5">
-                        {parent.status === 'active' && `${parent.messages_30d} messages in 30 days`}
-                        {parent.status === 'inactive' && 'Logged in but not active'}
-                        {parent.status === 'never_logged_in' && 'Has not opened the app yet'}
+                        {parent.status === 'never_logged_in' ? 'Has not opened the app yet' : 'Logged in'}
                       </p>
                     </div>
                     {/* Phone action */}
