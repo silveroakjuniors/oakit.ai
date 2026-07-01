@@ -98,6 +98,38 @@ router.get('/today', async (req: Request, res: Response) => {
     );
     row.supplementary_activities = suppResult.rows;
 
+    // Enrich chunks with curriculum resource lookup (topic + book page for reference numbers)
+    if (row.chunks?.length > 0) {
+      try {
+        // Collect all activity_ids from chunks
+        const allRefIds: string[] = [];
+        for (const chunk of row.chunks) {
+          if (chunk.activity_ids?.length > 0) {
+            allRefIds.push(...chunk.activity_ids);
+          }
+          // Also extract numbers from content (e.g., "Res. 1472", "Rhyme - 1437")
+          const contentNums = (chunk.content || '').match(/\b(\d{2,4})\b/g) || [];
+          const wsNums = (chunk.content || '').match(/\b(w\d{4})\b/gi) || [];
+          allRefIds.push(...contentNums, ...wsNums);
+        }
+
+        if (allRefIds.length > 0) {
+          const uniqueIds = [...new Set(allRefIds)];
+          const resourceResult = await pool.query(
+            `SELECT resource_id, topic, book_page, resource_type, subject
+             FROM curriculum_resources
+             WHERE school_id = $1 AND resource_id = ANY($2)`,
+            [school_id, uniqueIds]
+          );
+          if (resourceResult.rows.length > 0) {
+            row.resource_lookup = Object.fromEntries(
+              resourceResult.rows.map((r: any) => [r.resource_id, { topic: r.topic, book_page: r.book_page, type: r.resource_type, subject: r.subject }])
+            );
+          }
+        }
+      } catch { /* non-critical — plan still works without enrichment */ }
+    }
+
     return res.json(row);
   } catch (err) {
     console.error('[Plans] error:', err);

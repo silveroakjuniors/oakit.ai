@@ -204,6 +204,10 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
     } as any);
     const { verifyToken: vt4 } = await import('../lib/jwt');
     const p4 = vt4(parentToken); await registerSession(parent.id, p4.sid!);
+
+    // Update last_login timestamp
+    pool.query('UPDATE parent_users SET last_login = now() WHERE id = $1', [parent.id]).catch(() => {});
+
     return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset, also_staff_role });
 
   } catch (err) {
@@ -411,17 +415,25 @@ router.get('/security-questions', async (_req: Request, res: Response) => {
 // POST /api/v1/auth/setup-security-question
 router.post('/setup-security-question', jwtVerify, async (req: Request, res: Response) => {
   try {
-    const { user_id } = req.user!;
+    const { user_id, role } = req.user!;
     const { security_question_id, answer } = req.body;
     if (!security_question_id || !answer) {
       return res.status(400).json({ error: 'security_question_id and answer are required' });
     }
 
     const hash = await bcrypt.hash(answer.trim().toLowerCase(), 12);
-    await pool.query(
-      'UPDATE users SET security_question_id = $1, security_answer_hash = $2 WHERE id = $3',
-      [security_question_id, hash, user_id]
-    );
+
+    if ((role as string) === 'parent') {
+      await pool.query(
+        'UPDATE parent_users SET security_question_id = $1, security_answer_hash = $2 WHERE id = $3',
+        [security_question_id, hash, user_id]
+      );
+    } else {
+      await pool.query(
+        'UPDATE users SET security_question_id = $1, security_answer_hash = $2 WHERE id = $3',
+        [security_question_id, hash, user_id]
+      );
+    }
 
     return res.json({ message: 'Security question set' });
   } catch (err) {

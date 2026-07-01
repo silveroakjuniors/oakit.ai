@@ -184,9 +184,10 @@ router.get('/import/template', roleGuard('admin'), async (_req: Request, res: Re
     { header: 'class', width: 12 },
     { header: 'parent contact number', width: 22 },
     { header: 'mother contact number', width: 22 },
+    { header: 'date of birth', width: 14 },
   ];
-  ws.addRow(['Aarav Sharma', 'Rajesh Sharma', 'Priya Sharma', 'A', 'UKG', '9876543210', '9876543211']);
-  ws.addRow(['Diya Patel', 'Suresh Patel', 'Meena Patel', 'B', 'LKG', '9123456789', '']);
+  ws.addRow(['Aarav Sharma', 'Rajesh Sharma', 'Priya Sharma', 'A', 'UKG', '9876543210', '9876543211', '2020-05-15']);
+  ws.addRow(['Diya Patel', 'Suresh Patel', 'Meena Patel', 'B', 'LKG', '9123456789', '', '2021-02-10']);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="student_import_template.xlsx"');
   const buf = await wb.xlsx.writeBuffer();
@@ -245,6 +246,10 @@ headers.forEach((h, i) => {
   else if (n === 'mothercontactnumber') {
     colMap.mother_contact = i;
   }
+
+  else if (n === 'dateofbirth' || n === 'dob' || n === 'birthday' || n === 'birthdate') {
+    colMap.date_of_birth = i;
+  }
 });
 
     if (colMap.student_name === undefined) return res.status(400).json({ error: 'Column "student name" not found in file' });
@@ -272,6 +277,22 @@ headers.forEach((h, i) => {
       const className     = String(row[colMap.class] || '').trim();
       const parentContact = colMap.parent_contact !== undefined ? String(row[colMap.parent_contact] || '').trim() : '';
       const motherContact = colMap.mother_contact !== undefined ? String(row[colMap.mother_contact] || '').trim() : '';
+      // Parse DOB — accepts YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or Excel Date objects
+      let dateOfBirth: string | null = null;
+      if (colMap.date_of_birth !== undefined && row[colMap.date_of_birth]) {
+        const rawDob = row[colMap.date_of_birth];
+        if (rawDob instanceof Date) {
+          dateOfBirth = rawDob.toISOString().split('T')[0];
+        } else {
+          const dobStr = String(rawDob).trim();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dobStr)) {
+            dateOfBirth = dobStr;
+          } else if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(dobStr)) {
+            const parts = dobStr.split(/[\/\-]/);
+            dateOfBirth = `${parts[2]}-${parts[1]}-${parts[0]}`;
+          }
+        }
+      }
 
       if (!studentName || !className || !sectionLabel) {
         skipped.push({ studentName, reason: 'Missing student name, class, or section' });
@@ -329,8 +350,8 @@ try {
     // INSERT new student
     await pool.query(
       `INSERT INTO students
-       (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+       (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact, date_of_birth)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         school_id,
         classRow.rows[0].id,
@@ -339,7 +360,8 @@ try {
         fatherName || null,
         motherName || null,
         parentContact || null,
-        motherContact || null
+        motherContact || null,
+        dateOfBirth || null
       ]
     );
   }
@@ -502,19 +524,39 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
       [school_id]
     );
 
-    // 2. Per-class counts + contact completeness
+    // 2. Parent activation/login stats
+    const parentStatsRow = await pool.query(
+      `SELECT
+         COUNT(DISTINCT s.id)::int AS total_students,
+         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL THEN s.id END)::int AS parents_activated,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN s.id END)::int AS parents_logged_in,
+         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL AND pu.last_login IS NULL THEN s.id END)::int AS parents_not_logged_in
+       FROM students s
+       LEFT JOIN parent_student_links psl ON psl.student_id = s.id
+       LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+       WHERE s.school_id = $1 AND s.is_active = true`,
+      [school_id]
+    );
+    const ps = parentStatsRow.rows[0];
+
+    // 3. Per-class counts + contact completeness + parent activation
     const byClassRow = await pool.query(
       `SELECT
          c.id   AS class_id,
          c.name AS class_name,
-         COUNT(s.id)::int AS total_students,
-         COUNT(s.id) FILTER (WHERE s.father_name    IS NOT NULL AND s.father_name    <> '')::int AS with_father,
-         COUNT(s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
-         COUNT(s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
-         COUNT(s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact
+         COUNT(DISTINCT s.id)::int AS total_students,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.father_name    IS NOT NULL AND s.father_name    <> '')::int AS with_father,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
+         COUNT(DISTINCT s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact,
+         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL THEN s.id END)::int AS parents_activated,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN s.id END)::int AS parents_logged_in,
+         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL AND pu.last_login IS NULL THEN s.id END)::int AS parents_not_logged_in
        FROM classes c
        LEFT JOIN students s
          ON s.class_id = c.id AND s.school_id = c.school_id AND s.is_active = true
+       LEFT JOIN parent_student_links psl ON psl.student_id = s.id
+       LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
        WHERE c.school_id = $1
        GROUP BY c.id, c.name
        ORDER BY c.name`,
@@ -555,6 +597,12 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
 
     return res.json({
       total_students: totalRow.rows[0].total,
+      parent_stats: {
+        activated: ps.parents_activated,
+        logged_in: ps.parents_logged_in,
+        not_logged_in: ps.parents_not_logged_in,
+        not_activated: totalRow.rows[0].total - ps.parents_activated,
+      },
       by_class: byClass,
     });
   } catch (err: any) {
@@ -897,20 +945,28 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
     );
 
     // 4. Cancel any pending fee reminders for this student
-    await client.query(
-      `UPDATE fee_reminders
-       SET status = 'cancelled'
-       WHERE student_id = $1 AND school_id = $2 AND status = 'pending'`,
-      [studentId, school_id]
-    ).catch(() => { /* fee_reminders table may not exist in all deployments */ });
+    try {
+      await client.query('SAVEPOINT sp_reminders');
+      await client.query(
+        `UPDATE fee_reminders
+         SET status = 'cancelled'
+         WHERE student_id = $1 AND school_id = $2 AND status = 'pending'`,
+        [studentId, school_id]
+      );
+      await client.query('RELEASE SAVEPOINT sp_reminders');
+    } catch { await client.query('ROLLBACK TO SAVEPOINT sp_reminders'); }
 
     // 5. Abandon any in-progress quiz attempts
-    await client.query(
-      `UPDATE quiz_attempts
-       SET status = 'abandoned'
-       WHERE student_id = $1 AND school_id = $2 AND status = 'in_progress'`,
-      [studentId, school_id]
-    ).catch(() => { /* ignore if table doesn't exist */ });
+    try {
+      await client.query('SAVEPOINT sp_quiz');
+      await client.query(
+        `UPDATE quiz_attempts
+         SET status = 'abandoned'
+         WHERE student_id = $1 AND school_id = $2 AND status = 'in_progress'`,
+        [studentId, school_id]
+      );
+      await client.query('RELEASE SAVEPOINT sp_quiz');
+    } catch { await client.query('ROLLBACK TO SAVEPOINT sp_quiz'); }
 
     // 6. Delete student portal account
     await client.query(

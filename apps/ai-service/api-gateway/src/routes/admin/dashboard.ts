@@ -10,9 +10,12 @@ const AI = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin', 'principal'));
 
-function coverageBand(pct: number): 'green' | 'amber' | 'red' {
-  if (pct >= 75) return 'green';
-  if (pct >= 40) return 'amber';
+function coverageBand(coveredPct: number, expectedPct: number): 'green' | 'amber' | 'red' {
+  // Compare against expected progress, not total curriculum
+  // If we're within 10% of expected, it's green; within 25%, amber; else red
+  const gap = expectedPct - coveredPct;
+  if (gap <= 10) return 'green';
+  if (gap <= 25) return 'amber';
   return 'red';
 }
 
@@ -20,12 +23,17 @@ function coverageBand(pct: number): 'green' | 'amber' | 'red' {
 router.get('/coverage', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
+    const today = new Date().toISOString().split('T')[0];
     const result = await pool.query(
       `SELECT
          sec.id as section_id, sec.label as section_label,
          c.name as class_name,
          COUNT(DISTINCT cc.id)::int as total_chunks,
-         COUNT(DISTINCT dc_chunks.chunk_id)::int as covered_chunks
+         COUNT(DISTINCT dc_chunks.chunk_id)::int as covered_chunks,
+         (SELECT COUNT(*)::int FROM day_plans dp 
+          WHERE dp.section_id = sec.id AND dp.plan_date <= $2 
+          AND dp.chunk_ids != '{}' AND dp.status NOT IN ('holiday','settling','revision','exam','event','weekend')
+         ) as expected_days
        FROM sections sec
        JOIN classes c ON c.id = sec.class_id
        LEFT JOIN curriculum_documents cd ON cd.class_id = sec.class_id AND cd.school_id = $1
@@ -37,11 +45,14 @@ router.get('/coverage', async (req: Request, res: Response) => {
        WHERE sec.school_id = $1
        GROUP BY sec.id, sec.label, c.name, c.id
        ORDER BY c.name, sec.label`,
-      [school_id]
+      [school_id, today]
     );
     const rows = result.rows.map((r: any) => {
-      const pct = r.total_chunks > 0 ? Math.round((r.covered_chunks / r.total_chunks) * 100) : 0;
-      return { ...r, coverage_pct: pct, band: coverageBand(pct), alert: pct < 40 && r.total_chunks > 0 };
+      const totalPct = r.total_chunks > 0 ? Math.round((r.covered_chunks / r.total_chunks) * 100) : 0;
+      // Expected progress: what percentage should be done by today
+      const expectedPct = r.total_chunks > 0 ? Math.round((r.expected_days / r.total_chunks) * 100) : 0;
+      const band = coverageBand(totalPct, Math.min(expectedPct, 100));
+      return { ...r, coverage_pct: totalPct, expected_pct: Math.min(expectedPct, 100), band, alert: band === 'red' && r.total_chunks > 0 };
     });
     return res.json(rows);
   } catch (err) {

@@ -42,7 +42,8 @@ def _clean(text: str | None) -> str:
 
 
 def _parse_week_day_header(cell: str) -> tuple[int | None, int | None]:
-    """Extract week and day numbers from a header cell like 'UKG Week 1 : Subject' or 'Day 3'"""
+    """Extract week and day numbers from a header cell like 'UKG Week 1 : Subject' or 'Day 3'
+    Also handles: 'Playgroup Subject', 'Playgroup Day 3', 'Sr. KG Day 1' etc."""
     import re
     if not cell:
         return None, None
@@ -69,6 +70,10 @@ def extract_days(file_path: str, start_page: int = 1) -> tuple[list[DayEntry], l
 
     # Carry subject names across pages — key = week number, value = ordered list of subject names
     week_subjects: dict[int, list[str]] = {}
+    # Auto-increment week when no explicit "Week N" is in the header
+    auto_week: int = 0
+    # Track consecutive days to infer week boundaries (5 days per week)
+    global_day_counter: int = 0
 
     try:
         with pdfplumber.open(file_path) as pdf:
@@ -102,6 +107,23 @@ def extract_days(file_path: str, start_page: int = 1) -> tuple[list[DayEntry], l
                                 current_week = week
                             col_week.append(current_week)
                             col_day.append(day)
+
+                        # If no week found in headers, auto-assign based on day sequence
+                        # (every 5 days = 1 week)
+                        if current_week is None:
+                            # Find the first day number in this table
+                            first_day_in_table = next((d for d in col_day if d is not None), None)
+                            if first_day_in_table:
+                                # Compute week from day number: days 1-5 = week 1, days 6-10 = week 2
+                                global_day_counter = max(global_day_counter, first_day_in_table - 1)
+                                current_week = ((global_day_counter) // 5) + 1
+                                col_week = [current_week if d is not None else None for d in col_day]
+                            elif col_day[0] is None and any(d for d in col_day[1:] if d is not None):
+                                # Subject column + day columns but no week — use auto_week
+                                # This is the first table of a new week
+                                auto_week += 1
+                                current_week = auto_week
+                                col_week = [current_week if d is not None else None for d in col_day]
 
                         # Skip non-curriculum tables
                         if not any(d for d in col_day if d is not None):
@@ -164,6 +186,11 @@ def extract_days(file_path: str, start_page: int = 1) -> tuple[list[DayEntry], l
                                         day_map[key].subjects[subject] = cell_text
 
                         days.extend(day_map.values())
+
+                        # Update global day counter for auto-week inference
+                        if day_map:
+                            max_day_in_table = max(d for _, d in day_map.keys())
+                            global_day_counter = max(global_day_counter, max_day_in_table)
 
                 except Exception as e:
                     failed.append({"page": real_page, "reason": str(e)})
