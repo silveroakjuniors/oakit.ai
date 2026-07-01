@@ -101,16 +101,8 @@ export default function FirstLoginSetupPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
 
-      // Store token and show success before redirect
-      setToken(token);
-      setRole(context?.account_type === 'parent' ? 'parent' : 'teacher');
-      setSchoolCode(context?.school_code || '');
-      sessionStorage.removeItem('oakit_first_login');
+      // Show success — user will click "Login Now" button
       setStep('done');
-
-      // Brief pause to show success, then redirect
-      const redirect = context?.account_type === 'parent' ? '/parent' : '/teacher';
-      setTimeout(() => router.push(redirect), 1500);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed');
     } finally { setLoading(false); }
@@ -203,10 +195,13 @@ export default function FirstLoginSetupPage() {
                 <ShieldCheck size={32} className="text-emerald-600" />
               </div>
               <h2 className="text-xl font-bold text-gray-900 mb-2">All set!</h2>
-              <p className="text-sm text-gray-500">Your account is ready. Redirecting you now...</p>
-              <div className="mt-4">
-                <Loader2 size={20} className="animate-spin text-emerald-600 mx-auto" />
-              </div>
+              <p className="text-sm text-gray-500">Your security question has been saved. Please login with your new password.</p>
+              <button
+                onClick={() => { sessionStorage.removeItem('oakit_first_login'); router.push('/login'); }}
+                className="mt-6 w-full py-3.5 rounded-2xl text-white font-bold text-sm"
+                style={{ background: 'linear-gradient(135deg,#1a4a2e,#1F7A5A)' }}>
+                Login Now
+              </button>
             </div>
           )}
         </div>
