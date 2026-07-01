@@ -380,7 +380,14 @@ router.get('/', async (req: Request, res: Response) => {
     return res.json(result);
   } catch (err) {
     console.error('[smart-alerts]', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    // Return empty result on error (e.g., temp disk full) instead of 500
+    return res.json({
+      alerts: [],
+      teacher_scores: [],
+      generated_at: new Date().toISOString(),
+      summary: { total_alerts: 0, high: 0, medium: 0, low: 0 },
+      error_hint: 'Smart alerts temporarily unavailable',
+    });
   }
 });
 
