@@ -438,7 +438,7 @@ export default function AdminDashboardPage() {
  title="School Intelligence"
  subtitle="Oakie-detected issues across teachers, attendance & curriculum"
  badge={smartAlerts?.summary ? (smartAlerts.summary.high > 0 ? `${smartAlerts.summary.high} urgent` : `${smartAlerts.summary.total_alerts} alerts`) : 'Analysing...'}
- badgeColor={smartAlerts?.summary?.high > 0 ? 'bg-red-100 text-red-700' : 'bg-violet-100 text-violet-700'}
+ badgeColor={(smartAlerts?.summary?.high ?? 0) > 0 ? 'bg-red-100 text-red-700' : 'bg-violet-100 text-violet-700'}
  expanded={smartAlertsExpanded} onToggle={() => setSmartAlertsExpanded(v => !v)}
  />
  {smartAlertsExpanded && smartAlerts && (
