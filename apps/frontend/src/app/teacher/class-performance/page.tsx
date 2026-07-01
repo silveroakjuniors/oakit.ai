@@ -108,7 +108,7 @@ export default function ClassPerformancePage() {
   const [allSections, setAllSections] = useState<{ section_id: string; section_label: string; class_name: string; role: string }[]>([]);
   const [selectedSection, setSelectedSection] = useState('');
   const [showParentDrill, setShowParentDrill] = useState(false);
-  const [parentFilter, setParentFilter] = useState<'all' | 'active' | 'inactive' | 'never_logged_in'>('all');
+  const [parentFilter, setParentFilter] = useState<'all' | 'active' | 'never_logged_in'>('all');
 
   useEffect(() => {
     const t = getToken() || '';
