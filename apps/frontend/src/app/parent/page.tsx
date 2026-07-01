@@ -1173,9 +1173,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  {/* Stat cards row  4 colored cards with mini donut graphs */}
  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
  {/* Attendance */}
- <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#d1fae5,#a7f3d0)', border: '1px solid #6ee7b7' }}>
- <div className="relative flex-shrink-0 w-12 h-12">
- <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+ <div className="stat-pill rounded-2xl p-3 sm:p-4 flex items-center gap-2 sm:gap-3 cursor-default overflow-hidden" style={{ background: 'linear-gradient(135deg,#d1fae5,#a7f3d0)', border: '1px solid #6ee7b7' }}>
+ <div className="relative flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12">
+ <svg width="100%" height="100%" viewBox="0 0 48 48" style={{ transform: 'rotate(-90deg)' }}>
  <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
  <circle cx="24" cy="24" r="18" fill="none" stroke="#059669" strokeWidth="5"
  strokeDasharray={`${(attPct / 100) * 113} 113`} strokeLinecap="round" />
@@ -1185,16 +1185,16 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  </div>
  </div>
  <div>
- <p className="text-2xl font-black text-emerald-900 leading-none">{attPct}%</p>
+ <p className="text-lg sm:text-2xl font-black text-emerald-900 leading-none truncate">{attPct}%</p>
  <p className="text-xs font-semibold text-emerald-700 mt-0.5">Attendance</p>
  <p className="text-[10px] text-emerald-600">{attPct >= 90 ? 'Excellent' : 'This Month'}</p>
  </div>
  </div>
 
  {/* Progress */}
- <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', border: '1px solid #93c5fd' }}>
- <div className="relative flex-shrink-0 w-12 h-12">
- <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+ <div className="stat-pill rounded-2xl p-3 sm:p-4 flex items-center gap-2 sm:gap-3 cursor-default overflow-hidden" style={{ background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', border: '1px solid #93c5fd' }}>
+ <div className="relative flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12">
+ <svg width="100%" height="100%" viewBox="0 0 48 48" style={{ transform: 'rotate(-90deg)' }}>
  <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
  <circle cx="24" cy="24" r="18" fill="none" stroke="#2563eb" strokeWidth="5"
  strokeDasharray={`${((progress?.coverage_pct ?? 0) / 100) * 113} 113`} strokeLinecap="round" />
@@ -1204,16 +1204,16 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  </div>
  </div>
  <div>
- <p className="text-2xl font-black text-blue-900 leading-none">{(progress?.coverage_pct ?? 0).toFixed(1)}%</p>
+ <p className="text-lg sm:text-2xl font-black text-blue-900 leading-none truncate">{(progress?.coverage_pct ?? 0).toFixed(1)}%</p>
  <p className="text-xs font-semibold text-blue-700 mt-0.5">Progress</p>
  <p className="text-[10px] text-blue-600">This Term</p>
  </div>
  </div>
 
  {/* Messages */}
- <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd' }}>
- <div className="relative flex-shrink-0 w-12 h-12">
- <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+ <div className="stat-pill rounded-2xl p-3 sm:p-4 flex items-center gap-2 sm:gap-3 cursor-default overflow-hidden" style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd' }}>
+ <div className="relative flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12">
+ <svg width="100%" height="100%" viewBox="0 0 48 48" style={{ transform: 'rotate(-90deg)' }}>
  <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
  <circle cx="24" cy="24" r="18" fill="none" stroke="#7c3aed" strokeWidth="5"
  strokeDasharray={`${Math.min(unreadMessages * 20, 113)} 113`} strokeLinecap="round" />
@@ -1223,16 +1223,16 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  </div>
  </div>
  <div>
- <p className="text-2xl font-black text-purple-900 leading-none">{unreadMessages}</p>
+ <p className="text-lg sm:text-2xl font-black text-purple-900 leading-none truncate">{unreadMessages}</p>
  <p className="text-xs font-semibold text-purple-700 mt-0.5">Messages</p>
  <p className="text-[10px] text-purple-600">Unread</p>
  </div>
  </div>
 
  {/* Updates */}
- <div className="stat-pill rounded-2xl p-4 flex items-center gap-3 cursor-default" style={{ background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fcd34d' }}>
- <div className="relative flex-shrink-0 w-12 h-12">
- <svg width="48" height="48" style={{ transform: 'rotate(-90deg)' }}>
+ <div className="stat-pill rounded-2xl p-3 sm:p-4 flex items-center gap-2 sm:gap-3 cursor-default overflow-hidden" style={{ background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fcd34d' }}>
+ <div className="relative flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12">
+ <svg width="100%" height="100%" viewBox="0 0 48 48" style={{ transform: 'rotate(-90deg)' }}>
  <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="5" />
  <circle cx="24" cy="24" r="18" fill="none" stroke="#d97706" strokeWidth="5"
  strokeDasharray={`${Math.min(unreadNotifs * 20, 113)} 113`} strokeLinecap="round" />
@@ -1242,7 +1242,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  </div>
  </div>
  <div>
- <p className="text-2xl font-black text-amber-900 leading-none">{unreadNotifs}</p>
+ <p className="text-lg sm:text-2xl font-black text-amber-900 leading-none truncate">{unreadNotifs}</p>
  <p className="text-xs font-semibold text-amber-700 mt-0.5">Updates</p>
  <p className="text-[10px] text-amber-600">New</p>
  </div>
