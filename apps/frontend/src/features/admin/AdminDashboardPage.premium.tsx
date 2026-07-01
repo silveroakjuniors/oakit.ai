@@ -421,7 +421,7 @@ export default function AdminDashboardPage() {
  {todayBdays.length > 0 && (
  <button onClick={() => setBirthdayModal(true)}
  className="w-full mt-1 text-xs font-bold text-pink-600 hover:text-pink-800 py-2 rounded-xl hover:bg-pink-50 transition-colors">
- Ô£¿ Send birthday wishes to parents 
+  Send birthday wishes to parents 
  </button>
  )}
  </div>
