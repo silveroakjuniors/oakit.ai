@@ -843,7 +843,7 @@ export default function ClassPerformancePage() {
                         </p>
                         <p className="text-[9px] text-neutral-400 mt-1.5">
                           {(() => { const d = new Date(entry.entry_date); return isNaN(d.getTime()) ? entry.entry_date : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); })()}
-                          {entry.sent_at && ` · Sent ${new Date(entry.sent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                          {entry.read_at && ` · Read ${new Date(entry.read_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
                         </p>
                       </div>
                     </div>
