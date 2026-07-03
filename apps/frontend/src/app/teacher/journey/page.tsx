@@ -7,7 +7,7 @@ import { getToken } from '@/lib/auth';
 import {
   ChevronLeft, Send, BookOpen, ClipboardList, CheckCircle2, AlertCircle,
   X, Loader2, Sparkles, Users, Wand2, Pencil, Trash2, Calendar,
-  ChevronDown, ChevronUp, Eye, EyeOff,
+  ChevronDown, ChevronUp, Eye, EyeOff, Check, CheckCheck,
 } from 'lucide-react';
 import InlineMicButton from '@/components/InlineMicButton';
 
@@ -16,6 +16,7 @@ interface JourneyEntry {
   id: string; entry_date: string; entry_type: 'daily' | 'weekly' | 'highlight';
   raw_text: string; beautified_text: string; student_name: string;
   student_id: string; is_sent_to_parent: boolean; sent_at: string | null;
+  read_at: string | null;
 }
 interface ObsRecord { student_id: string; categories: string[]; }
 interface Observation {
@@ -923,9 +924,15 @@ export default function ChildJourneyPage() {
                                     <div className="flex items-center gap-1.5 mt-0.5">
                                       <span className="text-[10px] text-neutral-400 capitalize">{entry.entry_type}</span>
                                       {entry.is_sent_to_parent ? (
-                                        <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5">
-                                          <CheckCircle2 size={9} /> Sent to parent
-                                        </span>
+                                        entry.read_at ? (
+                                          <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5">
+                                            <CheckCheck size={9} /> Read by parent
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5">
+                                            <Check size={9} /> Sent to parent
+                                          </span>
+                                        )
                                       ) : (
                                         <span className="text-[10px] bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded-full font-medium">
                                           Saved · not sent yet
