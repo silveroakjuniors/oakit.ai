@@ -341,7 +341,7 @@ router.get('/parent/:studentId', async (req: Request, res: Response) => {
     }
 
     let query = `
-      SELECT cj.id, cj.entry_date, cj.entry_type, cj.beautified_text, cj.created_at
+      SELECT cj.id, cj.entry_date, cj.entry_type, cj.beautified_text, cj.created_at, cj.read_at
       FROM child_journey_entries cj
       WHERE cj.student_id = $1 AND cj.school_id = $2
     `;
@@ -353,6 +353,15 @@ router.get('/parent/:studentId', async (req: Request, res: Response) => {
     query += ' ORDER BY cj.entry_date DESC LIMIT 90';
 
     const r = await pool.query(query, params);
+
+    // Mark unread entries as read (fire-and-forget)
+    const entryIds = r.rows.filter((e: any) => !e.read_at).map((e: any) => e.id);
+    if (entryIds.length > 0) {
+      pool.query(
+        `UPDATE child_journey_entries SET read_at = now() WHERE id = ANY($1::uuid[]) AND read_at IS NULL`,
+        [entryIds]
+      ).catch(() => {});
+    }
 
     return res.json({
       student: accessCheck.rows[0],

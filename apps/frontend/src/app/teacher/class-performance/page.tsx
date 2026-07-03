@@ -12,7 +12,20 @@ import {
   ChevronLeft, Users, BookOpen, CheckCircle2, Clock,
   Send, UserCheck, TrendingUp, Award, Loader2, X, Phone,
   AlertTriangle, Cake, MessageSquare, Flame, Trophy, FileText,
+  Check, CheckCheck,
 } from 'lucide-react';
+
+interface JournalEntry {
+  id: string;
+  entry_date: string;
+  entry_type: string;
+  beautified_text: string;
+  raw_text: string;
+  is_sent_to_parent: boolean;
+  sent_at: string | null;
+  read_at: string | null;
+  student_name: string;
+}
 
 interface ParentDetail {
   id: string;
@@ -66,6 +79,23 @@ interface PerformanceData {
     att_pct: number;
     comments_sent: number;
   }[];
+  section_scores: {
+    section_id: string;
+    section_label: string;
+    class_name: string;
+    rank: number;
+    score: number;
+    breakdown: {
+      completion: number;
+      comp_timeliness: number;
+      att_timeliness: number;
+      journal: number;
+      feed: number;
+      milestones: number;
+      homework: number;
+      observations: number;
+    };
+  }[];
   weekly_trend: {
     week_start: string;
     att_pct: number;
@@ -109,6 +139,11 @@ export default function ClassPerformancePage() {
   const [selectedSection, setSelectedSection] = useState('');
   const [showParentDrill, setShowParentDrill] = useState(false);
   const [parentFilter, setParentFilter] = useState<'all' | 'active' | 'never_logged_in'>('all');
+  const [showJournalDrill, setShowJournalDrill] = useState(false);
+  const [journalFilter, setJournalFilter] = useState<'all' | 'sent' | 'unsent'>('all');
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [showRankDrill, setShowRankDrill] = useState(false);
 
   useEffect(() => {
     const t = getToken() || '';
@@ -146,6 +181,26 @@ export default function ClassPerformancePage() {
       setData(null);
     }
     finally { setLoading(false); }
+  }
+
+  async function loadJournalEntries(filter: 'all' | 'sent' | 'unsent') {
+    setJournalLoading(true);
+    try {
+      const res = await apiGet<{ entries: JournalEntry[] }>(
+        `/api/v1/teacher/class-performance/journal-entries?section_id=${selectedSection}&filter=${filter}`,
+        token
+      );
+      setJournalEntries(res.entries || []);
+    } catch (e: any) {
+      console.error('Journal entries load failed:', e.message);
+      setJournalEntries([]);
+    } finally { setJournalLoading(false); }
+  }
+
+  function openJournalDrill(filter: 'all' | 'sent' | 'unsent' = 'all') {
+    setJournalFilter(filter);
+    setShowJournalDrill(true);
+    loadJournalEntries(filter);
   }
 
   if (!token) return null;
@@ -230,7 +285,10 @@ export default function ClassPerformancePage() {
               if (existing) { existing.comp_time = d.time_minutes; }
               else { dateMap.set(key, { date: key, att_time: null, comp_time: d.time_minutes }); }
             });
-            const chartData = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+            const chartData = Array.from(dateMap.values())
+              .filter(d => { const day = new Date(d.date + 'T12:00:00').getDay(); return day !== 0 && day !== 6; })
+              .filter(d => d.date >= '2026-06-08')
+              .sort((a, b) => a.date.localeCompare(b.date));
             const fmtTime = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(Math.round(mins % 60)).padStart(2, '0')}`;
 
             return (
@@ -321,14 +379,14 @@ export default function ClassPerformancePage() {
               <p className="text-xs font-bold text-neutral-700">Comments to Parents (30 days)</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-amber-50 rounded-xl p-3 text-center">
+              <button onClick={() => openJournalDrill('all')} className="bg-amber-50 rounded-xl p-3 text-center hover:bg-amber-100 hover:shadow-sm transition-all active:scale-95">
                 <p className="text-2xl font-black text-amber-600">{data.journal.total_entries}</p>
                 <p className="text-[10px] text-amber-700 font-medium mt-1">Total Entries</p>
-              </div>
-              <div className="bg-emerald-50 rounded-xl p-3 text-center">
+              </button>
+              <button onClick={() => openJournalDrill('sent')} className="bg-emerald-50 rounded-xl p-3 text-center hover:bg-emerald-100 hover:shadow-sm transition-all active:scale-95">
                 <p className="text-2xl font-black text-emerald-600">{data.journal.sent_to_parents}</p>
                 <p className="text-[10px] text-emerald-700 font-medium mt-1">Sent to Parents</p>
-              </div>
+              </button>
             </div>
           </div>
 
@@ -428,12 +486,12 @@ export default function ClassPerformancePage() {
               <p className="text-[10px] text-neutral-500">Day Streak</p>
               <p className="text-[9px] text-neutral-400">Best: {data.streak?.best || 0}</p>
             </div>
-            <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-3 text-center">
+            <button onClick={() => setShowRankDrill(true)} className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-3 text-center hover:border-indigo-200 hover:shadow-md transition-all active:scale-95">
               <Trophy size={18} className="text-indigo-500 mx-auto mb-1" />
               <p className="text-lg font-black text-neutral-800">#{data.school_rank?.rank || '—'}</p>
               <p className="text-[10px] text-neutral-500">School Rank</p>
               <p className="text-[9px] text-neutral-400">of {data.school_rank?.total || 0} sections</p>
-            </div>
+            </button>
             <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-3 text-center">
               <FileText size={18} className="text-cyan-500 mx-auto mb-1" />
               <p className="text-lg font-black text-neutral-800">{data.homework?.days_with_homework || 0}</p>
@@ -611,6 +669,188 @@ export default function ClassPerformancePage() {
                 ))}
               {(data.parents.details || []).filter(p => parentFilter === 'all' || p.status === parentFilter).length === 0 && (
                 <p className="text-xs text-neutral-400 text-center py-8">No parents in this category</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rank Drill-Down Modal ── */}
+      {showRankDrill && data && (() => {
+        const ranked = data.section_scores || [];
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowRankDrill(false)}>
+            <div className="relative w-full sm:w-[520px] max-h-[85vh] bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 shrink-0">
+                <div>
+                  <p className="text-sm font-bold text-neutral-800">Class Rankings</p>
+                  <p className="text-[10px] text-neutral-400 mt-0.5">Performance score (last 30 days)</p>
+                </div>
+                <button onClick={() => setShowRankDrill(false)}
+                  className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-500 transition-colors">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Rankings list */}
+              <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+                {ranked.map(section => {
+                  const isMe = section.section_id === selectedSection;
+                  return (
+                    <div key={section.section_id} className={`p-3 rounded-xl border ${isMe ? 'bg-indigo-50 border-indigo-200' : 'bg-neutral-50 border-neutral-100'}`}>
+                      <div className="flex items-center gap-3 mb-2">
+                        {/* Rank badge */}
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-black text-sm ${
+                          section.rank === 1 ? 'bg-amber-100 text-amber-700' :
+                          section.rank === 2 ? 'bg-neutral-200 text-neutral-600' :
+                          section.rank === 3 ? 'bg-orange-100 text-orange-700' :
+                          'bg-neutral-100 text-neutral-500'
+                        }`}>
+                          #{section.rank}
+                        </div>
+                        {/* Section info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className={`text-xs font-semibold truncate ${isMe ? 'text-indigo-700' : 'text-neutral-800'}`}>
+                              {section.class_name} · {section.section_label}
+                            </p>
+                            {isMe && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-200 text-indigo-700 font-medium">You</span>}
+                          </div>
+                        </div>
+                        {/* Score */}
+                        <div className="text-right shrink-0">
+                          <p className={`text-sm font-black ${isMe ? 'text-indigo-600' : 'text-neutral-700'}`}>{section.score}</p>
+                          <p className="text-[9px] text-neutral-400">/100</p>
+                        </div>
+                      </div>
+                      {/* Score breakdown bars */}
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {([
+                          { key: 'completion', label: 'Plans', color: 'bg-emerald-400' },
+                          { key: 'comp_timeliness', label: 'Plan Speed', color: 'bg-cyan-400' },
+                          { key: 'att_timeliness', label: 'Att. Speed', color: 'bg-indigo-400' },
+                          { key: 'journal', label: 'Comments', color: 'bg-amber-400' },
+                          { key: 'feed', label: 'Feed', color: 'bg-violet-400' },
+                          { key: 'milestones', label: 'Milestones', color: 'bg-pink-400' },
+                          { key: 'homework', label: 'Homework', color: 'bg-sky-400' },
+                          { key: 'observations', label: 'Obs.', color: 'bg-orange-400' },
+                        ] as const).map(item => (
+                          <div key={item.key} className="text-center">
+                            <div className="w-full bg-neutral-100 rounded-full h-1.5 mb-0.5">
+                              <div className={`h-1.5 rounded-full ${item.color} transition-all`}
+                                style={{ width: `${(section.breakdown as any)[item.key] || 0}%` }} />
+                            </div>
+                            <p className="text-[8px] text-neutral-400 leading-tight">{item.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer explanation */}
+              <div className="px-5 py-3 border-t border-neutral-100 shrink-0">
+                <p className="text-[9px] text-neutral-400 text-center leading-relaxed">
+                  Score based on: Plan completion (20%) + Completion speed (15%) + Attendance speed (15%) + Comments to parents (15%) + Feed posts (10%) + Milestones (10%) + Homework (10%) + Observations (5%)
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Journal Drill-Down Modal ── */}
+      {showJournalDrill && data && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setShowJournalDrill(false)}>
+          <div className="relative w-full sm:w-[520px] max-h-[85vh] bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 shrink-0">
+              <div>
+                <p className="text-sm font-bold text-neutral-800">Journal Entries</p>
+                <p className="text-[10px] text-neutral-400 mt-0.5">Last 30 days · {data.class_name} · Section {data.section_label}</p>
+              </div>
+              <button onClick={() => setShowJournalDrill(false)}
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center text-neutral-500 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Filter tabs */}
+            <div className="flex gap-1 px-5 py-3 border-b border-neutral-50 shrink-0 overflow-x-auto">
+              {([
+                { key: 'all', label: 'All', count: data.journal.total_entries, color: 'bg-neutral-600' },
+                { key: 'sent', label: 'Sent to Parents', count: data.journal.sent_to_parents, color: 'bg-emerald-500' },
+                { key: 'unsent', label: 'Not Sent', count: data.journal.total_entries - data.journal.sent_to_parents, color: 'bg-amber-500' },
+              ] as const).map(tab => (
+                <button key={tab.key} onClick={() => { setJournalFilter(tab.key); loadJournalEntries(tab.key); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap ${
+                    journalFilter === tab.key
+                      ? `${tab.color} text-white shadow-sm`
+                      : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+                  }`}>
+                  {tab.label}
+                  <span className={`text-[10px] ${journalFilter === tab.key ? 'text-white/80' : 'text-neutral-400'}`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Journal entries list */}
+            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+              {journalLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+                </div>
+              ) : journalEntries.length > 0 ? (
+                journalEntries.map(entry => (
+                  <div key={entry.id} className="p-3 rounded-xl bg-neutral-50 border border-neutral-100">
+                    <div className="flex items-start gap-3">
+                      {/* Entry type badge */}
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                        entry.entry_type === 'highlight' ? 'bg-amber-100' :
+                        entry.entry_type === 'weekly' ? 'bg-indigo-100' : 'bg-emerald-100'
+                      }`}>
+                        <Send size={14} className={
+                          entry.entry_type === 'highlight' ? 'text-amber-600' :
+                          entry.entry_type === 'weekly' ? 'text-indigo-600' : 'text-emerald-600'
+                        } />
+                      </div>
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-xs font-semibold text-neutral-800 truncate">{entry.student_name}</p>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                            entry.entry_type === 'highlight' ? 'bg-amber-100 text-amber-700' :
+                            entry.entry_type === 'weekly' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
+                          }`}>
+                            {entry.entry_type}
+                          </span>
+                          {entry.is_sent_to_parent && (
+                            entry.read_at
+                              ? <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium"><CheckCheck size={10} /> read</span>
+                              : <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium"><Check size={10} /> sent</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-neutral-600 line-clamp-3 leading-relaxed">
+                          {entry.beautified_text || entry.raw_text}
+                        </p>
+                        <p className="text-[9px] text-neutral-400 mt-1.5">
+                          {(() => { const d = new Date(entry.entry_date); return isNaN(d.getTime()) ? entry.entry_date : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); })()}
+                          {entry.sent_at && ` · Sent ${new Date(entry.sent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-neutral-400 text-center py-8">No journal entries found</p>
               )}
             </div>
           </div>

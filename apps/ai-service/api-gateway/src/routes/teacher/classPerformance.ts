@@ -68,7 +68,7 @@ router.get('/', async (req: Request, res: Response) => {
     // Average attendance time
     const attTimeRows = await safeQuery(
       `SELECT
-         AVG(EXTRACT(HOUR FROM submitted_at) * 60 + EXTRACT(MINUTE FROM submitted_at))::int AS avg_minutes
+         AVG(EXTRACT(HOUR FROM submitted_at AT TIME ZONE 'Asia/Kolkata') * 60 + EXTRACT(MINUTE FROM submitted_at AT TIME ZONE 'Asia/Kolkata'))::int AS avg_minutes
        FROM attendance_records ar
        WHERE ar.section_id = $1 AND ar.school_id = $2 AND ar.attend_date >= $3
          AND ar.submitted_at IS NOT NULL`,
@@ -82,11 +82,13 @@ router.get('/', async (req: Request, res: Response) => {
     // ── 3. Curriculum coverage ──
     const covRows = await safeQuery(
       `SELECT
-         COUNT(*)::int AS total_chunks,
-         COUNT(*) FILTER (WHERE cs.status = 'covered')::int AS covered_chunks
-       FROM curriculum_chunks cc
-       LEFT JOIN coverage_statuses cs ON cs.chunk_id = cc.id
-       WHERE cc.section_id = $1 AND cc.school_id = $2`,
+         (SELECT COUNT(*)::int FROM curriculum_chunks WHERE class_id = sec.class_id) AS total_chunks,
+         COUNT(DISTINCT cid)::int AS covered_chunks
+       FROM sections sec
+       LEFT JOIN daily_completions dc ON dc.section_id = sec.id
+       LEFT JOIN LATERAL unnest(dc.covered_chunk_ids) AS cid ON true
+       WHERE sec.id = $1 AND sec.school_id = $2
+       GROUP BY sec.class_id`,
       [section_id, school_id]
     );
     const cov = covRows[0] || { total_chunks: 0, covered_chunks: 0 };
@@ -104,9 +106,9 @@ router.get('/', async (req: Request, res: Response) => {
     // Average completion time
     const compTimeRows = await safeQuery(
       `SELECT
-         AVG(EXTRACT(HOUR FROM created_at) * 60 + EXTRACT(MINUTE FROM created_at))::int AS avg_minutes
+         AVG(EXTRACT(HOUR FROM submitted_at AT TIME ZONE 'Asia/Kolkata') * 60 + EXTRACT(MINUTE FROM submitted_at AT TIME ZONE 'Asia/Kolkata'))::int AS avg_minutes
        FROM daily_completions
-       WHERE section_id = $1 AND school_id = $2 AND completion_date >= $3`,
+       WHERE section_id = $1 AND school_id = $2 AND completion_date >= $3 AND submitted_at IS NOT NULL`,
       [section_id, school_id, thirtyDaysAgo]
     );
     const avgCompMinutes = compTimeRows[0]?.avg_minutes || null;
@@ -125,47 +127,42 @@ router.get('/', async (req: Request, res: Response) => {
     );
     const journal = journalRows[0] || { total_entries: 0, sent_to_parents: 0 };
 
-    // ── 6. Parent engagement ──
+    // ── 6. Parent engagement (per-student: how many kids have a parent logged in) ──
     const parentRows = await safeQuery(
       `SELECT
-         COUNT(DISTINCT pu.id)::int AS total_parents,
-         COUNT(DISTINCT pu.id) FILTER (WHERE pu.force_password_reset = false AND EXISTS (
-           SELECT 1 FROM messages m WHERE m.parent_id = pu.id AND m.school_id = $2 AND m.sent_at >= $3
-         ))::int AS active_parents,
-         COUNT(DISTINCT pu.id) FILTER (WHERE pu.force_password_reset = true)::int AS never_logged_in
-       FROM parent_users pu
-       JOIN parent_student_links psl ON psl.parent_id = pu.id
-       JOIN students st ON st.id = psl.student_id AND st.section_id = $1
-       WHERE pu.school_id = $2 AND pu.is_active = true`,
-      [section_id, school_id, thirtyDaysAgo]
+         COUNT(DISTINCT st.id)::int AS total_students,
+         COUNT(DISTINCT st.id) FILTER (WHERE EXISTS(
+           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
+           WHERE p2.student_id = st.id AND pu2.last_login IS NOT NULL
+         ))::int AS logged_in,
+         COUNT(DISTINCT st.id) FILTER (WHERE NOT EXISTS(
+           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
+           WHERE p2.student_id = st.id AND pu2.last_login IS NOT NULL
+         ))::int AS not_logged_in
+       FROM students st
+       WHERE st.section_id = $1 AND st.school_id = $2 AND st.is_active = true`,
+      [section_id, school_id]
     );
-    const parents = parentRows[0] || { total_parents: 0, active_parents: 0, never_logged_in: 0 };
-    const inactive_parents = Math.max(0, (parents.total_parents || 0) - (parents.active_parents || 0) - (parents.never_logged_in || 0));
+    const parents = parentRows[0] || { total_students: 0, logged_in: 0, not_logged_in: 0 };
 
-    // ── 6b. Parent detail list (for drill-down) ──
+    // ── 6b. Parent detail list (for drill-down — one row per student) ──
     const parentDetailRows = await safeQuery(
       `SELECT
-         pu.id, pu.name AS parent_name, pu.mobile,
+         st.id, COALESCE(pu.name, st.father_name) AS parent_name, COALESCE(pu.mobile, st.parent_contact) AS mobile,
          st.name AS student_name,
-         pu.force_password_reset,
-         MAX(m.sent_at) AS last_message_at,
-         COUNT(m.id)::int AS messages_30d,
-         CASE
-           WHEN pu.force_password_reset = true THEN 'never_logged_in'
-           WHEN COUNT(m.id) > 0 THEN 'active'
-           ELSE 'inactive'
-         END AS status
-       FROM parent_users pu
-       JOIN parent_student_links psl ON psl.parent_id = pu.id
-       JOIN students st ON st.id = psl.student_id AND st.section_id = $1
-       LEFT JOIN messages m ON m.parent_id = pu.id AND m.school_id = $2 AND m.sent_at >= $3
-       WHERE pu.school_id = $2 AND pu.is_active = true
-       GROUP BY pu.id, pu.name, pu.mobile, st.name, pu.force_password_reset
-       ORDER BY pu.name`,
-      [section_id, school_id, thirtyDaysAgo]
+         CASE WHEN pu.last_login IS NOT NULL THEN 'active' ELSE 'never_logged_in' END AS status,
+         0 AS messages_30d,
+         pu.last_login AS last_message_at
+       FROM students st
+       LEFT JOIN parent_student_links psl ON psl.student_id = st.id
+       LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+       WHERE st.section_id = $1 AND st.school_id = $2 AND st.is_active = true
+       GROUP BY st.id, st.name, st.father_name, st.parent_contact, pu.name, pu.mobile, pu.last_login
+       ORDER BY st.name`,
+      [section_id, school_id]
     );
 
-    // ── 7. School-wide comparison (all sections) ──
+    // ── 7. School-wide comparison (all sections) — comprehensive teacher performance ──
     const schoolComparison = await safeQuery(
       `SELECT
          s.id AS section_id, s.label AS section_label, c.name AS class_name,
@@ -188,6 +185,164 @@ router.get('/', async (req: Request, res: Response) => {
       [school_id, thirtyDaysAgo]
     );
 
+    // ── 7b. Teacher performance score per section (for ranking) ──
+    const perfScores = await safeQuery(
+      `WITH section_students AS (
+         SELECT section_id, COUNT(*)::int AS student_count
+         FROM students WHERE school_id = $1 AND is_active = true
+         GROUP BY section_id
+       ),
+       completion_stats AS (
+         SELECT section_id,
+           COUNT(DISTINCT completion_date)::int AS days_completed,
+           AVG(EXTRACT(HOUR FROM submitted_at AT TIME ZONE 'Asia/Kolkata') * 60
+             + EXTRACT(MINUTE FROM submitted_at AT TIME ZONE 'Asia/Kolkata'))::int AS avg_comp_minutes
+         FROM daily_completions
+         WHERE school_id = $1 AND completion_date >= $2 AND submitted_at IS NOT NULL
+         GROUP BY section_id
+       ),
+       att_timing AS (
+         SELECT section_id,
+           AVG(EXTRACT(HOUR FROM submitted_at AT TIME ZONE 'Asia/Kolkata') * 60
+             + EXTRACT(MINUTE FROM submitted_at AT TIME ZONE 'Asia/Kolkata'))::int AS avg_att_minutes
+         FROM attendance_records
+         WHERE school_id = $1 AND attend_date >= $2 AND submitted_at IS NOT NULL
+         GROUP BY section_id
+       ),
+       journal_stats AS (
+         SELECT section_id,
+           COUNT(*)::int AS total_entries,
+           COUNT(*) FILTER (WHERE is_sent_to_parent = true)::int AS sent_entries
+         FROM child_journey_entries
+         WHERE school_id = $1 AND entry_date >= $2
+         GROUP BY section_id
+       ),
+       feed_stats AS (
+         SELECT section_id, COUNT(*)::int AS post_count
+         FROM feed_posts
+         WHERE school_id = $1 AND created_at >= ($2::date)::timestamptz AND section_id IS NOT NULL
+         GROUP BY section_id
+       ),
+       milestone_stats AS (
+         SELECT s.section_id, COUNT(DISTINCT sm.id)::int AS milestones_marked
+         FROM student_milestones sm
+         JOIN students s ON s.id = sm.student_id
+         WHERE s.school_id = $1 AND sm.achieved_at >= $2
+         GROUP BY s.section_id
+       ),
+       homework_stats AS (
+         SELECT section_id, COUNT(DISTINCT homework_date)::int AS hw_days
+         FROM teacher_homework
+         WHERE school_id = $1 AND homework_date >= $2
+         GROUP BY section_id
+       ),
+       observation_stats AS (
+         SELECT s.section_id, COUNT(*)::int AS obs_count
+         FROM student_observations so
+         JOIN students s ON s.id = so.student_id
+         WHERE so.school_id = $1 AND so.obs_date >= $2
+         GROUP BY s.section_id
+       )
+       SELECT
+         sec.id AS section_id,
+         COALESCE(ss.student_count, 0) AS student_count,
+         COALESCE(cs.days_completed, 0) AS days_completed,
+         cs.avg_comp_minutes,
+         at2.avg_att_minutes,
+         COALESCE(js.total_entries, 0) AS journal_entries,
+         COALESCE(js.sent_entries, 0) AS journal_sent,
+         COALESCE(fs.post_count, 0) AS feed_posts,
+         COALESCE(ms.milestones_marked, 0) AS milestones_marked,
+         COALESCE(hs.hw_days, 0) AS hw_days,
+         COALESCE(os.obs_count, 0) AS obs_count
+       FROM sections sec
+       LEFT JOIN section_students ss ON ss.section_id = sec.id
+       LEFT JOIN completion_stats cs ON cs.section_id = sec.id
+       LEFT JOIN att_timing at2 ON at2.section_id = sec.id
+       LEFT JOIN journal_stats js ON js.section_id = sec.id
+       LEFT JOIN feed_stats fs ON fs.section_id = sec.id
+       LEFT JOIN milestone_stats ms ON ms.section_id = sec.id
+       LEFT JOIN homework_stats hs ON hs.section_id = sec.id
+       LEFT JOIN observation_stats os ON os.section_id = sec.id
+       WHERE sec.school_id = $1`,
+      [school_id, thirtyDaysAgo]
+    );
+
+    // Calculate composite performance score for each section
+    const SCHOOL_DAYS_30 = 22; // approx school days in 30 days
+    const TARGET_ATT_TIME = 570; // 09:30 in minutes — ideal attendance time
+    const TARGET_COMP_TIME = 780; // 13:00 in minutes — ideal completion time
+
+    const sectionScores = perfScores.map((s: any) => {
+      const studentCount = Math.max(s.student_count || 1, 1);
+
+      // 1. Plan Completion (20%) — days completed / school days
+      const completionScore = Math.min(100, ((s.days_completed || 0) / SCHOOL_DAYS_30) * 100);
+
+      // 2. Completion Timeliness (15%) — closer to target = better (max 100 if <= target)
+      let compTimeScore = 0;
+      if (s.avg_comp_minutes != null) {
+        const diff = Math.max(0, s.avg_comp_minutes - TARGET_COMP_TIME);
+        compTimeScore = Math.max(0, 100 - (diff / 3)); // lose ~1 point per 3 mins late
+      }
+
+      // 3. Attendance Timeliness (15%) — closer to school start = better
+      let attTimeScore = 0;
+      if (s.avg_att_minutes != null) {
+        const diff = Math.max(0, s.avg_att_minutes - TARGET_ATT_TIME);
+        attTimeScore = Math.max(0, 100 - (diff / 3));
+      }
+
+      // 4. Journal/Comments (15%) — entries sent per student (target: 2 per student per month)
+      const journalTarget = studentCount * 2;
+      const journalScore = Math.min(100, ((s.journal_sent || 0) / journalTarget) * 100);
+
+      // 5. Feed Posts (10%) — target: 1 per school day
+      const feedScore = Math.min(100, ((s.feed_posts || 0) / SCHOOL_DAYS_30) * 100);
+
+      // 6. Milestones (10%) — target: 1 per student per month
+      const milestoneScore = Math.min(100, ((s.milestones_marked || 0) / studentCount) * 100);
+
+      // 7. Homework (10%) — days with homework / school days
+      const hwScore = Math.min(100, ((s.hw_days || 0) / SCHOOL_DAYS_30) * 100);
+
+      // 8. Observations (5%) — target: 0.5 per student per month
+      const obsTarget = Math.max(1, Math.round(studentCount * 0.5));
+      const obsScore = Math.min(100, ((s.obs_count || 0) / obsTarget) * 100);
+
+      const totalScore = Math.round(
+        completionScore * 0.20 +
+        compTimeScore * 0.15 +
+        attTimeScore * 0.15 +
+        journalScore * 0.15 +
+        feedScore * 0.10 +
+        milestoneScore * 0.10 +
+        hwScore * 0.10 +
+        obsScore * 0.05
+      );
+
+      return {
+        section_id: s.section_id,
+        score: totalScore,
+        breakdown: {
+          completion: Math.round(completionScore),
+          comp_timeliness: Math.round(compTimeScore),
+          att_timeliness: Math.round(attTimeScore),
+          journal: Math.round(journalScore),
+          feed: Math.round(feedScore),
+          milestones: Math.round(milestoneScore),
+          homework: Math.round(hwScore),
+          observations: Math.round(obsScore),
+        },
+      };
+    });
+
+    // Rank by score descending
+    sectionScores.sort((a: any, b: any) => b.score - a.score);
+    const rankedSections = sectionScores.map((s: any, i: number) => ({ ...s, rank: i + 1 }));
+    const myRankEntry = rankedSections.find((s: any) => s.section_id === section_id);
+    const myRank = myRankEntry?.rank || 1;
+
     // ── 8. Weekly attendance trend (last 4 weeks) ──
     const weeklyTrend = await safeQuery(
       `SELECT
@@ -205,11 +360,11 @@ router.get('/', async (req: Request, res: Response) => {
     const dailyAttTime = await safeQuery(
       `SELECT
          ar.attend_date AS date,
-         MIN(EXTRACT(HOUR FROM ar.submitted_at) * 60 + EXTRACT(MINUTE FROM ar.submitted_at))::int AS time_minutes
+         MIN(EXTRACT(HOUR FROM ar.submitted_at AT TIME ZONE 'Asia/Kolkata') * 60 + EXTRACT(MINUTE FROM ar.submitted_at AT TIME ZONE 'Asia/Kolkata'))::int AS time_minutes
        FROM attendance_records ar
        WHERE ar.section_id = $1 AND ar.school_id = $2 AND ar.attend_date >= $3
          AND ar.submitted_at IS NOT NULL
-         AND EXTRACT(DOW FROM ar.attend_date::timestamp) NOT IN (0, 6)
+         AND EXTRACT(DOW FROM ar.attend_date) NOT IN (0, 6)
        GROUP BY ar.attend_date
        ORDER BY ar.attend_date`,
       [section_id, school_id, thirtyDaysAgo]
@@ -218,10 +373,11 @@ router.get('/', async (req: Request, res: Response) => {
     const dailyCompTime = await safeQuery(
       `SELECT
          dc.completion_date AS date,
-         (EXTRACT(HOUR FROM dc.created_at) * 60 + EXTRACT(MINUTE FROM dc.created_at))::int AS time_minutes
+         (EXTRACT(HOUR FROM dc.submitted_at AT TIME ZONE 'Asia/Kolkata') * 60 + EXTRACT(MINUTE FROM dc.submitted_at AT TIME ZONE 'Asia/Kolkata'))::int AS time_minutes
        FROM daily_completions dc
        WHERE dc.section_id = $1 AND dc.school_id = $2 AND dc.completion_date >= $3
-         AND EXTRACT(DOW FROM dc.completion_date::timestamp) NOT IN (0, 6)
+         AND dc.submitted_at IS NOT NULL
+         AND EXTRACT(DOW FROM dc.completion_date) NOT IN (0, 6)
        ORDER BY dc.completion_date`,
       [section_id, school_id, thirtyDaysAgo]
     );
@@ -293,7 +449,7 @@ router.get('/', async (req: Request, res: Response) => {
       `SELECT COUNT(*)::int AS unread
        FROM messages m
        JOIN students st ON st.id = m.student_id AND st.section_id = $1
-       WHERE m.school_id = $2 AND m.sender_type = 'parent' AND m.read_at IS NULL`,
+       WHERE m.school_id = $2 AND m.sender_role = 'parent' AND m.read_at IS NULL`,
       [section_id, school_id]
     );
     const unread_messages = unreadMessages[0]?.unread || 0;
@@ -316,10 +472,8 @@ router.get('/', async (req: Request, res: Response) => {
     );
     const streak = streakRows[0] || { current_streak: 0, best_streak: 0 };
 
-    // ── 17. School rank (attendance) ──
-    const myAttPct = att.avg_attendance_pct || 0;
+    // ── 17. School rank (performance score) ──
     const totalSections = schoolComparison.length;
-    const rank = schoolComparison.filter(s => (s.att_pct || 0) > myAttPct).length + 1;
 
     return res.json({
       section_id,
@@ -349,10 +503,10 @@ router.get('/', async (req: Request, res: Response) => {
         sent_to_parents: journal.sent_to_parents || 0,
       },
       parents: {
-        total: parents.total_parents || 0,
-        active: parents.active_parents || 0,
-        inactive: inactive_parents,
-        never_logged_in: parents.never_logged_in || 0,
+        total: parents.total_students || 0,
+        active: parents.logged_in || 0,
+        inactive: 0,
+        never_logged_in: parents.not_logged_in || 0,
         details: parentDetailRows,
       },
       school_comparison: schoolComparison,
@@ -366,10 +520,62 @@ router.get('/', async (req: Request, res: Response) => {
       unread_messages,
       pending_topics,
       streak: { current: streak.current_streak || 0, best: streak.best_streak || 0 },
-      school_rank: { rank, total: totalSections },
+      school_rank: { rank: myRank, total: totalSections, score: myRankEntry?.score || 0, breakdown: myRankEntry?.breakdown || {} },
+      section_scores: rankedSections.map((s: any) => {
+        const comp = schoolComparison.find((c: any) => c.section_id === s.section_id);
+        return {
+          section_id: s.section_id,
+          section_label: comp?.section_label || '',
+          class_name: comp?.class_name || '',
+          rank: s.rank,
+          score: s.score,
+          breakdown: s.breakdown,
+        };
+      }),
     });
   } catch (err) {
     console.error('[classPerformance] GET', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/teacher/class-performance/journal-entries?section_id=&filter=all|sent|unsent
+router.get('/journal-entries', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const today = await getToday(school_id);
+    const thirtyDaysAgo = new Date(new Date(today).getTime() - 30 * 86400000).toISOString().split('T')[0];
+
+    // Resolve section
+    const sections = await getTeacherSections(user_id, school_id);
+    const requestedSectionId = req.query.section_id as string | undefined;
+    let section_id: string | null = null;
+    if (requestedSectionId && sections.some(s => s.section_id === requestedSectionId)) {
+      section_id = requestedSectionId;
+    } else {
+      section_id = sections[0]?.section_id || null;
+    }
+    if (!section_id) return res.status(404).json({ error: 'No section assigned' });
+
+    const filter = (req.query.filter as string) || 'all';
+    let filterClause = '';
+    if (filter === 'sent') filterClause = 'AND cje.is_sent_to_parent = true';
+    else if (filter === 'unsent') filterClause = 'AND cje.is_sent_to_parent = false';
+
+    const rows = await safeQuery(
+      `SELECT cje.id, cje.entry_date, cje.entry_type, cje.beautified_text, cje.raw_text,
+              cje.is_sent_to_parent, cje.sent_at, cje.read_at, s.name AS student_name
+       FROM child_journey_entries cje
+       JOIN students s ON s.id = cje.student_id
+       WHERE cje.section_id = $1 AND cje.school_id = $2 AND cje.entry_date >= $3
+         ${filterClause}
+       ORDER BY cje.entry_date DESC, cje.sent_at DESC NULLS LAST`,
+      [section_id, school_id, thirtyDaysAgo]
+    );
+
+    return res.json({ entries: rows });
+  } catch (err) {
+    console.error('[classPerformance] GET /journal-entries', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
