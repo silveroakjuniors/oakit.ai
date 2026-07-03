@@ -214,6 +214,9 @@ router.get('/', async (req: Request, res: Response) => {
              s.label AS section_label,
              COALESCE(lc.cnt, 0) AS like_count,
              CASE WHEN ml.user_id IS NOT NULL THEN true ELSE false END AS liked_by_me,
+             COALESCE(ig.cnt, 0) AS instagram_shares,
+             COALESCE(fb.cnt, 0) AS facebook_shares,
+             COALESCE(dl.cnt, 0) AS downloads,
              ARRAY_AGG(fpi.cdn_url ORDER BY fpi.display_order)
                FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images
       FROM feed_posts fp
@@ -225,12 +228,15 @@ router.get('/', async (req: Request, res: Response) => {
         ON ml.post_id = fp.id
         AND ml.user_id = $${userIdIdx}
         AND ml.user_type = $${userTypeIdx}
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS cnt FROM feed_engagements WHERE action = 'instagram_share' GROUP BY post_id) ig ON ig.post_id = fp.id
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS cnt FROM feed_engagements WHERE action = 'facebook_share' GROUP BY post_id) fb ON fb.post_id = fp.id
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS cnt FROM feed_engagements WHERE action = 'download' GROUP BY post_id) dl ON dl.post_id = fp.id
       LEFT JOIN feed_post_images fpi ON fpi.post_id = fp.id
       WHERE ${scopeFilter}
         AND fp.expires_at > now()
         ${cursorFilter}
       GROUP BY fp.id, fp.caption, fp.created_at, fp.expires_at, fp.post_scope,
-               fp.poster_name, fp.poster_role, fp.section_id, s.label, lc.cnt, ml.user_id
+               fp.poster_name, fp.poster_role, fp.section_id, s.label, lc.cnt, ml.user_id, ig.cnt, fb.cnt, dl.cnt
       ORDER BY fp.created_at DESC, fp.id DESC
       LIMIT $${limitIdx}
     `;
@@ -250,6 +256,9 @@ router.get('/', async (req: Request, res: Response) => {
       images: r.images || [],
       like_count: Number(r.like_count),
       liked_by_me: Boolean(r.liked_by_me),
+      instagram_shares: Number(r.instagram_shares || 0),
+      facebook_shares: Number(r.facebook_shares || 0),
+      downloads: Number(r.downloads || 0),
     }));
 
     const lastPost = posts[posts.length - 1];
@@ -548,6 +557,41 @@ router.get('/stats', async (req: Request, res: Response) => {
     });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/v1/feed/posts/:id/engage ── Track shares & downloads ────────────
+
+router.post('/posts/:id/engage', async (req: Request, res: Response) => {
+  const user = req.user!;
+  const postId = req.params.id;
+  const { action } = req.body;
+
+  if (!['instagram_share', 'facebook_share', 'download'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid action. Must be instagram_share, facebook_share, or download' });
+  }
+
+  const userType = (user.role === 'parent') ? 'parent' : 'staff';
+
+  try {
+    await pool.query(
+      `INSERT INTO feed_engagements (post_id, user_id, user_type, school_id, action)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [postId, user.user_id, userType, user.school_id, action]
+    );
+
+    // Return updated counts
+    const counts = await pool.query(
+      `SELECT action, COUNT(*)::int AS cnt FROM feed_engagements WHERE post_id = $1 GROUP BY action`,
+      [postId]
+    );
+    const result: Record<string, number> = { instagram_share: 0, facebook_share: 0, download: 0 };
+    counts.rows.forEach((r: any) => { result[r.action] = r.cnt; });
+
+    return res.json(result);
+  } catch (err) {
+    console.error('[feed engage]', err);
+    return res.status(500).json({ error: 'Failed to track engagement' });
   }
 });
 

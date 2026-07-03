@@ -1439,6 +1439,17 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  const [likes, setLikes] = useState<Record<string, { count: number; likedByMe: boolean }>>(() =>
  Object.fromEntries(classFeed.map(p => [p.id, { count: p.like_count ?? 0, likedByMe: p.liked_by_me ?? false }]))
  );
+ // Engagement counts: { postId: { instagram_share, facebook_share, download } }
+ const [engagements, setEngagements] = useState<Record<string, { instagram_share: number; facebook_share: number; download: number }>>(() =>
+ Object.fromEntries(classFeed.map(p => [p.id, { instagram_share: p.instagram_shares ?? 0, facebook_share: p.facebook_shares ?? 0, download: p.downloads ?? 0 }]))
+ );
+
+ async function trackEngagement(postId: string, action: 'instagram_share' | 'facebook_share' | 'download') {
+   try {
+     const res = await apiPost<{ instagram_share: number; facebook_share: number; download: number }>(`/api/v1/feed/posts/${postId}/engage`, { action }, token);
+     setEngagements(prev => ({ ...prev, [postId]: res }));
+   } catch { /* non-critical */ }
+ }
 
  async function toggleLike(postId: string) {
  // Optimistic update
@@ -1466,36 +1477,52 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  function nextPhoto() { setLightbox(lb => lb && lb.index < lb.images.length - 1 ? { ...lb, index: lb.index + 1 } : lb); }
 
  function shareToInstagram(post: any) {
+ trackEngagement(post.id, 'instagram_share');
  const tag = schoolInstagram ? `@${schoolInstagram}` : '';
  const caption = [post.caption, tag].filter(Boolean).join(' ');
- // Copy caption to clipboard so user can paste it into Instagram
  if (caption) navigator.clipboard?.writeText(caption).catch(() => {});
-
- // Use Web Share API if available (mobile browsers, PWA)
  if (navigator.share && post.images?.[0]) {
  navigator.share({
  title: post.caption || 'School moment',
  text: caption,
  url: post.images[0],
  }).catch(() => {
- // Fallback: open Instagram app
  window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
  });
  return;
  }
- // Desktop fallback: open Instagram and show toast that caption was copied
  window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
  if (caption) alert(`Caption copied to clipboard:\n\n${caption}\n\nPaste it when creating your Instagram post.`);
  }
 
  function shareToFacebook(post: any) {
+ trackEngagement(post.id, 'facebook_share');
  const img = post.images?.[0];
  const tag = schoolInstagram ? `@${schoolInstagram}` : '';
  const caption = [post.caption, tag].filter(Boolean).join(' ');
- // Facebook sharer  works on web; on mobile opens FB app
  const shareUrl = img || window.location.href;
  const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(caption)}`;
  window.open(fbUrl, '_blank', 'noopener,noreferrer,width=600,height=500');
+ }
+
+ async function downloadImage(post: any) {
+   trackEngagement(post.id, 'download');
+   const img = post.images?.[0];
+   if (!img) return;
+   try {
+     const response = await fetch(img);
+     const blob = await response.blob();
+     const url = URL.createObjectURL(blob);
+     const a = document.createElement('a');
+     a.href = url;
+     a.download = `school-memory-${Date.now()}.jpg`;
+     document.body.appendChild(a);
+     a.click();
+     document.body.removeChild(a);
+     URL.revokeObjectURL(url);
+   } catch {
+     window.open(img, '_blank');
+   }
  }
 
  return (
@@ -1585,20 +1612,38 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  <button
  onClick={() => shareToInstagram(post)}
  title={schoolInstagram ? `Share & tag @${schoolInstagram}` : 'Share to Instagram'}
- className="flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-white hover:opacity-90 active:scale-95 transition-all"
+ className="flex items-center gap-0.5 text-[10px] text-neutral-500"
  >
+ <span className="flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-white hover:opacity-90 active:scale-95 transition-all">
  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
  <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
  </svg>
+ </span>
+ {(engagements[post.id]?.instagram_share || 0) > 0 && <span>{engagements[post.id].instagram_share}</span>}
  </button>
  <button
  onClick={() => shareToFacebook(post)}
- title={schoolInstagram ? `Share & tag @${schoolInstagram}` : 'Share to Facebook'}
- className="flex items-center justify-center w-7 h-7 rounded-full bg-[#1877F2] text-white hover:opacity-90 active:scale-95 transition-all"
+ title="Share to Facebook"
+ className="flex items-center gap-0.5 text-[10px] text-neutral-500"
  >
+ <span className="flex items-center justify-center w-7 h-7 rounded-full bg-[#1877F2] text-white hover:opacity-90 active:scale-95 transition-all">
  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
  </svg>
+ </span>
+ {(engagements[post.id]?.facebook_share || 0) > 0 && <span>{engagements[post.id].facebook_share}</span>}
+ </button>
+ <button
+ onClick={() => downloadImage(post)}
+ title="Download image"
+ className="flex items-center gap-0.5 text-[10px] text-neutral-500"
+ >
+ <span className="flex items-center justify-center w-7 h-7 rounded-full bg-neutral-200 text-neutral-600 hover:bg-neutral-300 active:scale-95 transition-all">
+ <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+ <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+ </svg>
+ </span>
+ {(engagements[post.id]?.download || 0) > 0 && <span>{engagements[post.id].download}</span>}
  </button>
  </div>
  </div>
