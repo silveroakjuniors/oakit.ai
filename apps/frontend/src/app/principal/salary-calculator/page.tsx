@@ -2,18 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiGet, API_BASE } from '@/lib/api';
+import { apiGet, apiPost, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import {
   ChevronLeft, Calculator, Plus, Trash2, Download, Users, Loader2,
+  Check, Save,
 } from 'lucide-react';
 
-interface StaffMember {
+interface StaffFromApi {
   user_id: string;
-  name: string;
+  staff_name: string;
   role: string;
-  gross_salary: number;
-  is_manual?: boolean;
+  gross_salary: number | null;
 }
 
 interface CalcRow {
@@ -25,15 +25,25 @@ interface CalcRow {
   net_salary: number;
   per_day_rate: number;
   is_manual: boolean;
+  salary_saved: boolean;
+  user_id: string | null;
 }
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 export default function SalaryCalculatorPage() {
   const router = useRouter();
   const token = getToken() || '';
   const [loading, setLoading] = useState(true);
   const [workingDays, setWorkingDays] = useState(26);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [rows, setRows] = useState<CalcRow[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [paidMsg, setPaidMsg] = useState('');
 
   // Manual staff entry
   const [showAddManual, setShowAddManual] = useState(false);
@@ -49,19 +59,22 @@ export default function SalaryCalculatorPage() {
   async function loadStaff() {
     setLoading(true);
     try {
-      const data = await apiGet<any[]>('/api/v1/financial/salary/staff', token);
-      const staffRows: CalcRow[] = (data || [])
-        .filter((s: any) => s.gross_salary)
-        .map((s: any) => ({
+      const data = await apiGet<StaffFromApi[]>('/api/v1/principal/salary-calculator/staff', token);
+      const staffRows: CalcRow[] = (data || []).map((s) => {
+        const gross = Number(s.gross_salary) || 0;
+        return {
           id: s.user_id,
-          name: s.staff_name || s.name || 'Unknown',
+          name: s.staff_name || 'Unknown',
           role: s.role || '',
-          gross_salary: Number(s.gross_salary) || 0,
+          gross_salary: gross,
           deduction_days: 0,
-          net_salary: Number(s.gross_salary) || 0,
-          per_day_rate: 0,
+          net_salary: gross,
+          per_day_rate: workingDays > 0 ? gross / workingDays : 0,
           is_manual: false,
-        }));
+          salary_saved: gross > 0,
+          user_id: s.user_id,
+        };
+      });
       setRows(staffRows);
     } catch {
       setRows([]);
@@ -75,11 +88,6 @@ export default function SalaryCalculatorPage() {
     return { ...row, per_day_rate: perDay, net_salary: net };
   }
 
-  function recalcAll(newWd?: number) {
-    const wd = newWd ?? workingDays;
-    setRows(prev => prev.map(r => recalcRow(r, wd)));
-  }
-
   function updateWorkingDays(val: number) {
     setWorkingDays(val);
     setRows(prev => prev.map(r => recalcRow(r, val)));
@@ -88,30 +96,31 @@ export default function SalaryCalculatorPage() {
   function updateDeduction(id: string, days: number) {
     setRows(prev => prev.map(r => {
       if (r.id !== id) return r;
-      const updated = { ...r, deduction_days: days };
-      return recalcRow(updated, workingDays);
+      return recalcRow({ ...r, deduction_days: days }, workingDays);
     }));
   }
 
   function updateGross(id: string, gross: number) {
     setRows(prev => prev.map(r => {
       if (r.id !== id) return r;
-      const updated = { ...r, gross_salary: gross };
-      return recalcRow(updated, workingDays);
+      return recalcRow({ ...r, gross_salary: gross, salary_saved: false }, workingDays);
     }));
   }
 
   function addManualStaff() {
     if (!manualName.trim() || !manualSalary.trim()) return;
+    const gross = Number(manualSalary) || 0;
     const newRow: CalcRow = {
       id: `manual_${Date.now()}`,
       name: manualName.trim(),
       role: manualRole.trim() || 'Staff',
-      gross_salary: Number(manualSalary) || 0,
+      gross_salary: gross,
       deduction_days: 0,
-      net_salary: Number(manualSalary) || 0,
-      per_day_rate: workingDays > 0 ? Number(manualSalary) / workingDays : 0,
+      net_salary: gross,
+      per_day_rate: workingDays > 0 ? gross / workingDays : 0,
       is_manual: true,
+      salary_saved: false,
+      user_id: null,
     };
     setRows(prev => [...prev, recalcRow(newRow, workingDays)]);
     setManualName('');
@@ -124,9 +133,48 @@ export default function SalaryCalculatorPage() {
     setRows(prev => prev.filter(r => r.id !== id));
   }
 
+  // Save salary configurations for staff who have updated gross
+  async function saveSalaryConfigs() {
+    setSaving(true); setSaveMsg('');
+    try {
+      const unsaved = rows.filter(r => !r.is_manual && !r.salary_saved && r.gross_salary > 0);
+      if (unsaved.length === 0) { setSaveMsg('All salaries already saved'); setSaving(false); return; }
+      await apiPost('/api/v1/principal/salary-calculator/save-configs', {
+        configs: unsaved.map(r => ({ user_id: r.user_id, gross_salary: r.gross_salary })),
+      }, token);
+      setRows(prev => prev.map(r => unsaved.some(u => u.id === r.id) ? { ...r, salary_saved: true } : r));
+      setSaveMsg(`Saved salary for ${unsaved.length} staff`);
+    } catch { setSaveMsg('Failed to save'); }
+    finally { setSaving(false); setTimeout(() => setSaveMsg(''), 3000); }
+  }
+
+  // Mark all as paid — creates expense records
+  async function markAllPaid() {
+    if (!confirm(`Mark salary as paid for ${rows.filter(r => r.net_salary > 0).length} staff for ${MONTHS[selectedMonth]} ${selectedYear}?`)) return;
+    setMarkingPaid(true); setPaidMsg('');
+    try {
+      await apiPost('/api/v1/principal/salary-calculator/mark-paid', {
+        month: selectedMonth + 1,
+        year: selectedYear,
+        working_days: workingDays,
+        rows: rows.filter(r => r.net_salary > 0).map(r => ({
+          name: r.name,
+          role: r.role,
+          gross_salary: r.gross_salary,
+          deduction_days: r.deduction_days,
+          net_salary: r.net_salary,
+          user_id: r.user_id,
+        })),
+      }, token);
+      setPaidMsg(`Salary recorded as expense for ${MONTHS[selectedMonth]} ${selectedYear}`);
+    } catch { setPaidMsg('Failed to record payment'); }
+    finally { setMarkingPaid(false); setTimeout(() => setPaidMsg(''), 4000); }
+  }
+
   const totalGross = rows.reduce((s, r) => s + r.gross_salary, 0);
   const totalDeductions = rows.reduce((s, r) => s + (r.gross_salary - r.net_salary), 0);
   const totalNet = rows.reduce((s, r) => s + r.net_salary, 0);
+  const hasUnsaved = rows.some(r => !r.is_manual && !r.salary_saved && r.gross_salary > 0);
 
   async function exportPdf() {
     setExporting(true);
@@ -134,14 +182,14 @@ export default function SalaryCalculatorPage() {
       const response = await fetch(`${API_BASE}/api/v1/principal/salary-calculator/export-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ working_days: workingDays, rows }),
+        body: JSON.stringify({ working_days: workingDays, month: MONTHS[selectedMonth], year: selectedYear, rows }),
       });
       if (!response.ok) throw new Error('Export failed');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `salary-calculator-${new Date().toISOString().split('T')[0]}.pdf`;
+      a.download = `salary-${MONTHS[selectedMonth]}-${selectedYear}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -162,7 +210,7 @@ export default function SalaryCalculatorPage() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-bold text-white truncate">Salary Calculator</h1>
-          <p className="text-[10px] text-white/60">Quick salary payout calculation</p>
+          <p className="text-[10px] text-white/60">Quick monthly payout calculation</p>
         </div>
         <button onClick={exportPdf} disabled={exporting || rows.length === 0}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50">
@@ -178,25 +226,36 @@ export default function SalaryCalculatorPage() {
       ) : (
         <div className="px-4 py-4 max-w-2xl mx-auto space-y-4">
 
-          {/* Working Days Input */}
+          {/* Month + Working Days */}
           <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-4">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-3">
               <Calculator size={14} className="text-indigo-500" />
-              <p className="text-xs font-bold text-neutral-700">Working Days This Month</p>
+              <p className="text-xs font-bold text-neutral-700">Month & Working Days</p>
             </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min={1}
-                max={31}
-                value={workingDays}
-                onChange={e => updateWorkingDays(Math.max(1, Number(e.target.value) || 1))}
-                className="w-20 text-center text-lg font-black text-indigo-600 border border-indigo-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-              <p className="text-[11px] text-neutral-500 flex-1">
-                Total working days to consider for per-day salary calculation. Deduction = (Deduction Days x Gross) / Working Days.
-              </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))}
+                className="text-sm font-semibold text-neutral-800 border border-neutral-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+              </select>
+              <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}
+                className="text-sm font-semibold text-neutral-800 border border-neutral-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={workingDays}
+                  onChange={e => updateWorkingDays(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-16 text-center text-lg font-black text-indigo-600 border border-indigo-200 rounded-xl px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+                <span className="text-[11px] text-neutral-500">days</span>
+              </div>
             </div>
+            <p className="text-[10px] text-neutral-400 mt-2">
+              Per-day rate = Gross / Working Days. Deduction = Deduction Days x Per-day rate.
+            </p>
           </div>
 
           {/* Staff List */}
@@ -206,11 +265,20 @@ export default function SalaryCalculatorPage() {
                 <Users size={14} className="text-emerald-500" />
                 <p className="text-xs font-bold text-neutral-700">Staff ({rows.length})</p>
               </div>
-              <button onClick={() => setShowAddManual(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold rounded-lg transition-all">
-                <Plus size={12} /> Add Staff
-              </button>
+              <div className="flex items-center gap-2">
+                {hasUnsaved && (
+                  <button onClick={saveSalaryConfigs} disabled={saving}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold rounded-lg transition-all disabled:opacity-50">
+                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save Salaries
+                  </button>
+                )}
+                <button onClick={() => setShowAddManual(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold rounded-lg transition-all">
+                  <Plus size={12} /> Add Staff
+                </button>
+              </div>
             </div>
+            {saveMsg && <p className="px-4 py-1.5 text-[10px] font-medium text-indigo-600 bg-indigo-50 border-b border-indigo-100">{saveMsg}</p>}
 
             {/* Rows */}
             <div className="divide-y divide-neutral-50">
@@ -223,6 +291,9 @@ export default function SalaryCalculatorPage() {
                         <p className="text-xs font-semibold text-neutral-800 truncate">{row.name}</p>
                         <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-500 font-medium shrink-0">{row.role}</span>
                         {row.is_manual && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">manual</span>}
+                        {!row.salary_saved && row.gross_salary > 0 && !row.is_manual && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-500 font-medium shrink-0">unsaved</span>
+                        )}
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <div>
@@ -232,7 +303,8 @@ export default function SalaryCalculatorPage() {
                             min={0}
                             value={row.gross_salary || ''}
                             onChange={e => updateGross(row.id, Number(e.target.value) || 0)}
-                            className="w-full text-xs font-semibold text-neutral-800 border border-neutral-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                            placeholder="Set salary"
+                            className="w-full text-xs font-semibold text-neutral-800 border border-neutral-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300 placeholder:text-neutral-300"
                           />
                         </div>
                         <div>
@@ -249,7 +321,7 @@ export default function SalaryCalculatorPage() {
                         <div>
                           <label className="text-[9px] text-neutral-400 block mb-0.5">Net Salary</label>
                           <p className="text-xs font-black text-emerald-600 px-2 py-1.5">
-                            {row.net_salary.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            {row.net_salary > 0 ? row.net_salary.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'}
                           </p>
                         </div>
                       </div>
@@ -263,7 +335,7 @@ export default function SalaryCalculatorPage() {
                 </div>
               ))}
               {rows.length === 0 && (
-                <p className="text-xs text-neutral-400 text-center py-8">No staff loaded. Configure salary in Finance &gt; Salary or add manually below.</p>
+                <p className="text-xs text-neutral-400 text-center py-8">No staff found. Add staff manually using the button above.</p>
               )}
             </div>
           </div>
@@ -271,7 +343,7 @@ export default function SalaryCalculatorPage() {
           {/* Total Summary */}
           {rows.length > 0 && (
             <div className="bg-gradient-to-r from-emerald-50 to-green-50 rounded-2xl border border-emerald-200 p-4">
-              <p className="text-xs font-bold text-emerald-800 mb-2">Monthly Payout Summary</p>
+              <p className="text-xs font-bold text-emerald-800 mb-2">Monthly Payout Summary — {MONTHS[selectedMonth]} {selectedYear}</p>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div>
                   <p className="text-[10px] text-neutral-500 mb-0.5">Total Gross</p>
@@ -286,6 +358,13 @@ export default function SalaryCalculatorPage() {
                   <p className="text-sm font-black text-emerald-700">{totalNet.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                 </div>
               </div>
+              {/* Mark as Paid button */}
+              <button onClick={markAllPaid} disabled={markingPaid || totalNet === 0}
+                className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 active:scale-95">
+                {markingPaid ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Record as Paid (Add to Expenses)
+              </button>
+              {paidMsg && <p className="text-[10px] text-emerald-700 font-medium text-center mt-2">{paidMsg}</p>}
             </div>
           )}
         </div>
@@ -298,7 +377,7 @@ export default function SalaryCalculatorPage() {
           <div className="relative w-full sm:w-[400px] bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl p-5"
             onClick={e => e.stopPropagation()}>
             <p className="text-sm font-bold text-neutral-800 mb-4">Add Non-System Staff</p>
-            <p className="text-[10px] text-neutral-400 mb-3">For caretakers, drivers, or anyone not onboarded to the system.</p>
+            <p className="text-[10px] text-neutral-400 mb-3">For caretakers, drivers, cooks, or anyone not onboarded to the system.</p>
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] text-neutral-500 font-medium block mb-1">Name</label>
