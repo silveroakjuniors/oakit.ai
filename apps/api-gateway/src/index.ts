@@ -52,6 +52,7 @@ import principalContextRouter from './routes/principal/context';
 import principalObservationsRouter from './routes/principal/observations';
 import principalEngagementRouter from './routes/principal/engagement';
 import principalHrRouter from './routes/principal/hr';
+import principalSalaryCalculatorRouter from './routes/principal/salaryCalculator';
 import superAdminSchoolsRouter from './routes/super-admin/schools';
 import superAdminStatsRouter from './routes/super-admin/stats';
 import superAdminImpersonateRouter from './routes/super-admin/impersonate';
@@ -315,6 +316,7 @@ app.use('/api/v1/principal/context', principalContextRouter);
 app.use('/api/v1/principal/observations', principalObservationsRouter);
 app.use('/api/v1/principal/teachers/engagement', principalEngagementRouter);
 app.use('/api/v1/principal/hr', principalHrRouter);
+app.use('/api/v1/principal/salary-calculator', principalSalaryCalculatorRouter);
 
 // Super Admin
 app.use('/api/v1/super-admin/schools', superAdminSchoolsRouter);

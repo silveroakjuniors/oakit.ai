@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard, ClipboardList, Users, BarChart2, TrendingUp,
   FileText, DollarSign, Camera, Megaphone, BookOpen, CalendarDays,
-  ChevronLeft, ChevronRight, Menu, X, GraduationCap,
+  ChevronLeft, ChevronRight, Menu, X, GraduationCap, Calculator,
 } from 'lucide-react';
 import OakitLogo from '@/components/OakitLogo';
 import { getToken, getRole } from '@/lib/auth';
@@ -40,6 +40,7 @@ const NAV_GROUPS = [
       { href: '/principal/finance/concessions',      label: 'Concessions',    Icon: FileText },
       { href: '/principal/finance/expenses',         label: 'Expenses',       Icon: TrendingUp },
       { href: '/principal/finance/salary',           label: 'Salary',         Icon: Users },
+      { href: '/principal/salary-calculator',        label: 'Salary Calc',   Icon: Calculator },
       { href: '/principal/finance/reports',          label: 'Reports',        Icon: BarChart2 },
     ],
   },
