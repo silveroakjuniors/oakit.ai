@@ -155,14 +155,19 @@ async function uploadFeedImage(
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const dest = path.join(dir, safeName);
     fs.writeFileSync(dest, buf);
+    console.log(`[feed-upload] local fallback: ${dest} (${buf.length} bytes)`);
     return { storagePath: dest, cdnUrl: `/uploads/feed/${postId}/${safeName}` };
   }
 
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(storagePath, buf, { contentType: mimeType, upsert: false });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+  if (error) {
+    console.error(`[feed-upload] Supabase storage failed for ${storagePath}:`, error.message);
+    throw new Error(`Storage upload failed: ${error.message}`);
+  }
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+  console.log(`[feed-upload] success: ${storagePath} → ${data.publicUrl} (${buf.length} bytes)`);
   return { storagePath, cdnUrl: data.publicUrl };
 }
 
@@ -592,6 +597,41 @@ router.post('/posts/:id/engage', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[feed engage]', err);
     return res.status(500).json({ error: 'Failed to track engagement' });
+  }
+});
+
+// ── POST /api/v1/feed/generate-caption ── Ask Oakie for a feed caption ────────
+
+router.post('/generate-caption', async (req: Request, res: Response) => {
+  try {
+    const { has_video, file_count, current_caption } = req.body;
+    const axios = (await import('axios')).default;
+    const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+    try {
+      const aiResp = await axios.post(`${AI_URL}/internal/query`, {
+        message: `Generate a short, warm, engaging caption (max 100 words) for a school class feed post. The teacher is sharing ${has_video ? 'a video' : `${file_count} photo${file_count > 1 ? 's' : ''}`} from today's classroom activities.${current_caption ? ` They started writing: "${current_caption}". Improve and expand this.` : ''} The caption should be parent-friendly, celebrating the children's learning moments. Do NOT use emojis. Keep it under 2-3 sentences. Return ONLY the caption text, nothing else.`,
+        school_id: req.user!.school_id,
+        teacher_id: req.user!.user_id,
+      }, { timeout: 15000 });
+
+      const caption = (aiResp.data?.answer || aiResp.data?.response || '').trim().slice(0, 500);
+      if (caption) return res.json({ caption });
+    } catch { /* AI service unavailable — use fallback */ }
+
+    // Fallback captions if AI is unavailable
+    const fallbacks = [
+      'A wonderful day of learning and laughter in our classroom today!',
+      'Moments that make teaching special. Watch our little learners grow every day.',
+      'Learning through play and exploration. Today was a beautiful day in class!',
+      'Our classroom was full of energy and curiosity today. So proud of these young minds!',
+      'Every day brings new discoveries. Here is a glimpse of what we explored today.',
+    ];
+    const caption = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    return res.json({ caption });
+  } catch (err) {
+    console.error('[feed generate-caption]', err);
+    return res.status(500).json({ error: 'Failed to generate caption' });
   }
 });
 
