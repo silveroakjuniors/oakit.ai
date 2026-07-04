@@ -1479,7 +1479,8 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  function shareToInstagram(post: any) {
  trackEngagement(post.id, 'instagram_share');
  const tag = schoolInstagram ? `@${schoolInstagram}` : '';
- const caption = [post.caption, tag].filter(Boolean).join(' ');
+ const hashtags = '#fyp #preschool #kindergarten #earlylearning #schoollife #kidsofinstagram #playandlearn #preschoolactivities #toddlerlife #montessori #learningthroughplay #silveroakjuniors';
+ const caption = [post.caption, tag, hashtags].filter(Boolean).join('\n\n');
  if (caption) navigator.clipboard?.writeText(caption).catch(() => {});
  if (navigator.share && post.images?.[0]) {
  navigator.share({
