@@ -83,6 +83,17 @@ router.post('/homework', async (req: Request, res: Response) => {
        RETURNING *`,
       [school_id, section_id, user_id, date, raw_text.trim(), formatted_text]
     );
+
+    // Send push notification to parents in this section (fire-and-forget)
+    try {
+      const { sendPushToSectionParents } = await import('../../lib/pushNotification');
+      sendPushToSectionParents(section_id, {
+        title: 'Homework Assigned',
+        body: formatted_text?.slice(0, 100) || raw_text.trim().slice(0, 100),
+        url: '/parent',
+      }).catch(() => {});
+    } catch { /* non-critical */ }
+
     return res.status(201).json(result.rows[0]);
   } catch (err: any) {
     console.error('[homework POST]', err?.message || err);
