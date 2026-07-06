@@ -51,9 +51,9 @@ const AI_SUGGESTIONS: Record<string, string[]> = {
 };
 
 const CATEGORY_DB_MAP: Record<string, string> = {
-  cognitive: 'Academic Progress', language: 'Language', social: 'Social Skills',
-  emotional: 'Behavior', gross_motor: 'Motor Skills', fine_motor: 'Motor Skills',
-  creativity: 'Other', participation: 'Academic Progress', peer: 'Social Skills', behaviour: 'Behavior',
+  cognitive: 'cognitive', language: 'language', social: 'social',
+  emotional: 'emotional', gross_motor: 'gross_motor', fine_motor: 'fine_motor',
+  creativity: 'creativity', participation: 'participation', peer: 'peer', behaviour: 'behaviour',
 };
 
 function formatEntryDate(raw: string): string {
@@ -462,21 +462,7 @@ export default function ChildJourneyPage() {
 
   function getMissingCategories(studentId: string): string[] {
     const rawCats = obsMap[studentId] || [];
-    // Build a set of covered frontend keys by reverse-mapping DB category names
-    const covered = new Set<string>();
-    for (const cat of rawCats) {
-      const lower = cat.toLowerCase();
-      // Direct key match
-      covered.add(lower);
-      // Reverse-map: find which frontend keys map to this DB name
-      for (const [key, dbName] of Object.entries(CATEGORY_DB_MAP)) {
-        if (dbName.toLowerCase() === lower) covered.add(key);
-      }
-      // Also match by label
-      for (const rc of REPORT_CATEGORIES) {
-        if (rc.label.toLowerCase() === lower) covered.add(rc.key);
-      }
-    }
+    const covered = new Set(rawCats.map(c => c.toLowerCase()));
     return REPORT_CATEGORIES.filter(cat => !covered.has(cat.key)).map(c => c.key);
   }
 
@@ -1091,9 +1077,12 @@ export default function ChildJourneyPage() {
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                                      {obs.categories.map(c => (
-                                        <span key={c} className="text-[10px] bg-primary-50 text-primary-700 border border-primary-100 px-1.5 py-0.5 rounded-full">{c}</span>
-                                      ))}
+                                      {obs.categories.map(c => {
+                                        const cat = REPORT_CATEGORIES.find(rc => rc.key === c || rc.label === c);
+                                        return (
+                                          <span key={c} className="text-[10px] bg-primary-50 text-primary-700 border border-primary-100 px-1.5 py-0.5 rounded-full">{cat?.label || c}</span>
+                                        );
+                                      })}
                                       {obs.share_with_parent ? (
                                         <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
                                           <Eye size={9} /> Shared with parent
