@@ -610,7 +610,7 @@ router.post('/generate-caption', async (req: Request, res: Response) => {
 
     try {
       const aiResp = await axios.post(`${AI_URL}/internal/query`, {
-        message: `Generate a short, warm, engaging caption (max 100 words) for a school class feed post. The teacher is sharing ${has_video ? 'a video' : `${file_count} photo${file_count > 1 ? 's' : ''}`} from today's classroom activities.${current_caption ? ` They started writing: "${current_caption}". Improve and expand this.` : ''} The caption should be parent-friendly, celebrating the children's learning moments. Do NOT use emojis. Keep it under 2-3 sentences. Return ONLY the caption text, nothing else.`,
+        message: `You are writing a short Instagram-style caption for a preschool class feed post. The teacher typed: "${current_caption || 'classroom activity'}". Write a warm, engaging 2-3 sentence caption that describes this activity in a parent-friendly way. Include what the children might be learning. Do NOT use emojis. Return ONLY the caption text.`,
         school_id: req.user!.school_id,
         teacher_id: req.user!.user_id,
       }, { timeout: 15000 });
@@ -619,16 +619,25 @@ router.post('/generate-caption', async (req: Request, res: Response) => {
       if (caption) return res.json({ caption });
     } catch { /* AI service unavailable — use fallback */ }
 
-    // Fallback captions if AI is unavailable
+    // Smart fallback — incorporate teacher's text
+    const topic = (current_caption || '').trim();
+    if (topic) {
+      const templates = [
+        `Today our little learners explored "${topic}" through hands-on activities. Watch them discover and grow every single day!`,
+        `A fun and engaging session on "${topic}" in class today. Our children are building strong foundations through play and curiosity.`,
+        `"${topic}" was the highlight of our classroom today. These young minds never stop surprising us with their enthusiasm to learn!`,
+        `Our class had a wonderful time learning about "${topic}" today. Every child participated with such joy and curiosity.`,
+      ];
+      return res.json({ caption: templates[Math.floor(Math.random() * templates.length)] });
+    }
+
     const fallbacks = [
       'A wonderful day of learning and laughter in our classroom today!',
       'Moments that make teaching special. Watch our little learners grow every day.',
       'Learning through play and exploration. Today was a beautiful day in class!',
       'Our classroom was full of energy and curiosity today. So proud of these young minds!',
-      'Every day brings new discoveries. Here is a glimpse of what we explored today.',
     ];
-    const caption = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    return res.json({ caption });
+    return res.json({ caption: fallbacks[Math.floor(Math.random() * fallbacks.length)] });
   } catch (err) {
     console.error('[feed generate-caption]', err);
     return res.status(500).json({ error: 'Failed to generate caption' });
