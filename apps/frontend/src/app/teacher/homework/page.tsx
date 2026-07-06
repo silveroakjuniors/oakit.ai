@@ -117,7 +117,7 @@ export default function HomeworkNotesPage() {
         raw_text: homeworkText, ...(sectionId ? { section_id: sectionId } : {}),
       }, token);
       setExistingHomework(res);
-      setHomeworkMsg('...œ“ Homework sent to parents');
+      setHomeworkMsg('Homework sent to parents');
     } catch (e: unknown) { setHomeworkMsg(e instanceof Error ? e.message : 'Failed'); }
     finally { setSavingHomework(false); }
   }
@@ -129,7 +129,7 @@ export default function HomeworkNotesPage() {
       await apiPost('/api/v1/teacher/notes/homework/submissions', {
         submissions, ...(sectionId ? { section_id: sectionId } : {}),
       }, token);
-      setHwSubmissionsMsg('...œ“ Homework status saved');
+      setHwSubmissionsMsg('Homework status saved');
     } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
     finally { setSavingHwSubmissions(false); }
   }
@@ -324,7 +324,7 @@ export default function HomeworkNotesPage() {
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-neutral-100">
                   <p className="text-sm font-semibold text-neutral-800">Homework Completion</p>
-                  <p className="text-xs text-neutral-400 mt-0.5">{students.length} students</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">{students.length} students · {new Date(today + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                 </div>
                 {students.map(student => {
                   const status = hwSubmissions[student.id] || 'not_submitted';
@@ -344,7 +344,7 @@ export default function HomeworkNotesPage() {
                                 ? s === 'completed' ? 'bg-emerald-500 text-white' : s === 'partial' ? 'bg-amber-500 text-white' : 'bg-red-400 text-white'
                                 : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'
                             }`}>
-                            {s === 'completed' ? '...œ“' : s === 'partial' ? '...½' : '...œ—'}
+                            {s === 'completed' ? 'Done' : s === 'partial' ? 'Half' : 'No'}
                           </button>
                         ))}
                       </div>
@@ -352,7 +352,7 @@ export default function HomeworkNotesPage() {
                   );
                 })}
                 <div className="px-4 py-3 bg-neutral-50 border-t border-neutral-100">
-                  {hwSubmissionsMsg && <p className={`text-xs font-medium mb-2 ${hwSubmissionsMsg.startsWith('...œ“') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
+                  {hwSubmissionsMsg && <p className={`text-xs font-medium mb-2 ${hwSubmissionsMsg.includes('saved') ? 'text-emerald-600' : 'text-red-500'}`}>{hwSubmissionsMsg}</p>}
                   <Button onClick={saveSubmissions} loading={savingHwSubmissions} disabled={Object.keys(hwSubmissions).length === 0} fullWidth>
                     Save Homework Status
                   </Button>
