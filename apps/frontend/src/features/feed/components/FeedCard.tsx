@@ -88,7 +88,7 @@ export default function FeedCard({ post, onLike, onDelete, schoolName, instagram
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Oakit_sojs-${post.id.slice(0, 8)}.jpg`;
+      a.download = `Oakit_sojs-${post.id.slice(0, 8)}${img.includes('.mp4') || img.includes('video') ? '.mp4' : '.jpg'}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
