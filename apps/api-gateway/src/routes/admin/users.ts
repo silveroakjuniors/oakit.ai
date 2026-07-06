@@ -308,4 +308,22 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// PUT /api/v1/admin/users/:id/name — update user display name
+router.put('/:id/name', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+    const result = await pool.query(
+      'UPDATE users SET name = $1 WHERE id = $2 AND school_id = $3 RETURNING id, name',
+      [name.trim(), req.params.id, school_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[admin/users PUT name]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

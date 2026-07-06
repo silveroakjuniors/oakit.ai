@@ -273,6 +273,7 @@ export default function UsersPage() {
   const [showAddUser, setShowAddUser] = useState(false);
   const [editRole, setEditRole] = useState<Role | null | 'new'>(null);
   const [changingRole, setChangingRole] = useState<{ userId: string; current: string } | null>(null);
+  const [editingName, setEditingName] = useState<{ userId: string; name: string } | null>(null);
   const token = getToken() || '';
 
   async function load() {
@@ -312,6 +313,17 @@ export default function UsersPage() {
       body: JSON.stringify({ role_name }),
     });
     setChangingRole(null);
+    await load();
+  }
+
+  async function saveName(userId: string, name: string) {
+    if (!name.trim()) return;
+    await fetch(`${API_BASE}/api/v1/admin/users/${userId}/name`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    setEditingName(null);
     await load();
   }
 
@@ -362,7 +374,23 @@ export default function UsersPage() {
               <tbody>
                 {users.map(u => (
                   <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                    <td className="py-3 pr-4 font-medium text-gray-800">{u.name}</td>
+                    <td className="py-3 pr-4 font-medium text-gray-800">
+                      {editingName?.userId === u.id ? (
+                        <input
+                          autoFocus
+                          defaultValue={editingName.name}
+                          className="text-sm border border-gray-300 rounded px-2 py-1 w-full"
+                          onKeyDown={e => { if (e.key === 'Enter') saveName(u.id, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setEditingName(null); }}
+                          onBlur={e => saveName(u.id, e.target.value)}
+                        />
+                      ) : (
+                        <button onClick={() => setEditingName({ userId: u.id, name: u.name })}
+                          className="group flex items-center gap-1 hover:text-primary-600 transition-colors">
+                          {u.name}
+                          <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100">&#9998;</span>
+                        </button>
+                      )}
+                    </td>
                     <td className="py-3 pr-4 text-gray-500">{u.mobile || '—'}</td>
                     <td className="py-3 pr-4">
                       {changingRole?.userId === u.id ? (
