@@ -39,6 +39,7 @@ export default function HomeworkNotesPage() {
   const [savingHwSubmissions, setSavingHwSubmissions] = useState(false);
   const [hwSubmissionsMsg, setHwSubmissionsMsg] = useState('');
   const [trackingDate, setTrackingDate] = useState('');
+  const [trackingHomeworkText, setTrackingHomeworkText] = useState<string | null>(null);
   // Notes ...€” subject + date specific
   const [noteText, setNoteText] = useState('');
   const [noteSubject, setNoteSubject] = useState('');
@@ -78,7 +79,7 @@ export default function HomeworkNotesPage() {
         apiGet<HomeworkRecord>('/api/v1/teacher/notes/homework', token).catch(() => null),
         apiGet<NoteItem[]>('/api/v1/teacher/notes', token).catch(() => []),
       ]);
-      if (hw) { setExistingHomework(hw); setHomeworkText(hw.raw_text || ''); }
+      if (hw) { setExistingHomework(hw); setHomeworkText(hw.raw_text || ''); setTrackingHomeworkText(hw.formatted_text || hw.raw_text || null); }
       setNotes(ns || []);
 
       if (sid) {
@@ -140,14 +141,21 @@ export default function HomeworkNotesPage() {
     setTrackingDate(date);
     setHwSubmissions({});
     setHwSubmissionsMsg('');
+    setTrackingHomeworkText(null);
     if (!sectionId) return;
     try {
-      const subs = await apiGet<{ student_id: string; status: string }[]>(
-        `/api/v1/teacher/notes/homework/submissions?date=${date}`, token
-      );
+      const [subs, hw] = await Promise.all([
+        apiGet<{ student_id: string; status: string }[]>(
+          `/api/v1/teacher/notes/homework/submissions?date=${date}`, token
+        ).catch(() => []),
+        apiGet<HomeworkRecord | null>(
+          `/api/v1/teacher/notes/homework?date=${date}`, token
+        ).catch(() => null),
+      ]);
       const map: Record<string, HwStatus> = {};
       (subs || []).forEach(s => { map[s.student_id] = s.status as HwStatus; });
       setHwSubmissions(map);
+      setTrackingHomeworkText(hw?.formatted_text || hw?.raw_text || null);
     } catch { /* ignore */ }
   }
 
@@ -325,15 +333,10 @@ export default function HomeworkNotesPage() {
         )}
 
         {/* ...”€...”€ TRACKING TAB ...”€...”€ */}
+        {/* -- TRACKING TAB -- */}
         {activeSection === 'tracking' && (
           <div className="flex flex-col gap-3">
-            {!existingHomework ? (
-              <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
-                <BookOpen className="w-10 h-10 text-neutral-200 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-neutral-700 mb-1">No homework sent yet</p>
-                <button onClick={() => setActiveSection('homework')} className="text-xs text-primary-600 font-semibold hover:underline">...†’ Go to Homework tab</button>
-              </div>
-            ) : students.length === 0 ? (
+            {students.length === 0 ? (
               <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
                 <p className="text-sm text-neutral-400">No students found</p>
               </div>
@@ -354,6 +357,17 @@ export default function HomeworkNotesPage() {
                     />
                   </div>
                 </div>
+                {/* Homework given for this date */}
+                {trackingHomeworkText ? (
+                  <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100">
+                    <p className="text-[10px] font-semibold text-indigo-600 uppercase tracking-wide mb-1">Homework Given</p>
+                    <p className="text-xs text-indigo-800 leading-relaxed line-clamp-3">{trackingHomeworkText}</p>
+                  </div>
+                ) : (
+                  <div className="px-4 py-2.5 bg-neutral-50 border-b border-neutral-100">
+                    <p className="text-xs text-neutral-400 text-center">No homework was given on this date</p>
+                  </div>
+                )}
                 {students.map(student => {
                   const status = hwSubmissions[student.id] || 'not_submitted';
                   return (
