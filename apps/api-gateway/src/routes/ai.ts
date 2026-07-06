@@ -1096,7 +1096,7 @@ router.post('/term-summary', async (req: Request, res: Response) => {
 router.post('/format-observation', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { text, student_name, category, class_name } = req.body;
+    const { text, student_name, category, class_name, gender } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
 
     const aiResp = await axios.post(`${AI()}/internal/format-observation`, {
@@ -1104,6 +1104,7 @@ router.post('/format-observation', async (req: Request, res: Response) => {
       student_name: student_name || 'the student',
       category: category || '',
       class_name: class_name || '',
+      gender: gender || '',
     }, { timeout: 15000 });
 
     const formatted = aiResp.data.formatted || text;

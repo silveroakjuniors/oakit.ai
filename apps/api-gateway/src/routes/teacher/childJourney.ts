@@ -21,7 +21,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
 
     // Get student name and section for AI context
     const studentRow = await pool.query(
-      `SELECT s.name, s.section_id, sec.label as section_label, c.name as class_name
+      `SELECT s.name, s.gender, s.section_id, sec.label as section_label, c.name as class_name
        FROM students s
        JOIN sections sec ON sec.id = s.section_id
        JOIN classes c ON c.id = sec.class_id
@@ -38,6 +38,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
       const aiResp = await axios.post(`${AI_SERVICE_URL()}/internal/beautify-child-journey`, {
         raw_text,
         student_name: student.name,
+        gender: student.gender || null,
         class_level: student.class_name,
         entry_type,
         entry_date: entry_date || today,
@@ -125,7 +126,7 @@ router.put('/:id', roleGuard('teacher'), async (req: Request, res: Response) => 
 
     // Verify ownership
     const existing = await pool.query(
-      `SELECT cj.*, s.name as student_name, sec.label as section_label, c.name as class_name
+      `SELECT cj.*, s.name as student_name, s.gender, sec.label as section_label, c.name as class_name
        FROM child_journey_entries cj
        JOIN students s ON s.id = cj.student_id
        JOIN sections sec ON sec.id = cj.section_id
@@ -144,6 +145,7 @@ router.put('/:id', roleGuard('teacher'), async (req: Request, res: Response) => 
       const aiResp = await axios.post(`${AI_SERVICE_URL()}/internal/beautify-child-journey`, {
         raw_text,
         student_name: entry.student_name,
+        gender: entry.gender || null,
         class_level: entry.class_name,
         entry_type: entry.entry_type,
         entry_date: entry.entry_date,
