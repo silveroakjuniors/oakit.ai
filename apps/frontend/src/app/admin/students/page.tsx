@@ -20,6 +20,7 @@ interface Student {
   mother_name?: string;
   parent_contact?: string;
   mother_contact?: string;
+  gender?: string;
   photo_url?: string | null;
   class_name: string;
   section_label: string;
@@ -113,6 +114,7 @@ function AddStudentModal({ classes, token, onClose, onAdded }: {
     name: '', class_id: '', section_id: '',
     father_name: '', mother_name: '',
     parent_contact: '', mother_contact: '',
+    gender: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -176,6 +178,17 @@ function AddStudentModal({ classes, token, onClose, onAdded }: {
             </div>
           )}
           <div className="border-t border-gray-100 pt-3 mt-1">
+            <p className="text-xs font-semibold text-gray-500 mb-3">Gender</p>
+            <div className="flex gap-2">
+              {(['male', 'female', 'other'] as const).map(g => (
+                <button key={g} type="button" onClick={() => setForm(f => ({ ...f, gender: g }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${form.gender === g ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  {g === 'male' ? 'Boy' : g === 'female' ? 'Girl' : 'Other'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="border-t border-gray-100 pt-3 mt-1">
             <p className="text-xs font-semibold text-gray-500 mb-3">Parent / Guardian Details</p>
             <div className="grid grid-cols-2 gap-3">
               {field('Father Name', 'father_name', 'text', 'Optional')}
@@ -204,6 +217,7 @@ function EditStudentModal({ student, token, onClose, onSaved }: {
     mother_name: student.mother_name || '',
     parent_contact: student.parent_contact || '',
     mother_contact: student.mother_contact || '',
+    gender: (student as any).gender || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -249,6 +263,17 @@ function EditStudentModal({ student, token, onClose, onSaved }: {
           <button onClick={onClose} className="text-gray-400 text-xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">✕</button>
         </div>
         <div className="px-5 py-4 flex flex-col gap-3">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-2">Gender</p>
+            <div className="flex gap-2">
+              {(['male', 'female', 'other'] as const).map(g => (
+                <button key={g} type="button" onClick={() => setForm(f => ({ ...f, gender: g }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${form.gender === g ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  {g === 'male' ? 'Boy' : g === 'female' ? 'Girl' : 'Other'}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             {field('Father Name', 'father_name', 'text', 'Optional')}
             {field('Father Mobile', 'parent_contact', 'tel', '10 digits')}

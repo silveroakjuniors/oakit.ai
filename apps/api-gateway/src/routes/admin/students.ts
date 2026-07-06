@@ -89,11 +89,11 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
         await client.query('BEGIN');
 
         const insertResult = await client.query(
-          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact, gender)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name`,
           [school_id, class_id, section_id, name.trim(),
            father_name?.trim() || null, mother_name?.trim() || null,
-           parent_contact?.trim() || null, mother_contact?.trim() || null]
+           parent_contact?.trim() || null, mother_contact?.trim() || null, req.body.gender || null]
         );
         const student = insertResult.rows[0];
 
@@ -127,11 +127,11 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
 
     // No fee_assignment — keep existing simple pool.query approach
     const result = await pool.query(
-      `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+      `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact, gender)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name`,
       [school_id, class_id, section_id, name.trim(),
        father_name?.trim() || null, mother_name?.trim() || null,
-       parent_contact?.trim() || null, mother_contact?.trim() || null]
+       parent_contact?.trim() || null, mother_contact?.trim() || null, req.body.gender || null]
     );
     return res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1119,7 +1119,7 @@ router.delete('/:id/parent-links/:parent_id', roleGuard('admin'), async (req: Re
 router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { father_name, mother_name, parent_contact, mother_contact } = req.body;
+    const { father_name, mother_name, parent_contact, mother_contact, gender } = req.body;
     if (parent_contact && mother_contact && parent_contact.trim() === mother_contact.trim()) {
       return res.status(400).json({ error: 'Father and mother cannot have the same mobile number' });
     }
@@ -1134,10 +1134,11 @@ router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
          father_name = COALESCE($1, father_name),
          mother_name = COALESCE($2, mother_name),
          parent_contact = COALESCE($3, parent_contact),
-         mother_contact = COALESCE($4, mother_contact)
+         mother_contact = COALESCE($4, mother_contact),
+         gender = COALESCE($7, gender)
        WHERE id = $5 AND school_id = $6
-       RETURNING id, name, father_name, mother_name, parent_contact, mother_contact`,
-      [father_name || null, mother_name || null, parent_contact || null, mother_contact || null, req.params.id, school_id]
+       RETURNING id, name, father_name, mother_name, parent_contact, mother_contact, gender`,
+      [father_name || null, mother_name || null, parent_contact || null, mother_contact || null, req.params.id, school_id, gender || null]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     return res.json(result.rows[0]);
