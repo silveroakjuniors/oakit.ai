@@ -6,7 +6,8 @@ import { getTeacherSections } from '../../lib/teacherSection';
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
 
-const VALID_CATEGORIES = ['Behavior','Social Skills','Academic Progress','Motor Skills','Language','Other'];
+const VALID_CATEGORIES = ['Behavior','Social Skills','Academic Progress','Motor Skills','Language','Other',
+  'cognitive','language','social','emotional','gross_motor','fine_motor','creativity','participation','peer','behaviour'];
 
 // POST /api/v1/teacher/observations
 router.post('/', async (req: Request, res: Response) => {
