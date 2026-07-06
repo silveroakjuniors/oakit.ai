@@ -148,7 +148,7 @@ router.get('/', roleGuard('admin', 'principal'), async (req: Request, res: Respo
     let query = `
       SELECT s.id, s.name, s.father_name, s.mother_name,
              s.parent_contact, s.mother_contact,
-             s.photo_path,
+             s.photo_path, s.gender,
              s.is_active,
              s.class_id, s.section_id,
              c.name as class_name, sec.label as section_label
