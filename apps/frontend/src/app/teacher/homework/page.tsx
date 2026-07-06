@@ -38,6 +38,7 @@ export default function HomeworkNotesPage() {
   const [hwSubmissions, setHwSubmissions] = useState<Record<string, HwStatus>>({});
   const [savingHwSubmissions, setSavingHwSubmissions] = useState(false);
   const [hwSubmissionsMsg, setHwSubmissionsMsg] = useState('');
+  const [trackingDate, setTrackingDate] = useState('');
   // Notes ...€” subject + date specific
   const [noteText, setNoteText] = useState('');
   const [noteSubject, setNoteSubject] = useState('');
@@ -64,6 +65,7 @@ export default function HomeworkNotesPage() {
       const effectiveToday = ctx.today || new Date().toISOString().split('T')[0];
       setToday(effectiveToday);
       setNoteDate(effectiveToday);
+      setTrackingDate(effectiveToday);
 
       let sid = ctx.section_id || '';
       if (!sid) {
@@ -127,11 +129,26 @@ export default function HomeworkNotesPage() {
     try {
       const submissions = Object.entries(hwSubmissions).map(([student_id, status]) => ({ student_id, status }));
       await apiPost('/api/v1/teacher/notes/homework/submissions', {
-        submissions, ...(sectionId ? { section_id: sectionId } : {}),
+        submissions, date: trackingDate || today, ...(sectionId ? { section_id: sectionId } : {}),
       }, token);
       setHwSubmissionsMsg('Homework status saved');
     } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
     finally { setSavingHwSubmissions(false); }
+  }
+
+  async function loadSubmissionsForDate(date: string) {
+    setTrackingDate(date);
+    setHwSubmissions({});
+    setHwSubmissionsMsg('');
+    if (!sectionId) return;
+    try {
+      const subs = await apiGet<{ student_id: string; status: string }[]>(
+        `/api/v1/teacher/notes/homework/submissions?date=${date}`, token
+      );
+      const map: Record<string, HwStatus> = {};
+      (subs || []).forEach(s => { map[s.student_id] = s.status as HwStatus; });
+      setHwSubmissions(map);
+    } catch { /* ignore */ }
   }
 
   // Validate if noteDate is a valid working day
@@ -323,8 +340,19 @@ export default function HomeworkNotesPage() {
             ) : (
               <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-neutral-100">
-                  <p className="text-sm font-semibold text-neutral-800">Homework Completion</p>
-                  <p className="text-xs text-neutral-400 mt-0.5">{students.length} students · {new Date(today + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-neutral-800">Homework Completion</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{students.length} students · {trackingDate ? new Date(trackingDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : ''}</p>
+                    </div>
+                    <input
+                      type="date"
+                      value={trackingDate}
+                      max={today}
+                      onChange={e => loadSubmissionsForDate(e.target.value)}
+                      className="text-xs border border-neutral-200 rounded-lg px-2 py-1.5 text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                    />
+                  </div>
                 </div>
                 {students.map(student => {
                   const status = hwSubmissions[student.id] || 'not_submitted';
