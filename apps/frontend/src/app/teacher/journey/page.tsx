@@ -460,9 +460,26 @@ export default function ChildJourneyPage() {
     } catch { /* silently fail */ }
   }
 
+  // Map old DB category names to their corresponding frontend keys
+  const OLD_TO_NEW: Record<string, string> = {
+    'social skills': 'social',
+    'behavior': 'emotional',
+    'academic progress': 'cognitive',
+    'motor skills': 'gross_motor',
+    'language': 'language',
+    'other': 'creativity',
+  };
+
   function getMissingCategories(studentId: string): string[] {
     const rawCats = obsMap[studentId] || [];
-    const covered = new Set(rawCats.map(c => c.toLowerCase()));
+    const covered = new Set<string>();
+    for (const cat of rawCats) {
+      const lower = cat.toLowerCase();
+      // Direct new-format key match
+      covered.add(lower);
+      // Old-format: map to a default key
+      if (OLD_TO_NEW[lower]) covered.add(OLD_TO_NEW[lower]);
+    }
     return REPORT_CATEGORIES.filter(cat => !covered.has(cat.key)).map(c => c.key);
   }
 
