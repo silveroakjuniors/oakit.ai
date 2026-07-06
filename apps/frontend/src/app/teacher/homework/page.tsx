@@ -368,6 +368,16 @@ export default function HomeworkNotesPage() {
                     <p className="text-xs text-neutral-400 text-center">No homework was given on this date</p>
                   </div>
                 )}
+                {/* Mark All Done button */}
+                <div className="px-4 py-2 border-b border-neutral-100 flex items-center justify-between">
+                  <span className="text-[10px] text-neutral-500">{Object.values(hwSubmissions).filter(s => s === 'completed').length}/{students.length} completed</span>
+                  <button
+                    onClick={() => { const all: Record<string, HwStatus> = {}; students.forEach(s => { all[s.id] = 'completed'; }); setHwSubmissions(all); }}
+                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-semibold rounded-lg transition-colors active:scale-95"
+                  >
+                    Mark All Done
+                  </button>
+                </div>
                 {students.map(student => {
                   const status = hwSubmissions[student.id] || 'not_submitted';
                   return (

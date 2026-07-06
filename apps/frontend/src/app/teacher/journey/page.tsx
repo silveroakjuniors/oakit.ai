@@ -461,8 +461,23 @@ export default function ChildJourneyPage() {
   }
 
   function getMissingCategories(studentId: string): string[] {
-    const covered = new Set((obsMap[studentId] || []).map(c => c.toLowerCase()));
-    return REPORT_CATEGORIES.filter(cat => !covered.has(cat.key) && !covered.has(cat.label.toLowerCase())).map(c => c.key);
+    const rawCats = obsMap[studentId] || [];
+    // Build a set of covered frontend keys by reverse-mapping DB category names
+    const covered = new Set<string>();
+    for (const cat of rawCats) {
+      const lower = cat.toLowerCase();
+      // Direct key match
+      covered.add(lower);
+      // Reverse-map: find which frontend keys map to this DB name
+      for (const [key, dbName] of Object.entries(CATEGORY_DB_MAP)) {
+        if (dbName.toLowerCase() === lower) covered.add(key);
+      }
+      // Also match by label
+      for (const rc of REPORT_CATEGORIES) {
+        if (rc.label.toLowerCase() === lower) covered.add(rc.key);
+      }
+    }
+    return REPORT_CATEGORIES.filter(cat => !covered.has(cat.key)).map(c => c.key);
   }
 
   function openModal(student: Student, cat: typeof REPORT_CATEGORIES[0]) {
