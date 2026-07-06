@@ -16,17 +16,24 @@ export default function ImageCarousel({ images, mediaTypes }: { images: string[]
   return (
     <>
       <div className="relative w-full bg-black cursor-pointer" style={{ aspectRatio: '4/3' }}
-        onClick={() => !currentIsVideo && setLightbox(true)}>
+        onClick={() => setLightbox(true)}>
         {/* Main media */}
         {currentIsVideo ? (
-          <video
-            src={images[idx]}
-            className="w-full h-full object-cover"
-            controls
-            playsInline
-            preload="metadata"
-            onClick={e => e.stopPropagation()}
-          />
+          <div className="relative w-full h-full">
+            <video
+              src={images[idx]}
+              className="w-full h-full object-cover"
+              playsInline
+              preload="metadata"
+              muted
+            />
+            {/* Play button overlay */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+              </div>
+            </div>
+          </div>
         ) : (
           <img
             src={images[idx]}
@@ -77,22 +84,33 @@ export default function ImageCarousel({ images, mediaTypes }: { images: string[]
 
       {/* Lightbox */}
       {lightbox && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center"
           onClick={() => setLightbox(false)}>
           {/* Close button */}
           <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center text-2xl z-10"
-            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+            style={{ marginTop: 'env(safe-area-inset-top)' }}
             onClick={() => setLightbox(false)}>
             &times;
           </button>
 
-          {/* Full image */}
-          <img
-            src={images[idx]}
-            alt={`Photo ${idx + 1}`}
-            className="max-w-[95vw] max-h-[85vh] object-contain rounded-lg"
-            onClick={e => e.stopPropagation()}
-          />
+          {/* Full media */}
+          {currentIsVideo ? (
+            <video
+              src={images[idx]}
+              className="max-w-[95vw] max-h-[85vh] rounded-lg"
+              controls
+              autoPlay
+              playsInline
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <img
+              src={images[idx]}
+              alt={`Photo ${idx + 1}`}
+              className="max-w-[95vw] max-h-[85vh] object-contain rounded-lg"
+              onClick={e => e.stopPropagation()}
+            />
+          )}
 
           {/* Nav arrows in lightbox */}
           {images.length > 1 && (
