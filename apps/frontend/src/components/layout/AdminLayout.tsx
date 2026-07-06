@@ -214,7 +214,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-col min-h-screen bg-neutral-50">
       {/* Top bar */}
-      <header className="h-14 bg-white border-b border-neutral-200 flex items-center justify-between px-4 shrink-0 z-40 sticky top-0">
+      <header className="bg-white border-b border-neutral-200 flex items-center justify-between px-4 shrink-0 z-40 sticky top-0"
+        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '12px', minHeight: '56px' }}>
         <div className="flex items-center gap-3">
           {/* Hamburger — mobile only */}
           <button onClick={() => setDrawerOpen(true)}

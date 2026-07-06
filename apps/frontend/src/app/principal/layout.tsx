@@ -183,7 +183,8 @@ export default function PrincipalLayout({ children }: { children: React.ReactNod
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile top bar */}
-        <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-neutral-100 shrink-0">
+        <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-neutral-100 shrink-0"
+          style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
           <button onClick={() => setMobileOpen(true)}
             className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-neutral-100 text-neutral-500">
             <Menu size={16} />
