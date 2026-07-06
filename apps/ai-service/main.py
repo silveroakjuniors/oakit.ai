@@ -862,6 +862,7 @@ class FormatObservationRequest(BaseModel):
     student_name: str = "the student"
     category: str = ""
     class_name: str = ""
+    gender: str = ""
 
 @app.post("/internal/format-observation")
 async def format_observation(req: FormatObservationRequest):
@@ -869,6 +870,22 @@ async def format_observation(req: FormatObservationRequest):
     from query_pipeline import _call_llm
 
     first_name = req.student_name.split()[0] if req.student_name and req.student_name != "the student" else "the student"
+    # Skip initials (single char or char+dot) — use actual first name
+    if req.student_name and req.student_name != "the student":
+        parts = req.student_name.strip().split()
+        first_name = "the student"
+        for p in parts:
+            clean = p.rstrip('.')
+            if len(clean) > 1:
+                first_name = clean
+                break
+        if first_name == "the student" and parts:
+            first_name = parts[0]
+    pronoun_hint = ""
+    if req.gender == "male":
+        pronoun_hint = f"Use he/him/his pronouns for {first_name}. "
+    elif req.gender == "female":
+        pronoun_hint = f"Use she/her/hers pronouns for {first_name}. "
 
     # Detect if category is a milestone description (long text) vs a short category label
     is_milestone = req.category and len(req.category) > 30
@@ -878,7 +895,7 @@ async def format_observation(req: FormatObservationRequest):
             f"You are helping a teacher write a milestone achievement note for a school report.\n"
             f"The milestone being achieved is: \"{req.category}\"\n"
             "Output plain text only — no markdown, no bullet symbols, no headers.\n"
-            f"Always refer to the child by their first name: {first_name}.\n"
+            f"Always refer to the child by their first name: {first_name}. {pronoun_hint}\n"
             "Write 2-3 warm, specific, professional sentences that:\n"
             "1. Confirm the child has achieved this milestone\n"
             "2. Describe HOW they demonstrated it (using the teacher's note)\n"
@@ -897,7 +914,7 @@ Use {first_name}'s name naturally. Reference the milestone and how it was demons
         system = (
             f"You are helping a teacher write a professional child observation note{category_hint}.\n"
             "Output plain text only — no markdown, no bullet symbols, no headers.\n"
-            f"Always refer to the child by their first name: {first_name}.\n"
+            f"Always refer to the child by their first name: {first_name}. {pronoun_hint}\n"
             "Write 2-3 warm, specific, professional sentences suitable for a school report.\n"
             "Expand on the observation with concrete, positive language. Do not invent facts."
         )
