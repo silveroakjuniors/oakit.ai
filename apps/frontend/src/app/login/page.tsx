@@ -122,6 +122,7 @@ export default function LoginPage() {
         if (s.ok) { const sd = await s.json(); if (sd.primary_color) applyBrandColor(sd.primary_color); if (sd.tagline !== undefined) saveTagline(sd.tagline || ''); }
       } catch { /* non-critical */ }
       if (data.force_password_reset) { router.push('/auth/change-password'); return; }
+      if ((data as any).security_question_missing && data.role === 'parent') { router.push('/auth/change-password?step=security'); return; }
 
       // Check for dual-role (teacher who is also a parent, or parent who is also staff)
       const hasSecondRole = data.also_parent || data.also_staff_role;

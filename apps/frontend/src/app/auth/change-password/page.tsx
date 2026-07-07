@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
 import { apiPost, apiGet } from '@/lib/api';
 import { getToken, getRole } from '@/lib/auth';
@@ -10,10 +10,12 @@ interface SecurityQuestion { id: string; text: string; }
 
 export default function ChangePasswordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const token = getToken() || '';
   const role = getRole() || '';
   const isParent = role === 'parent';
-  const [step, setStep] = useState<'password' | 'security' | 'done'>('password');
+  const initialStep = searchParams.get('step') === 'security' ? 'security' : 'password';
+  const [step, setStep] = useState<'password' | 'security' | 'done'>(initialStep);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [questions, setQuestions] = useState<SecurityQuestion[]>([]);

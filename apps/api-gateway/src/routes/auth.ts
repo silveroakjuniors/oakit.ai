@@ -219,7 +219,7 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
 
     // Fallback: try parent_users table
     const parentResult = await pool.query(
-      `SELECT id, password_hash, is_active, force_password_reset, mobile
+      `SELECT id, password_hash, is_active, force_password_reset, mobile, security_question_id
        FROM parent_users WHERE mobile = $1 AND school_id = $2`,
       [identifier, school_id]
     );
@@ -256,7 +256,13 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
     // Update last_login timestamp
     pool.query('UPDATE parent_users SET last_login = now() WHERE id = $1', [parent.id]).catch(() => {});
 
-    return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset, also_staff_role });
+    return res.json({
+      token: parentToken,
+      role: 'parent',
+      force_password_reset: parent.force_password_reset,
+      security_question_missing: !parent.security_question_id,
+      also_staff_role,
+    });
 
   } catch (err) {
     console.error('Login error:', err);
