@@ -1065,6 +1065,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  const [aiSummary, setAiSummary] = useState<string | null>(null);
  const [summaryLoading, setSummaryLoading] = useState(false);
  const [profileOpen, setProfileOpen] = useState(false);
+ const [showHomework, setShowHomework] = useState(false);
 
  // Use feed_date from API (respects time machine)  fall back to real today
  const feedDateStr = feed?.feed_date ?? new Date().toISOString().split('T')[0];
@@ -1317,9 +1318,24 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  </div>
  ))}
  </div>
- <button onClick={() => onTabChange('assignments')} className="mt-1.5 text-xs text-emerald-600 font-medium flex items-center gap-1 hover:text-emerald-700">
+ <button onClick={() => setShowHomework(true)} className="mt-1.5 text-xs text-emerald-600 font-medium flex items-center gap-1 hover:text-emerald-700">
  View All <ChevronRight size={11} />
  </button>
+ </div>
+ )}
+
+ {/* Homework popup */}
+ {showHomework && feed?.homework && (
+ <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowHomework(false)}>
+ <div className="relative w-full sm:w-[420px] max-h-[70vh] bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+ <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+ <p className="text-sm font-bold text-gray-800">Today's Homework</p>
+ <button onClick={() => setShowHomework(false)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-lg">&times;</button>
+ </div>
+ <div className="flex-1 overflow-y-auto px-5 py-4">
+ <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{feed.homework.formatted_text || feed.homework.raw_text}</p>
+ </div>
+ </div>
  </div>
  )}
 
