@@ -2239,8 +2239,9 @@ function AssignmentsTab({ activeChild, token }: { activeChild: Child | null; tok
  const statusConfig = {
  completed: { label: 'Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
  partial: { label: 'Half Done', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
- not_submitted: { label: 'Pending', cls: 'bg-red-50 text-red-600 border-red-100' },
- }[hw.status] || { label: 'Pending', cls: 'bg-gray-50 text-gray-600 border-gray-100' };
+ not_submitted: { label: 'Not Done', cls: 'bg-red-50 text-red-600 border-red-100' },
+ pending: { label: '', cls: 'bg-white text-gray-700 border-gray-100' },
+ }[hw.status] || { label: '', cls: 'bg-white text-gray-700 border-gray-100' };
  return (
  <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
  <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
