@@ -3263,7 +3263,7 @@ function NotificationsTab({ notifications, announcements, onRead }: { notificati
  ) : notifications.map(n => (
  <div key={n.id} className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm mb-3">
  <div className="flex items-start justify-between gap-3">
- <div><p className="font-bold text-neutral-800 text-sm">Daily Plan Completed</p><p className="text-xs text-neutral-500 mt-0.5">{new Date(n.completion_date.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} - {n.chunks_covered} {n.chunks_covered === 1 ? 'topic' : 'topics'} covered today</p></div>
+ <div><p className="font-bold text-neutral-800 text-sm">Daily Plan Completed</p><p className="text-xs text-neutral-500 mt-0.5">{new Date(n.completion_date.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} - Today's curriculum plan has been completed by the teacher</p></div>
  <button onClick={() => onRead(n.id)} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">Dismiss</button>
  </div>
  </div>
