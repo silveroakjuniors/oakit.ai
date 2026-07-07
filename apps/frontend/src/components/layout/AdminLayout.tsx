@@ -204,6 +204,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       return;
     }
     setAuthChecked(true);
+    // Admin: only fee collection + fee structures. Principal: everything.
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.role === 'principal') {
+        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'VIEW_REPORTS', 'SEND_REMINDER', 'VIEW_EXPENSE', 'VIEW_SALARY', 'VIEW_RECONCILIATION', 'PERFORM_RECONCILIATION', 'PUSH_PAYSLIP', 'EDIT_SALARY']);
+        return;
+      }
+      if (payload.role === 'admin') {
+        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'SEND_REMINDER']);
+        return;
+      }
+    } catch {}
     apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
       .then(data => setFinPerms(data.permissions || []))
       .catch(() => setFinPerms([]));
