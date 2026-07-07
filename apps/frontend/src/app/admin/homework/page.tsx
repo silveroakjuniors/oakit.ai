@@ -121,8 +121,7 @@ export default function AdminHomeworkPage() {
             ) : (
               <div style={{ height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}
-                    onClick={(e: any) => { if (e?.activePayload?.[0]?.payload?._raw) openDrill(e.activePayload[0].payload._raw); }}>
+                  <BarChart data={chartData} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                     <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
                     <YAxis tick={{ fontSize: 10 }} />
@@ -135,6 +134,31 @@ export default function AdminHomeworkPage() {
               </div>
             )}
           </div>
+
+          {/* Section cards — tap to drill down */}
+          {stats.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1">Tap a class to see student details</p>
+              {stats.map(s => {
+                const total = s.completed + s.partial + s.not_done;
+                const pct = total > 0 ? Math.round((s.completed / total) * 100) : 0;
+                return (
+                  <button key={s.section_id} onClick={() => openDrill(s)}
+                    className="w-full bg-white rounded-xl border border-gray-100 shadow-sm p-3 flex items-center gap-3 hover:border-emerald-200 hover:shadow-md transition-all text-left active:scale-[0.98]">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800">{s.class_name} - {s.section_label}</p>
+                      <div className="flex gap-3 mt-1">
+                        <span className="text-[10px] text-emerald-600 font-medium">{s.completed} done</span>
+                        <span className="text-[10px] text-amber-600 font-medium">{s.partial} partial</span>
+                        <span className="text-[10px] text-red-500 font-medium">{s.not_done} missed</span>
+                      </div>
+                    </div>
+                    <span className={`text-lg font-black ${pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-red-500'}`}>{pct}%</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Drill-down modal */}
           {drillSection && (
