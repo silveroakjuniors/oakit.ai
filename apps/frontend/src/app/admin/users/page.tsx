@@ -431,13 +431,13 @@ export default function UsersPage() {
                     </td>
                     <td className="py-3 text-right">
                       <div className="flex gap-2 justify-end">
-                        {u.mobile && (
+                        {u.mobile && u.role !== 'principal' && u.role !== 'admin' && (
                           <Button variant="ghost" size="sm" onClick={() => resetPassword(u.id, u.name)}>Reset Password</Button>
                         )}
-                        {u.is_active && (
+                        {u.is_active && u.role !== 'principal' && u.role !== 'admin' && (
                           <Button variant="danger" size="sm" onClick={() => deactivate(u.id)}>Deactivate</Button>
                         )}
-                        {!u.is_active && (
+                        {!u.is_active && u.role !== 'principal' && u.role !== 'admin' && (
                           <Button variant="danger" size="sm" onClick={() => deleteUser(u.id, u.name)}>Delete</Button>
                         )}
                       </div>

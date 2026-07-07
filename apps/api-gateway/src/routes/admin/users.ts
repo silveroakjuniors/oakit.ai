@@ -255,11 +255,15 @@ router.post('/:id/reset-password', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
     const userRow = await pool.query(
-      'SELECT id, mobile FROM users WHERE id = $1 AND school_id = $2',
+      `SELECT u.id, u.mobile, r.name AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1 AND u.school_id = $2`,
       [req.params.id, school_id]
     );
     if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    const { mobile } = userRow.rows[0];
+    const { mobile, role } = userRow.rows[0];
+    // Block admin from resetting principal or admin passwords
+    if (role === 'principal' || role === 'admin') {
+      return res.status(403).json({ error: 'Cannot reset password for principal or admin accounts' });
+    }
     const bcrypt = require('bcryptjs');
     const password_hash = await bcrypt.hash(mobile, 12);
     await pool.query(
