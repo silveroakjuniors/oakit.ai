@@ -633,8 +633,14 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
       `SELECT
          COUNT(DISTINCT s.id)::int AS total_students,
          COUNT(DISTINCT psl.student_id)::int AS parents_activated,
-         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN psl.student_id END)::int AS parents_logged_in,
-         COUNT(DISTINCT CASE WHEN pu.last_login IS NULL AND pu.id IS NOT NULL THEN psl.student_id END)::int AS parents_not_logged_in
+         COUNT(DISTINCT CASE WHEN EXISTS (
+           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
+           WHERE p2.student_id = s.id AND pu2.last_login IS NOT NULL
+         ) THEN s.id END)::int AS parents_logged_in,
+         COUNT(DISTINCT CASE WHEN psl.student_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
+           WHERE p2.student_id = s.id AND pu2.last_login IS NOT NULL
+         ) THEN s.id END)::int AS parents_not_logged_in
        FROM students s
        LEFT JOIN parent_student_links psl ON psl.student_id = s.id
        LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
