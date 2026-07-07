@@ -79,7 +79,7 @@ export default function ChangePasswordPage() {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {step === 'password' ? (
+        {step === 'password' && (
           <Card padding="lg">
             <h1 className="text-xl font-semibold text-gray-800 mb-2">
               {isParent ? 'Welcome! Set Your Password' : 'Change Your Password'}
@@ -112,7 +112,9 @@ export default function ChangePasswordPage() {
               <Button type="submit" loading={loading} className="w-full">Set Password</Button>
             </form>
           </Card>
-        ) : (
+        )}
+
+        {step === 'security' && (
           <Card padding="lg">
             <h1 className="text-xl font-semibold text-gray-800 mb-2">Set Security Question</h1>
             <p className="text-sm text-gray-500 mb-6">
