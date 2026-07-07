@@ -334,7 +334,6 @@ router.put('/:id/name', async (req: Request, res: Response) => {
 router.delete('/:id/permanent', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    // Only allow deleting inactive users
     const check = await pool.query(
       'SELECT id, name, is_active FROM users WHERE id = $1 AND school_id = $2',
       [req.params.id, school_id]
@@ -343,18 +342,31 @@ router.delete('/:id/permanent', async (req: Request, res: Response) => {
     if (check.rows[0].is_active) return res.status(400).json({ error: 'Cannot delete active user. Deactivate first.' });
 
     const userId = req.params.id;
-    // Clean up all foreign key references
-    await pool.query('DELETE FROM teacher_sections WHERE teacher_id = $1', [userId]);
-    await pool.query('DELETE FROM teacher_streaks WHERE teacher_id = $1', [userId]);
-    await pool.query('DELETE FROM ai_credit_transactions WHERE actor_id = $1', [userId]);
-    await pool.query('UPDATE daily_completions SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
-    await pool.query('UPDATE attendance_records SET teacher_id = (SELECT id FROM users WHERE school_id = $1 AND role_id = (SELECT id FROM roles WHERE name = \'admin\') LIMIT 1) WHERE teacher_id = $2', [school_id, userId]).catch(() => {});
-    await pool.query('UPDATE child_journey_entries SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
-    await pool.query('UPDATE student_observations SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
-    await pool.query('UPDATE teacher_homework SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
-    await pool.query('UPDATE feed_posts SET posted_by = $1 WHERE posted_by = $2', [req.user!.id, userId]).catch(() => {});
-    await pool.query('DELETE FROM push_subscriptions WHERE user_id = $1', [userId]).catch(() => {});
-    // Remove the user
+
+    // Clean up ALL known foreign key references (fire-and-forget pattern)
+    const cleanups = [
+      'DELETE FROM teacher_sections WHERE teacher_id = $1',
+      'DELETE FROM teacher_streaks WHERE teacher_id = $1',
+      'DELETE FROM ai_credit_transactions WHERE actor_id = $1',
+      'DELETE FROM ai_usage_logs WHERE actor_id = $1',
+      'DELETE FROM push_subscriptions WHERE user_id = $1',
+      'DELETE FROM audit_logs WHERE actor_id = $1::text',
+      'UPDATE daily_completions SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE child_journey_entries SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE student_observations SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE teacher_homework SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE teacher_notes SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE coverage_logs SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE feed_posts SET posted_by = NULL WHERE posted_by = $1',
+      'UPDATE student_milestones SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE salary_records SET created_by = NULL WHERE created_by = $1',
+      'DELETE FROM staff_salary_config WHERE user_id = $1',
+    ];
+    for (const sql of cleanups) {
+      await pool.query(sql, [userId]).catch(() => {});
+    }
+
+    // Final delete
     await pool.query('DELETE FROM users WHERE id = $1 AND school_id = $2', [userId, school_id]);
 
     return res.json({ success: true, message: `User "${check.rows[0].name}" permanently deleted` });

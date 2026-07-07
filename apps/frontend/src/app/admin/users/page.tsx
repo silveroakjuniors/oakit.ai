@@ -275,6 +275,7 @@ export default function UsersPage() {
   const [changingRole, setChangingRole] = useState<{ userId: string; current: string } | null>(null);
   const [editingName, setEditingName] = useState<{ userId: string; name: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null);
   const token = getToken() || '';
 
   async function load() {
@@ -313,9 +314,15 @@ export default function UsersPage() {
 
   async function confirmDelete() {
     if (!deleteConfirm) return;
-    await fetch(`${API_BASE}/api/v1/admin/users/${deleteConfirm.id}/permanent`, {
+    const res = await fetch(`${API_BASE}/api/v1/admin/users/${deleteConfirm.id}/permanent`, {
       method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
     });
+    const data = await res.json();
+    if (res.ok) {
+      setDeleteSuccess(`"${deleteConfirm.name}" has been permanently deleted.`);
+    } else {
+      setDeleteSuccess(`Failed: ${data.error || 'Unknown error'}`);
+    }
     setDeleteConfirm(null);
     await load();
   }
@@ -530,6 +537,24 @@ export default function UsersPage() {
                 Delete
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete success/error popup */}
+      {deleteSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <p className="text-sm text-gray-700 mb-5">{deleteSuccess}</p>
+            <button onClick={() => setDeleteSuccess(null)}
+              className="px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors">
+              OK
+            </button>
           </div>
         </div>
       )}
