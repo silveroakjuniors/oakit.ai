@@ -2861,13 +2861,19 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
  };
  for (const t of topics) {
  const tl = t.toLowerCase();
- if (/english|letter|phonics|reading|story|language|alphabet|speaking|rhyme|listening/.test(tl)) cats['English & Language'].push(t);
- else if (/math|maths|number|count|shape|pattern|addition|subtraction|numeracy/.test(tl)) cats['Math & Numbers'].push(t);
- else if (/art|craft|draw|paint|colour|color|collage|clay|creative/.test(tl)) cats['Art & Craft'].push(t);
- else if (/science|nature|plant|animal|weather|earth|experiment|evs|environment/.test(tl)) cats['Science & Nature'].push(t);
- else if (/circle|gk|general|knowledge|quiz|question|social|emotional/.test(tl)) cats['Circle Time & GK'].push(t);
- else if (/motor|writing|pencil|grip|trace|cut|fold|bead|scribbl|handwriting/.test(tl)) cats['Fine Motor & Writing'].push(t);
- else if (/holiday|festival|special|event|celebration|birthday|diwali|christmas|eid|holi|settling|sensory|play|exploration/.test(tl)) cats['Special Days & Events'].push(t);
+ // Check prefix first (e.g., "GK: ...", "Math: ...", "English: ...")
+ const prefix = tl.split(':')[0].trim();
+ if (/^(english|eng)$/.test(prefix) || /^english/.test(tl)) cats['English & Language'].push(t);
+ else if (/^(math|maths|mathematics)$/.test(prefix) || /^math/.test(tl)) cats['Math & Numbers'].push(t);
+ else if (/^(gk|general knowledge)$/.test(prefix) || /^gk/.test(tl)) cats['Circle Time & GK'].push(t);
+ else if (/^(writing|handwriting)$/.test(prefix) || /^writing/.test(tl)) cats['Fine Motor & Writing'].push(t);
+ else if (/^(art|craft)$/.test(prefix) || /art|craft|draw|paint|colour|collage/.test(tl)) cats['Art & Craft'].push(t);
+ else if (/^(science|evs)$/.test(prefix) || /science|nature|plant|animal|evs/.test(tl)) cats['Science & Nature'].push(t);
+ else if (/rhyme|song|circle|social|emotional|moral|story time/.test(tl)) cats['Circle Time & GK'].push(t);
+ else if (/motor|pencil|grip|trace|cut|fold|bead|scribbl/.test(tl)) cats['Fine Motor & Writing'].push(t);
+ else if (/holiday|festival|special|event|settling|sensory|play|exploration|free play/.test(tl)) cats['Special Days & Events'].push(t);
+ else if (/letter|phonics|reading|alphabet|speaking|listening/.test(tl)) cats['English & Language'].push(t);
+ else if (/number|count|shape|pattern/.test(tl)) cats['Math & Numbers'].push(t);
  else cats['Other Activities'].push(t);
  }
  return Object.entries(cats).filter(([, v]) => v.length > 0);
