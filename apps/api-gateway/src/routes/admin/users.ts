@@ -326,4 +326,30 @@ router.put('/:id/name', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/v1/admin/users/:id/permanent — permanently delete a deactivated user
+router.delete('/:id/permanent', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    // Only allow deleting inactive users
+    const check = await pool.query(
+      'SELECT id, name, is_active FROM users WHERE id = $1 AND school_id = $2',
+      [req.params.id, school_id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    if (check.rows[0].is_active) return res.status(400).json({ error: 'Cannot delete active user. Deactivate first.' });
+
+    // Remove from teacher_sections
+    await pool.query('DELETE FROM teacher_sections WHERE teacher_id = $1', [req.params.id]);
+    // Remove from teacher_streaks
+    await pool.query('DELETE FROM teacher_streaks WHERE teacher_id = $1', [req.params.id]);
+    // Remove the user
+    await pool.query('DELETE FROM users WHERE id = $1 AND school_id = $2', [req.params.id, school_id]);
+
+    return res.json({ success: true, message: `User "${check.rows[0].name}" permanently deleted` });
+  } catch (err) {
+    console.error('[admin/users DELETE permanent]', err);
+    return res.status(500).json({ error: 'Failed to delete user. They may have linked records.' });
+  }
+});
+
 export default router;

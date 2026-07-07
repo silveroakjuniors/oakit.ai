@@ -306,6 +306,14 @@ export default function UsersPage() {
     await load();
   }
 
+  async function deleteUser(id: string, name: string) {
+    if (!confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
+    await fetch(`${API_BASE}/api/v1/admin/users/${id}/permanent`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    await load();
+  }
+
   async function changeRole(userId: string, role_name: string) {
     await fetch(`${API_BASE}/api/v1/admin/users/${userId}/role`, {
       method: 'PUT',
@@ -428,6 +436,9 @@ export default function UsersPage() {
                         )}
                         {u.is_active && (
                           <Button variant="danger" size="sm" onClick={() => deactivate(u.id)}>Deactivate</Button>
+                        )}
+                        {!u.is_active && (
+                          <Button variant="danger" size="sm" onClick={() => deleteUser(u.id, u.name)}>Delete</Button>
                         )}
                       </div>
                     </td>
