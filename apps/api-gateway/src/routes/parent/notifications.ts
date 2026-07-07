@@ -13,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT
          pn.id,
-         pn.completion_date,
+         pn.completion_date::text AS completion_date,
          pn.chunks_covered,
          pn.is_read,
          pn.created_at,
