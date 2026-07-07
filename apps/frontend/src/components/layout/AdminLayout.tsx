@@ -77,7 +77,7 @@ const navItems: NavItem[] = [
   { href: '/admin/finance',                label: 'Finance',          icon: DollarSign,    group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
   { href: '/admin/finance/fee-structures', label: 'Fee Structures',   icon: Tag,           group: 'finance', requirePerm: FIN_PERMS.MANAGE_FEE_STRUCTURE },
   { href: '/admin/finance/fees',           label: 'Fee Collection',   icon: CreditCard,    group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
-  { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: Pencil,        group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
+  { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: Pencil,        group: 'school' },
   { href: '/admin/finance/concessions',    label: 'Concessions',      icon: Gift,          group: 'finance', requirePerm: FIN_PERMS.MANAGE_CONCESSION },
   { href: '/admin/finance/expenses',       label: 'Expenses',         icon: Receipt,       group: 'finance', requirePerm: FIN_PERMS.VIEW_EXPENSE },
   { href: '/admin/finance/salary',         label: 'Salary',           icon: Briefcase,     group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
@@ -212,7 +212,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         return;
       }
       if (payload.role === 'admin') {
-        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'SEND_REMINDER']);
+        setFinPerms(['COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE']);
         return;
       }
     } catch {}
