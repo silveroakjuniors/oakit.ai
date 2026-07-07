@@ -16,14 +16,15 @@ router.get('/', async (req: Request, res: Response) => {
     const { date, class_id, section_id } = req.query as Record<string, string>;
 
     const params: any[] = [school_id];
-    const conditions: string[] = ['th.school_id = $1', 'th.chunk_id IS NOT NULL'];
+    const conditions: string[] = ['th.school_id = $1'];
 
     if (date) { params.push(date); conditions.push(`th.homework_date = $${params.length}`); }
+    else { conditions.push(`th.homework_date >= CURRENT_DATE - 7`); }
     if (section_id) { params.push(section_id); conditions.push(`th.section_id = $${params.length}`); }
     if (class_id) { params.push(class_id); conditions.push(`s.class_id = $${params.length}`); }
 
     const result = await pool.query(
-      `SELECT th.id, th.chunk_id, th.topic_label, th.homework_date,
+      `SELECT th.id, th.chunk_id, COALESCE(th.topic_label, 'Homework') AS topic_label, th.homework_date,
               th.raw_text, th.formatted_text, th.teacher_comments,
               u.name AS teacher_name,
               c.name AS class_name, sec.label AS section_label
