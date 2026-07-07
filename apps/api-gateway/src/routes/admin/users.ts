@@ -342,12 +342,20 @@ router.delete('/:id/permanent', async (req: Request, res: Response) => {
     if (check.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     if (check.rows[0].is_active) return res.status(400).json({ error: 'Cannot delete active user. Deactivate first.' });
 
-    // Remove from teacher_sections
-    await pool.query('DELETE FROM teacher_sections WHERE teacher_id = $1', [req.params.id]);
-    // Remove from teacher_streaks
-    await pool.query('DELETE FROM teacher_streaks WHERE teacher_id = $1', [req.params.id]);
+    const userId = req.params.id;
+    // Clean up all foreign key references
+    await pool.query('DELETE FROM teacher_sections WHERE teacher_id = $1', [userId]);
+    await pool.query('DELETE FROM teacher_streaks WHERE teacher_id = $1', [userId]);
+    await pool.query('DELETE FROM ai_credit_transactions WHERE actor_id = $1', [userId]);
+    await pool.query('UPDATE daily_completions SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
+    await pool.query('UPDATE attendance_records SET teacher_id = (SELECT id FROM users WHERE school_id = $1 AND role_id = (SELECT id FROM roles WHERE name = \'admin\') LIMIT 1) WHERE teacher_id = $2', [school_id, userId]).catch(() => {});
+    await pool.query('UPDATE child_journey_entries SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
+    await pool.query('UPDATE student_observations SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
+    await pool.query('UPDATE teacher_homework SET teacher_id = NULL WHERE teacher_id = $1', [userId]).catch(() => {});
+    await pool.query('UPDATE feed_posts SET posted_by = $1 WHERE posted_by = $2', [req.user!.id, userId]).catch(() => {});
+    await pool.query('DELETE FROM push_subscriptions WHERE user_id = $1', [userId]).catch(() => {});
     // Remove the user
-    await pool.query('DELETE FROM users WHERE id = $1 AND school_id = $2', [req.params.id, school_id]);
+    await pool.query('DELETE FROM users WHERE id = $1 AND school_id = $2', [userId, school_id]);
 
     return res.json({ success: true, message: `User "${check.rows[0].name}" permanently deleted` });
   } catch (err) {
