@@ -2738,6 +2738,32 @@ function AttendanceTab({ data }: { data: AttendanceData | null }) {
  );
 }
 
+// --- Topic Category Card (collapsible) ----------------------------------------
+function TopicCategoryCard({ cat, topics, icon }: { cat: string; topics: string[]; icon: string }) {
+ const [expanded, setExpanded] = useState(false);
+ const MAX_SHOW = 3;
+ const visible = expanded ? topics : topics.slice(0, MAX_SHOW);
+ const hasMore = topics.length > MAX_SHOW;
+ return (
+ <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+ <p className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
+ <span>{icon}</span> {cat}
+ <span className="ml-auto text-[10px] font-semibold text-gray-400">{topics.length} topic{topics.length > 1 ? 's' : ''}</span>
+ </p>
+ <div className="flex flex-wrap gap-1.5">
+ {visible.map((t, i) => (
+ <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100 max-w-[220px] truncate">{t}</span>
+ ))}
+ </div>
+ {hasMore && (
+ <button onClick={() => setExpanded(!expanded)} className="mt-2 text-[11px] text-emerald-600 font-semibold hover:underline">
+ {expanded ? 'Show less' : `+${topics.length - MAX_SHOW} more topics`}
+ </button>
+ )}
+ </div>
+ );
+}
+
 // --- Progress Tab -------------------------------------------------------------
 // --- Progress Tab  Learning Summary -----------------------------------------
 function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; activeChild: Child | null; token: string }) {
@@ -2973,17 +2999,7 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
  <div className="space-y-3">
  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topics Covered This Term</p>
  {categorised.map(([cat, topics]) => (
- <div key={cat} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
- <p className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
- <span>{catIcons[cat] ?? ''}</span> {cat}
- <span className="ml-auto text-[10px] font-semibold text-gray-400">{topics.length} topic{topics.length > 1 ? 's' : ''}</span>
- </p>
- <div className="flex flex-wrap gap-1.5">
- {topics.map((t, i) => (
- <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">{t}</span>
- ))}
- </div>
- </div>
+ <TopicCategoryCard key={cat} cat={cat} topics={topics} icon={catIcons[cat] ?? ''} />
  ))}
  </div>
  ) : (
