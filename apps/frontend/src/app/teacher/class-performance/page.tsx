@@ -572,8 +572,9 @@ export default function ClassPerformancePage() {
               </div>
               <div className="space-y-2">
                 {data.birthdays.map(s => {
-                  const bday = new Date(s.date_of_birth + 'T12:00:00');
-                  const dayMonth = bday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                  const raw = (s.date_of_birth || '').split('T')[0];
+                  const bday = new Date(raw + 'T12:00:00');
+                  const dayMonth = isNaN(bday.getTime()) ? '' : bday.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                   return (
                     <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-pink-50 border border-pink-100">
                       <div className="w-7 h-7 rounded-full bg-pink-100 flex items-center justify-center text-sm">

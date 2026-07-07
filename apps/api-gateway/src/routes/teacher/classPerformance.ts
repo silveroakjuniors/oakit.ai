@@ -82,11 +82,13 @@ router.get('/', async (req: Request, res: Response) => {
     // ── 3. Curriculum coverage ──
     const covRows = await safeQuery(
       `SELECT
-         COUNT(*)::int AS total_chunks,
-         COUNT(*) FILTER (WHERE cs.status = 'covered')::int AS covered_chunks
-       FROM curriculum_chunks cc
-       LEFT JOIN coverage_statuses cs ON cs.chunk_id = cc.id
-       WHERE cc.section_id = $1 AND cc.school_id = $2`,
+         (SELECT COUNT(*)::int FROM curriculum_chunks WHERE class_id = sec.class_id) AS total_chunks,
+         COUNT(DISTINCT cid)::int AS covered_chunks
+       FROM sections sec
+       LEFT JOIN daily_completions dc ON dc.section_id = sec.id
+       LEFT JOIN LATERAL unnest(dc.covered_chunk_ids) AS cid ON true
+       WHERE sec.id = $1 AND sec.school_id = $2
+       GROUP BY sec.class_id`,
       [section_id, school_id]
     );
     const cov = covRows[0] || { total_chunks: 0, covered_chunks: 0 };
