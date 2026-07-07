@@ -147,12 +147,23 @@ function AiMessageText({ text, subjectCheckboxes, onVideoHelp }: { text: string;
 
 function extractSubjects(chunks: Chunk[]): string[] {
   const subjects = new Set<string>();
-  const pat = /^(English Speaking|English|Math(?:ematics)?|GK|General Knowledge|Writing|Art|Music|PE|Science|EVS|Hindi|Regional Language|Additional activities|Circle time|Morning meet)/im;
+  const pat = /^(English Speaking|English|Math(?:ematics)?|GK|General Knowledge|Writing|Art(?:\s+and\s+Craft)?|Music|PE|Science|EVS|Hindi|Regional Language|Additional activities|Circle [Tt]ime|Morning [Mm]eet|Rhyme|Moral Story|Free Play|Outdoor Play|Story Time|Sensory Play|Motor Skills|Attendance|Assembly|Colouring|Drawing|Number Work|Letter Work|Phonics|Reading|Conversation|Show and Tell)/im;
   for (const chunk of chunks) {
     for (const line of chunk.content.split('\n')) { const m = line.match(pat); if (m) subjects.add(m[1].trim()); }
     if (chunk.topic_label) { const m = chunk.topic_label.match(pat); if (m) subjects.add(m[1].trim()); }
   }
-  return Array.from(subjects).slice(0, 6);
+  // Also try splitting by colon-separated activities
+  if (subjects.size === 0) {
+    for (const chunk of chunks) {
+      const colonPat = /^([A-Z][A-Za-z\s&]+?):/gm;
+      let m;
+      while ((m = colonPat.exec(chunk.content)) !== null) {
+        const label = m[1].trim();
+        if (label.length > 2 && label.length < 40 && !label.startsWith('Resource')) subjects.add(label);
+      }
+    }
+  }
+  return Array.from(subjects).slice(0, 8);
 }
 
 function getHelpButtons(subjects: string[]) {
