@@ -13,7 +13,7 @@ export default function ChangePasswordPage() {
   const token = getToken() || '';
   const role = getRole() || '';
   const isParent = role === 'parent';
-  const [step, setStep] = useState<'password' | 'security'>('password');
+  const [step, setStep] = useState<'password' | 'security' | 'done'>('password');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [questions, setQuestions] = useState<SecurityQuestion[]>([]);
@@ -66,11 +66,7 @@ export default function ChangePasswordPage() {
         security_question_id: selectedQuestion,
         answer: answer.trim(),
       }, token);
-      // Redirect based on role
-      const redirectMap: Record<string, string> = {
-        admin: '/admin', principal: '/principal', teacher: '/teacher', parent: '/parent',
-      };
-      router.push(redirectMap[role] || '/teacher');
+      setStep('done');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to set security question');
     } finally {
@@ -148,6 +144,25 @@ export default function ChangePasswordPage() {
               )}
               <Button type="submit" loading={loading} className="w-full">Save & Continue</Button>
             </form>
+          </Card>
+        )}
+
+        {step === 'done' && (
+          <Card padding="lg">
+            <div className="text-center py-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              <h1 className="text-xl font-bold text-gray-900 mb-2">All Set!</h1>
+              <p className="text-sm text-gray-500 mb-6">
+                Your password has been changed and security question saved successfully. Please login with your new password.
+              </p>
+              <Button onClick={() => router.push('/login')} className="w-full">
+                Login Now
+              </Button>
+            </div>
           </Card>
         )}
       </div>
