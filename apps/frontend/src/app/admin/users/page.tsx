@@ -274,6 +274,7 @@ export default function UsersPage() {
   const [editRole, setEditRole] = useState<Role | null | 'new'>(null);
   const [changingRole, setChangingRole] = useState<{ userId: string; current: string } | null>(null);
   const [editingName, setEditingName] = useState<{ userId: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
   const token = getToken() || '';
 
   async function load() {
@@ -307,10 +308,15 @@ export default function UsersPage() {
   }
 
   async function deleteUser(id: string, name: string) {
-    if (!confirm(`Permanently delete "${name}"? This cannot be undone.`)) return;
-    await fetch(`${API_BASE}/api/v1/admin/users/${id}/permanent`, {
+    setDeleteConfirm({ id, name });
+  }
+
+  async function confirmDelete() {
+    if (!deleteConfirm) return;
+    await fetch(`${API_BASE}/api/v1/admin/users/${deleteConfirm.id}/permanent`, {
       method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
     });
+    setDeleteConfirm(null);
     await load();
   }
 
@@ -499,6 +505,33 @@ export default function UsersPage() {
           onClose={() => setEditRole(null)}
           onSaved={load}
         />
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete User</h3>
+            <p className="text-sm text-gray-600 text-center mb-6">
+              Permanently delete <strong>{deleteConfirm.name}</strong>? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)}
+                className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmDelete}
+                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
