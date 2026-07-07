@@ -823,7 +823,7 @@ export default function ParentPage() {
  {tab === 'milestones' && <MilestonesTab activeChild={activeChild} token={token} />}
  {tab === 'assignments' && <AssignmentsTab activeChild={activeChild} token={token} />}
  {tab === 'messages' && <MessagesTab threads={messageThreads} token={token} onRefresh={() => apiGet<ParentMessage[]>('/api/v1/parent/messages', token).then(setMessageThreads).catch(() => {})} />}
- {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} />}
+ {tab === 'notifications' && <NotificationsTab notifications={notifications} announcements={announcements} onRead={markNotifRead} onTabChange={setTab} />}
  {tab === 'fees' && <FeesTab invoice={invoice} activeChild={activeChild} token={token} />}
  {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
  {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} translationEnabled={schoolTranslationEnabled} />}
@@ -3236,7 +3236,7 @@ function MessagesTab({ threads, token, onRefresh }: { threads: ParentMessage[]; 
 }
 
 // --- Notifications Tab --------------------------------------------------------
-function NotificationsTab({ notifications, announcements, onRead }: { notifications: Notification[]; announcements: Announcement[]; onRead: (id: string) => void }) {
+function NotificationsTab({ notifications, announcements, onRead, onTabChange }: { notifications: Notification[]; announcements: Announcement[]; onRead: (id: string) => void; onTabChange?: (t: Tab) => void }) {
  return (
  <div className="space-y-5">
  {announcements.length > 0 && (
@@ -3261,10 +3261,10 @@ function NotificationsTab({ notifications, announcements, onRead }: { notificati
  <p className="text-neutral-500 font-medium">You&apos;re all caught up!</p>
  </div>
  ) : notifications.map(n => (
- <div key={n.id} className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm mb-3">
+ <div key={n.id} className="bg-white rounded-2xl p-4 border border-neutral-100 shadow-sm mb-3 cursor-pointer hover:border-emerald-200 transition-colors" onClick={() => onTabChange?.('calendar')}>
  <div className="flex items-start justify-between gap-3">
  <div><p className="font-bold text-neutral-800 text-sm">Daily Plan Completed</p><p className="text-xs text-neutral-500 mt-0.5">{new Date(n.completion_date.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} - Today's curriculum plan has been completed by the teacher</p></div>
- <button onClick={() => onRead(n.id)} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">Dismiss</button>
+ <button onClick={(e) => { e.stopPropagation(); onRead(n.id); }} className="text-xs text-emerald-600 font-bold px-3 py-1.5 rounded-xl hover:bg-emerald-50 transition-colors min-h-[32px]">Dismiss</button>
  </div>
  </div>
  ))}
