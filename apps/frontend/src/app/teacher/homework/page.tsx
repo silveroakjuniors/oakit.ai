@@ -130,7 +130,7 @@ export default function HomeworkNotesPage() {
     try {
       const submissions = Object.entries(hwSubmissions).map(([student_id, status]) => ({ student_id, status }));
       await apiPost('/api/v1/teacher/notes/homework/submissions', {
-        submissions, date: trackingDate || today, ...(sectionId ? { section_id: sectionId } : {}),
+        submissions, homework_date: trackingDate || today, ...(sectionId ? { section_id: sectionId } : {}),
       }, token);
       setHwSubmissionsMsg('Homework status saved');
     } catch (e: unknown) { setHwSubmissionsMsg(e instanceof Error ? e.message : 'Failed'); }
