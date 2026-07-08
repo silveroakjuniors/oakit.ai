@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { apiGet } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { ChevronLeft, Calendar, BookOpen, Search } from 'lucide-react';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface JourneyEntry {
   id: string;
@@ -45,44 +46,61 @@ function ChildJourneyParentPage() {
   const searchParams = useSearchParams();
   const studentId = searchParams.get('student_id') || '';
   const token = getToken() || '';
+  const { academicStart } = useAcademicCalendar(token);
 
   const [data, setData] = useState<JourneyData | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [snapshotLoading, setSnapshotLoading] = useState(true);
+  const [effectiveToday, setEffectiveToday] = useState<string>('');
 
-  // Draft dates — only committed to appliedFrom/appliedTo when user taps "Show"
-  const defaultFrom = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split('T')[0]; })();
-  const defaultTo = new Date().toISOString().split('T')[0];
-
-  const [fromDate, setFromDate] = useState(defaultFrom);
-  const [toDate, setToDate] = useState(defaultTo);
-  const [appliedFrom, setAppliedFrom] = useState(defaultFrom);
-  const [appliedTo, setAppliedTo] = useState(defaultTo);
+  // Draft dates — only committed on "Show" click
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   function applyFilter() {
-    setAppliedFrom(fromDate);
-    setAppliedTo(toDate);
+    loadEntries(fromDate, toDate);
   }
 
   useEffect(() => {
     if (!token || !studentId) { router.push('/parent'); return; }
+
+    // Fetch the child feed to get the time-machine-aware "today"
+    apiGet<{ feed_date?: string }>(`/api/v1/parent/child/${studentId}/feed`, token)
+      .then(feed => {
+        const today = feed?.feed_date || new Date().toISOString().split('T')[0];
+        setEffectiveToday(today);
+        const d = new Date(today);
+        d.setDate(d.getDate() - 30);
+        const from = d.toISOString().split('T')[0];
+        setFromDate(from);
+        setToDate(today);
+        // Trigger initial load directly with the resolved dates
+        loadEntries(from, today);
+      })
+      .catch(() => {
+        const today = new Date().toISOString().split('T')[0];
+        setEffectiveToday(today);
+        const d = new Date(today);
+        d.setDate(d.getDate() - 30);
+        const from = d.toISOString().split('T')[0];
+        setFromDate(from);
+        setToDate(today);
+        loadEntries(from, today);
+      });
+
     // Load snapshot once (cached per day)
     setSnapshotLoading(true);
-    apiGet<Snapshot>(`/api/v1/parent/child-journey/${studentId}/snapshot`, token)
+    apiGet<Snapshot>(`/api/v1/parent/child-journey/parent/${studentId}/snapshot`, token)
       .then(setSnapshot).catch(() => {}).finally(() => setSnapshotLoading(false));
   }, [studentId]);
 
-  useEffect(() => {
-    if (!token || !studentId) return;
-    load();
-  }, [studentId, appliedFrom, appliedTo]);
-
-  async function load() {
+  async function loadEntries(from: string, to: string) {
+    if (!from || !to) return;
     setLoading(true);
     try {
       const d = await apiGet<JourneyData>(
-        `/api/v1/parent/child-journey/${studentId}?from=${appliedFrom}&to=${appliedTo}`,
+        `/api/v1/parent/child-journey/parent/${studentId}?from=${from}&to=${to}`,
         token
       );
       setData(d);
@@ -143,6 +161,7 @@ function ChildJourneyParentPage() {
             <input
               type="date"
               value={fromDate}
+              min={academicStart ?? undefined}
               max={toDate}
               onChange={e => setFromDate(e.target.value)}
               className="flex-1 text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
@@ -152,7 +171,7 @@ function ChildJourneyParentPage() {
               type="date"
               value={toDate}
               min={fromDate}
-              max={new Date().toISOString().split('T')[0]}
+              max={effectiveToday || undefined}
               onChange={e => setToDate(e.target.value)}
               className="flex-1 text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
             />

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+uploads/
+*.log
+time_machine.json
+
+# Tests — kept in oakit-tests/ outside project
+*.test.ts
+*.spec.ts
+*.property.test.ts
+tsconfig.test.json

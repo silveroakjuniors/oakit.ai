@@ -6,6 +6,7 @@ import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import { ChevronLeft, Download, Calendar, Users, BookOpen, AlertCircle } from 'lucide-react';
 import OakitLogo from '@/components/OakitLogo';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 interface ClassStat {
   class_id: string; class_name: string; total_students: number;
@@ -27,11 +28,12 @@ interface ReportData {
   school_name: string; class_name: string; section_label: string;
   class_teacher: string; supporting_teachers: string;
   from_date: string; to_date: string;
-  completions: { date: string; teacher: string; topics_covered: number }[];
+  completions: { date: string; teacher: string; topics_covered: number; is_special_day?: boolean; special_day_label?: string }[];
   covered_topics: CoveredTopic[];
   special_days: SpecialDay[]; holidays: Holiday[];
   attendance: { days_marked: number; total_present: number; total_absent: number };
   total_days_completed: number; total_topics_covered: number;
+  total_planned_days?: number; day_completion_pct?: number;
 }
 
 // ── Mini donut chart (SVG, no deps) ──────────────────────────
@@ -77,6 +79,7 @@ const DAY_TYPE_COLORS: Record<string, string> = {
 export default function PrincipalOverviewPage() {
   const router = useRouter();
   const token = getToken() || '';
+  const { today, academicStart, academicEnd } = useAcademicCalendar(token);
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,12 +131,16 @@ export default function PrincipalOverviewPage() {
       `Generated: ${new Date().toLocaleDateString('en-IN')}`,
       ``,
       `SUMMARY`,
-      `Days with completion logged: ${reportData.total_days_completed}`,
+      `Days completed: ${reportData.total_days_completed} / ${reportData.total_planned_days ?? '?'} planned (${reportData.day_completion_pct ?? 0}%)`,
       `Total topics covered: ${reportData.total_topics_covered}`,
       `Attendance days marked: ${reportData.attendance?.days_marked ?? 0}`,
       ``,
       `DAILY COMPLETIONS`,
-      ...reportData.completions.map(c => `  ${c.date}  |  ${c.teacher}  |  ${c.topics_covered} topics`),
+      ...reportData.completions.map(c => 
+        c.is_special_day
+          ? `  ${c.date}  |  ${c.teacher}  |  🎉 ${c.special_day_label || 'Special Day'}`
+          : `  ${c.date}  |  ${c.teacher}  |  ${c.topics_covered} topics`
+      ),
       ``,
       `TOPICS COVERED`,
       ...reportData.covered_topics.map(t =>
@@ -312,11 +319,13 @@ export default function PrincipalOverviewPage() {
               <div className="flex-1">
                 <label className="text-xs font-medium text-neutral-600 mb-1 block">From</label>
                 <input type="date" value={reportFrom} onChange={e => setReportFrom(e.target.value)}
+                  min={academicStart ?? undefined} max={today}
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
               </div>
               <div className="flex-1">
                 <label className="text-xs font-medium text-neutral-600 mb-1 block">To</label>
                 <input type="date" value={reportTo} onChange={e => setReportTo(e.target.value)}
+                  min={academicStart ?? undefined} max={today}
                   className="w-full px-3 py-2.5 border border-neutral-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-400/30" />
               </div>
             </div>
@@ -346,7 +355,7 @@ export default function PrincipalOverviewPage() {
                 {/* Summary stats */}
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: 'Days logged', value: reportData.total_days_completed },
+                    { label: 'Days completed', value: `${reportData.total_days_completed}/${reportData.total_planned_days ?? '?'}` },
                     { label: 'Subjects covered', value: reportData.covered_topics.length },
                     { label: 'Att. days', value: reportData.attendance?.days_marked ?? 0 },
                   ].map((s, i) => (
@@ -393,6 +402,26 @@ export default function PrincipalOverviewPage() {
                       ))}
                     </div>
                   </details>
+                )}
+
+                {/* No curriculum topics but days completed (special days only) */}
+                {reportData.covered_topics.length === 0 && reportData.total_days_completed > 0 && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-purple-700 mb-1">📋 Completion Summary</p>
+                    <p className="text-xs text-purple-600">
+                      {reportData.total_days_completed} day{reportData.total_days_completed > 1 ? 's' : ''} completed — all were special days/events (no curriculum topics covered yet).
+                    </p>
+                    {reportData.completions.filter(c => c.is_special_day).map((c, i) => (
+                      <p key={i} className="text-xs text-purple-500 mt-1">🎉 {c.date} — {c.special_day_label || 'Special Day'} ({c.teacher})</p>
+                    ))}
+                  </div>
+                )}
+
+                {/* No completions at all */}
+                {reportData.total_days_completed === 0 && (
+                  <div className="bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-center">
+                    <p className="text-xs text-neutral-500">No completions recorded in this period.</p>
+                  </div>
                 )}
 
                 {/* Special days */}

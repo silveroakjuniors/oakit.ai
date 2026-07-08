@@ -136,7 +136,45 @@ async def _run_ingest(document_id: str):
         result = await ingest_document(document_id)
         print(f"Ingestion complete for {document_id}: {result}")
     except Exception as e:
-        print(f"Ingestion failed for {document_id}: {e}")
+        import traceback
+        print(f"Ingestion failed for {document_id}: {e}\n{traceback.format_exc()}")
+        # Always mark as failed so the document doesn't stay stuck in 'processing'
+        try:
+            from db import get_pool
+            from uuid import UUID
+            pool = await get_pool()
+            await pool.execute(
+                "UPDATE curriculum_documents SET status = 'failed', ingestion_stage = 'failed' WHERE id = $1",
+                UUID(document_id)
+            )
+        except Exception as db_err:
+            print(f"Failed to update status to failed for {document_id}: {db_err}")
+
+
+# POST /internal/retry-ingest — re-trigger ingestion for a stuck/failed document
+class RetryIngestRequest(BaseModel):
+    document_id: str
+
+@app.post("/internal/retry-ingest")
+async def retry_ingest(req: RetryIngestRequest, background_tasks: BackgroundTasks):
+    """Re-trigger ingestion for a document stuck in processing or failed state."""
+    try:
+        from db import get_pool
+        from uuid import UUID
+        pool = await get_pool()
+        # Reset status back to pending so it can be re-processed
+        result = await pool.fetchrow(
+            "UPDATE curriculum_documents SET status = 'pending', ingestion_stage = 'queued' WHERE id = $1 RETURNING id, file_path",
+            UUID(req.document_id)
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail="Document not found")
+        background_tasks.add_task(_run_ingest, req.document_id)
+        return {"message": "Re-ingestion started", "document_id": req.document_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Query ---
@@ -157,169 +195,7 @@ async def query_endpoint(req: QueryRequest):
     return result
 
 
-# ─── Session transcript formatter ────────────────────────────────────────────
-
-class FormatSessionRequest(BaseModel):
-    raw_transcript: str
-    class_context: str = ""
-    topics_covered: list = []
-    session_date: str = ""
-    is_refinement: bool = False
-
-@app.post("/internal/format-session")
-async def format_session(req: FormatSessionRequest):
-    """
-    Format a raw speech transcript into clean class notes using Gemini.
-    When is_refinement=True, the input is already-formatted notes that the teacher
-    has edited — refine and improve them rather than starting from scratch.
-    Falls back to structured plain text if Gemini is unavailable.
-    """
-    from query_pipeline import _call_llm
-
-    topics_str = ", ".join(req.topics_covered) if req.topics_covered else "General session"
-    date_str = req.session_date or ""
-
-    if req.is_refinement:
-        # Teacher edited the AI output — refine the edited version
-        prompt = f"""You are a school assistant helping a teacher refine their classroom session notes.
-
-{f"Context: {req.class_context}" if req.class_context else ""}
-{f"Session Date: {date_str}" if date_str else ""}
-Topics covered today: {topics_str}
-
-The teacher has edited these session notes and wants them refined and improved:
----
-{req.raw_transcript[:8000]}
----
-
-Please improve these notes while keeping the teacher's edits and intent intact:
-1. Fix any grammar or spelling issues
-2. Improve clarity and flow
-3. Ensure it reads well for parents
-4. Keep all the teacher's specific content and changes
-5. Format with clear sections using emoji headers
-
-Do NOT remove or change the teacher's specific additions — only improve the presentation."""
-    else:
-        # First-time formatting from raw transcript
-        prompt = f"""You are a school assistant helping a teacher format their classroom session notes.
-
-{f"Context: {req.class_context}" if req.class_context else ""}
-{f"Session Date: {date_str}" if date_str else ""}
-Topics covered today: {topics_str}
-
-The teacher recorded this session transcript using voice recognition:
----
-{req.raw_transcript[:8000]}
----
-
-Please format this into clean, structured class notes that can be shared with parents. Include:
-1. A brief summary of what was covered today (2-3 sentences)
-2. Key topics discussed (bullet points)
-3. Any activities or exercises mentioned
-4. Homework or follow-up items if mentioned
-
-Keep it concise, clear, and parent-friendly. Use simple language.
-Format with clear sections using emoji headers like 📚 Topics Covered, 🎯 Activities, 📝 Homework.
-Start with the date and topics at the top."""
-
-    system = "You are a helpful school assistant. Format classroom notes clearly and concisely for parents."
-
-    formatted, _ = await _call_llm(prompt, system)
-
-    if not formatted:
-        # Fallback: basic structure without AI
-        formatted = f"📅 Session Notes — {date_str}\n"
-        formatted += f"📚 Topics: {topics_str}\n\n"
-        formatted += f"📝 Session Summary:\n{req.raw_transcript[:500]}{'...' if len(req.raw_transcript) > 500 else ''}\n\n"
-        formatted += f"ℹ️ Note: This is the raw transcript from today's session."
-
-    return {"formatted": formatted}
-
-
-# ─── Voice transcription ──────────────────────────────────────────────────────
-
-@app.post("/internal/transcribe")
-async def transcribe_audio(
-    audio: UploadFile = File(...),
-    language: str = Form(default="en"),
-):
-    """
-    Transcribe audio to text using Gemini's audio understanding.
-    Accepts any audio format (webm, mp4, wav, ogg, m4a).
-    Returns: { transcript: str, language: str, duration_seconds: float }
-    """
-    import os, httpx, base64, mimetypes
-
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
-    if not gemini_key:
-        raise HTTPException(status_code=503, detail="Voice transcription not configured")
-
-    # Read audio bytes
-    audio_bytes = await audio.read()
-    if len(audio_bytes) > 10 * 1024 * 1024:  # 10MB limit
-        raise HTTPException(status_code=413, detail="Audio file too large (max 10MB)")
-    if len(audio_bytes) < 100:
-        raise HTTPException(status_code=400, detail="Audio file too small or empty")
-
-    # Determine MIME type
-    content_type = audio.content_type or "audio/webm"
-    # Normalize common types
-    mime_map = {
-        "audio/webm": "audio/webm",
-        "audio/ogg": "audio/ogg",
-        "audio/wav": "audio/wav",
-        "audio/mp4": "audio/mp4",
-        "audio/m4a": "audio/mp4",
-        "audio/mpeg": "audio/mpeg",
-        "video/webm": "audio/webm",  # Chrome records as video/webm
-    }
-    mime_type = mime_map.get(content_type, "audio/webm")
-
-    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-
-    # Language hint for the prompt
-    lang_hints = {
-        "hi": "Hindi", "te": "Telugu", "kn": "Kannada", "ta": "Tamil",
-        "ml": "Malayalam", "gu": "Gujarati", "mr": "Marathi", "bn": "Bengali",
-        "pa": "Punjabi", "ur": "Urdu", "ar": "Arabic", "fr": "French",
-        "es": "Spanish", "en": "English",
-    }
-    lang_name = lang_hints.get(language, "English")
-
-    prompt = (
-        f"Transcribe this audio recording accurately. "
-        f"The speaker is likely speaking in {lang_name}. "
-        f"This is a school-related question from a teacher or parent. "
-        f"Return ONLY the transcribed text, nothing else. "
-        f"If the audio is unclear or silent, return an empty string."
-    )
-
-    try:
-        # ── PHASE 2: Real Gemini transcription (not yet available on this API key)
-        # For now, return a mock transcript to demonstrate the voice flow in demos.
-        # The audio IS recorded and received correctly — only the transcription step is mocked.
-        print(f"[Transcribe] DEMO MODE — received {len(audio_bytes)} bytes of {mime_type} audio, returning mock transcript")
-
-        # Pick a contextual demo response based on language
-        demo_transcripts = {
-            "hi": "आज का पाठ्यक्रम क्या है?",
-            "te": "ఈరోజు పాఠ్యప్రణాళిక ఏమిటి?",
-            "kn": "ಇಂದಿನ ಪಾಠ್ಯಕ್ರಮ ಏನು?",
-            "ta": "இன்றைய பாடத்திட்டம் என்ன?",
-            "en": "What is today's plan for my child?",
-        }
-        mock_transcript = demo_transcripts.get(language, demo_transcripts["en"])
-        return {"transcript": mock_transcript, "language": language, "demo_mode": True}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[Transcribe] Exception: {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
-
-
-
+# --- Plan generation ---
 
 class PlanRequest(BaseModel):
     class_id: str
@@ -331,12 +207,17 @@ class PlanRequest(BaseModel):
 
 @app.post("/internal/generate-plans")
 async def generate_plans(req: PlanRequest):
-    from planner_service import generate_plans
-    count = await generate_plans(
-        req.class_id, req.section_id, req.school_id, req.academic_year,
-        month=req.month, plan_year=req.plan_year
-    )
-    return {"plans_created": count}
+    import traceback
+    try:
+        from planner_service import generate_plans as _generate_plans
+        count = await _generate_plans(
+            req.class_id, req.section_id, req.school_id, req.academic_year,
+            month=req.month, plan_year=req.plan_year
+        )
+        return {"plans_created": count}
+    except Exception as e:
+        print(f"[generate-plans] ERROR section={req.section_id}: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Coverage analysis ---
@@ -359,151 +240,76 @@ async def analyze_coverage(req: CoverageRequest):
 @app.post("/internal/import-holidays")
 async def import_holidays(file: UploadFile = File(...)):
     import openpyxl
-    import csv
     content = await file.read()
     valid_rows = []
     invalid_rows = []
 
-    filename = (file.filename or '').lower()
-    is_csv = filename.endswith('.csv')
-
-    # Also detect CSV by content — if content starts with PK (xlsx magic bytes), force xlsx mode
-    if is_csv and content[:2] == b'PK':
-        is_csv = False
-
     try:
-        if is_csv:
-            # Parse CSV
-            text = content.decode('utf-8-sig')  # utf-8-sig strips BOM if present
-            reader = csv.DictReader(text.splitlines())
-            original_headers = [h.strip() for h in (reader.fieldnames or [])]
-            headers_lower = [h.lower() for h in original_headers]
+        wb = openpyxl.load_workbook(io.BytesIO(content))
+        ws = wb.active
+        headers = [str(cell.value).strip().lower() if cell.value else '' for cell in ws[1]]
 
-            # Map from lowercased candidate → original header name for row.get()
-            def find_col(candidates):
-                for c in candidates:
-                    if c in headers_lower:
-                        return original_headers[headers_lower.index(c)]
-                for c in candidates:
-                    for i, h in enumerate(headers_lower):
-                        if c in h or h in c:
-                            return original_headers[i]
-                return None
+        # Flexible column detection — support multiple naming conventions
+        def find_col(candidates):
+            for c in candidates:
+                if c in headers:
+                    return headers.index(c)
+            return None
 
-            date_key = find_col(['date'])
-            name_key = find_col(['description', 'event_name', 'event name', 'event', 'name', 'holiday name', 'holiday'])
-            type_key = find_col(['type', 'day type', 'category'])
+        date_idx = find_col(['date'])
+        # event_name can come from 'description', 'event_name', 'event', 'name', 'holiday name'
+        name_idx = find_col(['description', 'event_name', 'event', 'name', 'holiday name', 'holiday'])
+        # type column: 'type', 'day type', 'category'
+        type_idx = find_col(['type', 'day type', 'category'])
 
-            if not date_key:
-                raise HTTPException(status_code=400, detail=f"Missing required column: 'date'. Found columns: {original_headers}")
-            if not name_key:
-                raise HTTPException(status_code=400, detail=f"Missing required column: 'description' or 'event_name'. Found columns: {original_headers}")
+        if date_idx is None:
+            raise HTTPException(status_code=400, detail="Missing required column: Date")
+        if name_idx is None:
+            raise HTTPException(status_code=400, detail="Missing required column: Description or event_name")
 
-            for row_num, row in enumerate(reader, start=2):
-                raw_date = (row.get(date_key) or '').strip()
-                event_name = (row.get(name_key) or '').strip()
-                row_type = (row.get(type_key) or '').strip().lower() if type_key else ''
+        for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            raw_date = row[date_idx] if date_idx < len(row) else None
+            event_name = row[name_idx] if name_idx is not None and name_idx < len(row) else None
+            row_type = str(row[type_idx]).strip().lower() if type_idx is not None and type_idx < len(row) and row[type_idx] else ''
 
-                if not event_name:
-                    invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
-                    continue
+            if not event_name or not str(event_name).strip():
+                invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
+                continue
 
-                if row_type in ('working day', 'working', 'school day'):
-                    invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
-                    continue
+            # Skip rows that are explicitly "Working Day" — those aren't holidays
+            if row_type in ('working day', 'working', 'school day'):
+                invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
+                continue
 
-                parsed_date = None
-                for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y', '%d-%b-%Y', '%d.%m.%Y'):
+            # Parse date
+            parsed_date = None
+            if isinstance(raw_date, (datetime, date)):
+                parsed_date = raw_date.strftime('%Y-%m-%d') if isinstance(raw_date, datetime) else str(raw_date)
+            elif isinstance(raw_date, str):
+                raw_str = raw_date.strip()
+                for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y'):
                     try:
-                        parsed_date = datetime.strptime(raw_date, fmt).strftime('%Y-%m-%d')
+                        parsed_date = datetime.strptime(raw_str, fmt).strftime('%Y-%m-%d')
                         break
                     except ValueError:
                         continue
 
-                if not parsed_date:
-                    invalid_rows.append({"row": row_num, "reason": f"Invalid date format: '{raw_date}'. Use DD-MM-YYYY (e.g. 26-06-2026)"})
-                    continue
+            if not parsed_date:
+                invalid_rows.append({"row": row_num, "reason": f"Invalid date: {raw_date}"})
+                continue
 
-                valid_rows.append({"date": parsed_date, "event_name": event_name, "type": row_type or "holiday"})
-
-        else:
-            wb = openpyxl.load_workbook(io.BytesIO(content))
-            ws = wb.active
-            headers = [str(cell.value).strip().lower() if cell.value else '' for cell in ws[1]]
-
-            # Flexible column detection — support multiple naming conventions
-            def find_col(candidates):
-                # Exact match first
-                for c in candidates:
-                    if c in headers:
-                        return headers.index(c)
-                # Partial match fallback (e.g. "holiday name" contains "holiday")
-                for c in candidates:
-                    for i, h in enumerate(headers):
-                        if c in h or h in c:
-                            return i
-                return None
-
-            date_idx = find_col(['date'])
-            name_idx = find_col(['description', 'event_name', 'event name', 'event', 'name', 'holiday name', 'holiday'])
-            type_idx = find_col(['type', 'day type', 'category'])
-
-            if date_idx is None:
-                raise HTTPException(status_code=400, detail="Missing required column: Date")
-            if name_idx is None:
-                raise HTTPException(status_code=400, detail="Missing required column: Description or event_name")
-
-            for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                raw_date = row[date_idx] if date_idx < len(row) else None
-                event_name = row[name_idx] if name_idx is not None and name_idx < len(row) else None
-                row_type = str(row[type_idx]).strip().lower() if type_idx is not None and type_idx < len(row) and row[type_idx] else ''
-
-                if not event_name or not str(event_name).strip():
-                    invalid_rows.append({"row": row_num, "reason": "Missing description/event name"})
-                    continue
-
-                if row_type in ('working day', 'working', 'school day'):
-                    invalid_rows.append({"row": row_num, "reason": f"Skipped: type is '{row_type}' (not a holiday)"})
-                    continue
-
-                parsed_date = None
-                if isinstance(raw_date, (datetime, date)):
-                    parsed_date = raw_date.strftime('%Y-%m-%d') if isinstance(raw_date, datetime) else str(raw_date)
-                elif isinstance(raw_date, (int, float)):
-                    try:
-                        from openpyxl.utils.datetime import from_excel
-                        dt = from_excel(raw_date)
-                        parsed_date = dt.strftime('%Y-%m-%d')
-                    except Exception:
-                        pass
-                elif isinstance(raw_date, str):
-                    raw_str = raw_date.strip()
-                    for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%m/%d/%Y', '%d %b %Y', '%d %B %Y', '%B %d %Y', '%d-%b-%Y', '%d.%m.%Y'):
-                        try:
-                            parsed_date = datetime.strptime(raw_str, fmt).strftime('%Y-%m-%d')
-                            break
-                        except ValueError:
-                            continue
-
-                if not parsed_date:
-                    invalid_rows.append({"row": row_num, "reason": f"Invalid date: {raw_date}"})
-                    continue
-
-                valid_rows.append({
-                    "date": parsed_date,
-                    "event_name": str(event_name).strip(),
-                    "type": row_type or "holiday"
-                })
+            valid_rows.append({
+                "date": parsed_date,
+                "event_name": str(event_name).strip(),
+                "type": row_type or "holiday"
+            })
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
 
-    return {
-        "valid_rows": valid_rows,
-        "invalid_rows": invalid_rows,
-    }
+    return {"valid_rows": valid_rows, "invalid_rows": invalid_rows}
 
 
 # --- Student import ---
@@ -596,8 +402,14 @@ async def export_holiday_pdf(req: HolidayExportRequest):
     y -= 0.6 * cm
     c.setFont("Helvetica", 9)
     c.setFillColorRGB(0.5, 0.5, 0.5)
-    from datetime import datetime
-    c.drawString(2 * cm, y, f"Generated on {datetime.now().strftime('%d %B %Y')}   ·   {len(req.holidays)} holidays")
+    from datetime import datetime, timezone, timedelta
+    try:
+        from zoneinfo import ZoneInfo
+        gen_date = datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%d %B %Y')
+    except Exception:
+        IST = timezone(timedelta(hours=5, minutes=30))
+        gen_date = datetime.now(IST).strftime('%d %B %Y')
+    c.drawString(2 * cm, y, f"Generated on {gen_date}   ·   {len(req.holidays)} holidays")
     c.setFillColorRGB(0, 0, 0)
     y -= 0.4 * cm
     c.line(2 * cm, y, width - 2 * cm, y)
@@ -952,225 +764,18 @@ async def export_pdf(req: ExportPdfRequest):
     return Response(content=buf.read(), media_type="application/pdf")
 
 
-# --- Progress Report PDF export ---
-
-class ProgressReportPdfRequest(BaseModel):
-    student_name: str
-    age: str = ""
-    class_name: str
-    section_label: str
-    teacher_name: str = ""
-    father_name: str = ""
-    mother_name: str = ""
-    school_name: str
-    from_date: str
-    to_date: str
-    attendance_pct: int = 0
-    attendance_present: int = 0
-    attendance_total: int = 0
-    curriculum_covered: int = 0
-    milestones_achieved: int = 0
-    milestones_total: int = 0
-    homework_completed: int = 0
-    homework_total: int = 0
-    ai_report: str
-
-@app.post("/internal/export-progress-report-pdf")
-async def export_progress_report_pdf(req: ProgressReportPdfRequest):
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import cm
-    from reportlab.pdfgen import canvas as rl_canvas
-    from reportlab.lib.colors import HexColor, Color, white, black
-    from reportlab.platypus import Paragraph, Frame
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER
-    import io, re, textwrap
-
-    buf = io.BytesIO()
-    c = rl_canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-    BRAND = HexColor('#1A3C2E')
-    BRAND_LIGHT = HexColor('#2E7D5E')
-    NEUTRAL = HexColor('#9E9690')
-    LIGHT_BG = HexColor('#F5F4F2')
-    BORDER = HexColor('#ECEAE7')
-    GREEN_BG = HexColor('#F0FDF4')
-    GREEN_TEXT = HexColor('#15803D')
-    AMBER_BG = HexColor('#FFFBEB')
-    AMBER_TEXT = HexColor('#B45309')
-    BLUE_BG = HexColor('#EFF6FF')
-    BLUE_TEXT = HexColor('#1D4ED8')
-
-    margin = 1.8 * cm
-    col_w = width - 2 * margin
-
-    def new_page():
-        c.showPage()
-        # Subtle header on continuation pages
-        c.setFillColor(BRAND)
-        c.rect(0, height - 0.8*cm, width, 0.8*cm, fill=1, stroke=0)
-        c.setFillColor(white)
-        c.setFont("Helvetica-Bold", 8)
-        c.drawString(margin, height - 0.55*cm, f"{req.student_name} — Progress Report · {req.school_name}")
-        return height - 1.5*cm
-
-    # ── Header ──────────────────────────────────────────────────
-    c.setFillColor(BRAND)
-    c.rect(0, height - 4.5*cm, width, 4.5*cm, fill=1, stroke=0)
-    # Subtle gradient overlay
-    c.setFillColor(BRAND_LIGHT)
-    c.setFillAlpha(0.3)
-    c.rect(width*0.6, height - 4.5*cm, width*0.4, 4.5*cm, fill=1, stroke=0)
-    c.setFillAlpha(1.0)
-
-    c.setFillColor(white)
-    c.setFont("Helvetica", 8)
-    c.setFillAlpha(0.65)
-    c.drawString(margin, height - 1.2*cm, req.school_name.upper())
-    c.setFillAlpha(1.0)
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(margin, height - 2.1*cm, f"Progress Report — {req.student_name}")
-    c.setFont("Helvetica", 10)
-    c.setFillAlpha(0.75)
-    c.drawString(margin, height - 2.8*cm, f"{req.from_date}  to  {req.to_date}")
-    c.setFillAlpha(1.0)
-    c.setFont("Helvetica", 9)
-    c.setFillAlpha(0.6)
-    c.drawString(margin, height - 3.5*cm, f"Generated on {datetime.now().strftime('%d %B %Y')}")
-    c.setFillAlpha(1.0)
-
-    y = height - 5.2*cm
-
-    # ── Profile strip ────────────────────────────────────────────
-    c.setFillColor(LIGHT_BG)
-    c.roundRect(margin, y - 1.4*cm, col_w, 1.6*cm, 6, fill=1, stroke=0)
-    fields = [
-        ("Student", f"{req.student_name}{' (' + req.age + ')' if req.age else ''}"),
-        ("Class", f"{req.class_name} · {req.section_label}"),
-        ("Teacher", req.teacher_name or "—"),
-        ("Father", req.father_name or "—"),
-    ]
-    fw = col_w / 4
-    for i, (lbl, val) in enumerate(fields):
-        x = margin + i * fw + 0.3*cm
-        c.setFont("Helvetica", 7)
-        c.setFillColor(NEUTRAL)
-        c.drawString(x, y - 0.5*cm, lbl.upper())
-        c.setFont("Helvetica-Bold", 9)
-        c.setFillColor(black)
-        # Truncate long values
-        v = val[:22] if len(val) > 22 else val
-        c.drawString(x, y - 1.0*cm, v)
-    y -= 2.0*cm
-
-    # ── Stat cards ───────────────────────────────────────────────
-    stats = [
-        (f"{req.attendance_pct}%", f"Attendance\n{req.attendance_present}/{req.attendance_total} days",
-         GREEN_BG if req.attendance_pct >= 90 else AMBER_BG, GREEN_TEXT if req.attendance_pct >= 90 else AMBER_TEXT),
-        (str(req.curriculum_covered), "Topics\nCovered", BLUE_BG, BLUE_TEXT),
-        (f"{req.milestones_achieved}/{req.milestones_total}", "Milestones\nAchieved", AMBER_BG, AMBER_TEXT),
-        (f"{req.homework_completed}/{req.homework_total}", "Homework\nCompleted", LIGHT_BG, NEUTRAL),
-    ]
-    sw = (col_w - 0.3*cm * 3) / 4
-    for i, (val, lbl, bg, fg) in enumerate(stats):
-        sx = margin + i * (sw + 0.3*cm)
-        c.setFillColor(bg)
-        c.roundRect(sx, y - 1.5*cm, sw, 1.7*cm, 5, fill=1, stroke=0)
-        c.setFont("Helvetica-Bold", 16)
-        c.setFillColor(fg)
-        c.drawCentredString(sx + sw/2, y - 0.8*cm, val)
-        c.setFont("Helvetica", 7.5)
-        c.setFillColor(NEUTRAL)
-        for j, line in enumerate(lbl.split('\n')):
-            c.drawCentredString(sx + sw/2, y - 1.15*cm - j*0.28*cm, line)
-    y -= 2.2*cm
-
-    # ── Report sections ──────────────────────────────────────────
-    clean = re.sub(r'\*\*([^*]+)\*\*', r'\1', req.ai_report)
-    clean = re.sub(r'\*([^*]+)\*', r'\1', clean)
-    sections = [s for s in re.split(r'\n##\s+', clean) if s.strip()]
-
-    for section in sections:
-        lines = section.split('\n')
-        heading = lines[0].strip()
-        body_lines = [l.strip() for l in lines[1:] if l.strip()]
-
-        # Estimate height needed
-        est_h = 0.7*cm + len(body_lines) * 0.45*cm + 0.4*cm
-        if y - est_h < 2.5*cm:
-            y = new_page()
-
-        # Section box
-        box_h = 0.65*cm + len(body_lines) * 0.48*cm + 0.3*cm
-        c.setFillColor(LIGHT_BG)
-        c.roundRect(margin, y - box_h, col_w, box_h, 5, fill=1, stroke=0)
-        c.setStrokeColor(BORDER)
-        c.setLineWidth(0.5)
-        c.roundRect(margin, y - box_h, col_w, box_h, 5, fill=0, stroke=1)
-
-        # Heading
-        c.setFillColor(black)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(margin + 0.4*cm, y - 0.5*cm, heading)
-        c.setStrokeColor(BORDER)
-        c.line(margin, y - 0.7*cm, margin + col_w, y - 0.7*cm)
-
-        # Body lines
-        by = y - 1.05*cm
-        for line in body_lines:
-            if by < 2.5*cm:
-                y = new_page()
-                by = y - 0.3*cm
-            # Check for "Label: content" pattern
-            sub = re.match(r'^([A-Za-z\s&/]+?):\s+(.+)', line)
-            if sub and len(sub.group(1)) < 35:
-                c.setFont("Helvetica-Bold", 8.5)
-                c.setFillColor(NEUTRAL)
-                c.drawString(margin + 0.4*cm, by, sub.group(1) + ":")
-                c.setFont("Helvetica", 8.5)
-                c.setFillColor(black)
-                # Wrap long text
-                wrapped = textwrap.fill(sub.group(2), width=72)
-                for wl in wrapped.split('\n'):
-                    c.drawString(margin + 4.5*cm, by, wl[:90])
-                    by -= 0.42*cm
-            else:
-                c.setFont("Helvetica", 8.5)
-                c.setFillColor(black)
-                wrapped = textwrap.fill(line, width=95)
-                for wl in wrapped.split('\n'):
-                    c.drawString(margin + 0.4*cm, by, wl[:100])
-                    by -= 0.42*cm
-            by -= 0.06*cm
-
-        y = by - 0.4*cm
-
-    # ── Footer ───────────────────────────────────────────────────
-    if y < 2.5*cm:
-        c.showPage()
-        y = height - 2*cm
-    c.setStrokeColor(BORDER)
-    c.line(margin, 1.8*cm, margin + col_w, 1.8*cm)
-    c.setFont("Helvetica", 7.5)
-    c.setFillColor(NEUTRAL)
-    c.drawCentredString(width/2, 1.3*cm, f"Generated by Oakit.ai  ·  {req.school_name}  ·  {datetime.now().strftime('%d %B %Y')}")
-
-    c.save()
-    buf.seek(0)
-    from fastapi.responses import Response as FastResponse
-    fname = f"Progress_Report_{req.student_name.replace(' ', '_')}.pdf"
-    return FastResponse(
-        content=buf.read(),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
-    )
-
-
 # --- Greeting ---
 
 @app.get("/internal/greeting")
-async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
-    now = datetime.now()
+async def greeting(teacher_name: str = "Teacher", teacher_id: str = "", class_name: str = "", student_count: int = 0):
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    except Exception:
+        # Fallback: manual IST offset (UTC+5:30)
+        from datetime import timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
+        now = datetime.now(IST)
     hour = now.hour
 
     if 5 <= hour < 12:
@@ -1181,6 +786,23 @@ async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
         salutation = "Good evening"
 
     greeting_text = f"{salutation}, {teacher_name}!"
+
+    # Add meaningful subtitle with class info and student count
+    if student_count > 0 and class_name:
+        # Rotate subtitle phrases by date for variety
+        date_seed = now.strftime('%Y-%m-%d') + teacher_id
+        subtitle_idx = int(hashlib.md5(date_seed.encode()).hexdigest(), 16) % 6
+        subtitles = [
+            f"You're shaping {student_count} young minds in {class_name} today ✨",
+            f"Your {student_count} little stars in {class_name} are waiting for you 🌟",
+            f"{student_count} curious learners in {class_name} — let's make today count!",
+            f"Rooted fearlessly — nurturing {student_count} futures in {class_name} 🌱",
+            f"Today's mission: inspire {student_count} hearts in {class_name} 💚",
+            f"{student_count} bright minds in {class_name} are ready to grow with you 🌿",
+        ]
+        greeting_text += f"\n{subtitles[subtitle_idx]}"
+    elif student_count > 0:
+        greeting_text += f"\n{student_count} little learners are counting on you today 🌟"
 
     # Early arrival (before 7am)
     if hour < 7:
@@ -1197,253 +819,30 @@ async def greeting(teacher_name: str = "Teacher", teacher_id: str = ""):
     }
 
 
-# --- Birthday wish generator ---
-
-class BirthdayWishRequest(BaseModel):
-    students: list  # [{name, age, class_name, section_label}]
-    school_name: str = ""
-
-@app.post("/internal/birthday-wish")
-async def birthday_wish(req: BirthdayWishRequest):
-    """Generate warm, age-appropriate birthday wishes for students turning X today."""
-    from llm_client import call_llm
-
-    if not req.students:
-        return {"wishes": {}}
-
-    # Build a prompt describing each child
-    lines = []
-    for s in req.students:
-        age = s.get("age")
-        name = s.get("name", "Student")
-        cls = s.get("class_name", "")
-        age_str = f", turning {age} today" if age else ""
-        lines.append(f"- {name} ({cls}{age_str})")
-
-    students_text = "\n".join(lines)
-    today_str = datetime.now().strftime("%d %B %Y")
-
-    prompt = f"""Today is {today_str}. The following students are celebrating their birthday today at school:
-
-{students_text}
-
-Write a single warm, joyful birthday announcement message (3-4 sentences) that:
-- Celebrates all these children together
-- Is age-appropriate and cheerful for a school setting
-- Mentions the school community wishing them well
-- Ends with an encouraging note about their learning journey
-- Uses simple, warm language suitable for parents to read
-
-Return ONLY the message text, no extra formatting."""
-
-    try:
-        result = await call_llm(prompt, max_tokens=200)
-        message = result.strip() if isinstance(result, str) else result.get("text", "").strip()
-    except Exception:
-        # Fallback message
-        names = ", ".join(s.get("name", "Student") for s in req.students)
-        message = f"🎂 Wishing a very Happy Birthday to {names}! May this special day be filled with joy, laughter, and wonderful memories. The entire school family celebrates with you today. Keep shining bright in your learning journey! 🌟"
-
-    return {"message": message, "student_count": len(req.students)}
-
-
 class HomeworkFormatRequest(BaseModel):
     raw_text: str
     school_id: str = ""
     section_id: str = ""
 
-class GenerateReportRequest(BaseModel):
-    prompt: str
-    student_name: str = ""
-
-@app.post("/internal/generate-report")
-async def generate_report(req: GenerateReportRequest):
-    """Generate a student progress report — bypasses query pipeline filters.
-    Called directly by the admin reports endpoint."""
-    from query_pipeline import _call_llm
-
-    system = (
-        f"You are an expert school report writer generating a formal progress report for {req.student_name or 'a student'}.\n"
-        "Write in warm, professional, parent-friendly language.\n"
-        "Use the section headings provided (## heading). Write flowing sentences — NO bullet points, NO bold markdown, NO asterisks.\n"
-        "Be specific, positive, and encouraging. Keep each section to 2-4 sentences.\n"
-        "Always use the student's name — never 'the child' or 'your child'."
-    )
-
-    try:
-        response, provider = await _call_llm(req.prompt, system)
-        if not response:
-            response = f"Progress report for {req.student_name} could not be generated at this time. Please try again."
-        # Strip any markdown bold that slipped through
-        import re
-        response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
-        response = re.sub(r'\*([^*]+)\*', r'\1', response)
-    except Exception as e:
-        response = f"Report generation failed: {str(e)}"
-
-    return {"response": response}
-
-
-class TopicSummaryRequest(BaseModel):
-    topics: list  # list of topic_label strings
-    class_name: str = "Nursery"
-    child_name: str = "your child"
-    completed: bool = False
-
-@app.post("/internal/topic-summary")
-async def topic_summary(req: TopicSummaryRequest):
-    """Generate a 2-sentence parent-friendly summary of today's topics.
-    Bypasses query pipeline — direct LLM call only."""
-    from query_pipeline import _call_llm
-    import re
-
-    # Clean up generic labels like "Week 1 Day 5" before sending to LLM
-    cleaned = []
-    for t in req.topics:
-        # Remove standalone "Week X Day Y" patterns
-        stripped = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', t, flags=re.IGNORECASE).strip(' -–:,')
-        if stripped:
-            cleaned.append(stripped)
-        elif t.strip():
-            cleaned.append(t.strip())
-
-    if not cleaned:
-        return {"summary": ""}
-
-    topics_str = ", ".join(cleaned)
-
-    if req.completed:
-        prompt = (
-            f"Today in {req.class_name}, {req.child_name} learned: {topics_str}.\n\n"
-            f"Write exactly 2 short, warm sentences for a parent explaining what their child learned today. "
-            f"Use past tense (learned, practiced, explored). Use simple language. Be specific about the subjects. "
-            f"Do NOT use bullet points, markdown, or asterisks. "
-            f"Do NOT mention 'Week' or 'Day' numbers. "
-            f"Keep it under 40 words total."
-        )
-    else:
-        prompt = (
-            f"Today in {req.class_name}, {req.child_name}'s class is planned to cover: {topics_str}.\n\n"
-            f"Write exactly 2 short, warm sentences for a parent explaining what their child will be learning today. "
-            f"Use future tense (will learn, will practice, will explore). Use simple language. Be specific about the subjects. "
-            f"Do NOT use bullet points, markdown, or asterisks. "
-            f"Do NOT mention 'Week' or 'Day' numbers. "
-            f"Keep it under 40 words total."
-        )
-
-    system = (
-        "You are a friendly school assistant writing brief daily updates for parents. "
-        "Always write in plain English. No formatting. No lists. Just 2 warm sentences."
-    )
-
-    try:
-        response, _ = await _call_llm(prompt, system)
-        if response:
-            # Strip any markdown that slipped through
-            response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
-            response = re.sub(r'\*([^*]+)\*', r'\1', response)
-            response = response.strip()
-        return {"summary": response or topics_str}
-    except Exception:
-        return {"summary": topics_str}
-
-
-# --- Per-topic homework generation ---
-
-class TopicHomeworkRequest(BaseModel):
-    topic_label: str
-    content: str = ""
-    class_name: str = "Nursery"
-    school_id: str = ""
-    section_id: str = ""
-
-@app.post("/internal/generate-topic-homework")
-async def generate_topic_homework(req: TopicHomeworkRequest):
-    """Generate age-appropriate homework for a single curriculum topic.
-    Returns a structured draft: what to do, materials needed, estimated time.
-    Req 2.1–2.5: 15-second timeout, same language as content, preschool-appropriate."""
-    import asyncio
-    from query_pipeline import _call_llm
-    import re
-
-    topic = req.topic_label.strip() or "today's topic"
-    content_preview = req.content[:600].strip() if req.content else ""
-
-    system = (
-        "You are a friendly preschool teacher writing homework instructions for parents of young children (ages 3–7). "
-        "Write in simple, warm language. No markdown, no bullet symbols, no asterisks. "
-        "Keep it under 80 words. Write in the same language as the topic content."
-    )
-
-    prompt = (
-        f"Topic: {topic}\n"
-        f"{('Context: ' + content_preview) if content_preview else ''}\n\n"
-        f"Write homework for this topic as 3 short lines:\n"
-        f"1. What the child should do (one clear action)\n"
-        f"2. Materials needed (if any, otherwise skip)\n"
-        f"3. Estimated time (e.g. '10 minutes')\n\n"
-        f"Keep it simple, friendly, and age-appropriate for {req.class_name} students."
-    )
-
-    try:
-        response, _ = await asyncio.wait_for(_call_llm(prompt, system), timeout=15.0)
-        if response:
-            # Strip any markdown that slipped through
-            response = re.sub(r'\*\*([^*]+)\*\*', r'\1', response)
-            response = re.sub(r'\*([^*]+)\*', r'\1', response)
-            response = response.strip()
-        return {"draft_text": response or f"Practice {topic} at home for 10 minutes."}
-    except asyncio.TimeoutError:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=504, detail="AI generation timed out. Please retry.")
-    except Exception:
-        return {"draft_text": f"Practice {topic} at home for 10 minutes."}
-
-
 @app.post("/internal/format-homework")
 async def format_homework(req: HomeworkFormatRequest):
-    """Format raw teacher homework text into a clean, parent-friendly message.
-    Also checks relevance against today's covered topics and adds a note if mismatched.
-    """
+    """Format raw teacher homework text into a clean, parent-friendly message."""
     from query_pipeline import _call_llm
-    from db import get_pool
-
-    # Fetch today's covered topics for relevance check
-    covered_topics: list[str] = []
-    try:
-        pool = await get_pool()
-        rows = await pool.fetch(
-            """SELECT cc.topic_label, cc.content
-               FROM daily_completions dc
-               JOIN curriculum_chunks cc ON cc.id = ANY(dc.covered_chunk_ids)
-               WHERE dc.section_id = $1
-               ORDER BY dc.completion_date DESC, cc.chunk_index
-               LIMIT 20""",
-            req.section_id,
-        )
-        covered_topics = [r["topic_label"] for r in rows if r["topic_label"]]
-    except Exception:
-        pass  # non-critical — proceed without relevance check
-
-    topics_context = ""
-    if covered_topics:
-        topics_context = f"\nTopics covered today: {', '.join(covered_topics[:8])}"
+    import asyncio
 
     system = (
         "You are formatting a homework message from a teacher to parents of preschool/primary school children.\n"
         "Output plain text only — no markdown, no bold, no bullet symbols.\n"
         "Keep it warm, clear, and concise. Under 150 words.\n"
         "Start with 'Homework for today:' then list the tasks clearly numbered.\n"
-        "If the homework is relevant to today's topics, add a short line connecting them (e.g. 'This reinforces what we learned about...').\n"
         "End with one short encouraging line for parents."
     )
     prompt = f"""Teacher's raw homework note:
-\"{req.raw_text}\"{topics_context}
+\"{req.raw_text}\"
 
 Rewrite this as a clear, friendly homework message for parents.
 Format each task as a numbered item.
 Keep the original tasks — do not add or remove any.
-If the homework relates to the topics covered today, add one sentence connecting them.
 Under 150 words."""
 
     try:
@@ -1456,54 +855,83 @@ Under 150 words."""
     return {"formatted_text": formatted}
 
 
-# --- Child Journey beautifier ---
+# --- Observation formatter ---
 
-class ChildJourneyRequest(BaseModel):
-    raw_text: str
-    student_name: str = ""
-    class_level: str = ""
-    entry_type: str = "daily"  # daily, weekly, highlight
-    entry_date: str = ""
+class FormatObservationRequest(BaseModel):
+    text: str
+    student_name: str = "the student"
+    category: str = ""
+    class_name: str = ""
+    gender: str = ""
 
-@app.post("/internal/beautify-child-journey")
-async def beautify_child_journey(req: ChildJourneyRequest):
-    """
-    Transform a teacher's short raw notes about a child into a warm,
-    parent-friendly narrative. Keeps it personal, positive, and concise.
-    """
+@app.post("/internal/format-observation")
+async def format_observation(req: FormatObservationRequest):
+    """Format a raw teacher observation into a warm, professional report-ready note."""
     from query_pipeline import _call_llm
 
-    entry_label = {
-        "daily": "today",
-        "weekly": "this week",
-        "highlight": "a special moment",
-    }.get(req.entry_type, "today")
+    first_name = req.student_name.split()[0] if req.student_name and req.student_name != "the student" else "the student"
+    # Skip initials (single char or char+dot) — use actual first name
+    if req.student_name and req.student_name != "the student":
+        parts = req.student_name.strip().split()
+        first_name = "the student"
+        for p in parts:
+            clean = p.rstrip('.')
+            if len(clean) > 1:
+                first_name = clean
+                break
+        if first_name == "the student" and parts:
+            first_name = parts[0]
+    pronoun_hint = ""
+    if req.gender == "male":
+        pronoun_hint = f"Use he/him/his pronouns for {first_name}. "
+    elif req.gender == "female":
+        pronoun_hint = f"Use she/her/hers pronouns for {first_name}. "
 
-    system = (
-        f"You are writing a warm, personal update about a child for their parents.\n"
-        f"The child's name is {req.student_name or 'the child'}.\n"
-        f"Write in second person to the parents (e.g. 'Aarav showed...' or 'Your child...').\n"
-        f"Keep it warm, specific, encouraging, and under 100 words.\n"
-        f"Plain text only — no markdown, no bullet points.\n"
-        f"Focus on what the child did, showed, or achieved — not generic praise."
-    )
+    # Detect if category is a milestone description (long text) vs a short category label
+    is_milestone = req.category and len(req.category) > 30
 
-    prompt = (
-        f"Teacher's notes about {req.student_name or 'the child'} for {entry_label}"
-        f"{' (' + req.entry_date + ')' if req.entry_date else ''}:\n\n"
-        f"\"{req.raw_text}\"\n\n"
-        f"Rewrite this as a warm, personal update for the parents. "
-        f"Keep it specific to what the teacher observed. Under 100 words."
-    )
+    if is_milestone:
+        system = (
+            f"You are helping a teacher write a milestone achievement note for a school report.\n"
+            f"The milestone being achieved is: \"{req.category}\"\n"
+            "Output plain text only — no markdown, no bullet symbols, no headers.\n"
+            f"Always refer to the child by their first name: {first_name}. {pronoun_hint}\n"
+            "Write 2-3 warm, specific, professional sentences that:\n"
+            "1. Confirm the child has achieved this milestone\n"
+            "2. Describe HOW they demonstrated it (using the teacher's note)\n"
+            "3. End with a positive, encouraging observation\n"
+            "Do not invent facts beyond what the teacher wrote."
+        )
+        prompt = f"""Milestone: "{req.category}"
+
+Teacher's note about how {first_name} achieved this:
+"{req.text}"
+
+Rewrite as a polished 2-3 sentence milestone achievement note for a school report.
+Use {first_name}'s name naturally. Reference the milestone and how it was demonstrated."""
+    else:
+        category_hint = f" for the '{req.category}' category" if req.category else ""
+        system = (
+            f"You are helping a teacher write a professional child observation note{category_hint}.\n"
+            "Output plain text only — no markdown, no bullet symbols, no headers.\n"
+            f"Always refer to the child by their first name: {first_name}. {pronoun_hint}\n"
+            "Write 2-3 warm, specific, professional sentences suitable for a school report.\n"
+            "Expand on the observation with concrete, positive language. Do not invent facts."
+        )
+        prompt = f"""Teacher's raw observation about {first_name}:
+"{req.text}"
+
+Rewrite this as a polished 2-3 sentence observation note for a school report.
+Use {first_name}'s name naturally. Be warm, specific, and professional."""
 
     try:
-        beautified, _ = await _call_llm(prompt, system)
-        if not beautified:
-            beautified = req.raw_text
+        formatted, _ = await _call_llm(prompt, system)
+        if not formatted:
+            formatted = req.text
     except Exception:
-        beautified = req.raw_text
+        formatted = req.text
 
-    return {"beautified_text": beautified}
+    return {"formatted": formatted}
 
 
 # --- Activity suggestions ---
@@ -2455,3 +1883,246 @@ async def generate_textbook_planner(req: TextbookPlannerRequest):
             "preview_only": req.preview_only,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Parent-facing topic summary
+# ---------------------------------------------------------------------------
+
+class TopicSummaryRequest(BaseModel):
+    topics: list          # list of topic_label strings
+    chunks: list = []     # optional: [{ "topic": str, "snippet": str }] for richer context
+    class_name: str = "Nursery"
+    child_name: str = "your child"
+    completed: bool = False   # True = teacher marked these as done today
+    feed_date: str = ""       # YYYY-MM-DD — actual date to use instead of "Week X Day Y"
+
+@app.post("/internal/topic-summary")
+async def topic_summary(req: TopicSummaryRequest):
+    """
+    Generate a warm, parent-friendly summary of what a child learned (or will learn) today.
+    Uses chunk content when available for a richer, specific summary.
+    Falls back gracefully if LLM is unavailable.
+    """
+    from query_pipeline import _call_llm
+
+    if not req.topics:
+        return {"summary": ""}
+
+    # Format the actual date for display (e.g. "Monday, 15 June")
+    def format_date(date_str: str) -> str:
+        if not date_str:
+            return ""
+        try:
+            from datetime import datetime
+            d = datetime.strptime(date_str, "%Y-%m-%d")
+            return d.strftime("%A, %-d %B")  # e.g. "Monday, 15 June"
+        except Exception:
+            return date_str
+
+    date_label = format_date(req.feed_date) if req.feed_date else ""
+
+    # Clean up raw "Week X Day Y" labels — extract meaningful subject names
+    def clean_label(label: str) -> str:
+        import re
+        # Remove "Week N Day N" prefix/suffix
+        cleaned = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', label, flags=re.IGNORECASE).strip()
+        # Remove leading/trailing punctuation
+        cleaned = cleaned.strip(' -–—:,.')
+        return cleaned  # return empty string if nothing left — caller handles fallback
+
+    # Build meaningful topics list — for "Week X Day Y" labels, extract from chunk snippets
+    def extract_subjects_from_snippet(snippet: str) -> list:
+        import re
+        if not snippet:
+            return []
+        lines = [l.strip() for l in snippet.split('\n') if l.strip()]
+        subjects = []
+        subject_pattern = re.compile(
+            r'^(English|Math|Maths|GK|General Knowledge|Circle Time|Fine Motor|Art|Craft|Music|PE|'
+            r'Science|Hindi|Telugu|Tamil|Kannada|Story|Rhymes?|Writing|Reading|Numbers?|Shapes?|'
+            r'Colours?|Colors?|Drawing|Phonics|EVS|Computer|Dance|Yoga|Library|Activity|Outdoor|'
+            r'Indoor|Language|Numeracy|Literacy|Motor Skills?|Sensory|Play|Exploration|Discovery|'
+            r'Social|Emotional|Cognitive|Creative|Physical)',
+            re.IGNORECASE
+        )
+        for line in lines:
+            if re.match(r'^week\s*\d+\s*day\s*\d+', line, re.IGNORECASE):
+                continue
+            if re.match(r'^\d+$', line):
+                continue
+            if subject_pattern.match(line) or re.match(r'^[A-Z][a-zA-Z\s&/\-]{1,50}:\s*$', line):
+                subjects.append(line.rstrip(':').strip())
+        return subjects
+
+    meaningful_topics = []
+    for i, topic in enumerate(req.topics):
+        cleaned = clean_label(topic)
+        if cleaned:
+            meaningful_topics.append(cleaned)
+        else:
+            # Entire label was "Week X Day Y" — try to get subjects from chunk snippet
+            chunk = next((c for c in req.chunks if c.get("topic") == topic), None)
+            snippet = chunk.get("snippet", "") if chunk else ""
+            subjects = extract_subjects_from_snippet(snippet)
+            if subjects:
+                meaningful_topics.extend(subjects)
+            elif snippet:
+                # Use first meaningful line of snippet
+                first_line = next((l.strip() for l in snippet.split('\n')
+                                   if l.strip() and not re.match(r'^week\s*\d+\s*day\s*\d+', l.strip(), re.IGNORECASE)), "")
+                if first_line:
+                    meaningful_topics.append(first_line[:60])
+            # If still nothing, skip this topic entirely (don't use "Week X Day Y")
+
+    if not meaningful_topics:
+        meaningful_topics = [clean_label(t) or t for t in req.topics]
+
+    # Build content context from chunk snippets if available
+    content_lines = []
+    for chunk in req.chunks[:8]:
+        topic = chunk.get("topic", "")
+        snippet = (chunk.get("snippet") or "")[:250].strip()
+        if snippet:
+            content_lines.append(f"• {snippet}")
+
+    content_context = "\n".join(content_lines) if content_lines else ""
+
+    tense = "learned" if req.completed else "will learn"
+    # Use actual date if available, otherwise "Today"
+    day_ref = date_label if date_label else "Today"
+
+    system = (
+        "You are Oakie, a warm and friendly school assistant writing to parents.\n"
+        "Write in simple, joyful language that a parent can easily understand.\n"
+        "Always mention the child's name naturally in the summary.\n"
+        "Keep the summary to 2-3 sentences. No bullet points, no markdown.\n"
+        "IMPORTANT: Never use 'Week X Day Y' format. Always refer to the day by its actual date or just say 'today'.\n"
+        "Focus on what the child actually learned or will learn — be specific and encouraging."
+    )
+
+    topics_list = ", ".join(meaningful_topics[:6])
+
+    if content_context:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+{day_ref}: {req.child_name} {tense} about {topics_list}.
+
+Curriculum content:
+{content_context}
+
+Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} on {day_ref}. Be specific using the content above. Mention {req.child_name} by name. Do NOT say "Week 1 Day 4" or any week/day number — use the actual date "{day_ref}" or just "today"."""
+    else:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+{day_ref}: {req.child_name} {tense} about {topics_list}.
+
+Write a warm 2-3 sentence summary for the parent about what {req.child_name} {tense} on {day_ref}. Be encouraging and specific. Mention {req.child_name} by name. Do NOT say "Week 1 Day 4" or any week/day number — use the actual date "{day_ref}" or just "today"."""
+
+    try:
+        result, _ = await _call_llm(prompt, system)
+        if result and len(result.strip()) > 10:
+            # Post-process: strip any remaining "Week X Day Y" from the output
+            import re
+            cleaned_result = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', day_ref if day_ref != "Today" else "today", result.strip(), flags=re.IGNORECASE)
+            return {"summary": cleaned_result}
+    except Exception as e:
+        print(f"[topic-summary] LLM error: {e}")
+
+    # Fallback: build a readable sentence without LLM
+    if len(meaningful_topics) == 1:
+        summary = f"{day_ref}, {req.child_name} {tense} about {meaningful_topics[0]}."
+    elif len(meaningful_topics) == 2:
+        summary = f"{day_ref}, {req.child_name} {tense} about {meaningful_topics[0]} and {meaningful_topics[1]}."
+    else:
+        last = meaningful_topics[-1]
+        rest = ", ".join(meaningful_topics[:-1])
+        summary = f"{day_ref}, {req.child_name} {tense} about {rest}, and {last}."
+
+    return {"summary": summary}
+
+
+# ---------------------------------------------------------------------------
+# Term-level cumulative learning summary (Progress tab — "What X has learned so far")
+# ---------------------------------------------------------------------------
+
+class TermSummaryRequest(BaseModel):
+    subjects: list          # list of clean subject/topic strings (no "Week X Day Y")
+    chunks: list = []       # optional: [{ "topic": str, "snippet": str }] for context
+    class_name: str = "Nursery"
+    child_name: str = "your child"
+    completion_days: int = 0   # number of school days completed so far
+    covered_chunks: int = 0    # total topics/chunks covered
+
+@app.post("/internal/term-summary")
+async def term_summary(req: TermSummaryRequest):
+    """
+    Generate a warm cumulative summary of everything a child has learned
+    from the start of the school year until today.
+    This is NOT a daily summary — it covers the full term so far.
+    """
+    from query_pipeline import _call_llm
+
+    if not req.subjects:
+        return {"summary": ""}
+
+    # Deduplicate and limit subjects
+    unique_subjects = list(dict.fromkeys(req.subjects))[:50]
+
+    # Build context from snippets
+    content_lines = []
+    for chunk in req.chunks[:10]:
+        snippet = (chunk.get("snippet") or "")[:200].strip()
+        if snippet:
+            content_lines.append(f"• {snippet}")
+    content_context = "\n".join(content_lines) if content_lines else ""
+
+    subjects_list = ", ".join(unique_subjects[:20])
+    days_text = f" over {req.completion_days} school days" if req.completion_days > 0 else ""
+
+    system = (
+        "You are Oakie, a warm and friendly school assistant writing to parents.\n"
+        "Write in simple, joyful language that a parent can easily understand.\n"
+        "This is a CUMULATIVE summary of everything the child has learned from the START of school until TODAY — not just today.\n"
+        "Always mention the child's name naturally.\n"
+        "Keep it to 3-4 sentences. No bullet points, no markdown.\n"
+        "IMPORTANT: Never mention 'Week X Day Y' or any week/day numbers.\n"
+        "Focus on the subjects and skills covered — be warm, specific, and encouraging.\n"
+        "Use past tense throughout since these are things already learned."
+    )
+
+    if content_context:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+Since the start of school{days_text}, {req.child_name} has covered these subjects: {subjects_list}.
+
+Some of what was covered:
+{content_context}
+
+Write a warm 3-4 sentence summary for the parent about everything {req.child_name} has learned so far this term. Use past tense. Be specific about the subjects. Mention {req.child_name} by name. Do NOT mention week numbers or day numbers."""
+    else:
+        prompt = f"""{req.child_name} is in {req.class_name}.
+
+Since the start of school{days_text}, {req.child_name} has covered these subjects: {subjects_list}.
+
+Write a warm 3-4 sentence summary for the parent about everything {req.child_name} has learned so far this term. Use past tense. Be specific about the subjects. Mention {req.child_name} by name. Do NOT mention week numbers or day numbers."""
+
+    try:
+        result, _ = await _call_llm(prompt, system)
+        if result and len(result.strip()) > 10:
+            import re
+            # Strip any remaining "Week X Day Y" from output
+            cleaned = re.sub(r'\bweek\s*\d+\s*day\s*\d+\b', '', result.strip(), flags=re.IGNORECASE).strip()
+            return {"summary": cleaned}
+    except Exception as e:
+        print(f"[term-summary] LLM error: {e}")
+
+    # Fallback
+    if len(unique_subjects) == 0:
+        return {"summary": f"{req.child_name} has been busy learning at school this term!"}
+    elif len(unique_subjects) <= 3:
+        summary = f"So far this term, {req.child_name} has been learning about {', '.join(unique_subjects)}. It has been a wonderful start to the school year!"
+    else:
+        top = unique_subjects[:5]
+        summary = f"Since the start of school, {req.child_name} has covered a range of subjects including {', '.join(top[:3])} and more. It has been a wonderful learning journey so far!"
+    return {"summary": summary}

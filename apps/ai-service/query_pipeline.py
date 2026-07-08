@@ -1,8 +1,64 @@
 ﻿import re
+import hashlib
 import traceback
 from datetime import date as date_type, timedelta
 from uuid import UUID
 from db import get_pool
+
+
+# ---------------------------------------------------------------------------
+# AI Plan Cache — ensures all teachers get the same plan for same chunks
+# ---------------------------------------------------------------------------
+
+def _compute_chunk_hash(chunk_ids: list, plan_date: str = "") -> str:
+    """Compute MD5 hash of sorted chunk IDs + date — same chunks on same date = same hash.
+    Including date ensures plans for different days don't collide even if chunks are the same."""
+    sorted_ids = sorted(str(cid) for cid in chunk_ids)
+    key = "|".join(sorted_ids)
+    if plan_date:
+        key += f"|{plan_date}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+
+async def _get_cached_plan(pool, chunk_ids: list, school_id: str, plan_date: str = "") -> str | None:
+    """Check ai_plan_cache for an existing plan for these chunks + date."""
+    if not chunk_ids:
+        return None
+    chunk_hash = _compute_chunk_hash(chunk_ids, plan_date)
+    try:
+        row = await pool.fetchrow(
+            "SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1",
+            chunk_hash,
+        )
+        if row and row["ai_text"]:
+            print(f"[PlanCache] HIT — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks, date={plan_date})")
+            return row["ai_text"]
+    except Exception as e:
+        # Table might not exist yet (migration not run)
+        print(f"[PlanCache] read error: {e}")
+    return None
+
+
+async def _store_cached_plan(pool, chunk_ids: list, school_id: str, ai_text: str, plan_date: str = "") -> None:
+    """Store AI-generated plan in ai_plan_cache for future reuse."""
+    if not chunk_ids or not ai_text:
+        return
+    chunk_hash = _compute_chunk_hash(chunk_ids, plan_date)
+    try:
+        await pool.execute(
+            """INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text, plan_date)
+               VALUES ($1, $2, $3, $4, $5)
+               ON CONFLICT (chunk_hash) DO NOTHING""",
+            chunk_hash,
+            UUID(school_id),
+            [UUID(cid) for cid in chunk_ids],
+            ai_text,
+            date_type.fromisoformat(plan_date) if plan_date else None,
+        )
+        print(f"[PlanCache] STORED — hash={chunk_hash[:8]} ({len(chunk_ids)} chunks, date={plan_date}, {len(ai_text)} chars)")
+    except Exception as e:
+        # Non-critical — plan still returns, just won't be cached
+        print(f"[PlanCache] write error: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -15,6 +71,8 @@ def _parse_date_from_text(text: str, fallback: str) -> str:
     if iso:
         return iso.group(1)
     today = date_type.fromisoformat(fallback)
+    if "day after tomorrow" in t:
+        return str(today + timedelta(days=2))
     if "tomorrow" in t:
         return str(today + timedelta(days=1))
     if "yesterday" in t:
@@ -48,6 +106,26 @@ def _parse_date_from_text(text: str, fallback: str) -> str:
             return str(date_type(today.year, months[m.group(1)], int(m.group(2))))
         except (ValueError, KeyError):
             pass
+    # Day-first without year: "25th june", "25 june", "3rd july"
+    m = re.search(
+        r'(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)',
+        t,
+    )
+    if m:
+        try:
+            return str(date_type(today.year, months[m.group(2)], int(m.group(1))))
+        except (ValueError, KeyError):
+            pass
+    # Bare day number: "plan for 25th", "plan for 25", "what is the plan for 3rd"
+    m = re.search(r'\b(\d{1,2})(?:st|nd|rd|th)\b', t)
+    if m:
+        day_num = int(m.group(1))
+        if 1 <= day_num <= 31:
+            # Assume current month
+            try:
+                return str(date_type(today.year, today.month, day_num))
+            except ValueError:
+                pass
     return fallback
 
 
@@ -207,7 +285,15 @@ SUBJECT_TIPS = {
 }
 
 AGE_GROUPS = {
+    "playgroup": {"age": "2-3 years", "style": "toddlers"},
+    "nursery": {"age": "2.5-3.5 years", "style": "very young children"},
+    "jr.kg": {"age": "3-4 years", "style": "very young children"},
+    "jr.k.g": {"age": "3-4 years", "style": "very young children"},
+    "juniorkg": {"age": "3-4 years", "style": "very young children"},
     "lkg":   {"age": "3-4 years", "style": "very young children"},
+    "sr.kg": {"age": "4-5 years", "style": "young children"},
+    "sr.k.g": {"age": "4-5 years", "style": "young children"},
+    "seniorkg": {"age": "4-5 years", "style": "young children"},
     "ukg":   {"age": "4-5 years", "style": "young children"},
     "prep1": {"age": "5-6 years", "style": "early primary children"},
     "prep2": {"age": "6-7 years", "style": "primary children"},
@@ -299,6 +385,34 @@ def _parse_completion_from_text(text: str, subjects: list) -> dict:
 # ---------------------------------------------------------------------------
 # LLM helpers
 # ---------------------------------------------------------------------------
+
+async def _enrich_content_with_resources(content: str, school_id: str, pool) -> str:
+    """Replace resource numbers in content with enriched topic info from curriculum_resources.
+    E.g., 'Res. 1515' becomes 'Res. 1515 (English Speaking - pg 2)'"""
+    import re
+    # Extract all potential resource IDs (3-4 digit numbers and wNNNN patterns)
+    numbers = re.findall(r'\b(\d{2,4})\b', content)
+    ws_ids = re.findall(r'\b(w\d{4})\b', content, re.IGNORECASE)
+    all_ids = list(set(numbers + ws_ids))
+    if not all_ids:
+        return content
+    try:
+        rows = await pool.fetch(
+            "SELECT resource_id, topic, book_page FROM curriculum_resources WHERE school_id = $1 AND resource_id = ANY($2)",
+            UUID(school_id), all_ids,
+        )
+        if not rows:
+            return content
+        lookup = {r['resource_id']: r for r in rows}
+        # Enrich: replace "Res. 1515" or standalone "1515" with "1515 (topic, pg X)"
+        for rid, info in lookup.items():
+            enriched = f"{rid} ({info['topic']}, pg {info['book_page']})" if info['book_page'] else f"{rid} ({info['topic']})"
+            # Replace patterns like "Res. 1515", "- 1515", "1515" (only if it's a standalone number)
+            content = re.sub(rf'\b{re.escape(rid)}\b', enriched, content, count=1)
+        return content
+    except Exception:
+        return content
+
 
 def _build_chunk_context(chunks) -> str:
     """Build a rich text block from DB chunk rows for the LLM prompt.
@@ -1273,22 +1387,26 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
 
         # ── Content safety filter ──────────────────────────────────────────
         # Block inappropriate, off-topic, or harmful queries
+        # Use word-boundary matching to avoid false positives (e.g. "sex" in "section")
+        import re as _re_safety
         BLOCKED_PATTERNS = [
             # Violence / harm
-            "kill", "murder", "suicide", "self-harm", "abuse", "assault", "rape",
-            "weapon", "bomb", "explosive", "drug", "narcotic",
-            # Sexual content
-            "sex", "porn", "nude", "naked", "sexual",
-            # Off-topic / jailbreak attempts
-            "ignore previous", "ignore all", "forget instructions", "act as",
-            "pretend you are", "you are now", "jailbreak", "bypass",
-            "write code", "hack", "password", "credit card",
+            r"\bkill\b", r"\bmurder\b", r"\bsuicide\b", r"\bself-harm\b", r"\babuse\b",
+            r"\bassault\b", r"\brape\b", r"\bweapon\b", r"\bbomb\b", r"\bexplosive\b",
+            r"\bdrug\b", r"\bnarcotic\b",
+            # Sexual content — word boundary to avoid "section", "sexy" false positives
+            r"\bsex\b", r"\bporn\b", r"\bnude\b", r"\bnaked\b", r"\bsexual\b",
+            # Off-topic / jailbreak attempts — phrase matching
+            r"ignore previous", r"ignore all", r"forget instructions", r"\bact as\b",
+            r"pretend you are", r"you are now", r"\bjailbreak\b", r"\bbypass\b",
+            r"write code", r"\bhack\b", r"\bpassword\b", r"credit card",
             # Political / religious controversy
-            "politics", "election", "religion", "god is", "allah", "jesus is",
+            r"\bpolitics\b", r"\belection\b", r"\breligion\b", r"god is",
+            r"\ballah\b", r"jesus is",
         ]
         text_lower_safe = text.lower()
         for pattern in BLOCKED_PATTERNS:
-            if pattern in text_lower_safe:
+            if _re_safety.search(pattern, text_lower_safe):
                 return {
                     "response": "I can only help with classroom teaching, curriculum activities, and child management. Please ask something related to your class.",
                     "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": [],
@@ -1333,7 +1451,7 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                 "Please ask your admin to assign you as class teacher for a section."
             )}
 
-        # For principals/admins with no section, provide a school-wide context response
+        # For principals/admins — comprehensive school-wide intelligence
         if section_row is None and role in ("principal", "admin"):
             today_dt = date_type.fromisoformat(query_date)
             day_names = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
@@ -1359,9 +1477,9 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
 
             # ── 1. WHO IS THE CLASS TEACHER ──────────────────────────────────
             teacher_keywords = ["class teacher", "teacher for", "who teaches", "who is teaching",
-                                 "teacher of", "in charge of", "head of", "assigned to",
-                                 "who is the teacher", "teacher name", "class incharge"]
+                                 "teacher of", "in charge of", "head of", "assigned to"]
             if any(k in tl for k in teacher_keywords):
+                # Try to find a specific class mentioned
                 class_match = None
                 for row in sections_data:
                     cn = row['class_name'].lower()
@@ -1369,24 +1487,28 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                     if cn in tl or f"section {sl}" in tl or f"sec {sl}" in tl or sl in tl:
                         class_match = row
                         break
+
                 if class_match:
                     teacher = class_match['teacher_name'] or "Not assigned"
-                    lines = [f"👩‍🏫 **Class Teacher — {class_match['class_name']} Section {class_match['label']}**\n",
-                             f"**Teacher:** {teacher}"]
+                    lines = [
+                        f"👩‍🏫 **Class Teacher — {class_match['class_name']} Section {class_match['label']}**\n",
+                        f"**Teacher:** {teacher}",
+                    ]
                     if class_match['teacher_email']:
                         lines.append(f"**Email:** {class_match['teacher_email']}")
                     lines.append(f"**Students:** {class_match['student_count']}")
                     return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
                 else:
+                    # Show all teachers
                     lines = [f"👩‍🏫 **All Class Teachers — {today_dt.strftime('%d %B %Y')}**\n"]
                     for row in sections_data:
                         teacher = row['teacher_name'] or "⚠️ Not assigned"
                         lines.append(f"• **{row['class_name']} – Sec {row['label']}**: {teacher} ({row['student_count']} students)")
                     return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-            # ── 2. STUDENT COUNT ──────────────────────────────────────────────
+            # ── 2. STUDENT COUNT / HOW MANY STUDENTS ─────────────────────────
             student_keywords = ["how many students", "student count", "total students", "number of students",
-                                 "how many children", "how many kids", "enrolled", "strength", "roll strength"]
+                                 "how many children", "how many kids", "enrolled", "strength"]
             if any(k in tl for k in student_keywords):
                 total = sum(r['student_count'] for r in sections_data)
                 lines = [f"🎓 **Student Strength — {today_dt.strftime('%d %B %Y')}**\n",
@@ -1395,19 +1517,24 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                     lines.append(f"• {row['class_name']} – Sec {row['label']}: {row['student_count']} students")
                 return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-            # ── 3. ATTENDANCE (with individual student names if asked) ────────
+            # ── 3. ATTENDANCE ─────────────────────────────────────────────────
             att_keywords = ["attendance", "present today", "absent today", "who came", "who is absent",
                             "marked attendance", "not marked", "attendance today", "who was absent",
                             "who was present", "absent on", "present on", "attendance on"]
             if any(k in tl for k in att_keywords):
+                # Check if asking about a specific date
                 target_date = _parse_date_from_text(text, query_date)
                 target_dt_att = date_type.fromisoformat(target_date)
-                show_names = any(w in tl for w in ["who was absent", "who is absent", "who were absent",
-                                                    "list absent", "absent students", "absent children",
-                                                    "names of absent"])
-                if show_names:
+                is_specific_date = target_date != query_date or any(w in tl for w in ["on", "june", "july", "august", "september", "october", "november", "december", "january", "february", "march", "april", "may"])
+                
+                # If asking "who was absent" — show individual student names
+                show_student_names = any(w in tl for w in ["who was absent", "who is absent", "who were absent", "list absent", "absent students", "absent children"])
+                
+                if show_student_names or is_specific_date:
+                    # Fetch individual absent students for the target date
                     absent_students = await pool.fetch(
-                        """SELECT st.name, c.name AS class_name, s.label AS section_label
+                        """SELECT st.name, c.name AS class_name, s.label AS section_label,
+                                  ar.status, ar.is_late
                            FROM attendance_records ar
                            JOIN students st ON st.id = ar.student_id
                            JOIN sections s ON s.id = ar.section_id
@@ -1416,27 +1543,32 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                            ORDER BY c.name, s.label, st.name""",
                         sid, target_dt_att,
                     )
+                    
                     if absent_students:
                         date_label_att = target_dt_att.strftime('%A, %d %B %Y')
                         lines = [f"📋 **Absent Students — {date_label_att}**\n",
                                  f"**{len(absent_students)} students were absent:**\n"]
+                        
+                        # Group by class
                         by_class = {}
                         for st in absent_students:
                             key = f"{st['class_name']} – Sec {st['section_label']}"
                             if key not in by_class:
                                 by_class[key] = []
                             by_class[key].append(st['name'])
-                        for class_key_str, names in by_class.items():
-                            lines.append(f"**{class_key_str}** ({len(names)} absent):")
+                        
+                        for class_key, names in by_class.items():
+                            lines.append(f"**{class_key}** ({len(names)} absent):")
                             for name in names:
                                 lines.append(f"  • {name}")
                             lines.append("")
+                        
                         return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
                     else:
                         date_label_att = target_dt_att.strftime('%A, %d %B %Y')
                         return {"response": f"✅ No students were absent on {date_label_att}. Perfect attendance! 🎉", "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
-
-                # Section-level summary
+                
+                # Default: section-level summary for today
                 lines = [f"📋 **Attendance — {day_of_week}, {today_dt.strftime('%d %B %Y')}**\n"]
                 total_present = sum(r['present_count'] for r in sections_data)
                 total_absent = sum(r['absent_count'] for r in sections_data)
@@ -1447,17 +1579,18 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                 for row in sections_data:
                     if row['has_attendance'] > 0:
                         pct = round((row['present_count'] / row['student_count']) * 100) if row['student_count'] else 0
-                        lines.append(f"✅ {row['class_name']} – Sec {row['label']}: {row['present_count']}/{row['student_count']} present ({pct}%) — {row['teacher_name'] or 'N/A'}")
+                        lines.append(f"✅ {row['class_name']} – Sec {row['label']}: {row['present_count']}/{row['student_count']} present ({pct}%) — Teacher: {row['teacher_name'] or 'N/A'}")
                     else:
-                        lines.append(f"⏳ {row['class_name']} – Sec {row['label']}: Not marked yet — {row['teacher_name'] or 'N/A'}")
+                        lines.append(f"⏳ {row['class_name']} – Sec {row['label']}: Not marked yet — Teacher: {row['teacher_name'] or 'N/A'}")
+                
                 if total_absent > 0:
                     lines.append(f"\n💬 Ask: *\"Who was absent today?\"* to see individual student names")
+                
                 return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
             # ── 4. PLAN / COMPLETION STATUS ───────────────────────────────────
             plan_keywords = ["plan submitted", "completed plan", "who completed", "plan status",
-                             "who hasn't submitted", "pending plan", "completion status", "plans done",
-                             "who finished", "plan complete"]
+                             "who hasn't submitted", "pending plan", "completion status", "plans done"]
             if any(k in tl for k in plan_keywords):
                 submitted = [r for r in sections_data if r['plan_submitted'] > 0]
                 pending = [r for r in sections_data if r['plan_submitted'] == 0]
@@ -1473,7 +1606,7 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                         lines.append(f"  • {r['class_name']} – Sec {r['label']} ({r['teacher_name'] or 'N/A'})")
                 return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-            # ── 5. CURRICULUM PROGRESS ────────────────────────────────────────
+            # ── 5. CURRICULUM PROGRESS / COVERAGE ────────────────────────────
             progress_keywords = ["progress", "coverage", "curriculum", "syllabus", "on track",
                                   "behind", "lagging", "how far", "covered so far", "completion rate"]
             if any(k in tl for k in progress_keywords):
@@ -1511,15 +1644,17 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                     lines.append("No curriculum data found. Please upload curriculum PDFs first.")
                 return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-            # ── 6. STUDENT SEARCH ─────────────────────────────────────────────
-            if any(k in tl for k in ["find student", "where is", "which class is", "student named",
-                                      "search student", "look up"]):
+            # ── 6. SPECIFIC STUDENT QUERY ─────────────────────────────────────
+            student_name_keywords = ["student", "child", "boy", "girl", "kid"]
+            if any(k in tl for k in student_name_keywords) and any(k in tl for k in ["find", "where is", "which class", "in which", "attendance of", "progress of"]):
+                # Try to extract a name — words after "student" or "child" that are capitalised
                 import re as _re
-                name_match = _re.search(r'(?:student|child|kid|named?|called)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', text)
+                name_match = _re.search(r'(?:student|child|boy|girl|kid)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', text)
                 if name_match:
                     search_name = name_match.group(1)
                     students_found = await pool.fetch(
-                        """SELECT st.name, c.name AS class_name, s.label AS section_label, u.name AS teacher_name
+                        """SELECT st.name, c.name AS class_name, s.label AS section_label,
+                                  u.name AS teacher_name
                            FROM students st
                            JOIN sections s ON s.id = st.section_id
                            JOIN classes c ON c.id = s.class_id
@@ -1534,9 +1669,11 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                             lines.append(f"• **{st['name']}** — {st['class_name']} Section {st['section_label']} (Teacher: {st['teacher_name'] or 'N/A'})")
                         return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-            # ── 7. TEACHER PERFORMANCE ────────────────────────────────────────
-            if any(k in tl for k in ["teacher performance", "not completing", "inactive teacher",
-                                      "which teacher", "teacher report", "best teacher", "top teacher"]):
+            # ── 7. TEACHER PERFORMANCE / WHO IS NOT COMPLETING ───────────────
+            teacher_perf_keywords = ["teacher performance", "not completing", "not submitting",
+                                      "inactive teacher", "which teacher", "teacher report",
+                                      "best teacher", "worst teacher", "top teacher"]
+            if any(k in tl for k in teacher_perf_keywords):
                 perf_data = await pool.fetch(
                     """SELECT u.name AS teacher_name, c.name AS class_name, s.label,
                               COUNT(DISTINCT dc.completion_date) AS days_completed,
@@ -1557,10 +1694,13 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                     done = row['days_completed'] or 0
                     pct = round((done / total) * 100) if total > 0 else 0
                     status = "🟢" if pct >= 80 else "🟡" if pct >= 50 else "🔴"
-                    lines.append(f"{status} **{row['teacher_name'] or 'Unassigned'}** — {row['class_name']} Sec {row['label']}: {done}/{total} days ({pct}%)")
+                    lines.append(f"{status} **{row['teacher_name'] or 'Unassigned'}** — {row['class_name']} Sec {row['label']}: {done}/{total} days completed ({pct}%)")
                 return {"response": "\n".join(lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-            # ── 8. DEFAULT: School overview + LLM for anything else ───────────
+            # ── 8. GENERAL SCHOOL OVERVIEW (default / "give me a summary") ───
+            overview_keywords = ["overview", "summary", "how is school", "school status",
+                                  "what's happening", "update", "report", "dashboard", "today"]
+            # Always fall through to overview for unmatched questions
             total_students = sum(r['student_count'] for r in sections_data)
             total_present = sum(r['present_count'] for r in sections_data)
             plans_done = sum(1 for r in sections_data if r['plan_submitted'] > 0)
@@ -1574,22 +1714,30 @@ If the data doesn't contain the answer, say so honestly and suggest they check t
                 f"📋 Attendance: **{att_marked}/{total_sections}** sections marked | **{total_present} present** ({att_pct}%)",
                 f"📚 Plans completed: **{plans_done}/{total_sections}** sections\n",
             ]
+
+            # Highlight issues
             no_att = [f"{r['class_name']} {r['label']}" for r in sections_data if r['has_attendance'] == 0]
             no_plan = [f"{r['class_name']} {r['label']}" for r in sections_data if r['plan_submitted'] == 0]
             no_teacher = [f"{r['class_name']} {r['label']}" for r in sections_data if not r['teacher_name']]
+
             if no_att:
                 summary_lines.append(f"⚠️ Attendance not marked: {', '.join(no_att)}")
             if no_plan:
                 summary_lines.append(f"⚠️ Plans pending: {', '.join(no_plan)}")
             if no_teacher:
                 summary_lines.append(f"⚠️ No teacher assigned: {', '.join(no_teacher)}")
+
             if not no_att and not no_plan:
                 summary_lines.append("✅ All sections have marked attendance and submitted plans today!")
 
-            # For any question with "?" or question words — use LLM with full context
+            summary_lines.append(f"\n💬 Ask me: *\"Who is the class teacher for UKG A?\"* · *\"Show attendance today\"* · *\"Which class is behind on curriculum?\"* · *\"How many students are enrolled?\"*")
+
+            # If it's a question we didn't specifically match, use LLM with the full context
             if "?" in text or any(k in tl for k in ["why", "how", "what", "which", "who", "when", "where", "tell me", "show me", "give me"]):
+                # Build rich context for LLM
+                context_for_llm = "\n".join(summary_lines)
                 teacher_list = "\n".join([
-                    f"- {r['class_name']} Section {r['label']}: Teacher={r['teacher_name'] or 'Not assigned'}, Students={r['student_count']}, Attendance={'Marked' if r['has_attendance'] else 'Not marked'}, Plan={'Done' if r['plan_submitted'] else 'Pending'}"
+                    f"- {r['class_name']} Section {r['label']}: Teacher = {r['teacher_name'] or 'Not assigned'}, Students = {r['student_count']}, Attendance = {'Marked' if r['has_attendance'] else 'Not marked'}, Plan = {'Submitted' if r['plan_submitted'] else 'Pending'}"
                     for r in sections_data
                 ])
                 llm_prompt = f"""You are Oakie, a school intelligence assistant for the principal/admin.
@@ -1598,7 +1746,7 @@ SCHOOL DATA FOR TODAY ({today_dt.strftime('%d %B %Y')}):
 {teacher_list}
 
 SUMMARY:
-{chr(10).join(summary_lines)}
+{context_for_llm}
 
 Principal's question: "{text}"
 
@@ -1606,12 +1754,14 @@ Answer the question directly and specifically using the school data above.
 Be concise, factual, and helpful. Use bullet points for lists.
 If the data doesn't contain the answer, say so clearly."""
 
-                system = "You are Oakie, a school intelligence assistant. Answer only using the school data provided. Be factual and concise."
+                system = (
+                    "You are Oakie, a school intelligence assistant. "
+                    "Answer only using the school data provided. Be factual and concise."
+                )
                 response_text, _ = await _call_llm(llm_prompt, system)
                 if response_text:
                     return {"response": response_text, "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
-            summary_lines.append(f"\n💬 Ask me: *\"Who is the class teacher for UKG A?\"* · *\"Show attendance today\"* · *\"Which class is behind on curriculum?\"* · *\"How many students are enrolled?\"*")
             return {"response": "\n".join(summary_lines), "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": []}
 
         sec_id        = section_row["section_id"]   # UUID object from asyncpg
@@ -1753,6 +1903,34 @@ If the data doesn't contain the answer, say so clearly."""
                 sec_id, target_dt,
             )
             if not plan:
+                # Check if today is a special day even without a day_plan row
+                special_no_plan = await pool.fetchrow(
+                    "SELECT label, day_type, activity_note FROM special_days WHERE school_id=$1 AND day_date=$2",
+                    sid, target_dt,
+                )
+                if special_no_plan:
+                    day_type = special_no_plan["day_type"]
+                    label = special_no_plan["label"] or day_type.replace("_", " ").title()
+                    activity_note = special_no_plan["activity_note"]
+                    note_line = f"\nAdmin note: {activity_note}" if activity_note else ""
+
+                    if day_type == "settling":
+                        class_name_lower = class_name.lower() if class_name else "playgroup"
+                        age_info = _CLASS_SETTLING_PROFILE.get(class_name_lower, _CLASS_SETTLING_PROFILE.get("playgroup", ""))
+                        return {
+                            "response": _settling_response(date_label, target_dt.strftime("%A"), label, class_name or "Class", {"age": "preschool age"}),
+                            "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": [],
+                            "is_settling": True, "settling_day": True,
+                            "settling_total": 1, "plan_date": target_dt.isoformat()[:10],
+                        }
+                    else:
+                        guidance = _SPECIAL_DAY_GUIDANCE.get(day_type, "")
+                        return {
+                            "response": f"🎉 {date_label} — **{label}**{note_line}\n\n{guidance}\n\nThis is a special day — no curriculum topics are assigned. Ask me for activity ideas!",
+                            "chunk_ids": [], "covered_chunk_ids": [], "activity_ids": [],
+                            "plan_date": target_dt.isoformat()[:10],
+                        }
+
                 return {"response": (
                     f"No plan has been generated for {date_label} yet.\n\n"
                     f"Ask your admin to generate plans for {target_dt.strftime('%B %Y')} "
@@ -2128,6 +2306,7 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                 )
                 if class_row:
                     ai_plan_mode = class_row["ai_plan_mode"] or "standard"
+                    print(f"[PlanMode] class-level: {ai_plan_mode}")
                 else:
                     settings_row = await pool.fetchrow(
                         "SELECT ai_plan_mode FROM school_settings WHERE school_id = $1",
@@ -2135,8 +2314,12 @@ Plain text only, no bold, no markdown, short lines for mobile."""
                     )
                     if settings_row:
                         ai_plan_mode = settings_row["ai_plan_mode"] or "standard"
-            except Exception:
+                    print(f"[PlanMode] school-level: {ai_plan_mode}")
+            except Exception as e:
+                print(f"[PlanMode] ERROR: {e} — defaulting to standard")
                 pass  # default to standard if table doesn't exist yet
+
+            print(f"[PlanMode] FINAL ai_plan_mode={ai_plan_mode} for section={sec_id}")
 
             is_plan_request_only = any(p in text.lower() for p in [
                 "what is my plan", "what's my plan", "show me the plan", "give me the plan",
@@ -2145,85 +2328,117 @@ Plain text only, no bold, no markdown, short lines for mobile."""
             ])
 
             if ai_plan_mode == "ai_enhanced":
-                # Rich AI-generated plan with objectives, activities, offline support
-                # Build week number for the header
-                week_num = ((target_dt - target_dt.replace(day=1)).days // 7) + 1
-                day_num_in_week = target_dt.weekday() + 1  # 1=Mon
+                # ── Check plan cache first — same chunks + date = same plan for all teachers ──
+                plan_chunk_ids_for_cache = [str(c["id"]) for c in chunks]
+                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id, str(target_dt))
+                if cached_plan:
+                    response_text = cached_plan
+                    llm_provider = "cached"
+                else:
+                    # Rich AI-generated plan with objectives, activities, offline support
+                    # Build the raw curriculum content exactly as stored
+                    raw_curriculum_lines = []
+                    for ch in chunks:
+                        label = ch.get("topic_label") or ""
+                        content = (ch.get("content") or "").strip()
+                        if content:
+                            raw_curriculum_lines.append(content)
+                        elif label:
+                            raw_curriculum_lines.append(label)
 
-                subjects_list = []
-                for ch in chunks:
-                    subjects = _parse_subjects(ch["content"])
-                    for s in subjects:
-                        subjects_list.append(f"- {s['subject']}: {s['activity']}")
+                    raw_curriculum_text = "\n".join(raw_curriculum_lines)
 
-                rich_system = (
-                    f"You are an expert early childhood curriculum planner for {class_full} ({age_info['age']}).\n"
-                    f"Generate a detailed, structured daily plan in the exact format shown.\n"
-                    f"Use emojis for section headers. Be specific and practical.\n"
-                    f"Output plain text only — no markdown bold, no tables.\n"
-                    f"Keep it teacher-friendly for mobile reading."
-                )
+                    # Enrich resource numbers with topic names from curriculum_resources
+                    raw_curriculum_text = await _enrich_content_with_resources(raw_curriculum_text, school_id, pool)
 
-                rich_prompt = f"""Generate a detailed daily plan in this EXACT format:
+                    subjects_list = []
+                    for ch in chunks:
+                        subjects = _parse_subjects(ch["content"])
+                        for s in subjects:
+                            subjects_list.append(f"- {s['subject']}: {s['activity']}")
 
-🗓️ {class_full} – Week {week_num}: Day {day_num_in_week} Planner
-📅 Date: {date_label}
-Theme: [derive a theme from the topics below]
+                    rich_system = (
+                        f"You are a curriculum presenter for {class_name} ({age_info['age']}).\n"
+                        f"CRITICAL: You must preserve ALL page numbers, reference codes (Res., Ref., pg no.), "
+                        f"rhyme numbers, book names, and specific resources EXACTLY as written in the curriculum.\n"
+                        f"DO NOT replace them with your own suggestions.\n"
+                        f"You ADD teaching tips and activity suggestions ON TOP of the original content.\n"
+                        f"DO NOT mention any section label (A, B, C) — this plan is shared across all sections.\n"
+                        f"Use emojis for section headers. Plain text only — no markdown bold, no tables.\n"
+                        f"Keep it teacher-friendly for mobile reading."
+                    )
+
+                    rich_prompt = f"""FORMAT the following curriculum content into a structured daily plan.
+
+CURRICULUM CONTENT (preserve EXACTLY — do not change page numbers, references, or resources):
+{raw_curriculum_text}
+
+FORMAT as:
+📅 {date_label} — {class_name}
 
 🎯 Objective:
-· [3-4 overall objectives for the day based on all subjects]
+· [2-3 objectives derived from the actual topics above]
 
-CRITICAL ORDERING RULE: The FIRST section must ALWAYS be the morning routine:
-⭕ Circle Time / Morning Meet
-Topic: Welcome & Morning Prayer
-Resources: Talking object (soft toy or ball), prayer card
+Then for EACH subject in the curriculum above, create a section:
+[emoji] [Subject Name]: [EXACT topic/page/reference from curriculum]
 Objective:
-· Welcome children warmly and start the day with a positive prayer
-· Build community — each child shares one thing they are happy about
-✅ Offline Support:
-· Begin with a welcome song, then a short prayer together
-· Pass the talking object — each child says one happy thought
-· Ask: "What are you looking forward to today?"
+· [1 specific learning objective for this subject]
+How to conduct:
+· [Step 1 — specific instruction]
+· [Step 2 — specific instruction]
+· [Step 3 — if needed]
+Offline Support:
+· [1-2 practical tips if there's no digital aid available]
 
-Then for EACH remaining subject below, create a section like this:
-[emoji] [Subject Name]
-Topic: [topic name]
-Resources: [suggest relevant resources]
-Objective:
-· [2 specific objectives]
-✅ Offline Support:
-· [2-3 specific classroom activities]
-
-Subjects for today (in this order after morning routine):
-{chr(10).join(subjects_list) if subjects_list else "General curriculum activities"}
+RULES:
+1. ALWAYS start with Circle Time / Morning Meet / Additional Activities as first section
+2. Keep EVERY page number (pg no. 8), reference code (Res. 1515), rhyme number (Rhyme - 1472), and book reference EXACTLY as written
+3. DO NOT invent new resources — only add teaching tips and objectives
+4. The "How to conduct" must be specific enough that ALL teachers do the activity the SAME way
+5. DO NOT mention any section label (A, B, C) — this plan applies to all sections
+6. Add one 📝 Teacher Note at the end with 2-3 practical classroom management tips
+7. Under 600 words total
+8. No time slots, no bold, short lines for mobile
 
 {f"Pending from previous days: {', '.join(c['topic_label'] for c in pending_rows)}" if pending_rows else ""}
 
-📝 Teacher Note
-· [2-3 practical tips for the day]
+CLASS: {class_name} | AGE: {age_info['age']} | DATE: {date_label}"""
 
-CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}
-Keep each section concise. Total under 500 words."""
-
-                response_text, llm_provider = await _call_llm(rich_prompt, rich_system)
-                if not response_text:
-                    response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
-                    llm_provider = "rule_based"
+                    response_text, llm_provider = await _call_llm(rich_prompt, rich_system)
+                    if not response_text:
+                        response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                        llm_provider = "rule_based"
+                    else:
+                        # Store in cache so all teachers with same chunks get this plan
+                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text, str(target_dt))
 
             elif is_plan_request_only:
                 # Standard: build plan directly from chunks — no LLM cost
-                response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                # Enrich chunk content with resource topics before formatting
+                enriched_chunks = []
+                for ch in chunks:
+                    ech = dict(ch)
+                    if ech.get('content'):
+                        ech['content'] = await _enrich_content_with_resources(ech['content'], school_id, pool)
+                    enriched_chunks.append(ech)
+                response_text = _format_rich_plan(enriched_chunks, date_label, class_full, carried_note, pending_rows, age_info)
                 llm_provider = "rule_based"
             else:
-                system_prompt = (
-                    f"You are a teaching assistant for {class_full} ({age_info['age']}).\n"
-                    f"Output plain text only — no markdown bold, no tables, no horizontal rules.\n"
-                    f"Use emojis to mark sections. Keep lines short for mobile reading.\n"
-                    f"Be direct and practical. Teachers read this on their phone in the classroom.\n"
-                    f"Never include general website URLs. If suggesting a YouTube video, provide a search link like: "
-                    f"https://www.youtube.com/results?search_query={class_full.replace(' ', '+').replace('–', '').replace('  ', '+').strip('+')}+TOPIC — replace TOPIC with the specific video topic (use + for spaces)."
-                )
-                llm_prompt = f"""Teacher: "{text}"
+                # ── Check plan cache first — same chunks + date = same plan for all teachers ──
+                plan_chunk_ids_for_cache = [str(c["id"]) for c in chunks]
+                cached_plan = await _get_cached_plan(pool, plan_chunk_ids_for_cache, school_id, str(target_dt))
+                if cached_plan:
+                    response_text = cached_plan
+                    llm_provider = "cached"
+                else:
+                    system_prompt = (
+                        f"You are a teaching assistant for {class_full} ({age_info['age']}).\n"
+                        f"Output plain text only — no markdown bold, no tables, no horizontal rules.\n"
+                        f"Use emojis to mark sections. Keep lines short for mobile reading.\n"
+                        f"Be direct and practical. Teachers read this on their phone in the classroom.\n"
+                        f"Never include direct URLs or YouTube links. If suggesting a video, say 'Search YouTube for: [title]'."
+                    )
+                    llm_prompt = f"""Teacher: "{text}"
 
 CLASS: {class_full} | AGE: {age_info['age']} | DATE: {date_label}
 {f"NOTE: {carried_note}" if carried_note else ""}
@@ -2255,10 +2470,13 @@ Ask children: "[one specific question]"
 - No time slots, no bold text, no headers, no dashes, no markdown
 - Total response under 300 words"""
 
-                response_text, llm_provider = await _call_llm(llm_prompt, SYSTEM_HARDENING + system_prompt)
+                    response_text, llm_provider = await _call_llm(llm_prompt, SYSTEM_HARDENING + system_prompt)
 
-                if not response_text:
-                    response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                    if not response_text:
+                        response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                    else:
+                        # Store in cache so all teachers with same chunks get this plan
+                        await _store_cached_plan(pool, plan_chunk_ids_for_cache, school_id, response_text, str(target_dt))
 
             return {
                 "response": response_text, "llm_provider": locals().get("llm_provider", "rule_based"),
@@ -2303,9 +2521,8 @@ Ask children: "[one specific question]"
                 f"Short lines for mobile.\n"
                 f"IMPORTANT: You ONLY answer questions about classroom teaching, child development, curriculum activities, and classroom management. "
                 f"Refuse any off-topic, inappropriate, or harmful requests with: 'I can only help with classroom teaching topics.'\n"
-                f"IMPORTANT: Never include general website URLs. "
-                f"If suggesting a YouTube video, provide a search link like: "
-                f"https://www.youtube.com/results?search_query={class_full.replace(' ', '+').replace('–', '').replace('  ', '+').strip('+')}+TOPIC — replace TOPIC with the specific video topic (use + for spaces).\n"
+                f"IMPORTANT: Never include direct YouTube URLs or any website links. "
+                f"If suggesting a video, say 'Search YouTube for: [title]' instead of providing a link.\n"
                 f"IMPORTANT: If the teacher asks for a rhyme, song, story, or poem — provide the ACTUAL TEXT of the content, "
                 f"not instructions on how to teach it. Give the full rhyme/song/story text first, then optionally one tip."
             )
@@ -2317,14 +2534,14 @@ Ask children: "[one specific question]"
                 # ── Out-of-scope content block ────────────────────────────
                 # Only block requests for external links/URLs — not content types in the plan
                 OUT_OF_SCOPE = [
-                    "url","website","google","find me a link",
+                    "youtube","url","website","google","search for","find me a link",
                     "download","give me a link","send me a link","share a link",
                 ]
                 if any(w in t_lower for w in OUT_OF_SCOPE):
                     return {
                         "response": (
-                            "I can't provide general website links.\n\n"
-                            "For YouTube videos, just ask me about the topic and I'll suggest a search link.\n\n"
+                            "I can't provide external links or URLs.\n\n"
+                            "For videos and songs, use the resources in your Teacher's Handbook or school library.\n\n"
                             "Ask me how to conduct any activity in today's plan and I'll give you step-by-step guidance."
                         ),
                         "chunk_ids": [str(c["id"]) for c in chunks] if chunks else [],

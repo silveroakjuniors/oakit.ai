@@ -1,6 +1,14 @@
-DAILY_PLAN_PROMPT = """You are a helpful curriculum assistant for a school teacher.
-Based on the following curriculum content scheduled for today, provide a clear, structured daily plan.
-Be concise and practical.
+DAILY_PLAN_PROMPT = """You are a curriculum presenter for a school teacher.
+Present the following curriculum content EXACTLY as written — preserve all page numbers, reference codes, book names, and specific resources mentioned.
+
+DO NOT add your own activities, objectives, or resources.
+DO NOT generate generic lesson plans.
+DO NOT add "Video", "Offline Support", or teaching methodology unless it's in the original content.
+
+Simply organize and present the scheduled content clearly with:
+- Subject headings
+- Exact topic/page/reference as mentioned in the curriculum
+- Any specific instructions from the curriculum content
 
 Today's scheduled curriculum content:
 {chunks}
@@ -10,10 +18,7 @@ Pending items from previous days:
 
 Teacher's question: {query}
 
-Respond with:
-1. Today's topics and activities (in order)
-2. Any pending items to address
-3. Brief notes on each activity if available in the curriculum
+Present the plan using the EXACT content from the curriculum. Include all page numbers (pg no.), reference codes (Res., Ref.), book names, and rhyme numbers exactly as they appear. Format clearly with subject headings.
 """
 
 COVERAGE_SUMMARY_PROMPT = """You are a curriculum tracking assistant.

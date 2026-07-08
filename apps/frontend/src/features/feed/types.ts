@@ -8,8 +8,12 @@ export interface FeedPost {
   poster_name: string;
   poster_role: 'teacher' | 'admin' | 'principal';
   images: string[];
+  media_types?: string[];
   like_count: number;
   liked_by_me: boolean;
+  instagram_shares?: number;
+  facebook_shares?: number;
+  downloads?: number;
 }
 
 export interface FeedResponse {

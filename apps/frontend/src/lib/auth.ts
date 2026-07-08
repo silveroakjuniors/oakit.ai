@@ -53,6 +53,27 @@ export function getRoleRedirect(role: string): string {
   if (['teacher', 'class teacher', 'supporting teacher'].includes(r)) return '/teacher';
   if (r === 'parent') return '/parent';
   if (r === 'super_admin') return '/super-admin';
-  // Any unrecognised role — fall back to login so they don't get stuck
+  if (r === 'finance_manager') return '/admin';
   return '/login';
+}
+
+// Proper sign-out: calls logout API, clears local state, broadcasts to other tabs
+export async function signOut(): Promise<void> {
+  const token = getToken();
+  const base = (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_URL__) ||
+    process.env.NEXT_PUBLIC_API_URL || '';
+  if (token) {
+    try {
+      await fetch(`${base}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* ignore — still clear locally */ }
+  }
+  clearToken();
+  try {
+    const bc = new BroadcastChannel('oakit_session');
+    bc.postMessage({ type: 'LOGOUT' });
+    bc.close();
+  } catch { /* BroadcastChannel not supported */ }
 }

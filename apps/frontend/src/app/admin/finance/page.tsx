@@ -24,6 +24,11 @@ interface RecentTransaction {
   payment_date: string;
 }
 
+interface ReconPending {
+  count: number;
+  total_amount: number;
+}
+
 interface CashReconciliation {
   id: string;
   date: string;
@@ -31,31 +36,51 @@ interface CashReconciliation {
   status: string;
 }
 
+const ALL_TILES = [
+  { path: '/admin/finance/fees',                       icon: '💳', label: 'Fee Collection',       perm: 'COLLECT_PAYMENT' },
+  { path: '/admin/finance/concessions',                icon: '🎁', label: 'Concessions',           perm: 'MANAGE_CONCESSION' },
+  { path: '/admin/finance/reconciliation',             icon: '💵', label: 'Cash Reconciliation',   perm: 'VIEW_RECONCILIATION' },
+  { path: '/admin/finance/reconciliation/online',      icon: '🔍', label: 'Online Reconciliation', perm: 'VIEW_RECONCILIATION' },
+  { path: '/admin/finance/enquiries',                  icon: '📝', label: 'Admissions',            perm: 'VIEW_FEES' },
+  { path: '/admin/finance/fee-structures',             icon: '🏷️', label: 'Fee Structures',        perm: 'MANAGE_FEE_STRUCTURE' },
+  { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'VIEW_EXPENSE' },
+  { path: '/admin/finance/salary',                     icon: '👔', label: 'Salary',                perm: 'VIEW_SALARY' },
+  { path: '/admin/finance/reports',                    icon: '📈', label: 'Reports',               perm: 'VIEW_REPORTS' },
+  { path: '/admin/finance/profitability',              icon: '💹', label: 'Profitability',         perm: 'VIEW_PROFIT' },
+] as const;
+
 export default function FinanceDashboardPage() {
   const token = getToken() || '';
   const router = useRouter();
 
   const [dailyCollection, setDailyCollection] = useState<DailyCollection | null>(null);
   const [studentPending, setStudentPending] = useState<StudentPending | null>(null);
+  const [reconPending, setReconPending] = useState<ReconPending>({ count: 0, total_amount: 0 });
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
   const [cashTasks, setCashTasks] = useState<CashReconciliation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState<string[]>([]);
 
   useEffect(() => {
     loadDashboard();
+    apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+      .then(d => setPermissions(d.permissions || []))
+      .catch(() => {});
   }, []);
 
   async function loadDashboard() {
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
-      const [daily, pending, cash] = await Promise.all([
+      const [daily, pending, cash, recon] = await Promise.all([
         apiGet<DailyCollection>(`/api/v1/financial/reports/daily-collection?date=${today}`, token).catch(() => ({ total: 0, count: 0 })),
         apiGet<StudentPending>('/api/v1/financial/reports/student-pending', token).catch(() => ({ total_pending: 0, student_count: 0 })),
         apiGet<CashReconciliation[]>('/api/v1/financial/reconciliation/cash', token).catch(() => []),
+        apiGet<ReconPending>('/api/v1/financial/reports/reconciliation-pending', token).catch(() => ({ count: 0, total_amount: 0 })),
       ]);
       setDailyCollection(daily);
       setStudentPending(pending);
+      setReconPending(recon);
       setCashTasks(cash.filter(c => c.status === 'pending').slice(0, 5));
 
       // Fetch recent transactions (last 10)
@@ -83,19 +108,31 @@ export default function FinanceDashboardPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <StatCard
           label="Today's Collections"
           value={`₹${dailyCollection?.total.toLocaleString('en-IN') || 0}`}
-          subtitle={`${dailyCollection?.count || 0} payments`}
-          variant="success"
+          subvalue={`${dailyCollection?.count || 0} payments`}
+          color="success"
         />
         <StatCard
           label="Total Pending"
           value={`₹${studentPending?.total_pending.toLocaleString('en-IN') || 0}`}
-          subtitle={`${studentPending?.student_count || 0} students`}
-          variant="warning"
+          subvalue={`${studentPending?.student_count || 0} students`}
+          color="warning"
         />
+        <div
+          className={`rounded-2xl border p-4 cursor-pointer hover:shadow-md transition-shadow ${reconPending.count > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'}`}
+          onClick={() => router.push('/admin/finance/reconciliation/online')}
+        >
+          <p className="text-xs font-medium text-gray-500 mb-1">Reconciliation Pending</p>
+          <p className={`text-2xl font-black ${reconPending.count > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+            {reconPending.count > 0 ? `₹${reconPending.total_amount.toLocaleString('en-IN')}` : '—'}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {reconPending.count > 0 ? `${reconPending.count} payment${reconPending.count === 1 ? '' : 's'} awaiting bank match` : 'All payments reconciled'}
+          </p>
+        </div>
       </div>
 
       {/* Recent transactions */}
@@ -169,36 +206,18 @@ export default function FinanceDashboardPage() {
         </div>
       </Card>
 
-      {/* Navigation links */}
+      {/* Navigation links — filtered by permission */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <button
-          onClick={() => router.push('/admin/finance/fees')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">💳</span>
-          <p className="text-sm font-semibold text-gray-800">Fee Collection</p>
-        </button>
-        <button
-          onClick={() => router.push('/admin/finance/concessions')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">🎁</span>
-          <p className="text-sm font-semibold text-gray-800">Concessions</p>
-        </button>
-        <button
-          onClick={() => router.push('/admin/finance/reconciliation')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">🔍</span>
-          <p className="text-sm font-semibold text-gray-800">Reconciliation</p>
-        </button>
-        <button
-          onClick={() => router.push('/admin/finance/enquiries')}
-          className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
-        >
-          <span className="text-2xl block mb-2">📝</span>
-          <p className="text-sm font-semibold text-gray-800">Enquiries</p>
-        </button>
+        {ALL_TILES.filter(t => permissions.includes(t.perm)).map(({ path, icon, label }) => (
+          <button
+            key={path}
+            onClick={() => router.push(path)}
+            className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
+          >
+            <span className="text-2xl block mb-2">{icon}</span>
+            <p className="text-sm font-semibold text-gray-800">{label}</p>
+          </button>
+        ))}
       </div>
     </div>
   );

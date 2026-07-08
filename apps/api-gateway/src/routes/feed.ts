@@ -22,6 +22,10 @@ function getSupabase() {
 
 // ── Image compression (Req 1.3 — max 300KB) ──────────────────────────────────
 const MAX_IMAGE_BYTES = 300 * 1024; // 300 KB
+const MAX_VIDEO_SIZE = 25 * 1024 * 1024; // 25 MB (standard WhatsApp video size)
+const VIDEO_RETENTION_DAYS = 5; // Videos auto-delete after 5 days
+const VIDEO_MIMETYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp'];
+const IMAGE_MIMETYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 async function compressImage(inputPath: string, mimeType: string): Promise<Buffer> {
   try {
@@ -62,10 +66,10 @@ async function compressImage(inputPath: string, mimeType: string): Promise<Buffe
 
 const upload = multer({
   dest: UPLOAD_TMP,
-  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+  limits: { fileSize: MAX_VIDEO_SIZE, files: 5 },
   fileFilter: (_req, file, cb) => {
-    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Images must be JPEG, PNG or WebP'));
+    if ([...IMAGE_MIMETYPES, ...VIDEO_MIMETYPES].includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Files must be JPEG, PNG, WebP images or MP4, MOV, WebM videos'));
   },
 });
 
@@ -131,7 +135,8 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } | null 
 
 async function uploadFeedImage(
   localPath: string, schoolId: string, postId: string, scope: string,
-  sectionId: string | null, filename: string, mimeType: string
+  sectionId: string | null, filename: string, mimeType: string,
+  skipCompression: boolean = false
 ): Promise<{ storagePath: string; cdnUrl: string }> {
   const supabase = getSupabase();
   const ext = path.extname(filename) || '.jpg';
@@ -140,21 +145,29 @@ async function uploadFeedImage(
     ? `${schoolId}/memory-feed/school/${postId}/${safeName}`
     : `${schoolId}/memory-feed/sections/${sectionId}/${postId}/${safeName}`;
 
-  const buf = await compressImage(localPath, mimeType); // Req 1.3 — compress to ≤300KB
+  // Videos: upload raw (no compression). Images: compress to 300KB
+  const buf = skipCompression
+    ? fs.readFileSync(localPath)
+    : await compressImage(localPath, mimeType);
 
   if (!supabase) {
     const dir = path.resolve('./uploads/feed', postId);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const dest = path.join(dir, safeName);
     fs.writeFileSync(dest, buf);
+    console.log(`[feed-upload] local fallback: ${dest} (${buf.length} bytes)`);
     return { storagePath: dest, cdnUrl: `/uploads/feed/${postId}/${safeName}` };
   }
 
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(storagePath, buf, { contentType: mimeType, upsert: false });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
+  if (error) {
+    console.error(`[feed-upload] Supabase storage failed for ${storagePath}:`, error.message);
+    throw new Error(`Storage upload failed: ${error.message}`);
+  }
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
+  console.log(`[feed-upload] success: ${storagePath} → ${data.publicUrl} (${buf.length} bytes)`);
   return { storagePath, cdnUrl: data.publicUrl };
 }
 
@@ -206,6 +219,9 @@ router.get('/', async (req: Request, res: Response) => {
              s.label AS section_label,
              COALESCE(lc.cnt, 0) AS like_count,
              CASE WHEN ml.user_id IS NOT NULL THEN true ELSE false END AS liked_by_me,
+             COALESCE(ig.cnt, 0) AS instagram_shares,
+             COALESCE(fb.cnt, 0) AS facebook_shares,
+             COALESCE(dl.cnt, 0) AS downloads,
              ARRAY_AGG(fpi.cdn_url ORDER BY fpi.display_order)
                FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images
       FROM feed_posts fp
@@ -217,12 +233,15 @@ router.get('/', async (req: Request, res: Response) => {
         ON ml.post_id = fp.id
         AND ml.user_id = $${userIdIdx}
         AND ml.user_type = $${userTypeIdx}
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS cnt FROM feed_engagements WHERE action = 'instagram_share' GROUP BY post_id) ig ON ig.post_id = fp.id
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS cnt FROM feed_engagements WHERE action = 'facebook_share' GROUP BY post_id) fb ON fb.post_id = fp.id
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS cnt FROM feed_engagements WHERE action = 'download' GROUP BY post_id) dl ON dl.post_id = fp.id
       LEFT JOIN feed_post_images fpi ON fpi.post_id = fp.id
       WHERE ${scopeFilter}
         AND fp.expires_at > now()
         ${cursorFilter}
       GROUP BY fp.id, fp.caption, fp.created_at, fp.expires_at, fp.post_scope,
-               fp.poster_name, fp.poster_role, fp.section_id, s.label, lc.cnt, ml.user_id
+               fp.poster_name, fp.poster_role, fp.section_id, s.label, lc.cnt, ml.user_id, ig.cnt, fb.cnt, dl.cnt
       ORDER BY fp.created_at DESC, fp.id DESC
       LIMIT $${limitIdx}
     `;
@@ -242,6 +261,9 @@ router.get('/', async (req: Request, res: Response) => {
       images: r.images || [],
       like_count: Number(r.like_count),
       liked_by_me: Boolean(r.liked_by_me),
+      instagram_shares: Number(r.instagram_shares || 0),
+      facebook_shares: Number(r.facebook_shares || 0),
+      downloads: Number(r.downloads || 0),
     }));
 
     const lastPost = posts[posts.length - 1];
@@ -265,8 +287,16 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
 
   try {
     if (files.length === 0) {
-      return res.status(400).json({ error: 'At least one image is required' });
+      return res.status(400).json({ error: 'At least one image or video is required' });
     }
+
+    // Validate: videos limited to 1 per post, max 25MB each
+    const videoFiles = files.filter(f => VIDEO_MIMETYPES.includes(f.mimetype));
+    const imageFiles = files.filter(f => IMAGE_MIMETYPES.includes(f.mimetype));
+    if (videoFiles.length > 1) {
+      return res.status(400).json({ error: 'Maximum 1 video per post' });
+    }
+    const hasVideo = videoFiles.length > 0;
 
     const caption = (req.body.caption || '').trim().slice(0, 500) || null;
     const isAdmin = user.role === 'admin' || user.role === 'principal';
@@ -334,7 +364,9 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
       }
     }
 
-    const expiresAt = new Date(Date.now() + settings.retention_days * 86400000);
+    // Videos get shorter retention (5 days), images use default (20 days)
+    const retentionDays = hasVideo ? VIDEO_RETENTION_DAYS : settings.retention_days;
+    const expiresAt = new Date(Date.now() + retentionDays * 86400000);
 
     const postResult = await pool.query(
       `INSERT INTO feed_posts
@@ -345,23 +377,25 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
     );
     const postId = postResult.rows[0].id;
 
-    const imageRows: { storagePath: string; cdnUrl: string; order: number }[] = [];
+    const imageRows: { storagePath: string; cdnUrl: string; order: number; mediaType: string }[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const isVideo = VIDEO_MIMETYPES.includes(file.mimetype);
       const { storagePath, cdnUrl } = await uploadFeedImage(
         file.path, user.school_id, postId, postScope, sectionId,
-        file.originalname || `image${i}.jpg`, file.mimetype
+        file.originalname || `media${i}${isVideo ? '.mp4' : '.jpg'}`, file.mimetype,
+        isVideo // skip compression for videos
       );
       uploadedPaths.push(storagePath);
-      imageRows.push({ storagePath, cdnUrl, order: i });
+      imageRows.push({ storagePath, cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });
       fs.unlink(file.path, () => {});
     }
 
     for (const img of imageRows) {
       await pool.query(
-        `INSERT INTO feed_post_images (post_id, storage_path, cdn_url, display_order)
-         VALUES ($1, $2, $3, $4)`,
-        [postId, img.storagePath, img.cdnUrl, img.order]
+        `INSERT INTO feed_post_images (post_id, storage_path, cdn_url, display_order, media_type)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [postId, img.storagePath, img.cdnUrl, img.order, img.mediaType]
       );
     }
 
@@ -528,6 +562,85 @@ router.get('/stats', async (req: Request, res: Response) => {
     });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/v1/feed/posts/:id/engage ── Track shares & downloads ────────────
+
+router.post('/posts/:id/engage', async (req: Request, res: Response) => {
+  const user = req.user!;
+  const postId = req.params.id;
+  const { action } = req.body;
+
+  if (!['instagram_share', 'facebook_share', 'download'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid action. Must be instagram_share, facebook_share, or download' });
+  }
+
+  const userType = (user.role === 'parent') ? 'parent' : 'staff';
+
+  try {
+    await pool.query(
+      `INSERT INTO feed_engagements (post_id, user_id, user_type, school_id, action)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [postId, user.user_id, userType, user.school_id, action]
+    );
+
+    // Return updated counts
+    const counts = await pool.query(
+      `SELECT action, COUNT(*)::int AS cnt FROM feed_engagements WHERE post_id = $1 GROUP BY action`,
+      [postId]
+    );
+    const result: Record<string, number> = { instagram_share: 0, facebook_share: 0, download: 0 };
+    counts.rows.forEach((r: any) => { result[r.action] = r.cnt; });
+
+    return res.json(result);
+  } catch (err) {
+    console.error('[feed engage]', err);
+    return res.status(500).json({ error: 'Failed to track engagement' });
+  }
+});
+
+// ── POST /api/v1/feed/generate-caption ── Ask Oakie for a feed caption ────────
+
+router.post('/generate-caption', async (req: Request, res: Response) => {
+  try {
+    const { has_video, file_count, current_caption } = req.body;
+    const axios = (await import('axios')).default;
+    const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+    try {
+      const aiResp = await axios.post(`${AI_URL}/internal/query`, {
+        message: `You are writing a short Instagram-style caption for a preschool class feed post. The teacher typed: "${current_caption || 'classroom activity'}". Write a warm, engaging 2-3 sentence caption that describes this activity in a parent-friendly way. Include what the children might be learning. Do NOT use emojis. Return ONLY the caption text.`,
+        school_id: req.user!.school_id,
+        teacher_id: req.user!.user_id,
+      }, { timeout: 15000 });
+
+      const caption = (aiResp.data?.answer || aiResp.data?.response || '').trim().slice(0, 500);
+      if (caption) return res.json({ caption });
+    } catch { /* AI service unavailable — use fallback */ }
+
+    // Smart fallback — incorporate teacher's text
+    const topic = (current_caption || '').trim();
+    if (topic) {
+      const templates = [
+        `Today our little learners explored "${topic}" through hands-on activities. Watch them discover and grow every single day!`,
+        `A fun and engaging session on "${topic}" in class today. Our children are building strong foundations through play and curiosity.`,
+        `"${topic}" was the highlight of our classroom today. These young minds never stop surprising us with their enthusiasm to learn!`,
+        `Our class had a wonderful time learning about "${topic}" today. Every child participated with such joy and curiosity.`,
+      ];
+      return res.json({ caption: templates[Math.floor(Math.random() * templates.length)] });
+    }
+
+    const fallbacks = [
+      'A wonderful day of learning and laughter in our classroom today!',
+      'Moments that make teaching special. Watch our little learners grow every day.',
+      'Learning through play and exploration. Today was a beautiful day in class!',
+      'Our classroom was full of energy and curiosity today. So proud of these young minds!',
+    ];
+    return res.json({ caption: fallbacks[Math.floor(Math.random() * fallbacks.length)] });
+  } catch (err) {
+    console.error('[feed generate-caption]', err);
+    return res.status(500).json({ error: 'Failed to generate caption' });
   }
 });
 

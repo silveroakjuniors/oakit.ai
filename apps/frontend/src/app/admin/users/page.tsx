@@ -273,6 +273,9 @@ export default function UsersPage() {
   const [showAddUser, setShowAddUser] = useState(false);
   const [editRole, setEditRole] = useState<Role | null | 'new'>(null);
   const [changingRole, setChangingRole] = useState<{ userId: string; current: string } | null>(null);
+  const [editingName, setEditingName] = useState<{ userId: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null);
   const token = getToken() || '';
 
   async function load() {
@@ -305,6 +308,25 @@ export default function UsersPage() {
     await load();
   }
 
+  async function deleteUser(id: string, name: string) {
+    setDeleteConfirm({ id, name });
+  }
+
+  async function confirmDelete() {
+    if (!deleteConfirm) return;
+    const res = await fetch(`${API_BASE}/api/v1/admin/users/${deleteConfirm.id}/permanent`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setDeleteSuccess(`"${deleteConfirm.name}" has been permanently deleted.`);
+    } else {
+      setDeleteSuccess(`Failed: ${data.error || 'Unknown error'}`);
+    }
+    setDeleteConfirm(null);
+    await load();
+  }
+
   async function changeRole(userId: string, role_name: string) {
     await fetch(`${API_BASE}/api/v1/admin/users/${userId}/role`, {
       method: 'PUT',
@@ -312,6 +334,17 @@ export default function UsersPage() {
       body: JSON.stringify({ role_name }),
     });
     setChangingRole(null);
+    await load();
+  }
+
+  async function saveName(userId: string, name: string) {
+    if (!name.trim()) return;
+    await fetch(`${API_BASE}/api/v1/admin/users/${userId}/name`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    setEditingName(null);
     await load();
   }
 
@@ -362,7 +395,23 @@ export default function UsersPage() {
               <tbody>
                 {users.map(u => (
                   <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                    <td className="py-3 pr-4 font-medium text-gray-800">{u.name}</td>
+                    <td className="py-3 pr-4 font-medium text-gray-800">
+                      {editingName?.userId === u.id ? (
+                        <input
+                          autoFocus
+                          defaultValue={editingName.name}
+                          className="text-sm border border-gray-300 rounded px-2 py-1 w-full"
+                          onKeyDown={e => { if (e.key === 'Enter') saveName(u.id, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setEditingName(null); }}
+                          onBlur={e => saveName(u.id, e.target.value)}
+                        />
+                      ) : (
+                        <button onClick={() => setEditingName({ userId: u.id, name: u.name })}
+                          className="group flex items-center gap-1 hover:text-primary-600 transition-colors">
+                          {u.name}
+                          <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100">&#9998;</span>
+                        </button>
+                      )}
+                    </td>
                     <td className="py-3 pr-4 text-gray-500">{u.mobile || '—'}</td>
                     <td className="py-3 pr-4">
                       {changingRole?.userId === u.id ? (
@@ -395,11 +444,14 @@ export default function UsersPage() {
                     </td>
                     <td className="py-3 text-right">
                       <div className="flex gap-2 justify-end">
-                        {u.mobile && (
+                        {u.mobile && u.role !== 'principal' && u.role !== 'admin' && (
                           <Button variant="ghost" size="sm" onClick={() => resetPassword(u.id, u.name)}>Reset Password</Button>
                         )}
-                        {u.is_active && (
+                        {u.is_active && u.role !== 'principal' && u.role !== 'admin' && (
                           <Button variant="danger" size="sm" onClick={() => deactivate(u.id)}>Deactivate</Button>
+                        )}
+                        {!u.is_active && u.role !== 'principal' && u.role !== 'admin' && (
+                          <Button variant="danger" size="sm" onClick={() => deleteUser(u.id, u.name)}>Delete</Button>
                         )}
                       </div>
                     </td>
@@ -460,6 +512,51 @@ export default function UsersPage() {
           onClose={() => setEditRole(null)}
           onSaved={load}
         />
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete User</h3>
+            <p className="text-sm text-gray-600 text-center mb-6">
+              Permanently delete <strong>{deleteConfirm.name}</strong>? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)}
+                className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmDelete}
+                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete success/error popup */}
+      {deleteSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <p className="text-sm text-gray-700 mb-5">{deleteSuccess}</p>
+            <button onClick={() => setDeleteSuccess(null)}
+              className="px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors">
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

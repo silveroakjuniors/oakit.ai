@@ -1,19 +1,29 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, FormEvent, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
 import { apiPost, apiGet } from '@/lib/api';
 import { getToken, getRole } from '@/lib/auth';
 
 interface SecurityQuestion { id: string; text: string; }
 
-export default function ChangePasswordPage() {
+export default function ChangePasswordPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-bg flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" /></div>}>
+      <ChangePasswordPage />
+    </Suspense>
+  );
+}
+
+function ChangePasswordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const token = getToken() || '';
   const role = getRole() || '';
   const isParent = role === 'parent';
-  const [step, setStep] = useState<'password' | 'security'>('password');
+  const initialStep = searchParams.get('step') === 'security' ? 'security' : 'password';
+  const [step, setStep] = useState<'password' | 'security' | 'done'>(initialStep);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [questions, setQuestions] = useState<SecurityQuestion[]>([]);
@@ -24,11 +34,10 @@ export default function ChangePasswordPage() {
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
-    if (!isParent) {
-      apiGet<SecurityQuestion[]>('/api/v1/auth/security-questions', token)
-        .then(setQuestions)
-        .catch(console.error);
-    }
+    // Both parents and staff need security questions
+    apiGet<SecurityQuestion[]>('/api/v1/auth/security-questions', token)
+      .then(setQuestions)
+      .catch(console.error);
   }, []);
 
   async function handlePasswordChange(e: FormEvent) {
@@ -45,11 +54,8 @@ export default function ChangePasswordPage() {
     setLoading(true);
     try {
       await apiPost('/api/v1/auth/change-password', { new_password: newPassword }, token);
-      if (isParent) {
-        router.push('/parent');
-      } else {
-        setStep('security');
-      }
+      // All users (including parents) get the security question step
+      setStep('security');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to change password');
     } finally {
@@ -70,11 +76,7 @@ export default function ChangePasswordPage() {
         security_question_id: selectedQuestion,
         answer: answer.trim(),
       }, token);
-      // Redirect based on role
-      const redirectMap: Record<string, string> = {
-        admin: '/admin', principal: '/principal', teacher: '/teacher',
-      };
-      router.push(redirectMap[role] || '/teacher');
+      setStep('done');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to set security question');
     } finally {
@@ -85,10 +87,16 @@ export default function ChangePasswordPage() {
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {step === 'password' ? (
+        {step === 'password' && (
           <Card padding="lg">
-            <h1 className="text-xl font-semibold text-gray-800 mb-2">Change Your Password</h1>
-            <p className="text-sm text-gray-500 mb-6">You must set a new password before continuing.</p>
+            <h1 className="text-xl font-semibold text-gray-800 mb-2">
+              {isParent ? 'Welcome! Set Your Password' : 'Change Your Password'}
+            </h1>
+            <p className="text-sm text-gray-500 mb-6">
+              {isParent
+                ? 'Your account has been set up. Please create a new password to secure your account.'
+                : 'You must set a new password before continuing.'}
+            </p>
             <form onSubmit={handlePasswordChange} className="flex flex-col gap-4">
               <Input
                 label="New Password"
@@ -112,10 +120,16 @@ export default function ChangePasswordPage() {
               <Button type="submit" loading={loading} className="w-full">Set Password</Button>
             </form>
           </Card>
-        ) : (
+        )}
+
+        {step === 'security' && (
           <Card padding="lg">
             <h1 className="text-xl font-semibold text-gray-800 mb-2">Set Security Question</h1>
-            <p className="text-sm text-gray-500 mb-6">This will be used to recover your account if you forget your password.</p>
+            <p className="text-sm text-gray-500 mb-6">
+              {isParent
+                ? 'Set a security question so you can reset your password if you ever forget it.'
+                : 'This will be used to recover your account if you forget your password.'}
+            </p>
             <form onSubmit={handleSecuritySetup} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium text-gray-700">Security Question</label>
@@ -142,6 +156,25 @@ export default function ChangePasswordPage() {
               )}
               <Button type="submit" loading={loading} className="w-full">Save & Continue</Button>
             </form>
+          </Card>
+        )}
+
+        {step === 'done' && (
+          <Card padding="lg">
+            <div className="text-center py-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              <h1 className="text-xl font-bold text-gray-900 mb-2">All Set!</h1>
+              <p className="text-sm text-gray-500 mb-6">
+                Your password has been changed and security question saved successfully. Please login with your new password.
+              </p>
+              <Button onClick={() => router.push('/login')} className="w-full">
+                Login Now
+              </Button>
+            </div>
           </Card>
         )}
       </div>

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, clearToken } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
+import InlineMicButton from '@/components/InlineMicButton';
 
 interface Thread {
   parent_id: string; student_id: string; parent_name: string; parent_mobile: string;
@@ -139,6 +140,7 @@ export default function TeacherMessagesPage() {
             <div className="bg-white border-t border-neutral-200 px-4 py-3 shrink-0">
               {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
               <div className="flex gap-2">
+                <InlineMicButton token={token} onTranscript={t => setBody(prev => prev ? prev + ' ' + t : t)} />
                 <textarea value={body} onChange={e => setBody(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                   placeholder="Type a message..." rows={1} maxLength={1000}

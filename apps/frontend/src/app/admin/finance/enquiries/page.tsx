@@ -82,6 +82,7 @@ export default function EnquiriesPage() {
   const [allEnquiries, setAllEnquiries] = useState<Enquiry[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Create form
   const [showCreate, setShowCreate] = useState(false);
@@ -184,6 +185,17 @@ export default function EnquiriesPage() {
       await apiPut(`/api/v1/financial/enquiries/${id}`, { status: 'closed' }, token);
       await loadEnquiries();
     } catch { /* ignore */ }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Remove this enquiry? This cannot be undone.')) return;
+    setDeletingId(id);
+    try {
+      await apiPut(`/api/v1/financial/enquiries/${id}`, { status: 'closed' }, token);
+      setAllEnquiries(prev => prev.filter(e => e.id !== id));
+      setEnquiries(prev => prev.filter(e => e.id !== id));
+    } catch { /* ignore */ }
+    finally { setDeletingId(null); }
   }
 
   function openConvert(enquiry: Enquiry) {
@@ -416,51 +428,81 @@ export default function EnquiriesPage() {
         {loading ? (
           <p className="text-sm text-gray-400 py-6 text-center">Loading…</p>
         ) : (
-          <div className="space-y-2">
-            {enquiries.map(enq => (
-              <div key={enq.id} className="flex items-start justify-between p-3 rounded-lg bg-gray-50 border border-gray-100">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-semibold text-gray-800">{enq.student_name}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      enq.status === 'converted' ? 'bg-green-100 text-green-700' :
-                      enq.status === 'closed' ? 'bg-gray-100 text-gray-600' :
-                      'bg-blue-100 text-blue-700'
-                    }`}>{enq.status}</span>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    Parent: {enq.parent_name} · {enq.contact_number}
-                  </p>
-                  {enq.class_of_interest && (
-                    <p className="text-xs text-gray-500">Class: {enq.class_of_interest}{enq.child_age ? ` · Age: ${enq.child_age}` : ''}</p>
-                  )}
-                  {enq.notes && <p className="text-xs text-gray-400 mt-1 truncate max-w-xs">{enq.notes}</p>}
-                </div>
-                <div className="flex gap-2 flex-shrink-0 ml-3">
-                  {enq.status === 'open' && (
-                    <>
-                      <button
-                        onClick={() => openConvert(enq)}
-                        className="text-xs px-3 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-medium"
-                      >
-                        Convert
-                      </button>
-                      <button
-                        onClick={() => handleClose(enq.id)}
-                        className="text-xs px-3 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200"
-                      >
-                        Close
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-            {enquiries.length === 0 && (
-              <p className="text-sm text-gray-400 py-6 text-center">
-                {search ? 'No enquiries match your search' : 'No enquiries found'}
-              </p>
-            )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="py-2 px-2 text-xs font-medium text-gray-400 w-8">#</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Student</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Parent / Contact</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-gray-500">Class</th>
+                  <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Date</th>
+                  <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Status</th>
+                  <th className="text-center py-2 px-3 text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {enquiries.map((enq, idx) => (
+                  <tr key={enq.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="py-2 px-2 text-center text-xs text-gray-400">{idx + 1}</td>
+                    <td className="py-2 px-3">
+                      <p className="font-medium text-gray-800">{enq.student_name}</p>
+                      {enq.child_age && <p className="text-xs text-gray-400">Age: {enq.child_age}</p>}
+                    </td>
+                    <td className="py-2 px-3">
+                      <p className="text-gray-700">{enq.parent_name}</p>
+                      <p className="text-xs text-gray-400">{enq.contact_number}</p>
+                    </td>
+                    <td className="py-2 px-3 text-gray-600 text-xs">{enq.class_of_interest || '—'}</td>
+                    <td className="py-2 px-3 text-center text-gray-500 text-xs">
+                      {new Date(enq.enquiry_date).toLocaleDateString('en-IN')}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        enq.status === 'converted' ? 'bg-green-100 text-green-700' :
+                        enq.status === 'closed' ? 'bg-gray-100 text-gray-500' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>{enq.status}</span>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <div className="flex gap-1.5 justify-center">
+                        {enq.status === 'open' && (
+                          <>
+                            <button
+                              onClick={() => openConvert(enq)}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-medium"
+                            >
+                              Convert
+                            </button>
+                            <button
+                              onClick={() => handleClose(enq.id)}
+                              className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200"
+                            >
+                              Close
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleDelete(enq.id)}
+                          disabled={deletingId === enq.id}
+                          className="text-xs px-2.5 py-1 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 disabled:opacity-50"
+                          title="Remove enquiry"
+                        >
+                          {deletingId === enq.id ? '…' : '✕'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {enquiries.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-gray-400 text-sm">
+                      {search ? 'No enquiries match your search' : 'No enquiries found'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>

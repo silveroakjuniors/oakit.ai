@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiGet, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Card, Button } from '@/components/ui';
+import { useAcademicCalendar } from '@/hooks/useAcademicCalendar';
 
 type ReportType =
   | 'revenue'
@@ -47,6 +48,7 @@ function getUserRole(token: string): string {
 
 export default function ReportsPage() {
   const token = getToken() || '';
+  const { today } = useAcademicCalendar(token);
   const userRole = getUserRole(token);
   const isPrincipal = userRole === 'principal' || userRole === 'super_admin';
 
@@ -75,8 +77,14 @@ export default function ReportsPage() {
       if (Array.isArray(data)) {
         setReportData(data);
       } else if (data && typeof data === 'object') {
-        // Wrap single object in array for table rendering
-        setReportData([data as Record<string, unknown>]);
+        // daily-collection returns { date, payments: [...], total }
+        const obj = data as Record<string, unknown>;
+        if (Array.isArray(obj.payments)) {
+          setReportData(obj.payments as Record<string, unknown>[]);
+        } else {
+          // Wrap single summary object in array for table rendering
+          setReportData([obj]);
+        }
       } else {
         setReportData([]);
       }
@@ -135,11 +143,13 @@ export default function ReportsPage() {
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
             <input type="date" className="px-3 py-2 rounded-lg border border-gray-300 text-sm"
+              max={today}
               value={fromDate} onChange={e => setFromDate(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
             <input type="date" className="px-3 py-2 rounded-lg border border-gray-300 text-sm"
+              max={today}
               value={toDate} onChange={e => setToDate(e.target.value)} />
           </div>
           <Button onClick={fetchReport} disabled={loading}>

@@ -16,6 +16,7 @@ export default function TeacherFeedPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [sectionId, setSectionId] = useState('');
+  const [instagramHandle, setInstagramHandle] = useState('');
 
   const loadFeed = useCallback(async (nextCursor?: string) => {
     const isFirst = !nextCursor;
@@ -33,9 +34,17 @@ export default function TeacherFeedPage() {
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
-    // Get section id from context
+    // Get section id from context — endpoint returns array with section_id field
     fetch(`${API_BASE}/api/v1/teacher/sections`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => { if (d.sections?.[0]?.id) setSectionId(d.sections[0].id); }).catch(() => {});
+      .then(r => r.json()).then(d => {
+        const list = Array.isArray(d) ? d : d.sections || [];
+        if (list[0]?.section_id) setSectionId(list[0].section_id);
+        else if (list[0]?.id) setSectionId(list[0].id);
+      }).catch(() => {});
+    // Get school instagram handle
+    fetch(`${API_BASE}/api/v1/public/school-info`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => { if (d?.instagram_handle) setInstagramHandle(d.instagram_handle); })
+      .catch(() => {});
     loadFeed();
   }, [token, router, loadFeed]);
 
@@ -59,10 +68,11 @@ export default function TeacherFeedPage() {
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center justify-between"
+        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
         <div className="flex items-center gap-3">
-          <button onClick={() => router.back()} className="text-neutral-400 hover:text-neutral-600 text-xl">‹</button>
-          <p className="text-sm font-semibold text-neutral-800">📸 Class Feed</p>
+          <button onClick={() => router.back()} className="text-neutral-400 hover:text-neutral-600 text-xl">&#8249;</button>
+          <p className="text-sm font-semibold text-neutral-800">Class Feed</p>
         </div>
         <button
           onClick={() => setShowUpload(true)}
@@ -84,9 +94,11 @@ export default function TeacherFeedPage() {
           ))
         ) : posts.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-4xl mb-3">📸</p>
+            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-neutral-100 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            </div>
             <p className="text-sm font-semibold text-neutral-600">No posts yet</p>
-            <p className="text-xs text-neutral-400 mt-1">Share today's class moments with parents</p>
+            <p className="text-xs text-neutral-400 mt-1">Share today&apos;s class moments with parents</p>
             <button
               onClick={() => setShowUpload(true)}
               className="mt-4 px-4 py-2 bg-primary-600 text-white text-sm font-semibold rounded-xl"
@@ -103,6 +115,7 @@ export default function TeacherFeedPage() {
                 onLike={handleLike}
                 onDelete={handleDelete}
                 canDelete={true}
+                instagramHandle={instagramHandle}
               />
             ))}
             {cursor && (
