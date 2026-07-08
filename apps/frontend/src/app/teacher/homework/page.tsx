@@ -20,7 +20,7 @@ interface NoteItem {
 
 type HwStatus = 'completed' | 'partial' | 'not_submitted';
 
-const SUBJECTS = ['English Speaking', 'English', 'Math', 'GK', 'Writing', 'Art', 'Science', 'EVS', 'Hindi', 'Kannada', 'Circle Time', 'Morning Meet', 'Other'];
+const SUBJECTS = ['English Speaking', 'English', 'Math', 'GK', 'Writing', 'Art', 'Science', 'EVS', 'Kannada', 'Circle Time', 'Morning Meet', 'Other'];
 
 export default function HomeworkNotesPage() {
   const router = useRouter();
