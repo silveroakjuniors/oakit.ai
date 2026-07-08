@@ -255,11 +255,15 @@ router.post('/:id/reset-password', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
     const userRow = await pool.query(
-      'SELECT id, mobile FROM users WHERE id = $1 AND school_id = $2',
+      `SELECT u.id, u.mobile, r.name AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1 AND u.school_id = $2`,
       [req.params.id, school_id]
     );
     if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    const { mobile } = userRow.rows[0];
+    const { mobile, role } = userRow.rows[0];
+    // Block admin from resetting principal or admin passwords
+    if (role === 'principal' || role === 'admin') {
+      return res.status(403).json({ error: 'Cannot reset password for principal or admin accounts' });
+    }
     const bcrypt = require('bcryptjs');
     const password_hash = await bcrypt.hash(mobile, 12);
     await pool.query(
@@ -305,6 +309,70 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.json({ message: 'User deactivated' });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/v1/admin/users/:id/name — update user display name
+router.put('/:id/name', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+    const result = await pool.query(
+      'UPDATE users SET name = $1 WHERE id = $2 AND school_id = $3 RETURNING id, name',
+      [name.trim(), req.params.id, school_id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[admin/users PUT name]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/v1/admin/users/:id/permanent — permanently delete a deactivated user
+router.delete('/:id/permanent', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const check = await pool.query(
+      'SELECT id, name, is_active FROM users WHERE id = $1 AND school_id = $2',
+      [req.params.id, school_id]
+    );
+    if (check.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    if (check.rows[0].is_active) return res.status(400).json({ error: 'Cannot delete active user. Deactivate first.' });
+
+    const userId = req.params.id;
+
+    // Clean up ALL known foreign key references (fire-and-forget pattern)
+    const cleanups = [
+      'DELETE FROM teacher_sections WHERE teacher_id = $1',
+      'DELETE FROM teacher_streaks WHERE teacher_id = $1',
+      'DELETE FROM ai_credit_transactions WHERE actor_id = $1',
+      'DELETE FROM ai_usage_logs WHERE actor_id = $1',
+      'DELETE FROM push_subscriptions WHERE user_id = $1',
+      'DELETE FROM audit_logs WHERE actor_id = $1::text',
+      'UPDATE daily_completions SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE child_journey_entries SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE student_observations SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE teacher_homework SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE teacher_notes SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE coverage_logs SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE feed_posts SET posted_by = NULL WHERE posted_by = $1',
+      'UPDATE student_milestones SET teacher_id = NULL WHERE teacher_id = $1',
+      'UPDATE salary_records SET created_by = NULL WHERE created_by = $1',
+      'DELETE FROM staff_salary_config WHERE user_id = $1',
+    ];
+    for (const sql of cleanups) {
+      await pool.query(sql, [userId]).catch(() => {});
+    }
+
+    // Final delete
+    await pool.query('DELETE FROM users WHERE id = $1 AND school_id = $2', [userId, school_id]);
+
+    return res.json({ success: true, message: `User "${check.rows[0].name}" permanently deleted` });
+  } catch (err) {
+    console.error('[admin/users DELETE permanent]', err);
+    return res.status(500).json({ error: 'Failed to delete user. They may have linked records.' });
   }
 });
 

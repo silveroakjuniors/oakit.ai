@@ -20,15 +20,18 @@ router.get('/history', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Not authorized' });
 
     const result = await pool.query(
-      `SELECT hs.homework_date, hs.status, hs.teacher_note, hs.recorded_at,
-              th.formatted_text as homework_text
-       FROM homework_submissions hs
-       LEFT JOIN students s ON s.id = hs.student_id
-       LEFT JOIN teacher_homework th ON th.section_id = s.section_id AND th.homework_date = hs.homework_date
-       WHERE hs.student_id = $1
-       ORDER BY hs.homework_date DESC
-       LIMIT $2`,
-      [student_id, parseInt(limit)]
+      `SELECT th.homework_date::text AS homework_date,
+              COALESCE(hs.status, 'pending') AS status,
+              hs.teacher_note,
+              hs.recorded_at,
+              COALESCE(th.formatted_text, th.raw_text) as homework_text
+       FROM teacher_homework th
+       JOIN students s ON s.section_id = th.section_id AND s.id = $1
+       LEFT JOIN homework_submissions hs ON hs.student_id = $1 AND hs.homework_date = th.homework_date
+       WHERE th.school_id = $2 AND th.chunk_id IS NULL
+       ORDER BY th.homework_date DESC
+       LIMIT $3`,
+      [student_id, school_id, parseInt(limit)]
     );
     return res.json(result.rows);
   } catch (err) {

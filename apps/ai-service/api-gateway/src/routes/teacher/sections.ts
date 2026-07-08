@@ -50,7 +50,7 @@ router.get('/:sectionId/students', async (req: Request, res: Response) => {
     if (!allowed) return res.status(403).json({ error: 'Not authorized for this section' });
 
     const result = await pool.query(
-      `SELECT s.id, s.name, s.photo_path,
+      `SELECT s.id, s.name, s.photo_path, s.gender,
               c.name as class_name, sec.label as section_label
        FROM students s
        JOIN classes c ON c.id = s.class_id

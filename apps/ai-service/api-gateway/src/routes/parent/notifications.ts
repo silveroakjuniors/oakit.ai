@@ -13,20 +13,13 @@ router.get('/', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT
          pn.id,
-         pn.completion_date,
+         pn.completion_date::text AS completion_date,
          pn.chunks_covered,
          pn.is_read,
          pn.created_at,
-         c.name || ' - Section ' || s.label AS section_name,
-         (SELECT string_agg(cc.topic_label, ', ' ORDER BY cc.chunk_index)
-          FROM daily_completions dc
-          JOIN LATERAL unnest(dc.covered_chunk_ids) AS cid ON true
-          JOIN curriculum_chunks cc ON cc.id = cid
-          WHERE dc.id = pn.completion_id
-         ) AS topics_summary
+         s.label AS section_name
        FROM parent_notifications pn
        JOIN sections s ON s.id = pn.section_id
-       JOIN classes c ON c.id = s.class_id
        WHERE pn.parent_id = $1 AND pn.is_read = false
        ORDER BY pn.created_at DESC`,
       [user_id]

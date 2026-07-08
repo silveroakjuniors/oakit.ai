@@ -33,6 +33,54 @@ router.get('/school-info', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/auth/check-first-login — check if user needs password setup (no auth required)
+router.post('/check-first-login', async (req: Request, res: Response) => {
+  try {
+    const { school_code, mobile } = req.body;
+    if (!school_code || !mobile) return res.status(400).json({ error: 'school_code and mobile required' });
+
+    const schoolResult = await pool.query(
+      'SELECT id FROM schools WHERE subdomain = $1 AND status != $2',
+      [school_code.toLowerCase(), 'inactive']
+    );
+    if (schoolResult.rows.length === 0) return res.json({ is_first_login: false });
+    const school_id = schoolResult.rows[0].id;
+
+    // Check staff users
+    const userResult = await pool.query(
+      'SELECT id, force_password_reset, name FROM users WHERE mobile = $1 AND school_id = $2 AND is_active = true',
+      [mobile.trim(), school_id]
+    );
+    if (userResult.rows.length > 0 && userResult.rows[0].force_password_reset) {
+      return res.json({ is_first_login: true, name: userResult.rows[0].name, account_type: 'staff' });
+    }
+
+    // Check parent users
+    const parentResult = await pool.query(
+      `SELECT pu.id, pu.force_password_reset, pu.name AS parent_name,
+              s.name AS child_name
+       FROM parent_users pu
+       LEFT JOIN parent_student_links psl ON psl.parent_id = pu.id
+       LEFT JOIN students s ON s.id = psl.student_id
+       WHERE pu.mobile = $1 AND pu.school_id = $2 AND pu.is_active = true
+       LIMIT 1`,
+      [mobile.trim(), school_id]
+    );
+    if (parentResult.rows.length > 0 && parentResult.rows[0].force_password_reset) {
+      return res.json({
+        is_first_login: true,
+        name: parentResult.rows[0].parent_name,
+        child_name: parentResult.rows[0].child_name,
+        account_type: 'parent',
+      });
+    }
+
+    return res.json({ is_first_login: false });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/v1/auth/login
 router.post('/login', loginThrottle, async (req: Request, res: Response) => {
   try {
@@ -171,7 +219,7 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
 
     // Fallback: try parent_users table
     const parentResult = await pool.query(
-      `SELECT id, password_hash, is_active, force_password_reset, mobile
+      `SELECT id, password_hash, is_active, force_password_reset, mobile, security_question_id
        FROM parent_users WHERE mobile = $1 AND school_id = $2`,
       [identifier, school_id]
     );
@@ -208,7 +256,13 @@ router.post('/login', loginThrottle, async (req: Request, res: Response) => {
     // Update last_login timestamp
     pool.query('UPDATE parent_users SET last_login = now() WHERE id = $1', [parent.id]).catch(() => {});
 
-    return res.json({ token: parentToken, role: 'parent', force_password_reset: parent.force_password_reset, also_staff_role });
+    return res.json({
+      token: parentToken,
+      role: 'parent',
+      force_password_reset: parent.force_password_reset,
+      security_question_missing: !parent.security_question_id,
+      also_staff_role,
+    });
 
   } catch (err) {
     console.error('Login error:', err);
@@ -424,11 +478,13 @@ router.post('/setup-security-question', jwtVerify, async (req: Request, res: Res
     const hash = await bcrypt.hash(answer.trim().toLowerCase(), 12);
 
     if ((role as string) === 'parent') {
+      // Parent — update parent_users table
       await pool.query(
         'UPDATE parent_users SET security_question_id = $1, security_answer_hash = $2 WHERE id = $3',
         [security_question_id, hash, user_id]
       );
     } else {
+      // Staff — update users table
       await pool.query(
         'UPDATE users SET security_question_id = $1, security_answer_hash = $2 WHERE id = $3',
         [security_question_id, hash, user_id]
@@ -458,23 +514,41 @@ router.post('/forgot-password/init', async (req: Request, res: Response) => {
     }
     const school_id = schoolResult.rows[0].id;
 
+    // Check staff users first
     const userResult = await pool.query(
-      `SELECT u.id, sq.text as question_text
+      `SELECT u.id, sq.text as question_text, 'staff' as account_type
        FROM users u
        LEFT JOIN security_questions sq ON u.security_question_id = sq.id
        WHERE u.mobile = $1 AND u.school_id = $2`,
       [mobile, school_id]
     );
-    if (userResult.rows.length === 0) {
+
+    if (userResult.rows.length > 0) {
+      const user = userResult.rows[0];
+      if (!user.question_text) {
+        return res.status(400).json({ error: 'No security question set for this account. Contact your admin to reset your password.' });
+      }
+      return res.json({ user_id: user.id, question: user.question_text, account_type: 'staff' });
+    }
+
+    // Fallback: check parent_users
+    const parentResult = await pool.query(
+      `SELECT pu.id, sq.text as question_text, 'parent' as account_type
+       FROM parent_users pu
+       LEFT JOIN security_questions sq ON pu.security_question_id = sq.id
+       WHERE pu.mobile = $1 AND pu.school_id = $2`,
+      [mobile, school_id]
+    );
+
+    if (parentResult.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const user = userResult.rows[0];
-    if (!user.question_text) {
-      return res.status(400).json({ error: 'No security question set for this account' });
+    const parent = parentResult.rows[0];
+    if (!parent.question_text) {
+      return res.status(400).json({ error: 'No security question set for this account. Contact your admin to reset your password.' });
     }
-
-    return res.json({ user_id: user.id, question: user.question_text });
+    return res.json({ user_id: parent.id, question: parent.question_text, account_type: 'parent' });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -483,29 +557,39 @@ router.post('/forgot-password/init', async (req: Request, res: Response) => {
 // POST /api/v1/auth/forgot-password/verify
 router.post('/forgot-password/verify', async (req: Request, res: Response) => {
   try {
-    const { user_id, answer } = req.body;
+    const { user_id, answer, account_type } = req.body;
     if (!user_id || !answer) {
       return res.status(400).json({ error: 'user_id and answer are required' });
     }
 
-    const userResult = await pool.query(
-      'SELECT security_answer_hash FROM users WHERE id = $1',
-      [user_id]
-    );
-    if (userResult.rows.length === 0) {
+    // Check staff users first, then parent_users
+    let securityAnswerHash: string | null = null;
+
+    if (account_type === 'parent') {
+      const parentResult = await pool.query(
+        'SELECT security_answer_hash FROM parent_users WHERE id = $1',
+        [user_id]
+      );
+      securityAnswerHash = parentResult.rows[0]?.security_answer_hash || null;
+    } else {
+      const userResult = await pool.query(
+        'SELECT security_answer_hash FROM users WHERE id = $1',
+        [user_id]
+      );
+      securityAnswerHash = userResult.rows[0]?.security_answer_hash || null;
+    }
+
+    if (!securityAnswerHash) {
       return res.status(401).json({ error: 'Incorrect answer' });
     }
 
-    const { security_answer_hash } = userResult.rows[0];
-    if (!security_answer_hash) return res.status(401).json({ error: 'Incorrect answer' });
-
-    const valid = await bcrypt.compare(answer.trim().toLowerCase(), security_answer_hash);
+    const valid = await bcrypt.compare(answer.trim().toLowerCase(), securityAnswerHash);
     if (!valid) return res.status(401).json({ error: 'Incorrect answer' });
 
     // Issue short-lived reset token
     const import_jwt = require('jsonwebtoken');
     const resetToken = import_jwt.sign(
-      { user_id, purpose: 'password_reset' },
+      { user_id, purpose: 'password_reset', account_type: account_type || 'staff' },
       process.env.JWT_SECRET || 'change_me',
       { expiresIn: '15m' }
     );
@@ -536,18 +620,41 @@ router.post('/forgot-password/reset', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid reset token' });
     }
 
-    // Validate new password ≠ mobile
-    const userRow = await pool.query('SELECT mobile FROM users WHERE id = $1', [payload.user_id]);
-    if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    if (new_password === userRow.rows[0].mobile) {
-      return res.status(400).json({ error: 'New password must differ from your mobile number' });
-    }
+    // Single-use: check if token was already used (stored in Redis)
+    const tokenKey = `reset:used:${reset_token.slice(-16)}`;
+    try {
+      const used = await redis.get(tokenKey);
+      if (used) return res.status(401).json({ error: 'Reset token already used' });
+    } catch { /* Redis unavailable — proceed without single-use check */ }
 
     const hash = await bcrypt.hash(new_password, 12);
-    await pool.query(
-      'UPDATE users SET password_hash = $1, force_password_reset = false WHERE id = $2',
-      [hash, payload.user_id]
-    );
+
+    if (payload.account_type === 'parent') {
+      // Parent password reset
+      const parentRow = await pool.query('SELECT mobile FROM parent_users WHERE id = $1', [payload.user_id]);
+      if (parentRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+      if (new_password === parentRow.rows[0].mobile) {
+        return res.status(400).json({ error: 'New password must differ from your mobile number' });
+      }
+      await pool.query(
+        'UPDATE parent_users SET password_hash = $1, force_password_reset = false WHERE id = $2',
+        [hash, payload.user_id]
+      );
+    } else {
+      // Staff password reset
+      const userRow = await pool.query('SELECT mobile FROM users WHERE id = $1', [payload.user_id]);
+      if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+      if (new_password === userRow.rows[0].mobile) {
+        return res.status(400).json({ error: 'New password must differ from your mobile number' });
+      }
+      await pool.query(
+        'UPDATE users SET password_hash = $1, force_password_reset = false WHERE id = $2',
+        [hash, payload.user_id]
+      );
+    }
+
+    // Mark token as used (expires in 15 min — matches token TTL)
+    try { await redis.set(tokenKey, '1', { EX: 900 }); } catch { /* non-critical */ }
 
     return res.json({ message: 'Password reset successfully' });
   } catch (err) {

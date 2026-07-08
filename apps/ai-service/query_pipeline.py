@@ -386,6 +386,34 @@ def _parse_completion_from_text(text: str, subjects: list) -> dict:
 # LLM helpers
 # ---------------------------------------------------------------------------
 
+async def _enrich_content_with_resources(content: str, school_id: str, pool) -> str:
+    """Replace resource numbers in content with enriched topic info from curriculum_resources.
+    E.g., 'Res. 1515' becomes 'Res. 1515 (English Speaking - pg 2)'"""
+    import re
+    # Extract all potential resource IDs (3-4 digit numbers and wNNNN patterns)
+    numbers = re.findall(r'\b(\d{2,4})\b', content)
+    ws_ids = re.findall(r'\b(w\d{4})\b', content, re.IGNORECASE)
+    all_ids = list(set(numbers + ws_ids))
+    if not all_ids:
+        return content
+    try:
+        rows = await pool.fetch(
+            "SELECT resource_id, topic, book_page FROM curriculum_resources WHERE school_id = $1 AND resource_id = ANY($2)",
+            UUID(school_id), all_ids,
+        )
+        if not rows:
+            return content
+        lookup = {r['resource_id']: r for r in rows}
+        # Enrich: replace "Res. 1515" or standalone "1515" with "1515 (topic, pg X)"
+        for rid, info in lookup.items():
+            enriched = f"{rid} ({info['topic']}, pg {info['book_page']})" if info['book_page'] else f"{rid} ({info['topic']})"
+            # Replace patterns like "Res. 1515", "- 1515", "1515" (only if it's a standalone number)
+            content = re.sub(rf'\b{re.escape(rid)}\b', enriched, content, count=1)
+        return content
+    except Exception:
+        return content
+
+
 def _build_chunk_context(chunks) -> str:
     """Build a rich text block from DB chunk rows for the LLM prompt.
     If a chunk's content is sparse (short or just repeats the label),
@@ -2320,6 +2348,9 @@ Plain text only, no bold, no markdown, short lines for mobile."""
 
                     raw_curriculum_text = "\n".join(raw_curriculum_lines)
 
+                    # Enrich resource numbers with topic names from curriculum_resources
+                    raw_curriculum_text = await _enrich_content_with_resources(raw_curriculum_text, school_id, pool)
+
                     subjects_list = []
                     for ch in chunks:
                         subjects = _parse_subjects(ch["content"])
@@ -2383,7 +2414,14 @@ CLASS: {class_name} | AGE: {age_info['age']} | DATE: {date_label}"""
 
             elif is_plan_request_only:
                 # Standard: build plan directly from chunks — no LLM cost
-                response_text = _format_rich_plan(chunks, date_label, class_full, carried_note, pending_rows, age_info)
+                # Enrich chunk content with resource topics before formatting
+                enriched_chunks = []
+                for ch in chunks:
+                    ech = dict(ch)
+                    if ech.get('content'):
+                        ech['content'] = await _enrich_content_with_resources(ech['content'], school_id, pool)
+                    enriched_chunks.append(ech)
+                response_text = _format_rich_plan(enriched_chunks, date_label, class_full, carried_note, pending_rows, age_info)
                 llm_provider = "rule_based"
             else:
                 # ── Check plan cache first — same chunks + date = same plan for all teachers ──

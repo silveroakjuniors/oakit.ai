@@ -18,6 +18,16 @@ router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin', 'principa
  * 5. Teacher performance scores (compliance + AI usage + streak)
  */
 router.get('/', async (req: Request, res: Response) => {
+  // DISABLED: Smart alerts temporarily on hold — heavy query causes temp disk overflow on Supabase free tier.
+  // Will re-enable after DB upgrade or query optimization.
+  return res.json({
+    alerts: [],
+    teacher_scores: [],
+    generated_at: new Date().toISOString(),
+    summary: { total_alerts: 0, high: 0, medium: 0, low: 0 },
+    disabled: true,
+  });
+
   try {
     const { school_id } = req.user!;
     const cacheKey = `smart-alerts:${school_id}`;
@@ -365,7 +375,13 @@ router.get('/', async (req: Request, res: Response) => {
     return res.json(result);
   } catch (err) {
     console.error('[smart-alerts]', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.json({
+      alerts: [],
+      teacher_scores: [],
+      generated_at: new Date().toISOString(),
+      summary: { total_alerts: 0, high: 0, medium: 0, low: 0 },
+      error_hint: 'Smart alerts temporarily unavailable',
+    });
   }
 });
 

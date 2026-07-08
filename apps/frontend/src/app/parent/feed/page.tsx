@@ -45,9 +45,10 @@ export default function ParentFeedPage() {
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-neutral-400 hover:text-neutral-600 text-xl">‹</button>
-        <p className="text-sm font-semibold text-neutral-800">📸 Class Memories</p>
+      <div className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3"
+        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+        <button onClick={() => router.back()} className="text-neutral-400 hover:text-neutral-600 text-xl">&#8249;</button>
+        <p className="text-sm font-semibold text-neutral-800">Class Memories</p>
       </div>
 
       {/* Feed */}

@@ -414,6 +414,104 @@ router.post('/query', async (req: Request, res: Response) => {
     }
     // ─────────────────────────────────────────────────────────────────────
 
+    // ── Plan query — lookup by chunk_ids hash (single table, no duplication) ──
+    // Plan query detection — used for gateway-level cache lookup
+    const isPlanQuery = /plan.*today|today.*plan|what.*plan|my plan|plan for tomorrow|tomorrow.*plan|plan for \d|plan.*\d{4}-\d{2}-\d{2}|plan.*\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b/i.test(cleanText);
+    let classId: string | null = null;
+    let planDate: string = today;
+    let planChunkIds: string[] | null = null;
+
+    // Detect date from query
+    const dayAfterTomorrowMatch = /day after tomorrow/i.test(cleanText);
+    const tomorrowMatch = !dayAfterTomorrowMatch && /tomorrow/i.test(cleanText);
+    const dateMatch = cleanText.match(/(\d{4}-\d{2}-\d{2})/);
+    const monthNames: Record<string, number> = {
+      january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+      july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+      jan: 0, feb: 1, mar: 2, apr: 3, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    // Match "25th June", "June 25", "25 june", "25th jun" etc.
+    const naturalDateMatch = cleanText.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/i)
+      || cleanText.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i);
+
+    if (dayAfterTomorrowMatch) {
+      const parts = today.split('-').map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      d.setDate(d.getDate() + 2);
+      planDate = d.toISOString().slice(0, 10);
+    } else if (tomorrowMatch) {
+      const parts = today.split('-').map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      d.setDate(d.getDate() + 1);
+      planDate = d.toISOString().slice(0, 10);
+    } else if (dateMatch) {
+      planDate = dateMatch[1];
+    } else if (naturalDateMatch) {
+      // Figure out which group is day and which is month
+      let dayNum: number, monthNum: number;
+      if (/^\d/.test(naturalDateMatch[1])) {
+        // "25th June" format
+        dayNum = parseInt(naturalDateMatch[1]);
+        monthNum = monthNames[naturalDateMatch[2].toLowerCase()];
+      } else {
+        // "June 25" format
+        monthNum = monthNames[naturalDateMatch[1].toLowerCase()];
+        dayNum = parseInt(naturalDateMatch[2]);
+      }
+      const yearNum = parseInt(today.split('-')[0]);
+      const d = new Date(yearNum, monthNum, dayNum);
+      planDate = d.toISOString().slice(0, 10);
+    }
+
+    if (isPlanQuery && role === 'teacher') {
+      try {
+        const sectionRow = await pool.query(
+          `SELECT sec.class_id, sec.id as section_id FROM sections sec
+           LEFT JOIN teacher_sections ts ON ts.section_id = sec.id
+           WHERE (sec.class_teacher_id = $1 OR ts.teacher_id = $1) AND sec.school_id = $2
+           LIMIT 1`,
+          [user_id, school_id]
+        );
+        if (sectionRow.rows.length > 0) {
+          classId = sectionRow.rows[0].class_id;
+          const sectionId = sectionRow.rows[0].section_id;
+
+          // Get chunk_ids for this plan date
+          const planRow = await pool.query(
+            `SELECT chunk_ids FROM day_plans WHERE section_id = $1 AND plan_date = $2 AND school_id = $3`,
+            [sectionId, planDate, school_id]
+          );
+
+          if (planRow.rows.length > 0 && planRow.rows[0].chunk_ids?.length > 0) {
+            planChunkIds = planRow.rows[0].chunk_ids;
+            // Create hash of chunk_ids + date for lookup (date prevents cross-day collisions)
+            const sortedIds = [...planChunkIds].sort().join(',') + '|' + planDate;
+            const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
+
+            // Check ai_plan_cache for existing text
+            const cached = await pool.query(
+              `SELECT ai_text FROM ai_plan_cache WHERE chunk_hash = $1`,
+              [chunkHash]
+            );
+
+            if (cached.rows.length > 0) {
+              return res.json({
+                response: cached.rows[0].ai_text,
+                chunk_ids: planChunkIds,
+                covered_chunk_ids: [],
+                activity_ids: [],
+                plan_date: planDate,
+                from_cache: true,
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error('[ai.query] plan cache lookup error:', err.message);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     const cacheKey = `ai:${user_id}:${crypto.createHash('md5').update(cleanText + today).digest('hex')}`;
     const cached = await redis.get(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
@@ -429,7 +527,25 @@ router.post('/query', async (req: Request, res: Response) => {
         ...(role === 'principal' && req.body.context ? { context: req.body.context } : {}),
       }, AI_TIMEOUT_MS);
 
+      // Cache per-user (10 sec) for deduplication of non-plan queries
       await redis.setEx(cacheKey, 10, JSON.stringify(aiResp.data));
+
+      // Store plan text in ai_plan_cache (one row per unique chunk set + date)
+      if (isPlanQuery && planChunkIds && planChunkIds.length > 0 && aiResp.data.response) {
+        const sortedIds = [...planChunkIds].sort().join(',') + '|' + planDate;
+        const chunkHash = crypto.createHash('md5').update(sortedIds).digest('hex');
+        pool.query(
+          `INSERT INTO ai_plan_cache (chunk_hash, school_id, chunk_ids, ai_text, plan_date)
+           VALUES ($1, $2, $3::uuid[], $4, $5::date)
+           ON CONFLICT (chunk_hash) DO NOTHING`,
+          [chunkHash, school_id, planChunkIds, aiResp.data.response, planDate]
+        ).then(r => {
+          console.log(`[ai.query] Plan cached: hash=${chunkHash.slice(0, 8)} date=${planDate} rows=${r.rowCount}`);
+        }).catch(err => {
+          console.error(`[ai.query] Cache insert failed:`, err.message);
+        });
+      }
+
       return res.json(aiResp.data);
     } catch (err: unknown) {
       const requestId = crypto.randomBytes(6).toString('hex');
@@ -980,7 +1096,7 @@ router.post('/term-summary', async (req: Request, res: Response) => {
 router.post('/format-observation', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { text, student_name, category, class_name } = req.body;
+    const { text, student_name, category, class_name, gender } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
 
     const aiResp = await axios.post(`${AI()}/internal/format-observation`, {
@@ -988,6 +1104,7 @@ router.post('/format-observation', async (req: Request, res: Response) => {
       student_name: student_name || 'the student',
       category: category || '',
       class_name: class_name || '',
+      gender: gender || '',
     }, { timeout: 15000 });
 
     const formatted = aiResp.data.formatted || text;

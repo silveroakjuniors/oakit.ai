@@ -127,39 +127,44 @@ router.get('/', async (req: Request, res: Response) => {
     );
     const journal = journalRows[0] || { total_entries: 0, sent_to_parents: 0 };
 
-    // ── 6. Parent engagement (per-student: how many kids have a parent logged in) ──
+    // ── 6. Parent engagement ──
     const parentRows = await safeQuery(
       `SELECT
-         COUNT(DISTINCT st.id)::int AS total_students,
-         COUNT(DISTINCT st.id) FILTER (WHERE EXISTS(
-           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
-           WHERE p2.student_id = st.id AND pu2.last_login IS NOT NULL
-         ))::int AS logged_in,
-         COUNT(DISTINCT st.id) FILTER (WHERE NOT EXISTS(
-           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
-           WHERE p2.student_id = st.id AND pu2.last_login IS NOT NULL
-         ))::int AS not_logged_in
-       FROM students st
-       WHERE st.section_id = $1 AND st.school_id = $2 AND st.is_active = true`,
-      [section_id, school_id]
+         COUNT(DISTINCT pu.id)::int AS total_parents,
+         COUNT(DISTINCT pu.id) FILTER (WHERE pu.force_password_reset = false AND EXISTS (
+           SELECT 1 FROM messages m WHERE m.parent_id = pu.id AND m.school_id = $2 AND m.sent_at >= $3
+         ))::int AS active_parents,
+         COUNT(DISTINCT pu.id) FILTER (WHERE pu.force_password_reset = true)::int AS never_logged_in
+       FROM parent_users pu
+       JOIN parent_student_links psl ON psl.parent_id = pu.id
+       JOIN students st ON st.id = psl.student_id AND st.section_id = $1
+       WHERE pu.school_id = $2 AND pu.is_active = true`,
+      [section_id, school_id, thirtyDaysAgo]
     );
-    const parents = parentRows[0] || { total_students: 0, logged_in: 0, not_logged_in: 0 };
+    const parents = parentRows[0] || { total_parents: 0, active_parents: 0, never_logged_in: 0 };
+    const inactive_parents = Math.max(0, (parents.total_parents || 0) - (parents.active_parents || 0) - (parents.never_logged_in || 0));
 
-    // ── 6b. Parent detail list (for drill-down — one row per student) ──
+    // ── 6b. Parent detail list (for drill-down) ──
     const parentDetailRows = await safeQuery(
       `SELECT
-         st.id, COALESCE(pu.name, st.father_name) AS parent_name, COALESCE(pu.mobile, st.parent_contact) AS mobile,
+         pu.id, pu.name AS parent_name, pu.mobile,
          st.name AS student_name,
-         CASE WHEN pu.last_login IS NOT NULL THEN 'active' ELSE 'never_logged_in' END AS status,
-         0 AS messages_30d,
-         pu.last_login AS last_message_at
-       FROM students st
-       LEFT JOIN parent_student_links psl ON psl.student_id = st.id
-       LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
-       WHERE st.section_id = $1 AND st.school_id = $2 AND st.is_active = true
-       GROUP BY st.id, st.name, st.father_name, st.parent_contact, pu.name, pu.mobile, pu.last_login
-       ORDER BY st.name`,
-      [section_id, school_id]
+         pu.force_password_reset,
+         MAX(m.sent_at) AS last_message_at,
+         COUNT(m.id)::int AS messages_30d,
+         CASE
+           WHEN pu.force_password_reset = true THEN 'never_logged_in'
+           WHEN COUNT(m.id) > 0 THEN 'active'
+           ELSE 'inactive'
+         END AS status
+       FROM parent_users pu
+       JOIN parent_student_links psl ON psl.parent_id = pu.id
+       JOIN students st ON st.id = psl.student_id AND st.section_id = $1
+       LEFT JOIN messages m ON m.parent_id = pu.id AND m.school_id = $2 AND m.sent_at >= $3
+       WHERE pu.school_id = $2 AND pu.is_active = true
+       GROUP BY pu.id, pu.name, pu.mobile, st.name, pu.force_password_reset
+       ORDER BY pu.name`,
+      [section_id, school_id, thirtyDaysAgo]
     );
 
     // ── 7. School-wide comparison (all sections) — comprehensive teacher performance ──
@@ -269,44 +274,36 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     // Calculate composite performance score for each section
-    const SCHOOL_DAYS_30 = 22; // approx school days in 30 days
-    const TARGET_ATT_TIME = 570; // 09:30 in minutes — ideal attendance time
-    const TARGET_COMP_TIME = 780; // 13:00 in minutes — ideal completion time
+    const SCHOOL_DAYS_30 = 22;
+    const TARGET_ATT_TIME = 570; // 09:30 in minutes
+    const TARGET_COMP_TIME = 780; // 13:00 in minutes
 
     const sectionScores = perfScores.map((s: any) => {
       const studentCount = Math.max(s.student_count || 1, 1);
 
-      // 1. Plan Completion (20%) — days completed / school days
       const completionScore = Math.min(100, ((s.days_completed || 0) / SCHOOL_DAYS_30) * 100);
 
-      // 2. Completion Timeliness (15%) — closer to target = better (max 100 if <= target)
       let compTimeScore = 0;
       if (s.avg_comp_minutes != null) {
         const diff = Math.max(0, s.avg_comp_minutes - TARGET_COMP_TIME);
-        compTimeScore = Math.max(0, 100 - (diff / 3)); // lose ~1 point per 3 mins late
+        compTimeScore = Math.max(0, 100 - (diff / 3));
       }
 
-      // 3. Attendance Timeliness (15%) — closer to school start = better
       let attTimeScore = 0;
       if (s.avg_att_minutes != null) {
         const diff = Math.max(0, s.avg_att_minutes - TARGET_ATT_TIME);
         attTimeScore = Math.max(0, 100 - (diff / 3));
       }
 
-      // 4. Journal/Comments (15%) — entries sent per student (target: 2 per student per month)
       const journalTarget = studentCount * 2;
       const journalScore = Math.min(100, ((s.journal_sent || 0) / journalTarget) * 100);
 
-      // 5. Feed Posts (10%) — target: 1 per school day
       const feedScore = Math.min(100, ((s.feed_posts || 0) / SCHOOL_DAYS_30) * 100);
 
-      // 6. Milestones (10%) — target: 1 per student per month
       const milestoneScore = Math.min(100, ((s.milestones_marked || 0) / studentCount) * 100);
 
-      // 7. Homework (10%) — days with homework / school days
       const hwScore = Math.min(100, ((s.hw_days || 0) / SCHOOL_DAYS_30) * 100);
 
-      // 8. Observations (5%) — target: 0.5 per student per month
       const obsTarget = Math.max(1, Math.round(studentCount * 0.5));
       const obsScore = Math.min(100, ((s.obs_count || 0) / obsTarget) * 100);
 
@@ -337,7 +334,6 @@ router.get('/', async (req: Request, res: Response) => {
       };
     });
 
-    // Rank by score descending
     sectionScores.sort((a: any, b: any) => b.score - a.score);
     const rankedSections = sectionScores.map((s: any, i: number) => ({ ...s, rank: i + 1 }));
     const myRankEntry = rankedSections.find((s: any) => s.section_id === section_id);
@@ -449,7 +445,7 @@ router.get('/', async (req: Request, res: Response) => {
       `SELECT COUNT(*)::int AS unread
        FROM messages m
        JOIN students st ON st.id = m.student_id AND st.section_id = $1
-       WHERE m.school_id = $2 AND m.sender_role = 'parent' AND m.read_at IS NULL`,
+       WHERE m.school_id = $2 AND m.sender_type = 'parent' AND m.read_at IS NULL`,
       [section_id, school_id]
     );
     const unread_messages = unreadMessages[0]?.unread || 0;
@@ -503,10 +499,10 @@ router.get('/', async (req: Request, res: Response) => {
         sent_to_parents: journal.sent_to_parents || 0,
       },
       parents: {
-        total: parents.total_students || 0,
-        active: parents.logged_in || 0,
-        inactive: 0,
-        never_logged_in: parents.not_logged_in || 0,
+        total: parents.total_parents || 0,
+        active: parents.active_parents || 0,
+        inactive: inactive_parents,
+        never_logged_in: parents.never_logged_in || 0,
         details: parentDetailRows,
       },
       school_comparison: schoolComparison,

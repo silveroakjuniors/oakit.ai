@@ -46,10 +46,41 @@ router.get('/', async (req: Request, res: Response) => {
         let topic_labels: string[] = [];
         if (comp.covered_chunk_ids?.length > 0) {
           const chunksRow = await pool.query(
-            `SELECT topic_label FROM curriculum_chunks WHERE id = ANY($1::uuid[])`,
+            `SELECT cc.topic_label, cc.content FROM curriculum_chunks cc WHERE cc.id = ANY($1::uuid[])`,
             [comp.covered_chunk_ids]
           );
-          topic_labels = chunksRow.rows.map((r: any) => r.topic_label);
+          // Parse subjects from content and enrich with resource lookup
+          const allContent = chunksRow.rows.map((r: any) => r.content || r.topic_label).join('\n');
+          // Extract resource numbers and look them up
+          const refNums: string[] = [...(allContent.match(/\b(\d{2,4})\b/g) || []), ...(allContent.match(/\b(w\d{4})\b/gi) || [])];
+          let resourceMap: Record<string, { topic: string; book_page: string }> = {};
+          if (refNums.length > 0) {
+            const resRows = await pool.query(
+              `SELECT resource_id, topic, book_page FROM curriculum_resources WHERE school_id = $1 AND resource_id = ANY($2)`,
+              [school_id, [...new Set(refNums)]]
+            );
+            for (const r of resRows.rows) resourceMap[r.resource_id] = { topic: r.topic, book_page: r.book_page };
+          }
+          // Build enriched topic labels
+          topic_labels = chunksRow.rows.map((r: any) => {
+            let label = r.topic_label || '';
+            // Parse subjects from content
+            const content = r.content || '';
+            const lines = content.split('\n').filter((l: string) => l.includes(':'));
+            if (lines.length > 0) {
+              return lines.map((line: string) => {
+                // Enrich numbers in the line
+                let enriched = line;
+                for (const [rid, info] of Object.entries(resourceMap)) {
+                  if (enriched.includes(rid)) {
+                    enriched = enriched.replace(new RegExp(`\\b${rid}\\b`), `${rid} (${info.topic}, pg ${info.book_page})`);
+                  }
+                }
+                return enriched;
+              });
+            }
+            return [label];
+          }).flat();
         }
         feed.push({
           student_id,

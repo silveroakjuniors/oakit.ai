@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+﻿import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { getTeacherSections } from '../../lib/teacherSection';
@@ -6,7 +6,8 @@ import { getTeacherSections } from '../../lib/teacherSection';
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
 
-const VALID_CATEGORIES = ['Behavior','Social Skills','Academic Progress','Motor Skills','Language','Other'];
+const VALID_CATEGORIES = ['Behavior','Social Skills','Academic Progress','Motor Skills','Language','Other',
+  'cognitive','language','social','emotional','gross_motor','fine_motor','creativity','participation','peer','behaviour'];
 
 // POST /api/v1/teacher/observations
 router.post('/', async (req: Request, res: Response) => {
@@ -18,8 +19,8 @@ router.post('/', async (req: Request, res: Response) => {
     if (!obs_text?.trim() && (!categories || categories.length === 0)) {
       return res.status(400).json({ error: 'Please add a note or select a category before saving.' });
     }
-    if (obs_text && obs_text.length > 500) {
-      return res.status(400).json({ error: 'Note must be 500 characters or less.' });
+    if (obs_text && obs_text.length > 1000) {
+      return res.status(400).json({ error: 'Note must be 1000 characters or less.' });
     }
     const invalidCats = categories.filter((c: string) => !VALID_CATEGORIES.includes(c));
     if (invalidCats.length > 0) {
@@ -130,7 +131,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     const { obs_text, categories, share_with_parent } = req.body;
 
     if (!obs_text?.trim()) return res.status(400).json({ error: 'obs_text is required' });
-    if (obs_text.length > 500) return res.status(400).json({ error: 'Note must be 500 characters or less.' });
+    if (obs_text.length > 1000) return res.status(400).json({ error: 'Note must be 1000 characters or less.' });
 
     const updates: string[] = ['obs_text = $1', 'updated_at = now()'];
     const params: any[] = [obs_text.trim()];

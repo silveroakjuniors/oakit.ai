@@ -28,6 +28,23 @@ function normalise(s: string): string {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// - Extract plain text from ExcelJS cell value (handles rich text, formulas, etc.) -
+function cellText(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  // Rich text: { richText: [{ text: '...' }, ...] }
+  if (value.richText && Array.isArray(value.richText)) {
+    return value.richText.map((r: any) => r.text || '').join('');
+  }
+  // Formula result
+  if (value.result !== undefined) return String(value.result);
+  // Date
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  // Fallback
+  return String(value);
+}
+
 // - POST /api/v1/admin/students — create a single student -
 router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
@@ -72,11 +89,11 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
         await client.query('BEGIN');
 
         const insertResult = await client.query(
-          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+          `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact, gender)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name`,
           [school_id, class_id, section_id, name.trim(),
            father_name?.trim() || null, mother_name?.trim() || null,
-           parent_contact?.trim() || null, mother_contact?.trim() || null]
+           parent_contact?.trim() || null, mother_contact?.trim() || null, req.body.gender || null]
         );
         const student = insertResult.rows[0];
 
@@ -110,11 +127,11 @@ router.post('/', roleGuard('admin'), async (req: Request, res: Response) => {
 
     // No fee_assignment — keep existing simple pool.query approach
     const result = await pool.query(
-      `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, name`,
+      `INSERT INTO students (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact, gender)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name`,
       [school_id, class_id, section_id, name.trim(),
        father_name?.trim() || null, mother_name?.trim() || null,
-       parent_contact?.trim() || null, mother_contact?.trim() || null]
+       parent_contact?.trim() || null, mother_contact?.trim() || null, req.body.gender || null]
     );
     return res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -131,7 +148,7 @@ router.get('/', roleGuard('admin', 'principal'), async (req: Request, res: Respo
     let query = `
       SELECT s.id, s.name, s.father_name, s.mother_name,
              s.parent_contact, s.mother_contact,
-             s.photo_path,
+             s.photo_path, s.gender,
              s.is_active,
              s.class_id, s.section_id,
              c.name as class_name, sec.label as section_label
@@ -172,6 +189,78 @@ router.get('/', roleGuard('admin', 'principal'), async (req: Request, res: Respo
   }
 });
 
+// - GET /api/v1/admin/students/export -
+router.get('/export', roleGuard('admin'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, section_id } = req.query;
+
+    let query = `
+      SELECT s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+             s.date_of_birth, s.is_active,
+             c.name as class_name, sec.label as section_label
+      FROM students s
+      JOIN classes c ON c.id = s.class_id
+      JOIN sections sec ON sec.id = s.section_id
+      WHERE s.school_id = $1
+    `;
+    const params: any[] = [school_id];
+
+    if (class_id) {
+      params.push(class_id);
+      query += ` AND s.class_id = $${params.length}`;
+    }
+    if (section_id) {
+      params.push(section_id);
+      query += ` AND s.section_id = $${params.length}`;
+    }
+
+    query += ' ORDER BY c.name, sec.label, s.name';
+
+    const result = await pool.query(query, params);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Students');
+
+    ws.columns = [
+      { header: 'Student Name', width: 24 },
+      { header: 'Class', width: 12 },
+      { header: 'Section', width: 10 },
+      { header: 'Father Name', width: 22 },
+      { header: 'Mother Name', width: 22 },
+      { header: 'Father Contact Number', width: 20 },
+      { header: 'Mother Contact Number', width: 20 },
+      { header: 'Date of Birth', width: 14 },
+      { header: 'Status', width: 10 },
+    ];
+
+    // Style header row
+    ws.getRow(1).font = { bold: true };
+
+    for (const row of result.rows) {
+      ws.addRow([
+        row.name,
+        row.class_name,
+        row.section_label,
+        row.father_name || '',
+        row.mother_name || '',
+        row.parent_contact || '',
+        row.mother_contact || '',
+        row.date_of_birth || '',
+        row.is_active ? 'Active' : 'Inactive',
+      ]);
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="students_export.xlsx"');
+    const buf = await wb.xlsx.writeBuffer();
+    return res.send(buf);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // - GET /api/v1/admin/students/import/template -
 router.get('/import/template', roleGuard('admin'), async (_req: Request, res: Response) => {
   const wb = new ExcelJS.Workbook();
@@ -182,12 +271,11 @@ router.get('/import/template', roleGuard('admin'), async (_req: Request, res: Re
     { header: 'mother name', width: 20 },
     { header: 'section', width: 10 },
     { header: 'class', width: 12 },
-    { header: 'parent contact number', width: 22 },
-    { header: 'mother contact number', width: 22 },
-    { header: 'date of birth', width: 14 },
+    { header: 'father mobile', width: 18 },
+    { header: 'mother mobile', width: 18 },
   ];
-  ws.addRow(['Aarav Sharma', 'Rajesh Sharma', 'Priya Sharma', 'A', 'UKG', '9876543210', '9876543211', '2020-05-15']);
-  ws.addRow(['Diya Patel', 'Suresh Patel', 'Meena Patel', 'B', 'LKG', '9123456789', '', '2021-02-10']);
+  ws.addRow(['Aarav Sharma', 'Rajesh Sharma', 'Priya Sharma', 'A', 'UKG', '9876543210', '9876543211']);
+  ws.addRow(['Diya Patel', 'Suresh Patel', 'Meena Patel', 'B', 'LKG', '9123456789', '']);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="student_import_template.xlsx"');
   const buf = await wb.xlsx.writeBuffer();
@@ -213,42 +301,38 @@ router.post('/import', roleGuard('admin'), xlsxUpload.single('file'), async (req
 
     // Get headers from first row
     const headers: string[] = [];
-    ws.getRow(1).eachCell((cell, colNum) => { headers[colNum - 1] = String(cell.value || ''); });
+    ws.getRow(1).eachCell((cell, colNum) => { headers[colNum - 1] = cellText(cell.value); });
 
     const colMap: Record<string, number> = {};
 headers.forEach((h, i) => {
   const n = normalise(h);
 
-  if (n === 'studentname') {
+  if (n === 'studentname' || n === 'name' || n === 'childname' || n === 'studentsname') {
     colMap.student_name = i;
   }
 
-  else if (n === 'fathername') {
+  else if (n === 'fathername' || n === 'fathersname' || n === 'dadname') {
     colMap.father_name = i;
   }
 
-  else if (n === 'mothername') {
+  else if (n === 'mothername' || n === 'mothersname' || n === 'momname') {
     colMap.mother_name = i;
   }
 
-  else if (n === 'section') {
+  else if (n === 'section' || n === 'sec') {
     colMap.section = i;
   }
 
-  else if (n === 'class') {
+  else if (n === 'class' || n === 'classname' || n === 'grade') {
     colMap.class = i;
   }
 
-  else if (n === 'parentcontactnumber') {
+  else if (n === 'parentcontactnumber' || n === 'fathercontactnumber' || n === 'fathermobile' || n === 'fatherphone' || n === 'fathermobilenumber' || n === 'parentnumber' || n === 'parentmobile' || n === 'fatherno' || n === 'dadmobile' || n === 'fathernumber' || n === 'parentmobilenumber') {
     colMap.parent_contact = i;
   }
 
-  else if (n === 'mothercontactnumber') {
+  else if (n === 'mothercontactnumber' || n === 'mothermobile' || n === 'motherphone' || n === 'mothermobilenumber' || n === 'motherno' || n === 'mommobile' || n === 'mothernumber') {
     colMap.mother_contact = i;
-  }
-
-  else if (n === 'dateofbirth' || n === 'dob' || n === 'birthday' || n === 'birthdate') {
-    colMap.date_of_birth = i;
   }
 });
 
@@ -256,6 +340,26 @@ headers.forEach((h, i) => {
     if (colMap.class === undefined) return res.status(400).json({ error: 'Column "class" not found in file' });
     if (colMap.section === undefined) return res.status(400).json({ error: 'Column "section" not found in file' });
 
+    // Validate ALL required columns are present
+    const requiredColumns: { key: string; label: string }[] = [
+      { key: 'student_name', label: 'student name' },
+      { key: 'father_name', label: 'father name' },
+      { key: 'mother_name', label: 'mother name' },
+      { key: 'section', label: 'section' },
+      { key: 'class', label: 'class' },
+      { key: 'parent_contact', label: 'father mobile' },
+      { key: 'mother_contact', label: 'mother mobile' },
+    ];
+
+    const missingColumns = requiredColumns
+      .filter(col => colMap[col.key] === undefined)
+      .map(col => `"${col.label}"`);
+
+    if (missingColumns.length > 0) {
+      return res.status(400).json({
+        error: `Missing required columns: ${missingColumns.join(', ')}. Please use the import template with all required headers: student name, father name, mother name, section, class, father mobile, mother mobile.`
+      });
+    }
     const rows: any[][] = [];
     ws.eachRow((row, rowNum) => {
       if (rowNum === 1) return; // skip header
@@ -267,32 +371,17 @@ headers.forEach((h, i) => {
     if (rows.length === 0) return res.status(400).json({ error: 'File is empty or has no data rows' });
 
     let created = 0;
+    let updated = 0;
     const skipped: any[] = [];
 
     for (const row of rows) {
-      const studentName   = String(row[colMap.student_name] || '').trim();
-      const fatherName    = colMap.father_name !== undefined ? String(row[colMap.father_name] || '').trim() : '';
-      const motherName    = colMap.mother_name !== undefined ? String(row[colMap.mother_name] || '').trim() : '';
-      const sectionLabel  = String(row[colMap.section] || '').trim();
-      const className     = String(row[colMap.class] || '').trim();
-      const parentContact = colMap.parent_contact !== undefined ? String(row[colMap.parent_contact] || '').trim() : '';
-      const motherContact = colMap.mother_contact !== undefined ? String(row[colMap.mother_contact] || '').trim() : '';
-      // Parse DOB — accepts YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or Excel Date objects
-      let dateOfBirth: string | null = null;
-      if (colMap.date_of_birth !== undefined && row[colMap.date_of_birth]) {
-        const rawDob = row[colMap.date_of_birth];
-        if (rawDob instanceof Date) {
-          dateOfBirth = rawDob.toISOString().split('T')[0];
-        } else {
-          const dobStr = String(rawDob).trim();
-          if (/^\d{4}-\d{2}-\d{2}$/.test(dobStr)) {
-            dateOfBirth = dobStr;
-          } else if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(dobStr)) {
-            const parts = dobStr.split(/[\/\-]/);
-            dateOfBirth = `${parts[2]}-${parts[1]}-${parts[0]}`;
-          }
-        }
-      }
+      const studentName   = cellText(row[colMap.student_name]).trim();
+      const fatherName    = colMap.father_name !== undefined ? cellText(row[colMap.father_name]).trim() : '';
+      const motherName    = colMap.mother_name !== undefined ? cellText(row[colMap.mother_name]).trim() : '';
+      const sectionLabel  = cellText(row[colMap.section]).trim();
+      const className     = cellText(row[colMap.class]).trim();
+      const parentContact = colMap.parent_contact !== undefined ? cellText(row[colMap.parent_contact]).trim().replace(/[^0-9]/g, '') : '';
+      const motherContact = colMap.mother_contact !== undefined ? cellText(row[colMap.mother_contact]).trim().replace(/[^0-9]/g, '') : '';
 
       if (!studentName || !className || !sectionLabel) {
         skipped.push({ studentName, reason: 'Missing student name, class, or section' });
@@ -312,59 +401,74 @@ headers.forEach((h, i) => {
       if (sectionRow.rows.length === 0) { skipped.push({ studentName, reason: `Section '${sectionLabel}' not found in class '${className}'` }); continue; }
 
 try {
-  // Check if student already exists
-  const existingStudent = await pool.query(
-    `SELECT id
+  // Check for duplicate: multiple strategies
+  // 1. Match on name + father name + mother name
+  // 2. Match on name + father contact number
+  // 3. Match on name + mother contact number
+  let existingStudent = await pool.query(
+    `SELECT id, class_id, section_id
      FROM students
      WHERE school_id = $1
-       AND LOWER(name) = LOWER($2)
-       AND class_id = $3
-       AND section_id = $4
+       AND LOWER(TRIM(name)) = LOWER($2)
+       AND (
+         (LOWER(COALESCE(TRIM(father_name), '')) = LOWER($3) AND LOWER(COALESCE(TRIM(mother_name), '')) = LOWER($4))
+         OR ($5 <> '' AND COALESCE(parent_contact, '') = $5)
+         OR ($6 <> '' AND COALESCE(mother_contact, '') = $6)
+       )
      LIMIT 1`,
     [
       school_id,
-      studentName,
-      classRow.rows[0].id,
-      sectionRow.rows[0].id
+      studentName.toLowerCase(),
+      (fatherName || '').toLowerCase(),
+      (motherName || '').toLowerCase(),
+      parentContact || '',
+      motherContact || ''
     ]
   );
 
   if (existingStudent.rows.length > 0) {
-    // UPDATE existing student
+    const existing = existingStudent.rows[0];
+    if (existing.class_id !== classRow.rows[0].id || existing.section_id !== sectionRow.rows[0].id) {
+      // Student exists in a different class/section - reject
+      skipped.push({ studentName, reason: `Duplicate student already exists in a different class/section. Use student management to transfer.` });
+      continue;
+    }
+    // Same class/section - update contact details
     await pool.query(
       `UPDATE students
-       SET father_name = $1,
-           mother_name = $2,
-           parent_contact = $3,
-           mother_contact = $4
+       SET parent_contact = COALESCE(NULLIF($1, ''), parent_contact),
+           mother_contact = COALESCE(NULLIF($2, ''), mother_contact),
+           father_name = COALESCE(NULLIF($3, ''), father_name),
+           mother_name = COALESCE(NULLIF($4, ''), mother_name)
        WHERE id = $5`,
       [
-        fatherName || null,
-        motherName || null,
-        parentContact || null,
-        motherContact || null,
-        existingStudent.rows[0].id
+        parentContact || '',
+        motherContact || '',
+        fatherName || '',
+        motherName || '',
+        existing.id
       ]
     );
-  } else {
-    // INSERT new student
-    await pool.query(
-      `INSERT INTO students
-       (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact, date_of_birth)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        school_id,
-        classRow.rows[0].id,
-        sectionRow.rows[0].id,
-        studentName,
-        fatherName || null,
-        motherName || null,
-        parentContact || null,
-        motherContact || null,
-        dateOfBirth || null
-      ]
-    );
+    updated++;
+    continue;
   }
+
+  // INSERT new student
+  await pool.query(
+    `INSERT INTO students
+     (school_id, class_id, section_id, name, father_name, mother_name, parent_contact, mother_contact)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      school_id,
+      classRow.rows[0].id,
+      sectionRow.rows[0].id,
+      studentName,
+      fatherName || null,
+      motherName || null,
+      parentContact || null,
+      motherContact || null
+    ]
+  );
 
   created++;
 
@@ -373,7 +477,7 @@ try {
 }
     }
 
-    return res.json({ created, skipped });
+    return res.json({ total: rows.length, created, updated, skipped, columns_detected: colMap });
   } catch (err: unknown) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -524,20 +628,26 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
       [school_id]
     );
 
-    // 2. Parent activation/login stats
+    // 2. Parent activation/login stats (school-wide)
     const parentStatsRow = await pool.query(
       `SELECT
          COUNT(DISTINCT s.id)::int AS total_students,
-         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL THEN s.id END)::int AS parents_activated,
-         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN s.id END)::int AS parents_logged_in,
-         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL AND pu.last_login IS NULL THEN s.id END)::int AS parents_not_logged_in
+         COUNT(DISTINCT psl.student_id)::int AS parents_activated,
+         COUNT(DISTINCT CASE WHEN EXISTS (
+           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
+           WHERE p2.student_id = s.id AND pu2.last_login IS NOT NULL
+         ) THEN s.id END)::int AS parents_logged_in,
+         COUNT(DISTINCT CASE WHEN psl.student_id IS NOT NULL AND NOT EXISTS (
+           SELECT 1 FROM parent_student_links p2 JOIN parent_users pu2 ON pu2.id = p2.parent_id AND pu2.is_active = true
+           WHERE p2.student_id = s.id AND pu2.last_login IS NOT NULL
+         ) THEN s.id END)::int AS parents_not_logged_in
        FROM students s
        LEFT JOIN parent_student_links psl ON psl.student_id = s.id
        LEFT JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
        WHERE s.school_id = $1 AND s.is_active = true`,
       [school_id]
     );
-    const ps = parentStatsRow.rows[0];
+    const parentStats = parentStatsRow.rows[0];
 
     // 3. Per-class counts + contact completeness + parent activation
     const byClassRow = await pool.query(
@@ -549,9 +659,9 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
          COUNT(DISTINCT s.id) FILTER (WHERE s.mother_name    IS NOT NULL AND s.mother_name    <> '')::int AS with_mother,
          COUNT(DISTINCT s.id) FILTER (WHERE s.parent_contact IS NOT NULL AND s.parent_contact <> '')::int AS with_father_contact,
          COUNT(DISTINCT s.id) FILTER (WHERE s.mother_contact IS NOT NULL AND s.mother_contact <> '')::int AS with_mother_contact,
-         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL THEN s.id END)::int AS parents_activated,
-         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN s.id END)::int AS parents_logged_in,
-         COUNT(DISTINCT CASE WHEN psl.parent_id IS NOT NULL AND pu.last_login IS NULL THEN s.id END)::int AS parents_not_logged_in
+         COUNT(DISTINCT psl.student_id)::int AS parents_activated,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NOT NULL THEN psl.student_id END)::int AS parents_logged_in,
+         COUNT(DISTINCT CASE WHEN pu.last_login IS NULL AND pu.id IS NOT NULL THEN psl.student_id END)::int AS parents_not_logged_in
        FROM classes c
        LEFT JOIN students s
          ON s.class_id = c.id AND s.school_id = c.school_id AND s.is_active = true
@@ -598,16 +708,180 @@ router.get('/dashboard', roleGuard('admin', 'principal'), async (req: Request, r
     return res.json({
       total_students: totalRow.rows[0].total,
       parent_stats: {
-        activated: ps.parents_activated,
-        logged_in: ps.parents_logged_in,
-        not_logged_in: ps.parents_not_logged_in,
-        not_activated: totalRow.rows[0].total - ps.parents_activated,
+        activated: parentStats.parents_activated,
+        logged_in: parentStats.parents_logged_in,
+        not_logged_in: parentStats.parents_not_logged_in,
+        not_activated: totalRow.rows[0].total - parentStats.parents_activated,
       },
       by_class: byClass,
     });
   } catch (err: any) {
     console.error('[students/dashboard]', err);
     return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  }
+});
+
+// GET /api/v1/admin/students/dashboard/details?class_id=&status=activated|logged_in|not_logged_in|not_activated
+router.get('/dashboard/details', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, section_id, status } = req.query as Record<string, string>;
+
+    let query = '';
+    const params: any[] = [school_id];
+
+    if (status === 'not_activated') {
+      // Students with no parent_student_links entry
+      query = `
+        SELECT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        LEFT JOIN parent_student_links psl ON psl.student_id = s.id
+        WHERE s.school_id = $1 AND s.is_active = true AND psl.student_id IS NULL
+      `;
+    } else if (status === 'logged_in') {
+      // Students whose parent has logged in at least once
+      query = `
+        SELECT DISTINCT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label, pu.last_login
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        JOIN parent_student_links psl ON psl.student_id = s.id
+        JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+        WHERE s.school_id = $1 AND s.is_active = true AND pu.last_login IS NOT NULL
+      `;
+    } else if (status === 'not_logged_in') {
+      // Students whose parent is activated but never logged in
+      query = `
+        SELECT DISTINCT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        JOIN parent_student_links psl ON psl.student_id = s.id
+        JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+        WHERE s.school_id = $1 AND s.is_active = true AND pu.last_login IS NULL
+      `;
+    } else {
+      // activated = all students with parent links
+      query = `
+        SELECT DISTINCT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact,
+               c.name AS class_name, sec.label AS section_label, pu.last_login
+        FROM students s
+        JOIN classes c ON c.id = s.class_id
+        JOIN sections sec ON sec.id = s.section_id
+        JOIN parent_student_links psl ON psl.student_id = s.id
+        JOIN parent_users pu ON pu.id = psl.parent_id AND pu.is_active = true
+        WHERE s.school_id = $1 AND s.is_active = true
+      `;
+    }
+
+    if (class_id) { params.push(class_id); query += ` AND s.class_id = $${params.length}`; }
+    if (section_id) { params.push(section_id); query += ` AND s.section_id = $${params.length}`; }
+    query += ' ORDER BY c.name, sec.label, s.name';
+
+    const result = await pool.query(query, params);
+    return res.json(result.rows);
+  } catch (err: any) {
+    console.error('[students/dashboard/details]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/v1/admin/students/dashboard/section/:section_id — section details with students + teachers
+router.get('/dashboard/section/:section_id', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { section_id } = req.params;
+
+    // Get section + class info
+    const sectionRow = await pool.query(
+      `SELECT sec.id, sec.label, c.id AS class_id, c.name AS class_name
+       FROM sections sec JOIN classes c ON c.id = sec.class_id
+       WHERE sec.id = $1 AND sec.school_id = $2`,
+      [section_id, school_id]
+    );
+    if (sectionRow.rows.length === 0) return res.status(404).json({ error: 'Section not found' });
+    const section = sectionRow.rows[0];
+
+    // Get teachers assigned to this section
+    const teachersRow = await pool.query(
+      `SELECT u.id, u.name, u.mobile,
+              CASE WHEN sec.class_teacher_id = u.id THEN true ELSE false END as is_class_teacher
+       FROM teacher_sections ts
+       JOIN users u ON u.id = ts.teacher_id
+       JOIN sections sec ON sec.id = ts.section_id
+       WHERE ts.section_id = $1 AND u.is_active = true
+       ORDER BY (sec.class_teacher_id = u.id) DESC, u.name`,
+      [section_id]
+    );
+
+    // Get students in this section
+    const studentsRow = await pool.query(
+      `SELECT s.id, s.name, s.father_name, s.mother_name, s.parent_contact, s.mother_contact
+       FROM students s
+       WHERE s.section_id = $1 AND s.school_id = $2 AND s.is_active = true
+       ORDER BY s.name`,
+      [section_id, school_id]
+    );
+
+    // Get all sections in the same class (for transfer dropdown)
+    const allSectionsRow = await pool.query(
+      `SELECT id, label FROM sections WHERE class_id = $1 AND school_id = $2 ORDER BY label`,
+      [section.class_id, school_id]
+    );
+
+    return res.json({
+      section: { id: section.id, label: section.label },
+      class_name: section.class_name,
+      class_id: section.class_id,
+      teachers: teachersRow.rows,
+      students: studentsRow.rows,
+      all_sections: allSectionsRow.rows,
+    });
+  } catch (err: any) {
+    console.error('[dashboard/section]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/admin/students/transfer-section — move student to a different section
+router.post('/transfer-section', roleGuard('admin', 'principal'), async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { student_id, new_section_id } = req.body;
+    if (!student_id || !new_section_id) return res.status(400).json({ error: 'student_id and new_section_id required' });
+
+    // Verify student belongs to this school
+    const student = await pool.query(
+      'SELECT id, name, section_id FROM students WHERE id = $1 AND school_id = $2 AND is_active = true',
+      [student_id, school_id]
+    );
+    if (student.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+
+    // Verify new section belongs to this school
+    const section = await pool.query(
+      'SELECT id, label FROM sections WHERE id = $1 AND school_id = $2',
+      [new_section_id, school_id]
+    );
+    if (section.rows.length === 0) return res.status(404).json({ error: 'Section not found' });
+
+    if (student.rows[0].section_id === new_section_id) {
+      return res.json({ message: 'Student already in this section' });
+    }
+
+    await pool.query(
+      'UPDATE students SET section_id = $1 WHERE id = $2 AND school_id = $3',
+      [new_section_id, student_id, school_id]
+    );
+
+    return res.json({ message: `${student.rows[0].name} moved to Section ${section.rows[0].label}` });
+  } catch (err: any) {
+    console.error('[transfer-section]', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -851,7 +1125,7 @@ router.delete('/:id/parent-links/:parent_id', roleGuard('admin'), async (req: Re
 router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { father_name, mother_name, parent_contact, mother_contact } = req.body;
+    const { father_name, mother_name, parent_contact, mother_contact, gender } = req.body;
     if (parent_contact && mother_contact && parent_contact.trim() === mother_contact.trim()) {
       return res.status(400).json({ error: 'Father and mother cannot have the same mobile number' });
     }
@@ -866,10 +1140,11 @@ router.put('/:id', roleGuard('admin'), async (req: Request, res: Response) => {
          father_name = COALESCE($1, father_name),
          mother_name = COALESCE($2, mother_name),
          parent_contact = COALESCE($3, parent_contact),
-         mother_contact = COALESCE($4, mother_contact)
+         mother_contact = COALESCE($4, mother_contact),
+         gender = COALESCE($7, gender)
        WHERE id = $5 AND school_id = $6
-       RETURNING id, name, father_name, mother_name, parent_contact, mother_contact`,
-      [father_name || null, mother_name || null, parent_contact || null, mother_contact || null, req.params.id, school_id]
+       RETURNING id, name, father_name, mother_name, parent_contact, mother_contact, gender`,
+      [father_name || null, mother_name || null, parent_contact || null, mother_contact || null, req.params.id, school_id, gender || null]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     return res.json(result.rows[0]);
@@ -902,6 +1177,7 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
     const student = studentRow.rows[0];
 
     await client.query('BEGIN');
+    console.log('[terminate] Step 1: deactivating student');
 
     // 1. Soft-terminate the student
     await client.query(
@@ -910,9 +1186,10 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
        WHERE id = $2 AND school_id = $3`,
       [user_id, studentId, school_id]
     );
+    console.log('[terminate] Step 1 done');
 
     // 2. Save academic history record
-    // Determine current academic year from school settings (fall back to current calendar year)
+    console.log('[terminate] Step 2: academic history');
     const ayRow = await client.query(
       `SELECT label FROM academic_years
        WHERE school_id = $1 AND is_current = true LIMIT 1`,
@@ -920,29 +1197,41 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
     );
     const academicYear = ayRow.rows[0]?.label ||
       `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(2)}`;
+    console.log('[terminate] academic year:', academicYear);
 
-    await client.query(
-      `INSERT INTO student_academic_history
-         (school_id, student_id, academic_year, class_id, section_id,
-          class_name, section_label, outcome, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'terminated',$8)
-       ON CONFLICT (student_id, academic_year)
-       DO UPDATE SET outcome = 'terminated', created_by = EXCLUDED.created_by`,
-      [school_id, studentId, academicYear,
-       student.class_id, student.section_id,
-       student.class_name, student.section_label, user_id]
-    );
+    try {
+      await client.query(
+        `INSERT INTO student_academic_history
+           (school_id, student_id, academic_year, class_id, section_id,
+            class_name, section_label, outcome, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'terminated',$8)
+         ON CONFLICT (student_id, academic_year)
+         DO UPDATE SET outcome = 'terminated', created_by = EXCLUDED.created_by`,
+        [school_id, studentId, academicYear,
+         student.class_id, student.section_id,
+         student.class_name, student.section_label, user_id]
+      );
+      console.log('[terminate] Step 2 done');
+    } catch (e: any) {
+      console.error('[terminate] Step 2 FAILED:', e.message, e.detail);
+      throw e;
+    }
 
     // 3. Mark outstanding fee accounts as status='terminated'
-    //    Preserves payment history but flags the account so it's excluded from
-    //    active collection reports. Outstanding balance is kept for audit purposes.
-    await client.query(
-      `UPDATE student_fee_accounts
-       SET status = 'terminated', updated_at = now()
-       WHERE student_id = $1 AND school_id = $2
-         AND deleted_at IS NULL AND status != 'paid'`,
-      [studentId, school_id]
-    );
+    console.log('[terminate] Step 3: fee accounts');
+    try {
+      await client.query(
+        `UPDATE student_fee_accounts
+         SET status = 'terminated', updated_at = now()
+         WHERE student_id = $1 AND school_id = $2
+           AND deleted_at IS NULL AND status != 'paid'`,
+        [studentId, school_id]
+      );
+      console.log('[terminate] Step 3 done');
+    } catch (e: any) {
+      console.error('[terminate] Step 3 FAILED:', e.message, e.detail);
+      throw e;
+    }
 
     // 4. Cancel any pending fee reminders for this student
     try {
@@ -954,7 +1243,9 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
         [studentId, school_id]
       );
       await client.query('RELEASE SAVEPOINT sp_reminders');
-    } catch { await client.query('ROLLBACK TO SAVEPOINT sp_reminders'); }
+    } catch {
+      await client.query('ROLLBACK TO SAVEPOINT sp_reminders');
+    }
 
     // 5. Abandon any in-progress quiz attempts
     try {
@@ -966,7 +1257,9 @@ router.post('/:id/terminate', roleGuard('admin'), async (req: Request, res: Resp
         [studentId, school_id]
       );
       await client.query('RELEASE SAVEPOINT sp_quiz');
-    } catch { await client.query('ROLLBACK TO SAVEPOINT sp_quiz'); }
+    } catch {
+      await client.query('ROLLBACK TO SAVEPOINT sp_quiz');
+    }
 
     // 6. Delete student portal account
     await client.query(
@@ -1923,6 +2216,155 @@ router.post('/bulk-terminate', roleGuard('admin'), async (req: Request, res: Res
     return res.status(500).json({ error: 'Internal server error' });
   } finally {
     client.release();
+  }
+});
+
+// GET /api/v1/admin/students/login-cards?class_id=&section_id=
+// Generates a PDF of parent login cards for printing
+router.get('/login-cards', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { class_id, section_id } = req.query as Record<string, string>;
+
+    // Get school info
+    const schoolRow = await pool.query('SELECT name, subdomain FROM schools WHERE id = $1', [school_id]);
+    const school = schoolRow.rows[0] || { name: 'School', subdomain: '' };
+    const APP_URL = 'oakit.silveroakjuniors.in';
+
+    // Build query - get ALL students with contact numbers (not just those with activated parent logins)
+    let query = `
+      SELECT s.name AS student_name, c.name AS class_name, sec.label AS section_label,
+             s.father_name, s.mother_name, s.parent_contact, s.mother_contact
+      FROM students s
+      JOIN sections sec ON sec.id = s.section_id
+      JOIN classes c ON c.id = sec.class_id
+      WHERE s.is_active = true AND s.school_id = $1
+        AND ((s.parent_contact IS NOT NULL AND s.parent_contact != '')
+             OR (s.mother_contact IS NOT NULL AND s.mother_contact != ''))
+    `;
+    const params: any[] = [school_id];
+    if (section_id) { params.push(section_id); query += ` AND s.section_id = $${params.length}`; }
+    else if (class_id) { params.push(class_id); query += ` AND sec.class_id = $${params.length}`; }
+    query += ' ORDER BY c.name, sec.label, s.name';
+
+    const result = await pool.query(query, params);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'No students with contact numbers found for the selected class/section' });
+
+    // Build student cards with parent info from student record
+    const students = result.rows.map((row: any) => {
+      const parents: { name: string; mobile: string }[] = [];
+      if (row.parent_contact) {
+        parents.push({ name: row.father_name || 'Father', mobile: row.parent_contact });
+      }
+      if (row.mother_contact) {
+        parents.push({ name: row.mother_name || 'Mother', mobile: row.mother_contact });
+      }
+      return { ...row, parents };
+    });
+
+    // Generate PDF
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ size: 'A4', margin: 30 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+
+    const CARD_W = 241, CARD_H = 156, PAGE_MARGIN = 30, M = 8;
+
+    let cardIdx = 0;
+    const cardsPerPage = 8; // 2x4
+
+    for (const student of students) {
+      if (cardIdx > 0 && cardIdx % cardsPerPage === 0) doc.addPage();
+      const pos = cardIdx % cardsPerPage;
+      const col = pos % 2;
+      const row = Math.floor(pos / 2);
+      const x = PAGE_MARGIN + col * (CARD_W + 10);
+      const y = PAGE_MARGIN + row * (CARD_H + 10);
+
+      // Card border
+      doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
+      // Header with logo - "oakit" white, ".ai" dark yellow
+      doc.rect(x, y, CARD_W, 24).fill('#1B4332');
+      doc.fillColor('white').fontSize(8).font('Helvetica-Bold').text('oakit', x + M, y + 5, { continued: true });
+      doc.fillColor('#E8960C').text('.ai');
+      doc.fillColor('#86efac').fontSize(5.5).font('Helvetica').text(school.name, x + M, y + 15);
+      doc.fillColor('#86efac').fontSize(5).font('Helvetica-Bold').text('Oakie - Your AI Mentor', x + CARD_W - 85, y + 9, { width: 77, align: 'right' });
+
+      // Student name - centered
+      let ty = y + 32;
+      doc.fillColor('#1B4332').fontSize(11).font('Helvetica-Bold').text(student.student_name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+      ty += 14;
+      doc.fillColor('#6b7280').fontSize(7).font('Helvetica').text(`${student.class_name} - Section ${student.section_label}`, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+      ty += 14;
+      doc.moveTo(x + M + 20, ty).lineTo(x + CARD_W - M - 20, ty).lineWidth(0.3).stroke('#e5e7eb');
+      ty += 8;
+
+      // Login details
+      doc.fillColor('#374151').fontSize(6).font('Helvetica-Bold').text('PARENT LOGIN', x + M, ty);
+      ty += 10;
+
+      for (const p of student.parents) {
+        doc.fillColor('#111827').fontSize(7).font('Helvetica-Bold').text(p.name, x + M, ty);
+        ty += 9;
+        doc.fillColor('#1B4332').fontSize(7).font('Helvetica').text(`Mobile: ${p.mobile}  |  Password: ${p.mobile}`, x + M, ty);
+        ty += 11;
+      }
+
+      // Footer
+      doc.rect(x, y + CARD_H - 16, CARD_W, 16).fill('#f0fdf4');
+      doc.fillColor('#1B4332').fontSize(6.5).font('Helvetica-Bold').text(APP_URL, x + M, y + CARD_H - 12);
+      doc.fillColor('#6b7280').fontSize(5.5).font('Helvetica').text(`Code: ${school.subdomain}`, x + CARD_W - 60, y + CARD_H - 12, { width: 52, align: 'right' });
+      // Oakie mascot - skip in API (image may not be available)
+      cardIdx++;
+    }
+
+    // Back pages with instructions
+    const totalPages = Math.ceil(students.length / cardsPerPage);
+    for (let p = 0; p < totalPages; p++) {
+      doc.addPage();
+      for (let i = 0; i < cardsPerPage; i++) {
+        const col = 1 - (i % 2); // mirror for double-sided
+        const row = Math.floor(i / 2);
+        const x = PAGE_MARGIN + col * (CARD_W + 10);
+        const y = PAGE_MARGIN + row * (CARD_H + 10);
+
+        doc.roundedRect(x, y, CARD_W, CARD_H, 6).lineWidth(0.5).stroke('#d1d5db');
+        // School logo - skip in API (image may not be available)
+        let ty = y + M + 10;
+
+        // Branding
+        doc.fillColor('#1B4332').fontSize(9).font('Helvetica-Bold').text(school.name, x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+        ty += 11;
+        doc.fillColor('#6b7280').fontSize(6).font('Helvetica').text('AI-Integrated Preschool', x + M, ty, { width: CARD_W - M * 2, align: 'center' });
+        ty += 10;
+        doc.moveTo(x + M + 30, ty).lineTo(x + CARD_W - M - 30, ty).lineWidth(0.3).stroke('#e5e7eb');
+        ty += 6;
+        // Quick start
+        doc.fillColor('#1B4332').fontSize(6).font('Helvetica-Bold').text('Quick Start', x + M, ty);
+        ty += 9;
+        const steps = [`1. Open Chrome/Safari > ${APP_URL}`, `2. School Code: ${school.subdomain}`, '3. Enter Mobile & Password > Login'];
+        doc.fillColor('#374151').fontSize(5.5).font('Helvetica');
+        for (const s of steps) { doc.text(s, x + M, ty, { width: CARD_W - M * 2 }); ty += 7; }
+        ty += 3;
+        doc.fillColor('#374151').fontSize(5).font('Helvetica');
+        doc.text('Android: Menu > Add to Home screen', x + M, ty); ty += 6;
+        doc.text('iPhone: Share > Add to Home Screen', x + M, ty);
+        // Footer
+        doc.rect(x, y + CARD_H - 12, CARD_W, 12).fill('#1B4332');
+        doc.fillColor('#86efac').fontSize(4.5).font('Helvetica-Bold').text('Powered by oakit.ai - Where AI meets Early Education', x + M, y + CARD_H - 9, { width: CARD_W - M * 2, align: 'center' });
+      }
+    }
+
+    doc.end();
+    await new Promise<void>(resolve => doc.on('end', resolve));
+    const pdfBuffer = Buffer.concat(chunks);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="login-cards-${section_id || class_id || 'all'}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('[login-cards]', err);
+    return res.status(500).json({ error: 'Failed to generate login cards' });
   }
 });
 
