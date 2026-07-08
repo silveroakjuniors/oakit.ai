@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
 import { apiPost, apiGet } from '@/lib/api';
@@ -8,7 +8,15 @@ import { getToken, getRole } from '@/lib/auth';
 
 interface SecurityQuestion { id: string; text: string; }
 
-export default function ChangePasswordPage() {
+export default function ChangePasswordPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-bg flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" /></div>}>
+      <ChangePasswordPage />
+    </Suspense>
+  );
+}
+
+function ChangePasswordPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = getToken() || '';
