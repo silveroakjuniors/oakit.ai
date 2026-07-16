@@ -19,7 +19,7 @@ interface AttendanceItem {
 interface DailyRow { date: string; present: number; absent: number; total: number; }
 interface ClassRow { class_name: string; present: number; absent: number; total: number; attendance_pct: number; }
 interface Summary { today_pct: number; week_pct: number; month_pct: number; absent_today: number; present_today: number; }
-interface Stats { today: string; summary: Summary; daily: DailyRow[]; by_class: ClassRow[]; }
+interface Stats { today: string; from: string; to: string; range_pct: number | null; summary: Summary; daily: DailyRow[]; by_class: ClassRow[]; }
 
 function pct(present: number, total: number) {
   return total > 0 ? Math.round((present / total) * 100) : 0;
@@ -37,8 +37,11 @@ export default function AttendancePage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [items, setItems] = useState<AttendanceItem[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
+  const [rangeFrom, setRangeFrom] = useState('');
+  const [rangeTo, setRangeTo] = useState('');
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
+  const [rangeLoading, setRangeLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -50,9 +53,23 @@ export default function AttendancePage() {
       setStats(s);
       setItems(i);
       setSelectedDate(s.today);
+      setRangeTo(s.today);
+      // Default range: start of current month
+      const d = new Date(s.today + 'T12:00:00');
+      d.setDate(1);
+      setRangeFrom(d.toISOString().split('T')[0]);
     }).catch(() => setError('Failed to load attendance data'))
       .finally(() => setLoading(false));
   }, []);
+
+  async function loadRange(from: string, to: string) {
+    setRangeLoading(true);
+    try {
+      const s = await apiGet<Stats>(`/api/v1/principal/attendance/stats?from=${from}&to=${to}`, token);
+      setStats(prev => prev ? { ...prev, from, to, range_pct: s.range_pct, daily: s.daily, by_class: s.by_class } : s);
+    } catch { /* ignore */ }
+    finally { setRangeLoading(false); }
+  }
 
   async function loadDate(date: string) {
     setSelectedDate(date);
@@ -141,11 +158,75 @@ export default function AttendancePage() {
         ))}
       </div>
 
+      {/* Date range filter */}
+      <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest shrink-0">Date Range</p>
+          <div className="flex items-center gap-2 flex-1 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-neutral-500">From</label>
+              <input type="date" value={rangeFrom} max={rangeTo || stats?.today}
+                onChange={e => setRangeFrom(e.target.value)}
+                className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20" />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-neutral-500">To</label>
+              <input type="date" value={rangeTo} min={rangeFrom} max={stats?.today}
+                onChange={e => setRangeTo(e.target.value)}
+                className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20" />
+            </div>
+            <button
+              onClick={() => loadRange(rangeFrom, rangeTo)}
+              disabled={!rangeFrom || !rangeTo || rangeLoading}
+              className="px-4 py-1.5 bg-[#1B4332] text-white text-sm font-semibold rounded-xl hover:bg-[#1B4332]/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+            >
+              {rangeLoading ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+              Apply
+            </button>
+            {/* Quick presets */}
+            <div className="flex gap-1.5 flex-wrap">
+              {[
+                { label: 'This week', days: 7 },
+                { label: 'This month', days: 30 },
+                { label: 'Last 3 months', days: 90 },
+              ].map(p => (
+                <button key={p.label}
+                  onClick={() => {
+                    const to = stats?.today || new Date().toISOString().split('T')[0];
+                    const from = new Date(to + 'T12:00:00');
+                    from.setDate(from.getDate() - p.days + 1);
+                    const f = from.toISOString().split('T')[0];
+                    setRangeFrom(f); setRangeTo(to);
+                    loadRange(f, to);
+                  }}
+                  className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-600 hover:bg-neutral-200 transition-colors">
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {stats?.range_pct != null && (
+            <div className="shrink-0 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2 flex items-center gap-3">
+              <div>
+                <p className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wide">Range Avg</p>
+                <p className={`text-xl font-black ${pctColor(stats.range_pct)}`}>{stats.range_pct}%</p>
+              </div>
+              <div className="text-[10px] text-neutral-400 text-right">
+                <p>{stats.from} to</p>
+                <p>{stats.to}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Daily trend */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-neutral-100 shadow-sm p-4">
-          <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">Daily Attendance % — Last 30 Days</p>
+          <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">
+            Daily Attendance % {stats?.from && stats?.to ? `— ${stats.from} to ${stats.to}` : '— Last 30 Days'}
+          </p>
           {dailyChart.length > 0 ? (
             <div style={{ height: 180 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -178,7 +259,9 @@ export default function AttendancePage() {
 
         {/* Class-wise this month */}
         <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-4">
-          <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">By Class — This Month</p>
+          <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">
+            By Class {stats?.from && stats?.to ? `(${stats.from} to ${stats.to})` : '— This Month'}
+          </p>
           {stats?.by_class && stats.by_class.length > 0 ? (
             <div className="space-y-3">
               {stats.by_class.map(c => (

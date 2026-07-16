@@ -43,14 +43,22 @@ router.get('/overview', async (req: Request, res: Response) => {
   }
 });
 
-// GET /stats — historical attendance stats for last N days + class breakdown
+// GET /stats — historical attendance stats for a date range + class breakdown
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const school_id = req.user!.school_id;
     const today = await getToday(school_id!);
-    const days = Math.min(parseInt(req.query.days as string) || 30, 90);
 
-    // Daily school-wide attendance % for last N days
+    // Support explicit from/to range OR legacy days param
+    const toDate   = (req.query.to   as string) || today;
+    const fromDate = (req.query.from as string) || (() => {
+      const days = Math.min(parseInt(req.query.days as string) || 30, 365);
+      const d = new Date(toDate + 'T12:00:00');
+      d.setDate(d.getDate() - days + 1);
+      return d.toISOString().split('T')[0];
+    })();
+
+    // Daily school-wide attendance % for the range
     const dailyResult = await pool.query(
       `SELECT
          ar.attend_date::text AS date,
@@ -60,14 +68,13 @@ router.get('/stats', async (req: Request, res: Response) => {
        FROM attendance_records ar
        JOIN sections s ON s.id = ar.section_id
        WHERE s.school_id = $1
-         AND ar.attend_date >= ($2::date - ($3 || ' days')::interval)::date
-         AND ar.attend_date <= $2::date
+         AND ar.attend_date BETWEEN $2::date AND $3::date
        GROUP BY ar.attend_date
        ORDER BY ar.attend_date`,
-      [school_id, today, days]
+      [school_id, fromDate, toDate]
     );
 
-    // Class-wise attendance % for current month
+    // Class-wise attendance % for the range
     const classResult = await pool.query(
       `SELECT
          c.name AS class_name,
@@ -79,14 +86,13 @@ router.get('/stats', async (req: Request, res: Response) => {
        JOIN sections s ON s.id = ar.section_id
        JOIN classes c ON c.id = s.class_id
        WHERE s.school_id = $1
-         AND ar.attend_date >= date_trunc('month', $2::date)
-         AND ar.attend_date <= $2::date
+         AND ar.attend_date BETWEEN $2::date AND $3::date
        GROUP BY c.name
        ORDER BY c.name`,
-      [school_id, today]
+      [school_id, fromDate, toDate]
     );
 
-    // Summary: today, this week, this month
+    // Summary: today, this week, this month (always relative to today)
     const summaryResult = await pool.query(
       `SELECT
          ROUND(COUNT(*) FILTER (WHERE ar.status = 'present' AND ar.attend_date = $2) * 100.0 /
@@ -103,8 +109,16 @@ router.get('/stats', async (req: Request, res: Response) => {
       [school_id, today]
     );
 
+    // Range-level avg
+    const rangeTotal = dailyResult.rows.reduce((s: number, r: any) => s + r.total, 0);
+    const rangePresent = dailyResult.rows.reduce((s: number, r: any) => s + r.present, 0);
+    const range_pct = rangeTotal > 0 ? Math.round((rangePresent / rangeTotal) * 100) : null;
+
     return res.json({
       today,
+      from: fromDate,
+      to: toDate,
+      range_pct,
       summary: summaryResult.rows[0] || { today_pct: 0, week_pct: 0, month_pct: 0, absent_today: 0, present_today: 0 },
       daily: dailyResult.rows,
       by_class: classResult.rows,
