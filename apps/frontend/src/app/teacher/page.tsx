@@ -23,7 +23,7 @@ import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
   ChevronDown, ChevronUp, Send, Paperclip, BookOpen, Sparkles,
   LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X, ClipboardList,
-  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet
+  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet, Megaphone
 } from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
@@ -240,6 +240,7 @@ export default function TeacherPlanner() {
   const [streak, setStreak] = useState<{ current_streak: number; best_streak: number; badge: string | null } | null>(null);
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
   const [showStreakInfo, setShowStreakInfo] = useState(false);
+  const [announcements, setAnnouncements] = useState<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const initialLoadDone = useRef(false);
   const todayCompletedRef = useRef(false);
@@ -265,6 +266,10 @@ export default function TeacherPlanner() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
     if (!todayCompletedRef.current) await autoShowDailyPlan(effectiveToday);
+    // Load announcements (non-critical)
+    apiGet<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>(
+      '/api/v1/teacher/announcements', token
+    ).then(setAnnouncements).catch(() => {});
   }
 
   async function loadStreak() {
@@ -1019,6 +1024,27 @@ export default function TeacherPlanner() {
                 </Button>
               </div>
             )}
+          </Card>
+        )}
+
+        {/* School Announcements */}
+        {announcements.length > 0 && (
+          <Card padding="sm" className="mt-1 border-primary-100 bg-primary-50/30">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-7 h-7 rounded-xl bg-primary-100 flex items-center justify-center">
+                <Megaphone className="w-3.5 h-3.5 text-primary-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-neutral-800">School Announcements</h2>
+            </div>
+            <div className="flex flex-col gap-2">
+              {announcements.map(a => (
+                <div key={a.id} className="border-l-4 border-primary-400 pl-3 py-1">
+                  <p className="text-sm font-semibold text-neutral-800">{a.title}</p>
+                  <p className="text-xs text-neutral-600 mt-0.5 leading-relaxed">{a.body}</p>
+                  <p className="text-[10px] text-neutral-400 mt-1">By {a.author_name} &middot; {new Date(a.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                </div>
+              ))}
+            </div>
           </Card>
         )}
       </div>

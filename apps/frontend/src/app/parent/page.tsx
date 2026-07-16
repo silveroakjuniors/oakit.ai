@@ -3263,13 +3263,15 @@ function NotificationsTab({ notifications, announcements, onRead, onTabChange }:
  <div className="space-y-5">
  {announcements.length > 0 && (
  <div>
- <h2 className="text-lg font-bold text-neutral-800 mb-3">?? Announcements</h2>
+ <h2 className="text-lg font-bold text-neutral-800 mb-3 flex items-center gap-2">
+ <Megaphone size={18} className="text-primary-600" /> Announcements
+ </h2>
  <div className="space-y-3">
  {announcements.map(a => (
  <div key={a.id} className="bg-white rounded-2xl p-4 border-l-4 border-primary-400 shadow-sm">
  <p className="font-bold text-neutral-800 text-sm">{a.title}</p>
  <p className="text-sm text-neutral-600 mt-1">{a.body}</p>
- <p className="text-xs text-neutral-400 mt-2">By {a.author_name}  {a.created_at.split('T')[0]}</p>
+ <p className="text-xs text-neutral-400 mt-2">By {a.author_name} &middot; {new Date(a.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
  </div>
  ))}
  </div>
