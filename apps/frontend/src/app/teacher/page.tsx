@@ -840,7 +840,7 @@ export default function TeacherPlanner() {
                    tomorrowPlan.status === 'revision'  ? tomorrowPlan.special_label || 'Revision Day' :
                    tomorrowPlan.status === 'exam'      ? tomorrowPlan.special_label || 'Exam Day' :
                    tomorrowPlan.status === 'event'     ? tomorrowPlan.special_label || 'Special Event' :
-                   tomorrowPlan.chunks?.length > 0     ? `${tomorrowPlan.chunks.length} topic${tomorrowPlan.chunks.length > 1 ? 's' : ''} planned` :
+                   tomorrowPlan.chunks?.length > 0     ? tomorrowPlan.chunks.map((c: any) => c.topic_label || 'Activity').join(', ') :
                    tomorrowPlan.special_label          ? tomorrowPlan.special_label :
                    'Regular school day'}
                 </p>
