@@ -19,16 +19,15 @@ router.get('/overview', async (req: Request, res: Response) => {
          s.label       AS section_label,
          c.name        AS class_name,
          u.name        AS class_teacher_name,
-         COALESCE(s.flagged, false)   AS flagged,
+         COALESCE(s.flagged, false) AS flagged,
          s.flag_note,
          CASE WHEN COUNT(ar.id) > 0 THEN 'submitted' ELSE 'pending' END AS status,
-         COUNT(ar.id) FILTER (WHERE ar.status = 'present')::int  AS present_count,
-         COUNT(ar.id) FILTER (WHERE ar.status = 'absent')::int   AS absent_count,
-         COUNT(st.id)::int AS total_students
+         COUNT(ar.id) FILTER (WHERE ar.status = 'present')::int AS present_count,
+         COUNT(ar.id) FILTER (WHERE ar.status = 'absent')::int  AS absent_count,
+         (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) AS total_students
        FROM sections s
        JOIN classes c ON c.id = s.class_id
        LEFT JOIN users u ON u.id = s.class_teacher_id
-       LEFT JOIN students st ON st.section_id = s.id AND st.is_active = true
        LEFT JOIN attendance_records ar ON ar.section_id = s.id AND ar.attend_date = $2
        WHERE s.school_id = $1
        GROUP BY s.id, s.label, c.name, u.name, s.flagged, s.flag_note
