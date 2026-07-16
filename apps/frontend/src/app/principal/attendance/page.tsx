@@ -67,12 +67,13 @@ export default function AttendancePage() {
     Promise.all([
       apiGet<Stats>('/api/v1/principal/attendance/stats', token),
       apiGet<AttendanceItem[]>('/api/v1/principal/attendance/overview', token),
-    ]).then(([s, i]) => {
+      apiGet<SectionOption[]>('/api/v1/principal/attendance/sections', token).catch(() => []),
+    ]).then(([s, i, secs]) => {
       setStats(s);
       setItems(i);
+      setSectionOptions(secs || []);
       setSelectedDate(s.today);
       setRangeTo(s.today);
-      // Default range: start of current month
       const d = new Date(s.today + 'T12:00:00');
       d.setDate(1);
       setRangeFrom(d.toISOString().split('T')[0]);
@@ -143,8 +144,8 @@ export default function AttendancePage() {
   const rangeTotal   = rangePresent + rangeAbsent;
   const schoolRangePct = rangeTotal > 0 ? Math.round(rangePresent / rangeTotal * 100) : (stats?.range_pct ?? 0);
 
-  // Class list for filter dropdown
-  const classNames = [...new Set((stats?.by_class || []).map(c => c.class_name))].sort();
+  // Class list from sections endpoint (always complete, not dependent on range filter)
+  const classNames = [...new Set(sectionOptions.map(s => s.class_name))].sort();
 
   // Filter by selected class + section
   const filteredByClass = selectedClass
@@ -160,19 +161,15 @@ export default function AttendancePage() {
       )
     : items;
 
-  // Range avg — use class/section-specific if filtered
-  const selectedClassData = selectedClass ? filteredByClass[0] : null;
-  const rangePct = selectedClassData && filteredByClass.length === 1
-    ? Math.round(parseFloat(String(selectedClassData.attendance_pct)))
-    : selectedClass && filteredByClass.length > 1
-      ? Math.round(filteredByClass.reduce((s, c) => s + parseFloat(String(c.attendance_pct)), 0) / filteredByClass.length)
-      : schoolRangePct;
+  // Range avg — use range_pct from API (always reflects current filters after loadRange)
+  // Fallback to computing from daily data if range_pct is null
+  const rangePct = stats?.range_pct != null
+    ? Math.round(parseFloat(String(stats.range_pct)))
+    : schoolRangePct;
 
-  // Avg daily present — use class-specific totals if filtered
-  const effectivePresent = selectedClassData ? selectedClassData.present : rangePresent;
-  const effectiveAbsent  = selectedClassData ? selectedClassData.absent  : rangeAbsent;
-  const avgDailyPresent  = rangeDays > 0 ? Math.round(effectivePresent / rangeDays) : 0;
-  const avgDailyAbsent   = rangeDays > 0 ? Math.round(effectiveAbsent  / rangeDays) : 0;
+  // Avg daily — always from daily data (section-filtered when section is selected)
+  const avgDailyPresent  = rangeDays > 0 ? Math.round(rangePresent / rangeDays) : 0;
+  const avgDailyAbsent   = rangeDays > 0 ? Math.round(rangeAbsent  / rangeDays) : 0;
 
   // Best and worst day in range (school-wide from chart data)
   const sortedDays = [...activeDays].map(d => ({ ...d, pct: pct(d.present, d.total) }));
@@ -277,8 +274,8 @@ export default function AttendancePage() {
       {/* Summary KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Range Avg', value: `${rangePct}%`, sub: selectedClass ? `${selectedClass} · ${rangeLabel}` : rangeLabel, color: rangePct, icon: TrendingUp },
-          { label: 'Avg Daily Present', value: avgDailyPresent.toString(), sub: `~${avgDailyAbsent} absent/day · ${rangeDays} school days${selectedClass ? ` · ${selectedClass}` : ''}`, color: rangePct, icon: Users },
+          { label: 'Range Avg', value: `${rangePct}%`, sub: [selectedClass, selectedSection ? `Sec ${selectedSection}` : '', rangeLabel].filter(Boolean).join(' · '), color: rangePct, icon: TrendingUp },
+          { label: 'Avg Daily Present', value: avgDailyPresent.toString(), sub: `~${avgDailyAbsent} absent/day · ${rangeDays} school days`, color: rangePct, icon: Users },
           { label: 'Best Day', value: bestDay ? `${bestDay.pct}%` : '—', sub: bestDay ? new Date(bestDay.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'No data', color: bestDay?.pct ?? 0, icon: TrendingUp },
           { label: 'Worst Day', value: worstDay ? `${worstDay.pct}%` : '—', sub: worstDay ? new Date(worstDay.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'No data', color: worstDay?.pct ?? 0, icon: TrendingDown },
         ].map(k => (
@@ -363,7 +360,12 @@ export default function AttendancePage() {
               <>
                 <label className="text-xs text-neutral-500 shrink-0">Class</label>
                 <select value={selectedClass}
-                  onChange={e => { setSelectedClass(e.target.value); setSelectedSection(''); }}
+                  onChange={e => {
+                    const cls = e.target.value;
+                    setSelectedClass(cls);
+                    setSelectedSection('');
+                    loadRange(rangeFrom, rangeTo, cls || undefined, undefined);
+                  }}
                   className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20">
                   <option value="">All classes</option>
                   {classNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
@@ -372,18 +374,20 @@ export default function AttendancePage() {
             )}
             {/* Section dropdown — only visible when a class is selected */}
             {selectedClass && (() => {
-              const secs = (stats?.by_class || [])
-                .filter(c => c.class_name === selectedClass && c.section_label)
-                .map(c => ({ label: c.section_label!, id: '' }));
-              // also try from sections list if available
-              const secOptions = secs.length > 0 ? secs : [];
+              const secOptions = sectionOptions
+                .filter(s => s.class_name === selectedClass)
+                .map(s => ({ label: s.section_label, id: s.section_id }));
               return secOptions.length > 1 ? (
                 <>
                   <label className="text-xs text-neutral-500 shrink-0">Section</label>
-                  <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)}
+                  <select value={selectedSection} onChange={e => {
+                      const sec = e.target.value;
+                      setSelectedSection(sec);
+                      loadRange(rangeFrom, rangeTo, selectedClass || undefined, sec || undefined);
+                    }}
                     className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20">
                     <option value="">All sections</option>
-                    {secOptions.map(s => <option key={s.label} value={s.label}>Section {s.label}</option>)}
+                    {secOptions.map(s => <option key={s.id} value={s.id}>Section {s.label}</option>)}
                   </select>
                 </>
               ) : null;

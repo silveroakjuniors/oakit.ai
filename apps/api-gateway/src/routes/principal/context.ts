@@ -51,7 +51,7 @@ router.get('/', async (req: Request, res: Response) => {
        FROM sections s
        JOIN classes c ON c.id = s.class_id
        LEFT JOIN users ct ON ct.id = s.class_teacher_id
-       LEFT JOIN students st ON st.section_id = s.id
+       LEFT JOIN students st ON st.section_id = s.id AND st.is_active = true
        LEFT JOIN attendance_records ar ON ar.section_id = s.id AND ar.attend_date = $2
        WHERE s.school_id = $1
        GROUP BY s.id, s.label, c.name, ct.name
