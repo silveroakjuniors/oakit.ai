@@ -239,4 +239,221 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/teacher/context/performance — teacher's own performance vs school avg
+router.get('/performance', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const today = await getToday(school_id);
+
+    // School days in last 30 days (Mon-Fri, excluding holidays)
+    let schoolDays = 22;
+    try {
+      const calRow = await pool.query(
+        `SELECT working_days, holidays FROM school_calendar
+         WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+        [school_id, today]
+      );
+      if (calRow.rows.length > 0) {
+        const { working_days = [1,2,3,4,5], holidays = [] } = calRow.rows[0];
+        const holidayDates = (holidays as any[]).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+        const todayDate = new Date(today + 'T12:00:00');
+        let count = 0;
+        for (let i = 0; i < 30; i++) {
+          const d = new Date(todayDate); d.setDate(d.getDate() - i);
+          if (working_days.includes(d.getDay()) && !holidayDates.includes(d.toISOString().split('T')[0])) count++;
+        }
+        schoolDays = Math.max(count, 1);
+      }
+    } catch { /* use default */ }
+
+    // This teacher's stats — plans, attendance, homework, observations
+    const myRow = await pool.query(
+      `SELECT
+         u.name,
+         COALESCE(ts.current_streak, 0) AS current_streak,
+         COALESCE(ts.best_streak, 0) AS best_streak,
+         ts.last_completed_date,
+         (SELECT COUNT(DISTINCT dc.completion_date)::int
+          FROM daily_completions dc
+          WHERE dc.teacher_id = $1 AND dc.school_id = $2
+            AND dc.completion_date BETWEEN ($3::date - 29) AND $3::date
+         ) AS completions_30d,
+         -- Attendance submission rate (days attendance was submitted vs school days)
+         (SELECT COUNT(DISTINCT ar.attend_date)::int
+          FROM attendance_records ar
+          JOIN sections s2 ON s2.id = ar.section_id
+          WHERE s2.class_teacher_id = $1 OR ar.section_id IN (
+            SELECT ts2.section_id FROM teacher_sections ts2 WHERE ts2.teacher_id = $1
+          )
+            AND ar.attend_date BETWEEN ($3::date - 29) AND $3::date
+            AND ar.school_id = $2
+         ) AS attendance_days_30d,
+         -- Homework sent in last 30 days
+         (SELECT COUNT(DISTINCT th.homework_date)::int
+          FROM teacher_homework th
+          WHERE th.teacher_id = $1 AND th.school_id = $2
+            AND th.homework_date BETWEEN ($3::date - 29) AND $3::date
+         ) AS homework_days_30d,
+         -- Observations written in last 30 days
+         (SELECT COUNT(*)::int
+          FROM student_observations obs
+          WHERE obs.teacher_id = $1 AND obs.school_id = $2
+            AND obs.obs_date BETWEEN ($3::date - 29) AND $3::date
+         ) AS observations_30d
+       FROM users u
+       LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $2
+       WHERE u.id = $1`,
+      [user_id, school_id, today]
+    );
+
+    if (myRow.rows.length === 0) return res.status(404).json({ error: 'Teacher not found' });
+    const me = myRow.rows[0];
+    const my_rate = Math.round((me.completions_30d / schoolDays) * 100);
+    const att_rate = Math.round((me.attendance_days_30d / schoolDays) * 100);
+    const hw_rate  = Math.round((me.homework_days_30d / schoolDays) * 100);
+
+    // All teachers' stats for ranking
+    const allRows = await pool.query(
+      `SELECT
+         u.id, u.name,
+         (SELECT COUNT(DISTINCT dc.completion_date)::int
+          FROM daily_completions dc
+          WHERE dc.teacher_id = u.id AND dc.school_id = $1
+            AND dc.completion_date BETWEEN ($2::date - 29) AND $2::date
+         ) AS completions_30d,
+         COALESCE(ts.current_streak, 0) AS current_streak
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+       LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $1
+       WHERE u.school_id = $1
+         AND r.name IN ('teacher','class teacher','supporting teacher')
+         AND u.is_active = true`,
+      [school_id, today]
+    );
+
+    const allRates = allRows.rows.map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      rate: Math.round((t.completions_30d / schoolDays) * 100),
+      streak: t.current_streak,
+    })).sort((a: any, b: any) => b.rate - a.rate || b.streak - a.streak);
+
+    const total = allRates.length;
+    const rank = allRates.findIndex((t: any) => t.id === user_id) + 1;
+    const schoolAvg = total > 0 ? Math.round(allRates.reduce((s: number, t: any) => s + t.rate, 0) / total) : 0;
+    const top25pct = total > 0 ? allRates[Math.floor(total * 0.25)]?.rate ?? 0 : 0;
+
+    // What's holding back the rank — build reasons array
+    const reasons: { factor: string; your_value: string; school_avg: string; impact: 'high' | 'medium' | 'low'; status: 'good' | 'warn' | 'bad' }[] = [];
+
+    // Plan completion
+    const avgCompletions = Math.round(allRates.reduce((s: number, t: any) => s + t.rate, 0) / Math.max(total, 1));
+    reasons.push({
+      factor: 'Daily plan completion',
+      your_value: `${my_rate}% (${me.completions_30d}/${schoolDays} days)`,
+      school_avg: `${avgCompletions}%`,
+      impact: 'high',
+      status: my_rate >= avgCompletions ? 'good' : my_rate >= avgCompletions - 15 ? 'warn' : 'bad',
+    });
+
+    // Streak
+    const avgStreak = Math.round(allRates.reduce((s: number, t: any) => s + t.streak, 0) / Math.max(total, 1));
+    const effectiveStreak = me.completions_30d > 0 ? me.current_streak : 0;
+    reasons.push({
+      factor: 'Consistency streak',
+      your_value: `${effectiveStreak} days`,
+      school_avg: `${avgStreak} days avg`,
+      impact: 'high',
+      status: effectiveStreak >= avgStreak ? 'good' : effectiveStreak > 0 ? 'warn' : 'bad',
+    });
+
+    // Attendance submission
+    reasons.push({
+      factor: 'Attendance submission',
+      your_value: `${att_rate}% (${me.attendance_days_30d}/${schoolDays} days)`,
+      school_avg: '—',
+      impact: 'medium',
+      status: att_rate >= 90 ? 'good' : att_rate >= 70 ? 'warn' : 'bad',
+    });
+
+    // Homework
+    reasons.push({
+      factor: 'Homework sent to parents',
+      your_value: `${hw_rate}% (${me.homework_days_30d}/${schoolDays} days)`,
+      school_avg: '—',
+      impact: 'medium',
+      status: hw_rate >= 70 ? 'good' : hw_rate >= 40 ? 'warn' : 'bad',
+    });
+
+    // Observations
+    reasons.push({
+      factor: 'Student observations',
+      your_value: `${me.observations_30d} written`,
+      school_avg: '—',
+      impact: 'low',
+      status: me.observations_30d >= 10 ? 'good' : me.observations_30d >= 5 ? 'warn' : 'bad',
+    });
+
+    // Build improvement tips based on weakest areas
+    const tips: string[] = [];
+    if (my_rate < avgCompletions) {
+      const daysNeeded = Math.ceil((avgCompletions - my_rate) * schoolDays / 100);
+      tips.push(`Complete your daily plan for ${daysNeeded} more days to reach the school average. Mark topics done in the Plan tab every day.`);
+    }
+    if (effectiveStreak === 0) {
+      tips.push(`Start a streak today — complete today's plan to begin building consistency. Even a 5-day streak moves you up significantly.`);
+    } else if (effectiveStreak < avgStreak) {
+      tips.push(`Your current streak is ${effectiveStreak} days vs school average of ${avgStreak}. Keep completing plans daily to build your streak.`);
+    }
+    if (att_rate < 90) {
+      const missingAtt = schoolDays - me.attendance_days_30d;
+      tips.push(`You have ${missingAtt} school days without attendance submission. Submit attendance every morning before 10am.`);
+    }
+    if (hw_rate < 70) {
+      tips.push(`Sending homework to parents regularly improves your engagement score. Use the Homework & Notes tab after completing your daily plan.`);
+    }
+    if (me.observations_30d < 5) {
+      tips.push(`Add student observations in Child Journey. Aim for 2-3 observations per week to strengthen your student tracking record.`);
+    }
+    if (tips.length === 0) {
+      tips.push(`You are performing excellently! Maintain your streak and keep completing plans every day to stay in the top rankings.`);
+    }
+
+    // Daily completion trend last 30 days
+    const dailyResult = await pool.query(
+      `SELECT completion_date::text AS date, COUNT(DISTINCT section_id)::int AS sections_completed
+       FROM daily_completions
+       WHERE teacher_id = $1 AND school_id = $2
+         AND completion_date BETWEEN ($3::date - 29) AND $3::date
+       GROUP BY completion_date
+       ORDER BY completion_date`,
+      [user_id, school_id, today]
+    );
+
+    return res.json({
+      name: me.name,
+      completion_rate_30d: my_rate,
+      completions_30d: me.completions_30d,
+      school_days_30d: schoolDays,
+      attendance_rate_30d: att_rate,
+      homework_rate_30d: hw_rate,
+      observations_30d: me.observations_30d,
+      current_streak: effectiveStreak,
+      best_streak: me.best_streak,
+      last_completed_date: me.last_completed_date,
+      rank,
+      total_teachers: total,
+      school_avg_rate: schoolAvg,
+      top_25pct_rate: top25pct,
+      reasons,
+      tips,
+      daily: dailyResult.rows,
+      all_teachers: allRates,
+    });
+  } catch (err) {
+    console.error('[teacher/performance]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
