@@ -827,7 +827,7 @@ export default function ParentPage() {
  {tab === 'fees' && <FeesTab invoice={invoice} activeChild={activeChild} token={token} />}
  {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
  {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} translationEnabled={schoolTranslationEnabled} />}
- {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
+ {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} onClose={() => setTab('home')} />}
  {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} token={token} />}
  </div>
  )}
@@ -1293,9 +1293,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  })}
  {/* Show status pill: Completed or In Progress */}
  {feed.completion ? (
- <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">? Completed</span>
+ <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">Completed</span>
  ) : (
- <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200">? In Progress</span>
+ <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200">In Progress</span>
  )}
  </div>
  </div>
@@ -1668,7 +1668,9 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  onClick={closeLightbox}
  className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center text-white text-xl font-bold z-10"
  style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
- >?</button>
+ >
+ <X size={16} className="text-white" />
+ </button>
 
  {/* Prev */}
  {lightbox.index > 0 && (
@@ -1886,7 +1888,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
  <CreditCard size={15} className="text-orange-500" />
  <p className="text-sm font-bold text-orange-800">Fees Due</p>
  </div>
- <p className="text-2xl font-black text-orange-700 mb-1">?{invoice.net_payable.toLocaleString('en-IN')}</p>
+ <p className="text-2xl font-black text-orange-700 mb-1">&#8377;{invoice.net_payable.toLocaleString('en-IN')}</p>
  {invoice.accounts?.[0]?.due_date && (
  <p className="text-xs text-orange-600 mb-3">
  Due on {new Date(invoice.accounts[0].due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -1971,7 +1973,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
  <p className={`text-xs font-bold uppercase tracking-widest ${day.isToday ? 'text-emerald-600' : isCovered ? 'text-blue-600' : 'text-gray-400'}`}>
  {day.isToday ? 'Today' : isCovered ? (day.completed ? 'Completed' : 'Past') : 'Upcoming'}
  </p>
- {day.completed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">? Covered</span>}
+ {day.completed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Covered</span>}
  {isPast && !day.completed && !day.isToday && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Past</span>}
  </div>
  <p className="text-base font-bold text-gray-900 mt-0.5">{day.label}</p>
@@ -2125,13 +2127,13 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
 
  function typeConfig(type: string) {
  switch (type) {
- case 'holiday': return { bg: 'bg-red-50', border: 'border-red-100', icon: '', label: 'Holiday', labelCls: 'bg-red-100 text-red-700' };
- case 'settling': return { bg: 'bg-amber-50', border: 'border-amber-100', icon: '??', label: 'Settling Day', labelCls: 'bg-amber-100 text-amber-700' };
- case 'half_day': return { bg: 'bg-yellow-50', border: 'border-yellow-100', icon: '?', label: 'Half Day', labelCls: 'bg-yellow-100 text-yellow-700' };
- case 'exam': return { bg: 'bg-purple-50', border: 'border-purple-100', icon: '??', label: 'Exam', labelCls: 'bg-purple-100 text-purple-700' };
- case 'activity': return { bg: 'bg-blue-50', border: 'border-blue-100', icon: '??', label: 'Activity', labelCls: 'bg-blue-100 text-blue-700' };
- case 'announcement': return { bg: 'bg-emerald-50',border: 'border-emerald-100',icon: '??', label: 'Announcement', labelCls: 'bg-emerald-100 text-emerald-700' };
- default: return { bg: 'bg-gray-50', border: 'border-gray-100', icon: '??', label: 'Event', labelCls: 'bg-gray-100 text-gray-600' };
+ case 'holiday': return { bg: 'bg-red-50', border: 'border-red-100', icon: 'holiday', label: 'Holiday', labelCls: 'bg-red-100 text-red-700' };
+ case 'settling': return { bg: 'bg-amber-50', border: 'border-amber-100', icon: 'settling', label: 'Settling Day', labelCls: 'bg-amber-100 text-amber-700' };
+ case 'half_day': return { bg: 'bg-yellow-50', border: 'border-yellow-100', icon: 'half_day', label: 'Half Day', labelCls: 'bg-yellow-100 text-yellow-700' };
+ case 'exam': return { bg: 'bg-purple-50', border: 'border-purple-100', icon: 'exam', label: 'Exam', labelCls: 'bg-purple-100 text-purple-700' };
+ case 'activity': return { bg: 'bg-blue-50', border: 'border-blue-100', icon: 'activity', label: 'Activity', labelCls: 'bg-blue-100 text-blue-700' };
+ case 'announcement': return { bg: 'bg-emerald-50',border: 'border-emerald-100',icon: 'announcement', label: 'Announcement', labelCls: 'bg-emerald-100 text-emerald-700' };
+ default: return { bg: 'bg-gray-50', border: 'border-gray-100', icon: 'event', label: 'Event', labelCls: 'bg-gray-100 text-gray-600' };
  }
  }
 
@@ -2240,8 +2242,8 @@ function AssignmentsTab({ activeChild, token }: { activeChild: Child | null; tok
  completed: { label: 'Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
  partial: { label: 'Half Done', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
  not_submitted: { label: 'Not Done', cls: 'bg-red-50 text-red-600 border-red-100' },
- pending: { label: '', cls: 'bg-white text-gray-700 border-gray-100' },
- }[hw.status] || { label: '', cls: 'bg-white text-gray-700 border-gray-100' };
+ pending: { label: 'Not marked', cls: 'bg-gray-50 text-gray-400 border-gray-100' },
+ }[hw.status] || { label: 'Not marked', cls: 'bg-gray-50 text-gray-400 border-gray-100' };
  return (
  <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
  <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
@@ -2542,7 +2544,7 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  });
  const data = await res.json();
  if (!res.ok) throw new Error(data.error || 'Failed');
- setTxnMsg('? Payment details submitted. Admin will verify and update your fee status.');
+ setTxnMsg('Payment details submitted. Admin will verify and update your fee status.');
  setTxnId(''); setTxnFile(null);
  } catch (e: any) { setTxnMsg(e.message || 'Failed to submit'); }
  finally { setSubmitting(false); }
@@ -2569,14 +2571,14 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  <div>
  <p className="text-xs text-gray-500 mb-0.5">Total Due</p>
  <p className={`text-3xl font-black ${invoice.net_payable > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
- ?{(invoice.net_payable ?? 0).toLocaleString('en-IN')}
+ &#8377;{(invoice.net_payable ?? 0).toLocaleString('en-IN')}
  </p>
- {invoice.net_payable === 0 && <p className="text-xs text-emerald-600 font-medium mt-0.5">? All fees paid</p>}
+ {invoice.net_payable === 0 && <p className="text-xs text-emerald-600 font-medium mt-0.5">All fees paid</p>}
  </div>
  {invoice.credit_balance > 0 && (
  <div className="text-right">
  <p className="text-xs text-gray-400">Credit Balance</p>
- <p className="text-lg font-bold text-emerald-600">?{invoice.credit_balance.toLocaleString('en-IN')}</p>
+ <p className="text-lg font-bold text-emerald-600">&#8377;{invoice.credit_balance.toLocaleString('en-IN')}</p>
  </div>
  )}
  </div>
@@ -2592,7 +2594,7 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  {acc.due_date && <p className="text-xs text-gray-400">Due {new Date(acc.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>}
  </div>
  <div className="text-right">
- <p className="text-sm font-bold text-gray-900">?{(acc.outstanding_balance ?? 0).toLocaleString('en-IN')}</p>
+ <p className="text-sm font-bold text-gray-900">&#8377;{(acc.outstanding_balance ?? 0).toLocaleString('en-IN')}</p>
  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : acc.status === 'partial' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
  {acc.status}
  </span>
@@ -2640,7 +2642,7 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  </div>
 
  {txnMsg && (
- <p className={`text-xs px-3 py-2 rounded-xl ${txnMsg.startsWith('?') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+ <p className={`text-xs px-3 py-2 rounded-xl ${txnMsg.startsWith('Payment details') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
  {txnMsg}
  </p>
  )}
@@ -2979,7 +2981,7 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
  {termData?.settling_notes && termData.settling_notes.length > 0 && (
  <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
  <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">
- ?? Settling Period  {(termData as any).settling_days ?? termData.settling_notes.length} days
+ Settling Period &middot; {(termData as any).settling_days ?? termData.settling_notes.length} days
  </p>
  <div className="space-y-2">
  {termData.settling_notes.map((n, i) => (
@@ -3027,24 +3029,30 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
 }
 
 // --- Chat Tab -----------------------------------------------------------------
-function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
+function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName, onClose }: {
  msgs: ChatMsg[]; input: string; loading: boolean;
  onInput: (v: string) => void; onSend: () => void;
  endRef: React.RefObject<HTMLDivElement>; childName: string;
+ onClose: () => void;
 }) {
  function handleKey(e: React.KeyboardEvent) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }
  return (
  <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
  <div className="bg-[#0f2417] px-5 py-4 flex items-center gap-3">
- <div className={`w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-xl flex-shrink-0 transition-all ${loading ? 'ring-2 ring-emerald-300 ring-offset-1 ring-offset-[#0f2417]' : ''}`}
- style={{ animation: loading ? 'oakieWobble 0.7s ease-in-out infinite alternate' : 'none' }}>??</div>
+ <div className={`w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 transition-all overflow-hidden ${loading ? 'ring-2 ring-emerald-300 ring-offset-1 ring-offset-[#0f2417]' : ''}`}
+ style={{ animation: loading ? 'oakieWobble 0.7s ease-in-out infinite alternate' : 'none' }}>
+ <img src="/oakie.png" alt="Oakie" className="w-8 h-8 object-contain" />
+ </div>
  <div>
- <p className="text-white font-bold text-sm">Oakie AI</p>
+ <p className="text-white font-bold text-sm">Oakie</p>
  <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-bold uppercase tracking-widest">
  <span className={`w-1.5 h-1.5 rounded-full inline-block ${loading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
  {loading ? 'Thinking' : 'Active'}
  </div>
  </div>
+ <button onClick={onClose} className="ml-auto w-8 h-8 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors" aria-label="Close chat">
+ <X size={16} className="text-white" />
+ </button>
  <style>{`
  @keyframes oakieWobble {
  from { transform: rotate(-8deg) scale(1.05); }
@@ -3056,14 +3064,16 @@ function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
  {msgs.map((m, i) => (
  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
  style={{ animation: 'fadeslideup 0.25s ease both' }}>
- {m.role === 'ai' && <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2 mt-0.5">??</div>}
+ {m.role === 'ai' && <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 mr-2 mt-0.5 overflow-hidden"><img src="/oakie.png" alt="Oakie" className="w-6 h-6 object-contain" /></div>}
  <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === 'user' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>{m.text}</div>
  </div>
  ))}
  {loading && (
  <div className="flex justify-start" style={{ animation: 'fadeslideup 0.2s ease both' }}>
- <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2"
- style={{ animation: 'oakieWobble 0.7s ease-in-out infinite alternate' }}>??</div>
+ <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 mr-2 overflow-hidden"
+ style={{ animation: 'oakieWobble 0.7s ease-in-out infinite alternate' }}>
+ <img src="/oakie.png" alt="Oakie" className="w-6 h-6 object-contain" />
+ </div>
  <div className="bg-white rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm border border-neutral-100">
  <div className="flex gap-1.5 items-center h-4">
  {[0, 150, 300].map(d => <div key={d} className="w-2 h-2 rounded-full bg-emerald-400" style={{ animation: `bouncedot 1.2s ease-in-out ${d}ms infinite` }} />)}
@@ -3200,7 +3210,7 @@ function MessagesTab({ threads, token, onRefresh }: { threads: ParentMessage[]; 
  <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm space-y-3">
  <div className="flex items-center justify-between">
  <p className="text-sm font-semibold text-neutral-800">Message a Teacher</p>
- <button onClick={() => setShowNewMsg(false)} className="text-neutral-400 hover:text-neutral-600">?</button>
+ <button onClick={() => setShowNewMsg(false)} className="text-neutral-400 hover:text-neutral-600"><X size={16} /></button>
  </div>
  <div>
  <label className="text-xs font-medium text-neutral-600 mb-1 block">Select Teacher & Child</label>
@@ -3955,7 +3965,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
  <p className={`text-xs font-semibold ${selected ? 'text-indigo-700' : 'text-neutral-700'}`}>{lang.label}</p>
  {selected && <p className="text-[10px] text-indigo-500">Active</p>}
  </div>
- {selected && <span className="ml-auto text-indigo-500 text-sm">?</span>}
+ {selected && <CheckCircle2 size={15} className="ml-auto text-indigo-500" />}
  </button>
  );
  })}

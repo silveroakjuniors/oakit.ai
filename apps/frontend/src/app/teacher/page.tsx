@@ -241,6 +241,7 @@ export default function TeacherPlanner() {
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
   const [showStreakInfo, setShowStreakInfo] = useState(false);
   const [announcements, setAnnouncements] = useState<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>([]);
+  const [activeAnnouncement, setActiveAnnouncement] = useState<{ id: string; title: string; body: string; created_at: string; author_name: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const initialLoadDone = useRef(false);
   const todayCompletedRef = useRef(false);
@@ -265,11 +266,17 @@ export default function TeacherPlanner() {
   async function loadAll() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
-    if (!todayCompletedRef.current) await autoShowDailyPlan(effectiveToday);
+    // Run AI plan and announcements in parallel — don't let AI block announcements
+    if (!todayCompletedRef.current) autoShowDailyPlan(effectiveToday);
     // Load announcements (non-critical)
     apiGet<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>(
       '/api/v1/teacher/announcements', token
-    ).then(setAnnouncements).catch(() => {});
+    ).then(data => {
+      console.log('[announcements]', data);
+      setAnnouncements(data);
+    }).catch(err => {
+      console.error('[announcements error]', err);
+    });
   }
 
   async function loadStreak() {
@@ -1035,17 +1042,56 @@ export default function TeacherPlanner() {
                 <Megaphone className="w-3.5 h-3.5 text-primary-600" />
               </div>
               <h2 className="text-sm font-semibold text-neutral-800">School Announcements</h2>
+              <span className="ml-auto text-[10px] font-semibold text-primary-600 bg-primary-100 px-2 py-0.5 rounded-full">{announcements.length}</span>
             </div>
             <div className="flex flex-col gap-2">
               {announcements.map(a => (
-                <div key={a.id} className="border-l-4 border-primary-400 pl-3 py-1">
-                  <p className="text-sm font-semibold text-neutral-800">{a.title}</p>
-                  <p className="text-xs text-neutral-600 mt-0.5 leading-relaxed">{a.body}</p>
-                  <p className="text-[10px] text-neutral-400 mt-1">By {a.author_name} &middot; {new Date(a.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                </div>
+                <button
+                  key={a.id}
+                  onClick={() => setActiveAnnouncement(a)}
+                  className="text-left border-l-4 border-primary-400 pl-3 py-1.5 hover:bg-primary-50 rounded-r-xl transition-colors w-full"
+                >
+                  <p className="text-sm font-semibold text-neutral-800 line-clamp-1">{a.title}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{a.body}</p>
+                  <p className="text-[10px] text-neutral-400 mt-1">{new Date(a.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                </button>
               ))}
             </div>
           </Card>
+        )}
+
+        {/* Announcement detail modal */}
+        {activeAnnouncement && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-4 pb-4 sm:pb-0"
+            onClick={() => setActiveAnnouncement(null)}>
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-primary-100 flex items-center justify-center shrink-0">
+                    <Megaphone className="w-4 h-4 text-primary-600" />
+                  </div>
+                  <p className="text-sm font-bold text-neutral-900 leading-snug">{activeAnnouncement.title}</p>
+                </div>
+                <button onClick={() => setActiveAnnouncement(null)}
+                  className="ml-3 w-7 h-7 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center shrink-0 transition-colors">
+                  <X className="w-3.5 h-3.5 text-neutral-500" />
+                </button>
+              </div>
+              <div className="px-5 py-4">
+                <p className="text-sm text-neutral-700 leading-relaxed whitespace-pre-wrap">{activeAnnouncement.body}</p>
+              </div>
+              <div className="px-5 pb-4 flex items-center justify-between">
+                <p className="text-xs text-neutral-400">
+                  By {activeAnnouncement.author_name} &middot; {new Date(activeAnnouncement.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+                <button onClick={() => setActiveAnnouncement(null)}
+                  className="text-xs font-semibold text-primary-600 px-3 py-1.5 bg-primary-50 hover:bg-primary-100 rounded-xl transition-colors">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
   );

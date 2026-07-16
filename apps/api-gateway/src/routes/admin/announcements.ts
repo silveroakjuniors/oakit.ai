@@ -5,7 +5,7 @@ import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middle
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin', 'principal'));
 
-const ACTIVE_FILTER = `deleted_at IS NULL AND (expires_at IS NULL OR expires_at > now()) AND created_at > now() - INTERVAL '90 days'`;
+const ACTIVE_FILTER = `a.deleted_at IS NULL AND (a.expires_at IS NULL OR a.expires_at > now()) AND a.created_at > now() - INTERVAL '90 days'`;
 
 // POST /api/v1/admin/announcements
 router.post('/', async (req: Request, res: Response) => {
@@ -82,18 +82,19 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 // GET /api/v1/teacher/announcements — active announcements for teachers
 export const teacherAnnouncementsRouter = Router();
-teacherAnnouncementsRouter.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'principal', 'admin'));
+teacherAnnouncementsRouter.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher', 'principal', 'admin'));
 teacherAnnouncementsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
     const result = await pool.query(
-      `SELECT a.*, u.name as author_name FROM announcements a JOIN users u ON u.id = a.author_id
+      `SELECT a.*, COALESCE(u.name, 'School') as author_name FROM announcements a LEFT JOIN users u ON u.id = a.author_id
        WHERE a.school_id = $1 AND ${ACTIVE_FILTER} AND a.target_audience IN ('all','teachers')
        ORDER BY a.created_at DESC LIMIT 20`,
       [school_id]
     );
     return res.json(result.rows);
   } catch (err) {
+    console.error('[teacher announcements]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -111,7 +112,7 @@ parentAnnouncementsRouter.get('/', async (req: Request, res: Response) => {
     );
     const ids = classIds.rows.map((r: any) => r.class_id);
     const result = await pool.query(
-      `SELECT a.*, u.name as author_name FROM announcements a JOIN users u ON u.id = a.author_id
+      `SELECT a.*, COALESCE(u.name, 'School') as author_name FROM announcements a LEFT JOIN users u ON u.id = a.author_id
        WHERE a.school_id = $1 AND ${ACTIVE_FILTER}
          AND (a.target_audience IN ('all','parents') OR (a.target_audience = 'class' AND a.target_class_id = ANY($2::uuid[])))
        ORDER BY a.created_at DESC LIMIT 20`,

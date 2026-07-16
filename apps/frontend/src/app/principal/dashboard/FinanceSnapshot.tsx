@@ -14,8 +14,9 @@ interface MonthlyRow  { month: string; total: string; count: string; }
 interface ClassRow    { class_name: string; total_collected: string; total_pending: string; }
 
 function fmt(n: number) {
-  if (n >= 10_00_000) return `₹${(n / 10_00_000).toFixed(1)}L`;
-  if (n >= 1_000)     return `₹${(n / 1_000).toFixed(0)}K`;
+  if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)}Cr`;
+  if (n >= 10_00_000)   return `₹${(n / 10_00_000).toFixed(1)}L`;
+  if (n >= 1_000)       return `₹${(n / 1_000).toFixed(0)}K`;
   return `₹${n.toFixed(0)}`;
 }
 
@@ -155,11 +156,11 @@ export default function FinanceSnapshot({ token }: Props) {
         <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-4">
           <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-2">Fee Health</p>
           {pieFee.length > 0 ? (
-            <div className="flex items-center gap-4">
-              <div style={{ width: 90, height: 90 }} className="shrink-0">
+            <div className="flex items-center gap-3">
+              <div style={{ width: 80, height: 80 }} className="shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={pieFee} cx="50%" cy="50%" innerRadius={24} outerRadius={40}
+                    <Pie data={pieFee} cx="50%" cy="50%" innerRadius={22} outerRadius={36}
                       dataKey="value" startAngle={90} endAngle={-270}>
                       {pieFee.map((e, i) => <Cell key={i} fill={e.color} />)}
                     </Pie>
@@ -168,14 +169,14 @@ export default function FinanceSnapshot({ token }: Props) {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex flex-col gap-1.5 flex-1">
+              <div className="flex flex-col gap-1.5 min-w-0 flex-1">
                 {pieFee.map(d => (
-                  <div key={d.name} className="flex items-center justify-between">
+                  <div key={d.name} className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ background: d.color }} />
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
                       <span className="text-[10px] text-neutral-600">{d.name}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-neutral-800">{fmt(d.value)}</span>
+                    <span className="text-[10px] font-bold text-neutral-800 pl-3.5">{fmt(d.value)}</span>
                   </div>
                 ))}
               </div>
