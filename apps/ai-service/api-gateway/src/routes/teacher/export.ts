@@ -4,7 +4,7 @@ import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 const AI = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 

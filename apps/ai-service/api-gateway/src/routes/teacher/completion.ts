@@ -5,7 +5,7 @@ import { getTeacherSections } from '../../lib/teacherSection';
 import { getToday } from '../../lib/today';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 /** Update a teacher's streak — called for both the submitting teacher and all co-assigned teachers */
 async function updateTeacherStreak(teacherId: string, schoolId: string, today: string) {

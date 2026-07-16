@@ -239,14 +239,142 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/teacher/context/performance — teacher's own performance vs school avg
+// GET /api/v1/teacher/context/performance — monthly leaderboard + personal stats
 router.get('/performance', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
     const today = await getToday(school_id);
+    const monthStart = today.substring(0, 8) + '01';
 
-    // School days in last 30 days (Mon-Fri, excluding holidays)
-    let schoolDays = 22;
+    // Count school days this month
+    let schoolDays = 1;
+    try {
+      const calRow = await pool.query(
+        `SELECT working_days, holidays FROM school_calendar
+         WHERE school_id = $1 AND start_date <= $2 AND end_date >= $2 LIMIT 1`,
+        [school_id, today]
+      );
+      const { working_days = [1,2,3,4,5], holidays = [] } = calRow.rows.length > 0 ? calRow.rows[0] : {};
+      const holidayDates = (holidays as any[]).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+      const todayDate = new Date(today + 'T12:00:00');
+      const startDate = new Date(monthStart + 'T12:00:00');
+      let count = 0;
+      for (let d = new Date(startDate); d <= todayDate; d.setDate(d.getDate() + 1)) {
+        if ((working_days as number[]).includes(d.getDay()) && !holidayDates.includes(d.toISOString().split('T')[0])) count++;
+      }
+      schoolDays = Math.max(count, 1);
+    } catch { schoolDays = Math.max(new Date().getDate(), 1); }
+
+    // This teacher's stats for the month
+    const myRow = await pool.query(
+      `SELECT
+         u.name,
+         COALESCE(ts.current_streak, 0) AS current_streak,
+         COALESCE(ts.best_streak, 0) AS best_streak,
+         ts.last_completed_date,
+         (SELECT COUNT(DISTINCT dc.completion_date)::int FROM daily_completions dc
+          WHERE dc.teacher_id = $1 AND dc.school_id = $2
+            AND dc.completion_date BETWEEN $3::date AND $4::date) AS completions_month,
+         (SELECT COUNT(DISTINCT ar.attend_date)::int FROM attendance_records ar
+          JOIN sections s2 ON s2.id = ar.section_id
+          WHERE s2.id IN (
+            SELECT ts2.section_id FROM teacher_sections ts2 WHERE ts2.teacher_id = $1
+            UNION
+            SELECT s3.id FROM sections s3 WHERE s3.class_teacher_id = $1)
+            AND ar.attend_date BETWEEN $3::date AND $4::date AND ar.school_id = $2) AS attendance_days_month,
+         (SELECT COUNT(DISTINCT th.homework_date)::int FROM teacher_homework th
+          WHERE th.teacher_id = $1 AND th.school_id = $2
+            AND th.homework_date BETWEEN $3::date AND $4::date) AS homework_days_month,
+         (SELECT COUNT(*)::int FROM student_observations obs
+          WHERE obs.teacher_id = $1 AND obs.school_id = $2
+            AND obs.obs_date BETWEEN $3::date AND $4::date) AS observations_month
+       FROM users u
+       LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $2
+       WHERE u.id = $1`,
+      [user_id, school_id, monthStart, today]
+    );
+
+    if (myRow.rows.length === 0) return res.status(404).json({ error: 'Teacher not found' });
+    const me = myRow.rows[0];
+    const my_rate  = Math.round((me.completions_month / schoolDays) * 100);
+    const att_rate = Math.min(100, Math.round((me.attendance_days_month / schoolDays) * 100));
+    const hw_rate  = Math.min(100, Math.round((me.homework_days_month / schoolDays) * 100));
+    const effectiveStreak = me.completions_month > 0 ? me.current_streak : 0;
+
+    // All teachers this month for leaderboard
+    const allRows = await pool.query(
+      `SELECT u.id, u.name,
+         (SELECT COUNT(DISTINCT dc.completion_date)::int FROM daily_completions dc
+          WHERE dc.teacher_id = u.id AND dc.school_id = $1
+            AND dc.completion_date BETWEEN $2::date AND $3::date) AS completions_month,
+         COALESCE(ts.current_streak, 0) AS current_streak
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+       LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $1
+       WHERE u.school_id = $1 AND r.name IN ('teacher','class teacher','supporting teacher') AND u.is_active = true`,
+      [school_id, monthStart, today]
+    );
+
+    const sorted = allRows.rows.map((t: any) => ({
+      id: t.id, name: t.name,
+      rate: Math.round((t.completions_month / schoolDays) * 100),
+      completions: t.completions_month,
+      streak: t.current_streak,
+      is_me: t.id === user_id,
+    })).sort((a: any, b: any) => b.rate - a.rate || b.streak - a.streak);
+
+    // Assign tied ranks
+    let curRank = 1;
+    const leaderboard = sorted.map((t: any, i: number) => {
+      if (i > 0 && sorted[i].rate === sorted[i-1].rate && sorted[i].streak === sorted[i-1].streak) {
+        // tied — same rank
+      } else { curRank = i + 1; }
+      return { rank: curRank, name: t.name, initials: t.name.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase(), rate: t.rate, completions: t.completions, streak: t.streak, is_me: t.is_me };
+    });
+
+    const myRank = leaderboard.find((t: any) => t.is_me)?.rank ?? 1;
+    const total = sorted.length;
+    const daysToTop = sorted[0] && !sorted[0].is_me ? Math.max(0, sorted[0].completions - me.completions_month + 1) : 0;
+
+    // Reasons and tips (personal targets only)
+    const reasons = [
+      { factor: 'Plan completion this month', your_value: `${my_rate}% (${me.completions_month}/${schoolDays} days)`, school_avg: '—', impact: 'high' as const, status: (my_rate >= 90 ? 'good' : my_rate >= 70 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Consistency streak', your_value: `${effectiveStreak} days (best: ${me.best_streak})`, school_avg: '—', impact: 'high' as const, status: (effectiveStreak >= 10 ? 'good' : effectiveStreak > 0 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Attendance submission', your_value: `${att_rate}% (${me.attendance_days_month}/${schoolDays} days)`, school_avg: '—', impact: 'medium' as const, status: (att_rate >= 90 ? 'good' : att_rate >= 70 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Homework sent to parents', your_value: `${hw_rate}% (${me.homework_days_month}/${schoolDays} days)`, school_avg: '—', impact: 'medium' as const, status: (hw_rate >= 70 ? 'good' : hw_rate >= 40 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Student observations', your_value: `${me.observations_month} written`, school_avg: '—', impact: 'low' as const, status: (me.observations_month >= 10 ? 'good' : me.observations_month >= 5 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+    ];
+
+    const tips: string[] = [];
+    if (myRank > 1 && daysToTop > 0) tips.push(`Complete ${daysToTop} more day${daysToTop !== 1 ? 's' : ''} to reach #1 this month.`);
+    if (my_rate < 90) tips.push(`Complete your plan for ${Math.ceil((90 - my_rate) * schoolDays / 100)} more days to reach 90% this month.`);
+    if (effectiveStreak === 0) tips.push(`Start a streak today — complete today's plan. A strong streak lifts your rank.`);
+    if (att_rate < 90) tips.push(`Submit attendance every morning — you are missing ${schoolDays - me.attendance_days_month} day${(schoolDays - me.attendance_days_month) !== 1 ? 's' : ''} this month.`);
+    if (hw_rate < 70) tips.push(`Send homework to parents more regularly — use Homework & Notes after marking your plan complete.`);
+    if (tips.length === 0) tips.push(`Outstanding! You are on track to be Star of the Month. Keep it up!`);
+
+    const dailyResult = await pool.query(
+      `SELECT completion_date::text AS date, COUNT(DISTINCT section_id)::int AS sections_completed
+       FROM daily_completions WHERE teacher_id = $1 AND school_id = $2
+         AND completion_date BETWEEN $3::date AND $4::date
+       GROUP BY completion_date ORDER BY completion_date`,
+      [user_id, school_id, monthStart, today]
+    );
+
+    return res.json({
+      name: me.name, month: today.substring(0, 7),
+      completion_rate_month: my_rate, completions_month: me.completions_month,
+      school_days_month: schoolDays, attendance_rate_month: att_rate,
+      homework_rate_month: hw_rate, observations_month: me.observations_month,
+      current_streak: effectiveStreak, best_streak: me.best_streak,
+      rank: myRank, total_teachers: total, days_to_top: daysToTop,
+      leaderboard, reasons, tips, daily: dailyResult.rows,
+    });
+  } catch (err) {
+    console.error('[teacher/performance]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
     try {
       const calRow = await pool.query(
         `SELECT working_days, holidays FROM school_calendar
