@@ -5,7 +5,7 @@ import { getTeacherSections } from '../../lib/teacherSection';
 import { getToday } from '../../lib/today';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 // GET /api/v1/teacher/insights/class-summary
 // Returns class-level stats: total students, attendance trends, milestone progress, observation coverage

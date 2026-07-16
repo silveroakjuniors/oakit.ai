@@ -5,7 +5,7 @@ import { getTeacherSections } from '../../lib/teacherSection';
 import { generateProgressReport } from '../admin/reportHelper';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 // GET /api/v1/teacher/report-card/students — list students in teacher's section(s)
 router.get('/students', async (req: Request, res: Response) => {
