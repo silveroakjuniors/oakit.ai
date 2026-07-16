@@ -5,7 +5,7 @@ import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middle
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin', 'principal'));
 
-const ACTIVE_FILTER = `deleted_at IS NULL AND (expires_at IS NULL OR expires_at > now()) AND created_at > now() - INTERVAL '30 days'`;
+const ACTIVE_FILTER = `deleted_at IS NULL AND (expires_at IS NULL OR expires_at > now()) AND created_at > now() - INTERVAL '90 days'`;
 
 // POST /api/v1/admin/announcements
 router.post('/', async (req: Request, res: Response) => {

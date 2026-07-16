@@ -128,4 +128,43 @@ router.get('/stats', async (req: Request, res: Response) => {
   }
 });
 
+// GET /stats/class — daily breakdown for a specific class in a date range
+router.get('/stats/class', async (req: Request, res: Response) => {
+  try {
+    const school_id = req.user!.school_id;
+    const today = await getToday(school_id!);
+    const className = req.query.class_name as string;
+    const toDate   = (req.query.to   as string) || today;
+    const fromDate = (req.query.from as string) || (() => {
+      const d = new Date(toDate + 'T12:00:00');
+      d.setDate(d.getDate() - 29);
+      return d.toISOString().split('T')[0];
+    })();
+
+    if (!className) return res.status(400).json({ error: 'class_name is required' });
+
+    const result = await pool.query(
+      `SELECT
+         ar.attend_date::text AS date,
+         COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+         COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+         COUNT(*)::int AS total
+       FROM attendance_records ar
+       JOIN sections s ON s.id = ar.section_id
+       JOIN classes c ON c.id = s.class_id
+       WHERE s.school_id = $1
+         AND c.name = $2
+         AND ar.attend_date BETWEEN $3::date AND $4::date
+       GROUP BY ar.attend_date
+       ORDER BY ar.attend_date`,
+      [school_id, className, fromDate, toDate]
+    );
+
+    return res.json({ class_name: className, from: fromDate, to: toDate, daily: result.rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

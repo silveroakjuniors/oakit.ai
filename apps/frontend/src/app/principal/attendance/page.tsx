@@ -8,7 +8,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { Users, TrendingUp, TrendingDown, Calendar, ChevronLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Users, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, X } from 'lucide-react';
 
 interface AttendanceItem {
   section_id: string; section_label: string; class_name: string;
@@ -39,6 +39,21 @@ export default function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
+  const [drillDown, setDrillDown] = useState<{ className: string; daily: DailyRow[]; loading: boolean } | null>(null);
+
+  async function openDrillDown(className: string) {
+    setDrillDown({ className, daily: [], loading: true });
+    try {
+      const res = await apiGet<{ class_name: string; from: string; to: string; daily: DailyRow[] }>(
+        `/api/v1/principal/attendance/stats/class?class_name=${encodeURIComponent(className)}&from=${rangeFrom}&to=${rangeTo}`,
+        token
+      );
+      setDrillDown({ className, daily: res.daily, loading: false });
+    } catch {
+      setDrillDown(prev => prev ? { ...prev, loading: false } : null);
+    }
+  }
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
   const [rangeLoading, setRangeLoading] = useState(false);
@@ -109,7 +124,46 @@ export default function AttendancePage() {
     ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
     : '';
 
-  // Build daily chart data — show last 30 with formatted date
+  // Range label for display
+  const rangeLabel = stats?.from && stats?.to
+    ? `${new Date(stats.from + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(stats.to + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+    : 'Selected Range';
+
+  // Compute range stats from daily data
+  const activeDays   = (stats?.daily || []).filter(d => d.total > 0);
+  const rangeDays    = activeDays.length || 1;
+  const rangePresent = activeDays.reduce((sum, d) => sum + d.present, 0);
+  const rangeAbsent  = activeDays.reduce((sum, d) => sum + d.absent, 0);
+  const rangeTotal   = rangePresent + rangeAbsent;
+  const schoolRangePct = rangeTotal > 0 ? Math.round(rangePresent / rangeTotal * 100) : (stats?.range_pct ?? 0);
+
+  // Class list for filter dropdown
+  const classNames = [...new Set((stats?.by_class || []).map(c => c.class_name))].sort();
+
+  // Filter by selected class
+  const filteredByClass = selectedClass
+    ? (stats?.by_class || []).filter(c => c.class_name === selectedClass)
+    : (stats?.by_class || []);
+  const filteredItems = selectedClass
+    ? items.filter(i => i.class_name === selectedClass)
+    : items;
+
+  // Range avg — use class-specific if a class is selected
+  const selectedClassData = selectedClass ? filteredByClass[0] : null;
+  const rangePct = selectedClassData
+    ? selectedClassData.attendance_pct
+    : schoolRangePct;
+
+  // Avg daily present — use class-specific totals if filtered
+  const effectivePresent = selectedClassData ? selectedClassData.present : rangePresent;
+  const effectiveAbsent  = selectedClassData ? selectedClassData.absent  : rangeAbsent;
+  const avgDailyPresent  = rangeDays > 0 ? Math.round(effectivePresent / rangeDays) : 0;
+  const avgDailyAbsent   = rangeDays > 0 ? Math.round(effectiveAbsent  / rangeDays) : 0;
+
+  // Best and worst day in range (school-wide from chart data)
+  const sortedDays = [...activeDays].map(d => ({ ...d, pct: pct(d.present, d.total) }));
+  const bestDay  = sortedDays.length ? sortedDays.reduce((a, b) => a.pct >= b.pct ? a : b) : null;
+  const worstDay = sortedDays.length ? sortedDays.reduce((a, b) => a.pct <= b.pct ? a : b) : null;
   const dailyChart = (stats?.daily || []).map(d => ({
     name: new Date(d.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
     pct: pct(d.present, d.total),
@@ -122,6 +176,73 @@ export default function AttendancePage() {
 
   return (
     <div className="p-5 lg:p-7 space-y-6 max-w-6xl">
+
+      {/* Drill-down modal */}
+      {drillDown && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => setDrillDown(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+              <div>
+                <p className="text-sm font-bold text-neutral-900">{drillDown.className} — Daily Attendance</p>
+                <p className="text-xs text-neutral-400 mt-0.5">{rangeLabel}</p>
+              </div>
+              <button onClick={() => setDrillDown(null)}
+                className="w-7 h-7 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center transition-colors">
+                <X size={14} className="text-neutral-500" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {drillDown.loading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-6 h-6 border-4 border-[#1B4332]/20 border-t-[#1B4332] rounded-full animate-spin" />
+                </div>
+              ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-100 sticky top-0">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-neutral-500">Date</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-neutral-500">Present</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-neutral-500">Absent</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-neutral-500">Total</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-neutral-500">%</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-50">
+                  {drillDown.daily.filter(d => d.total > 0).map(d => {
+                    const p = pct(d.present, d.total);
+                    return (
+                      <tr key={d.date} className="hover:bg-neutral-50/60">
+                        <td className="px-4 py-2.5 text-neutral-700">
+                          {new Date(d.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-emerald-600">{d.present}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold text-red-500">{d.absent}</td>
+                        <td className="px-4 py-2.5 text-right text-neutral-500">{d.total}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <span className={`text-xs font-bold ${pctColor(p)}`}>{p}%</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {drillDown.daily.filter(d => d.total > 0).length === 0 && (
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-neutral-400">No data for this range</td></tr>
+                  )}
+                </tbody>
+              </table>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-neutral-100 bg-neutral-50 flex items-center justify-between">
+              <p className="text-xs text-neutral-500">{drillDown.daily.filter(d => d.total > 0).length} school days in range</p>
+              <button onClick={() => setDrillDown(null)}
+                className="text-xs font-semibold text-neutral-600 px-3 py-1.5 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-50 transition-colors">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => router.push('/principal')}
@@ -142,18 +263,35 @@ export default function AttendancePage() {
       {/* Summary KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Today's Attendance", value: `${s?.today_pct ?? 0}%`, sub: `${s?.present_today ?? 0} present · ${s?.absent_today ?? 0} absent`, color: s?.today_pct ?? 0, icon: Users },
-          { label: 'This Week Avg', value: `${s?.week_pct ?? 0}%`, sub: 'Rolling 7-day average', color: s?.week_pct ?? 0, icon: Calendar },
-          { label: 'This Month Avg', value: `${s?.month_pct ?? 0}%`, sub: 'Since 1st of month', color: s?.month_pct ?? 0, icon: TrendingUp },
-          { label: 'Submitted Today', value: `${submittedCount}/${totalSections}`, sub: submittedCount === totalSections ? 'All sections done' : `${totalSections - submittedCount} pending`, color: submittedCount === totalSections ? 95 : 60, icon: CheckCircle2 },
+          { label: 'Range Avg', value: `${rangePct}%`, sub: rangeLabel, color: rangePct, icon: TrendingUp },
+          { label: 'Avg Daily Present', value: avgDailyPresent.toString(), sub: `~${avgDailyAbsent} absent/day · ${rangeDays} school days`, color: rangePct, icon: Users },
+          { label: 'Best Day', value: bestDay ? `${bestDay.pct}%` : '—', sub: bestDay ? new Date(bestDay.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'No data', color: bestDay?.pct ?? 0, icon: TrendingUp },
+          { label: 'Worst Day', value: worstDay ? `${worstDay.pct}%` : '—', sub: worstDay ? new Date(worstDay.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'No data', color: worstDay?.pct ?? 0, icon: TrendingDown },
         ].map(k => (
           <div key={k.label} className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-4">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">{k.label}</p>
-              <k.icon size={16} className={pctColor(typeof k.color === 'number' ? k.color : 90)} />
+              <k.icon size={16} className={pctColor(k.color)} />
             </div>
-            <p className={`text-2xl font-black ${pctColor(typeof k.color === 'number' ? k.color : 90)}`}>{k.value}</p>
+            <p className={`text-2xl font-black ${pctColor(k.color)}`}>{k.value}</p>
             <p className="text-[10px] text-neutral-400 mt-0.5">{k.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Today's quick stats row */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Today's Attendance", value: `${s?.today_pct ?? 0}%`, sub: `${s?.present_today ?? 0} present · ${s?.absent_today ?? 0} absent`, color: s?.today_pct ?? 0 },
+          { label: 'This Week Avg', value: `${s?.week_pct ?? 0}%`, sub: 'Rolling 7-day', color: s?.week_pct ?? 0 },
+          { label: 'This Month Avg', value: `${s?.month_pct ?? 0}%`, sub: 'Since 1st of month', color: s?.month_pct ?? 0 },
+        ].map(k => (
+          <div key={k.label} className="bg-white rounded-2xl border border-neutral-100 shadow-sm px-4 py-3 flex items-center gap-3">
+            <div>
+              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-wide">{k.label}</p>
+              <p className={`text-xl font-black ${pctColor(k.color)}`}>{k.value}</p>
+              <p className="text-[10px] text-neutral-400">{k.sub}</p>
+            </div>
           </div>
         ))}
       </div>
@@ -205,6 +343,17 @@ export default function AttendancePage() {
               ))}
             </div>
           </div>
+          {/* Class filter */}
+          {classNames.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-neutral-500 shrink-0">Class</label>
+              <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
+                className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20">
+                <option value="">All classes</option>
+                {classNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
+              </select>
+            </div>
+          )}
           {stats?.range_pct != null && (
             <div className="shrink-0 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2 flex items-center gap-3">
               <div>
@@ -262,20 +411,26 @@ export default function AttendancePage() {
           <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4">
             By Class {stats?.from && stats?.to ? `(${stats.from} to ${stats.to})` : '— This Month'}
           </p>
-          {stats?.by_class && stats.by_class.length > 0 ? (
+          {stats?.by_class && filteredByClass.length > 0 ? (
             <div className="space-y-3">
-              {stats.by_class.map(c => (
-                <div key={c.class_name}>
+              {filteredByClass.map(c => (
+                <button key={c.class_name} onClick={() => openDrillDown(c.class_name)}
+                  className="w-full text-left hover:bg-neutral-50 rounded-xl p-1.5 -mx-1.5 transition-colors group">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold text-neutral-700">{c.class_name}</span>
-                    <span className={`text-xs font-bold ${pctColor(c.attendance_pct)}`}>{c.attendance_pct}%</span>
+                    <span className="text-xs font-semibold text-neutral-700 group-hover:text-[#1B4332] transition-colors">{c.class_name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold ${pctColor(c.attendance_pct)}`}>{c.attendance_pct}%</span>
+                      <ChevronRight size={12} className="text-neutral-300 group-hover:text-neutral-500" />
+                    </div>
                   </div>
                   <div className="w-full bg-neutral-100 rounded-full h-1.5 overflow-hidden">
                     <div className={`h-1.5 rounded-full transition-all ${pctBg(c.attendance_pct)}`}
                       style={{ width: `${Math.min(c.attendance_pct, 100)}%` }} />
                   </div>
-                  <p className="text-[9px] text-neutral-400 mt-0.5">{c.present} present of {c.total} records</p>
-                </div>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">
+                    avg {Math.round(c.present / Math.max(rangeDays, 1))} present/day &middot; {c.attendance_pct}% over {rangeDays} day{rangeDays !== 1 ? 's' : ''}
+                  </p>
+                </button>
               ))}
             </div>
           ) : (
@@ -323,7 +478,7 @@ export default function AttendancePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-50">
-                {items.map(item => {
+                {filteredItems.map(item => {
                   const p = pct(item.present_count, item.present_count + item.absent_count);
                   return (
                     <tr key={item.section_id} className={`hover:bg-neutral-50/60 transition-colors ${item.flagged ? 'bg-red-50/30' : ''}`}>
@@ -361,7 +516,7 @@ export default function AttendancePage() {
                     </tr>
                   );
                 })}
-                {items.length === 0 && (
+                {filteredItems.length === 0 && (
                   <tr>
                     <td colSpan={9} className="px-4 py-10 text-center text-neutral-400 text-sm">
                       No attendance data for this date
