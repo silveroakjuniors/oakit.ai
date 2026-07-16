@@ -238,7 +238,7 @@ export default function AdminHomeworkPage() {
                       <p className="text-xs text-gray-500">{hw.class_name} - Section {hw.section_label} · {hw.teacher_name}</p>
                     </div>
                     <span className="text-xs text-gray-400 shrink-0">
-                      {new Date(hw.homework_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {new Date((hw.homework_date || '').toString().split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </span>
                   </div>
                   <p className="text-sm text-gray-700 leading-relaxed">{hw.formatted_text || hw.raw_text}</p>
