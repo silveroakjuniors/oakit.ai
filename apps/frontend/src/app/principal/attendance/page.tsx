@@ -149,9 +149,11 @@ export default function AttendancePage() {
     : items;
 
   // Range avg — use class-specific if a class is selected
-  const selectedClassData = selectedClass ? filteredByClass[0] : null;
+  const selectedClassData = selectedClass
+    ? filteredByClass[0]
+    : null;
   const rangePct = selectedClassData
-    ? selectedClassData.attendance_pct
+    ? Math.round(parseFloat(String(selectedClassData.attendance_pct)))
     : schoolRangePct;
 
   // Avg daily present — use class-specific totals if filtered
@@ -263,8 +265,8 @@ export default function AttendancePage() {
       {/* Summary KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Range Avg', value: `${rangePct}%`, sub: rangeLabel, color: rangePct, icon: TrendingUp },
-          { label: 'Avg Daily Present', value: avgDailyPresent.toString(), sub: `~${avgDailyAbsent} absent/day · ${rangeDays} school days`, color: rangePct, icon: Users },
+          { label: 'Range Avg', value: `${rangePct}%`, sub: selectedClass ? `${selectedClass} · ${rangeLabel}` : rangeLabel, color: rangePct, icon: TrendingUp },
+          { label: 'Avg Daily Present', value: avgDailyPresent.toString(), sub: `~${avgDailyAbsent} absent/day · ${rangeDays} school days${selectedClass ? ` · ${selectedClass}` : ''}`, color: rangePct, icon: Users },
           { label: 'Best Day', value: bestDay ? `${bestDay.pct}%` : '—', sub: bestDay ? new Date(bestDay.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'No data', color: bestDay?.pct ?? 0, icon: TrendingUp },
           { label: 'Worst Day', value: worstDay ? `${worstDay.pct}%` : '—', sub: worstDay ? new Date(worstDay.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'No data', color: worstDay?.pct ?? 0, icon: TrendingDown },
         ].map(k => (
@@ -391,8 +393,8 @@ export default function AttendancePage() {
                   <YAxis tick={{ fontSize: 9 }} domain={[0, 100]} tickFormatter={v => `${v}%`} />
                   <Tooltip
                     contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                    formatter={(v: any, name: string) => [`${v}%`, 'Attendance']}
-                    labelFormatter={(l) => `Date: ${l}`}
+                    formatter={(v: any) => [`${v}%`, 'Attendance']}
+                    labelFormatter={(l: any) => `Date: ${l}`}
                   />
                   <Area type="monotone" dataKey="pct" stroke="#1B4332" strokeWidth={2}
                     fill="url(#attGrad)" dot={{ r: 2, fill: '#1B4332' }} />
