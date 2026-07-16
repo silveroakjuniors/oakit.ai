@@ -42,7 +42,9 @@ export default function AdminHomeworkPage() {
   const [items, setItems] = useState<HomeworkItem[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [loading, setLoading] = useState(false);
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => {
+    return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().split('T')[0];
+  });
   const [classId, setClassId] = useState('');
   const [stats, setStats] = useState<SectionStat[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -238,7 +240,12 @@ export default function AdminHomeworkPage() {
                       <p className="text-xs text-gray-500">{hw.class_name} - Section {hw.section_label} · {hw.teacher_name}</p>
                     </div>
                     <span className="text-xs text-gray-400 shrink-0">
-                      {new Date((hw.homework_date || '').toString().split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {(() => {
+                        const raw = (hw.homework_date || '').toString();
+                        const d = new Date(raw);
+                        const utcDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+                        return new Date(utcDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                      })()}
                     </span>
                   </div>
                   <p className="text-sm text-gray-700 leading-relaxed">{hw.formatted_text || hw.raw_text}</p>
