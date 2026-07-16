@@ -11,7 +11,7 @@ import {
 import { ChevronLeft, Flame, Target, AlertCircle, CheckCircle2, Calendar, Star, Trophy } from 'lucide-react';
 
 interface DailyRow { date: string; sections_completed: number; }
-interface LeaderboardEntry { rank: number; name: string; initials: string; rate: number; completions: number; streak: number; is_me: boolean; }
+interface LeaderboardEntry { rank: number; name: string; initials: string; score: number; rate: number; completions: number; streak: number; is_me: boolean; }
 interface PerformanceData {
   name: string;
   month: string;
@@ -21,6 +21,8 @@ interface PerformanceData {
   attendance_rate_month: number;
   homework_rate_month: number;
   observations_month: number;
+  feed_posts_month: number;
+  total_score: number;
   current_streak: number;
   best_streak: number;
   rank: number;
@@ -85,8 +87,11 @@ export default function MyPerformancePage() {
 
   const rate = data.completion_rate_month;
   const missed = Math.max(0, data.school_days_month - data.completions_month);
+  const score = data.total_score ?? 0;
   const badge = rankBadge(data.rank, data.total_teachers);
-  const monthLabel = new Date(data.month + '-15').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const monthLabel = data.month
+    ? new Date(data.month + '-15T12:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : '';
 
   const dailyChart = data.daily.map(d => ({
     name: new Date(d.date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
@@ -112,8 +117,8 @@ export default function MyPerformancePage() {
           <p className="text-xs font-semibold opacity-70 uppercase tracking-wide mb-1">{data.name}</p>
           <div className="flex items-end gap-3 mb-4">
             <div>
-              <p className="text-5xl font-black leading-none">{rate}%</p>
-              <p className="text-xs opacity-70 mt-1">plan completion this month</p>
+              <p className="text-5xl font-black leading-none">{score}<span className="text-xl opacity-60">/100</span></p>
+              <p className="text-xs opacity-70 mt-1">composite score · {rate}% plans completed</p>
             </div>
             <div className={`ml-auto px-3 py-1.5 rounded-xl border text-xs font-bold ${badge.bg} ${badge.color}`}>
               {data.rank === 1 && <Star size={10} className="inline mr-1 fill-amber-500 text-amber-500" />}
@@ -121,20 +126,20 @@ export default function MyPerformancePage() {
             </div>
           </div>
           <div className="w-full bg-white/20 rounded-full h-2.5 overflow-hidden">
-            <div className="h-2.5 rounded-full bg-white transition-all" style={{ width: `${rate}%` }} />
+            <div className="h-2.5 rounded-full bg-white transition-all" style={{ width: `${score}%` }} />
           </div>
           <div className="flex justify-between mt-1.5">
-            <p className="text-[10px] opacity-60">{data.completions_month} days completed</p>
-            <p className="text-[10px] opacity-60">{missed} missed &middot; {data.school_days_month} total</p>
+            <p className="text-[10px] opacity-60">{data.completions_month} plans done &middot; {missed} missed</p>
+            <p className="text-[10px] opacity-60">{data.school_days_month} school days</p>
           </div>
           {data.days_to_top > 0 && (
             <p className="text-[11px] mt-2 bg-white/15 rounded-lg px-3 py-1.5 font-semibold">
-              Complete {data.days_to_top} more day{data.days_to_top !== 1 ? 's' : ''} to reach #1 this month
+              {data.days_to_top} point{data.days_to_top !== 1 ? 's' : ''} behind #1 — check tips below to improve
             </p>
           )}
           {data.rank === 1 && (
             <p className="text-[11px] mt-2 bg-white/15 rounded-lg px-3 py-1.5 font-semibold">
-              You are #1 this month — keep completing your plans to stay on top!
+              You are #1 this month — keep completing all activities to stay on top!
             </p>
           )}
         </div>
@@ -208,7 +213,7 @@ export default function MyPerformancePage() {
                     <div className="w-14 bg-neutral-100 rounded-full h-1.5 overflow-hidden">
                       <div className={`h-1.5 rounded-full ${pctBg(t.rate)}`} style={{ width: `${t.rate}%` }} />
                     </div>
-                    <p className={`text-xs font-bold w-8 text-right ${pctColor(t.rate)}`}>{t.rate}%</p>
+                    <p className={`text-xs font-bold w-10 text-right ${pctColor(t.rate)}`}>{t.score ?? t.rate}/100</p>
                   </div>
                 </div>
               ))}
