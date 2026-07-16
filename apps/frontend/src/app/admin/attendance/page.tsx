@@ -17,10 +17,9 @@ interface AttendanceItem {
   flagged: boolean; flag_note: string | null;
 }
 interface DailyRow { date: string; present: number; absent: number; total: number; }
-interface ClassRow { class_name: string; section_label?: string; present: number; absent: number; total: number; attendance_pct: number; }
+interface ClassRow { class_name: string; present: number; absent: number; total: number; attendance_pct: number; }
 interface Summary { today_pct: number; week_pct: number; month_pct: number; absent_today: number; present_today: number; }
-interface Stats { today: string; from: string; to: string; range_pct: number | null; summary: Summary; daily: DailyRow[]; by_class: ClassRow[]; sections: { class_name: string; section_label: string }[]; }
-interface SectionOption { section_id: string; section_label: string; class_name: string; }
+interface Stats { today: string; from: string; to: string; range_pct: number | null; summary: Summary; daily: DailyRow[]; by_class: ClassRow[]; }
 
 function pct(present: number, total: number) {
   return total > 0 ? Math.round((present / total) * 100) : 0;
@@ -41,8 +40,6 @@ export default function AttendancePage() {
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
-  const [selectedSection, setSelectedSection] = useState('');
-  const [sectionOptions, setSectionOptions] = useState<SectionOption[]>([]);
   const [drillDown, setDrillDown] = useState<{ className: string; daily: DailyRow[]; loading: boolean } | null>(null);
 
   async function openDrillDown(className: string) {
@@ -80,13 +77,10 @@ export default function AttendancePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function loadRange(from: string, to: string, className?: string, sectionId?: string) {
+  async function loadRange(from: string, to: string) {
     setRangeLoading(true);
     try {
-      const params = new URLSearchParams({ from, to });
-      if (className)  params.set('class_name', className);
-      if (sectionId)  params.set('section_id', sectionId);
-      const s = await apiGet<Stats>(`/api/v1/principal/attendance/stats?${params}`, token);
+      const s = await apiGet<Stats>(`/api/v1/principal/attendance/stats?from=${from}&to=${to}`, token);
       setStats(prev => prev ? { ...prev, from, to, range_pct: s.range_pct, daily: s.daily, by_class: s.by_class } : s);
     } catch { /* ignore */ }
     finally { setRangeLoading(false); }
@@ -146,27 +140,21 @@ export default function AttendancePage() {
   // Class list for filter dropdown
   const classNames = [...new Set((stats?.by_class || []).map(c => c.class_name))].sort();
 
-  // Filter by selected class + section
+  // Filter by selected class
   const filteredByClass = selectedClass
-    ? (stats?.by_class || []).filter(c =>
-        c.class_name === selectedClass &&
-        (!selectedSection || c.section_label === selectedSection)
-      )
+    ? (stats?.by_class || []).filter(c => c.class_name === selectedClass)
     : (stats?.by_class || []);
   const filteredItems = selectedClass
-    ? items.filter(i =>
-        i.class_name === selectedClass &&
-        (!selectedSection || i.section_label === selectedSection)
-      )
+    ? items.filter(i => i.class_name === selectedClass)
     : items;
 
-  // Range avg — use class/section-specific if filtered
-  const selectedClassData = selectedClass ? filteredByClass[0] : null;
-  const rangePct = selectedClassData && filteredByClass.length === 1
+  // Range avg — use class-specific if a class is selected
+  const selectedClassData = selectedClass
+    ? filteredByClass[0]
+    : null;
+  const rangePct = selectedClassData
     ? Math.round(parseFloat(String(selectedClassData.attendance_pct)))
-    : selectedClass && filteredByClass.length > 1
-      ? Math.round(filteredByClass.reduce((s, c) => s + parseFloat(String(c.attendance_pct)), 0) / filteredByClass.length)
-      : schoolRangePct;
+    : schoolRangePct;
 
   // Avg daily present — use class-specific totals if filtered
   const effectivePresent = selectedClassData ? selectedClassData.present : rangePresent;
@@ -259,7 +247,7 @@ export default function AttendancePage() {
       )}
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => router.push('/principal')}
+        <button onClick={() => router.push('/admin')}
           className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors">
           <ChevronLeft size={16} /> Dashboard
         </button>
@@ -328,7 +316,7 @@ export default function AttendancePage() {
                 className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20" />
             </div>
             <button
-              onClick={() => loadRange(rangeFrom, rangeTo, selectedClass || undefined, selectedSection || undefined)}
+              onClick={() => loadRange(rangeFrom, rangeTo)}
               disabled={!rangeFrom || !rangeTo || rangeLoading}
               className="px-4 py-1.5 bg-[#1B4332] text-white text-sm font-semibold rounded-xl hover:bg-[#1B4332]/90 disabled:opacity-50 transition-colors flex items-center gap-2"
             >
@@ -349,7 +337,7 @@ export default function AttendancePage() {
                     from.setDate(from.getDate() - p.days + 1);
                     const f = from.toISOString().split('T')[0];
                     setRangeFrom(f); setRangeTo(to);
-                    loadRange(f, to, selectedClass || undefined, selectedSection || undefined);
+                    loadRange(f, to);
                   }}
                   className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-neutral-100 text-neutral-600 hover:bg-neutral-200 transition-colors">
                   {p.label}
@@ -357,38 +345,17 @@ export default function AttendancePage() {
               ))}
             </div>
           </div>
-          {/* Class + Section filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {classNames.length > 0 && (
-              <>
-                <label className="text-xs text-neutral-500 shrink-0">Class</label>
-                <select value={selectedClass}
-                  onChange={e => { setSelectedClass(e.target.value); setSelectedSection(''); }}
-                  className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20">
-                  <option value="">All classes</option>
-                  {classNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
-                </select>
-              </>
-            )}
-            {/* Section dropdown — only visible when a class is selected */}
-            {selectedClass && (() => {
-              const secs = (stats?.by_class || [])
-                .filter(c => c.class_name === selectedClass && c.section_label)
-                .map(c => ({ label: c.section_label!, id: '' }));
-              // also try from sections list if available
-              const secOptions = secs.length > 0 ? secs : [];
-              return secOptions.length > 1 ? (
-                <>
-                  <label className="text-xs text-neutral-500 shrink-0">Section</label>
-                  <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)}
-                    className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20">
-                    <option value="">All sections</option>
-                    {secOptions.map(s => <option key={s.label} value={s.label}>Section {s.label}</option>)}
-                  </select>
-                </>
-              ) : null;
-            })()}
-          </div>
+          {/* Class filter */}
+          {classNames.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-neutral-500 shrink-0">Class</label>
+              <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
+                className="text-sm border border-neutral-200 rounded-xl px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-[#1B4332]/20">
+                <option value="">All classes</option>
+                {classNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
+              </select>
+            </div>
+          )}
           {stats?.range_pct != null && (
             <div className="shrink-0 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2 flex items-center gap-3">
               <div>
@@ -449,12 +416,10 @@ export default function AttendancePage() {
           {stats?.by_class && filteredByClass.length > 0 ? (
             <div className="space-y-3">
               {filteredByClass.map(c => (
-                <button key={`${c.class_name}-${c.section_label}`} onClick={() => openDrillDown(c.class_name)}
+                <button key={c.class_name} onClick={() => openDrillDown(c.class_name)}
                   className="w-full text-left hover:bg-neutral-50 rounded-xl p-1.5 -mx-1.5 transition-colors group">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold text-neutral-700 group-hover:text-[#1B4332] transition-colors">
-                      {c.class_name}{c.section_label ? ` — Sec ${c.section_label}` : ''}
-                    </span>
+                    <span className="text-xs font-semibold text-neutral-700 group-hover:text-[#1B4332] transition-colors">{c.class_name}</span>
                     <div className="flex items-center gap-2">
                       <span className={`text-xs font-bold ${pctColor(c.attendance_pct)}`}>{c.attendance_pct}%</span>
                       <ChevronRight size={12} className="text-neutral-300 group-hover:text-neutral-500" />

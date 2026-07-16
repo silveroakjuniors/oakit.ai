@@ -42,6 +42,27 @@ router.get('/overview', async (req: Request, res: Response) => {
   }
 });
 
+// GET /sections — all sections with class names for the school
+router.get('/sections', async (req: Request, res: Response) => {
+  try {
+    const school_id = req.user!.school_id;
+
+    const result = await pool.query(
+      `SELECT s.id AS section_id, s.label AS section_label, c.name AS class_name
+       FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       WHERE s.school_id = $1
+       ORDER BY c.name, s.label`,
+      [school_id]
+    );
+
+    return res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /stats — historical attendance stats for a date range + class breakdown
 router.get('/stats', async (req: Request, res: Response) => {
   try {
@@ -57,41 +78,77 @@ router.get('/stats', async (req: Request, res: Response) => {
       return d.toISOString().split('T')[0];
     })();
 
-    // Daily school-wide attendance % for the range
-    const dailyResult = await pool.query(
-      `SELECT
-         ar.attend_date::text AS date,
-         COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
-         COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
-         COUNT(*)::int AS total
-       FROM attendance_records ar
-       JOIN sections s ON s.id = ar.section_id
-       WHERE s.school_id = $1
-         AND ar.attend_date BETWEEN $2::date AND $3::date
-       GROUP BY ar.attend_date
-       ORDER BY ar.attend_date`,
-      [school_id, fromDate, toDate]
-    );
+    const sectionId = req.query.section_id as string | undefined;
+
+    // Daily school-wide (or section-scoped) attendance % for the range
+    const dailyResult = sectionId
+      ? await pool.query(
+          `SELECT
+             ar.attend_date::text AS date,
+             COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+             COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+             COUNT(*)::int AS total
+           FROM attendance_records ar
+           JOIN sections s ON s.id = ar.section_id
+           WHERE s.school_id = $1
+             AND ar.section_id = $4
+             AND ar.attend_date BETWEEN $2::date AND $3::date
+           GROUP BY ar.attend_date
+           ORDER BY ar.attend_date`,
+          [school_id, fromDate, toDate, sectionId]
+        )
+      : await pool.query(
+          `SELECT
+             ar.attend_date::text AS date,
+             COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+             COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+             COUNT(*)::int AS total
+           FROM attendance_records ar
+           JOIN sections s ON s.id = ar.section_id
+           WHERE s.school_id = $1
+             AND ar.attend_date BETWEEN $2::date AND $3::date
+           GROUP BY ar.attend_date
+           ORDER BY ar.attend_date`,
+          [school_id, fromDate, toDate]
+        );
 
     // Class-wise attendance % for the range
-    const classResult = await pool.query(
-      `SELECT
-         c.name AS class_name,
-         COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
-         COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
-         COUNT(*)::int AS total,
-         ROUND(COUNT(*) FILTER (WHERE ar.status = 'present') * 100.0 / NULLIF(COUNT(*), 0), 1)::float AS attendance_pct
-       FROM attendance_records ar
-       JOIN sections s ON s.id = ar.section_id
-       JOIN classes c ON c.id = s.class_id
-       WHERE s.school_id = $1
-         AND ar.attend_date BETWEEN $2::date AND $3::date
-       GROUP BY c.name
-       ORDER BY c.name`,
-      [school_id, fromDate, toDate]
-    );
+    const classResult = sectionId
+      ? await pool.query(
+          `SELECT
+             c.name AS class_name,
+             COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+             COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+             COUNT(*)::int AS total,
+             ROUND(COUNT(*) FILTER (WHERE ar.status = 'present') * 100.0 / NULLIF(COUNT(*), 0), 1)::float AS attendance_pct
+           FROM attendance_records ar
+           JOIN sections s ON s.id = ar.section_id
+           JOIN classes c ON c.id = s.class_id
+           WHERE s.school_id = $1
+             AND ar.section_id = $4
+             AND ar.attend_date BETWEEN $2::date AND $3::date
+           GROUP BY c.name
+           ORDER BY c.name`,
+          [school_id, fromDate, toDate, sectionId]
+        )
+      : await pool.query(
+          `SELECT
+             c.name AS class_name,
+             COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+             COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+             COUNT(*)::int AS total,
+             ROUND(COUNT(*) FILTER (WHERE ar.status = 'present') * 100.0 / NULLIF(COUNT(*), 0), 1)::float AS attendance_pct
+           FROM attendance_records ar
+           JOIN sections s ON s.id = ar.section_id
+           JOIN classes c ON c.id = s.class_id
+           WHERE s.school_id = $1
+             AND ar.attend_date BETWEEN $2::date AND $3::date
+           GROUP BY c.name
+           ORDER BY c.name`,
+          [school_id, fromDate, toDate]
+        );
 
-    // Summary: today, this week, this month (always relative to today)
+    // Summary: today, this week, this month (always relative to today, school-wide)
     const summaryResult = await pool.query(
       `SELECT
          ROUND(COUNT(*) FILTER (WHERE ar.status = 'present' AND ar.attend_date = $2) * 100.0 /
@@ -134,6 +191,7 @@ router.get('/stats/class', async (req: Request, res: Response) => {
     const school_id = req.user!.school_id;
     const today = await getToday(school_id!);
     const className = req.query.class_name as string;
+    const sectionId = req.query.section_id as string | undefined;
     const toDate   = (req.query.to   as string) || today;
     const fromDate = (req.query.from as string) || (() => {
       const d = new Date(toDate + 'T12:00:00');
@@ -143,22 +201,40 @@ router.get('/stats/class', async (req: Request, res: Response) => {
 
     if (!className) return res.status(400).json({ error: 'class_name is required' });
 
-    const result = await pool.query(
-      `SELECT
-         ar.attend_date::text AS date,
-         COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
-         COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
-         COUNT(*)::int AS total
-       FROM attendance_records ar
-       JOIN sections s ON s.id = ar.section_id
-       JOIN classes c ON c.id = s.class_id
-       WHERE s.school_id = $1
-         AND c.name = $2
-         AND ar.attend_date BETWEEN $3::date AND $4::date
-       GROUP BY ar.attend_date
-       ORDER BY ar.attend_date`,
-      [school_id, className, fromDate, toDate]
-    );
+    const result = sectionId
+      ? await pool.query(
+          `SELECT
+             ar.attend_date::text AS date,
+             COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+             COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+             COUNT(*)::int AS total
+           FROM attendance_records ar
+           JOIN sections s ON s.id = ar.section_id
+           JOIN classes c ON c.id = s.class_id
+           WHERE s.school_id = $1
+             AND c.name = $2
+             AND ar.attend_date BETWEEN $3::date AND $4::date
+             AND s.id = $5
+           GROUP BY ar.attend_date
+           ORDER BY ar.attend_date`,
+          [school_id, className, fromDate, toDate, sectionId]
+        )
+      : await pool.query(
+          `SELECT
+             ar.attend_date::text AS date,
+             COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+             COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+             COUNT(*)::int AS total
+           FROM attendance_records ar
+           JOIN sections s ON s.id = ar.section_id
+           JOIN classes c ON c.id = s.class_id
+           WHERE s.school_id = $1
+             AND c.name = $2
+             AND ar.attend_date BETWEEN $3::date AND $4::date
+           GROUP BY ar.attend_date
+           ORDER BY ar.attend_date`,
+          [school_id, className, fromDate, toDate]
+        );
 
     return res.json({ class_name: className, from: fromDate, to: toDate, daily: result.rows });
   } catch (err) {
