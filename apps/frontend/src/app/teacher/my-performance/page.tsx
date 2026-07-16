@@ -188,10 +188,13 @@ export default function MyPerformancePage() {
             className="w-full flex items-center justify-between px-4 py-3 hover:bg-neutral-50 transition-colors">
             <div className="flex items-center gap-2">
               <Trophy size={16} className="text-amber-500" />
-              <p className="text-sm font-bold text-neutral-800">Monthly Leaderboard</p>
+              <div>
+                <p className="text-sm font-bold text-neutral-800">Monthly Leaderboard</p>
+                <p className="text-[10px] text-neutral-400">Score = plans(40) + attendance(20) + homework(15) + observations(15) + feed(10)</p>
+              </div>
               <span className="text-[10px] bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full font-semibold">{data.total_teachers} teachers</span>
             </div>
-            <span className="text-xs text-neutral-400">{showLeaderboard ? 'Hide' : 'Show'}</span>
+            <span className="text-xs text-neutral-400 shrink-0 ml-2">{showLeaderboard ? 'Hide' : 'Show'}</span>
           </button>
           {showLeaderboard && (
             <div className="border-t border-neutral-100 max-h-80 overflow-y-auto">
@@ -211,9 +214,9 @@ export default function MyPerformancePage() {
                   </p>
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="w-14 bg-neutral-100 rounded-full h-1.5 overflow-hidden">
-                      <div className={`h-1.5 rounded-full ${pctBg(t.rate)}`} style={{ width: `${t.rate}%` }} />
+                      <div className={`h-1.5 rounded-full ${pctBg(t.score ?? t.rate)}`} style={{ width: `${t.score ?? t.rate}%` }} />
                     </div>
-                    <p className={`text-xs font-bold w-10 text-right ${pctColor(t.rate)}`}>{t.score ?? t.rate}/100</p>
+                    <p className={`text-xs font-bold w-10 text-right ${pctColor(t.score ?? t.rate)}`}>{t.score ?? t.rate}/100</p>
                   </div>
                 </div>
               ))}
