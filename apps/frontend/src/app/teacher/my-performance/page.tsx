@@ -11,7 +11,7 @@ import {
 import { ChevronLeft, Flame, Target, AlertCircle, CheckCircle2, Calendar, Star, Trophy } from 'lucide-react';
 
 interface DailyRow { date: string; sections_completed: number; }
-interface LeaderboardEntry { rank: number; name: string; initials: string; score: number; rate: number; completions: number; streak: number; is_me: boolean; }
+interface LeaderboardEntry { rank: number; name: string; class_teacher: string; supporting_teachers: string | null; initials: string; score: number; rate: number; completions: number; streak: number; is_me: boolean; }
 interface PerformanceData {
   name: string;
   month: string;
@@ -192,28 +192,30 @@ export default function MyPerformancePage() {
                 <p className="text-sm font-bold text-neutral-800">Monthly Leaderboard</p>
                 <p className="text-[10px] text-neutral-400">Score = plans(40) + attendance(20) + homework(15) + observations(15) + feed(10)</p>
               </div>
-              <span className="text-[10px] bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full font-semibold">{data.total_teachers} teachers</span>
+              <span className="text-[10px] bg-neutral-100 text-neutral-500 px-2 py-0.5 rounded-full font-semibold">{data.total_teachers} classes</span>
             </div>
             <span className="text-xs text-neutral-400 shrink-0 ml-2">{showLeaderboard ? 'Hide' : 'Show'}</span>
           </button>
           {showLeaderboard && (
             <div className="border-t border-neutral-100 max-h-80 overflow-y-auto">
               {data.leaderboard.map((t) => (
-                <div key={t.name} className={`flex items-center gap-3 px-4 py-2.5 border-b border-neutral-50 last:border-0 ${t.is_me ? 'bg-primary-50' : ''}`}>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                <div key={t.name} className={`flex items-start gap-3 px-4 py-3 border-b border-neutral-50 last:border-0 ${t.is_me ? 'bg-primary-50' : ''}`}>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
                     t.rank === 1 ? 'bg-amber-100 text-amber-700' : t.rank === 2 ? 'bg-neutral-200 text-neutral-600' : t.rank === 3 ? 'bg-orange-100 text-orange-600' : 'bg-neutral-100 text-neutral-400'
                   }`}>
                     {t.rank === 1 ? <Star size={10} className="fill-amber-500 text-amber-500" /> : t.rank}
                   </div>
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                    style={{ background: t.rate >= 90 ? '#10b981' : t.rate >= 70 ? '#f59e0b' : '#f87171' }}>
-                    {t.initials}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-bold truncate ${t.is_me ? 'text-primary-800' : 'text-neutral-800'}`}>
+                      {t.name}{t.is_me ? ' (Your Class)' : ''}
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5 truncate">
+                      {t.class_teacher}
+                      {t.supporting_teachers ? ` + ${t.supporting_teachers}` : ''}
+                    </p>
                   </div>
-                  <p className={`text-xs flex-1 truncate ${t.is_me ? 'font-bold text-primary-800' : 'font-medium text-neutral-800'}`}>
-                    {t.name}{t.is_me ? ' (You)' : ''}
-                  </p>
                   <div className="flex items-center gap-2 shrink-0">
-                    <div className="w-14 bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                    <div className="w-12 bg-neutral-100 rounded-full h-1.5 overflow-hidden">
                       <div className={`h-1.5 rounded-full ${pctBg(t.score ?? t.rate)}`} style={{ width: `${t.score ?? t.rate}%` }} />
                     </div>
                     <p className={`text-xs font-bold w-10 text-right ${pctColor(t.score ?? t.rate)}`}>{t.score ?? t.rate}/100</p>

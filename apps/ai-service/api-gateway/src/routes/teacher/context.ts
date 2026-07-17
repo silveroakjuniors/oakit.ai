@@ -300,15 +300,31 @@ router.get('/performance', async (req: Request, res: Response) => {
     if (myRow.rows.length === 0) return res.status(404).json({ error: 'Teacher not found' });
     const me = myRow.rows[0];
 
-    // Composite score (100 pts)
-    // Plans: 40pts, Attendance: 20pts, Homework: 15pts, Observations: 15pts, Feed: 10pts
-    const planScore  = Math.min(40, Math.round((me.completions_month / schoolDays) * 40));
-    const attScore   = Math.min(20, Math.round((Math.min(me.attendance_days_month, schoolDays) / schoolDays) * 20));
-    const hwScore    = Math.min(15, Math.round((Math.min(me.homework_days_month, schoolDays) / schoolDays) * 15));
-    // Observations: 1pt per observation, max 15 (encourages ~2/week)
-    const obsScore   = Math.min(15, me.observations_month);
-    // Feed posts: 1pt per post, max 10
-    const feedScore  = Math.min(10, me.feed_posts_month || 0);
+    // Get teacher role to adjust scoring weights
+    const roleRow = await pool.query(
+      `SELECT r.name AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
+      [user_id]
+    );
+    const teacherRole = roleRow.rows[0]?.role || 'teacher';
+    const isSupporting = teacherRole === 'supporting teacher';
+
+    // Composite score — supporting teachers are not responsible for plan completion
+    // Class teacher: plans(40) + att(20) + hw(15) + obs(15) + feed(10) = 100
+    // Supporting teacher: att(35) + hw(25) + obs(25) + feed(15) = 100
+    let planScore: number, attScore: number, hwScore: number, obsScore: number, feedScore: number;
+    if (isSupporting) {
+      planScore = 0; // not their responsibility
+      attScore  = Math.min(35, Math.round((Math.min(me.attendance_days_month, schoolDays) / schoolDays) * 35));
+      hwScore   = Math.min(25, Math.round((Math.min(me.homework_days_month, schoolDays) / schoolDays) * 25));
+      obsScore  = Math.min(25, me.observations_month);
+      feedScore = Math.min(15, me.feed_posts_month || 0);
+    } else {
+      planScore = Math.min(40, Math.round((me.completions_month / schoolDays) * 40));
+      attScore  = Math.min(20, Math.round((Math.min(me.attendance_days_month, schoolDays) / schoolDays) * 20));
+      hwScore   = Math.min(15, Math.round((Math.min(me.homework_days_month, schoolDays) / schoolDays) * 15));
+      obsScore  = Math.min(15, me.observations_month);
+      feedScore = Math.min(10, me.feed_posts_month || 0);
+    }
     const totalScore = planScore + attScore + hwScore + obsScore + feedScore;
 
     const my_rate    = Math.min(100, Math.round((me.completions_month / schoolDays) * 100));
@@ -316,74 +332,92 @@ router.get('/performance', async (req: Request, res: Response) => {
     const hw_rate    = Math.min(100, Math.round((me.homework_days_month / schoolDays) * 100));
     const effectiveStreak = me.completions_month > 0 ? me.current_streak : 0;
 
-    // All teachers this month — compute composite score for ranking
+    // All teachers this month — rank by class/section, class teacher owns the score
     const allRows = await pool.query(
-      `SELECT u.id, u.name,
+      `SELECT
+         s.id AS section_id,
+         c.name AS class_name,
+         s.label AS section_label,
+         ct.id AS class_teacher_id,
+         ct.name AS class_teacher_name,
+         (SELECT string_agg(u2.name, ', ' ORDER BY u2.name)
+          FROM teacher_sections ts_sup
+          JOIN users u2 ON u2.id = ts_sup.teacher_id
+          JOIN roles r2 ON r2.id = u2.role_id
+          WHERE ts_sup.section_id = s.id
+            AND u2.id != COALESCE(s.class_teacher_id, '00000000-0000-0000-0000-000000000000'::uuid)
+            AND r2.name = 'supporting teacher' AND u2.is_active = true
+         ) AS supporting_teachers,
          (SELECT COUNT(DISTINCT dc.completion_date)::int FROM daily_completions dc
-          WHERE dc.teacher_id = u.id AND dc.school_id = $1
+          WHERE dc.teacher_id = ct.id AND dc.school_id = $1
             AND dc.completion_date BETWEEN $2::date AND $3::date) AS completions_month,
          (SELECT COUNT(DISTINCT ar.attend_date)::int FROM attendance_records ar
-          WHERE ar.section_id IN (
-            SELECT ts2.section_id FROM teacher_sections ts2 WHERE ts2.teacher_id = u.id
-            UNION SELECT s3.id FROM sections s3 WHERE s3.class_teacher_id = u.id)
-            AND ar.attend_date BETWEEN $2::date AND $3::date AND ar.school_id = $1) AS attendance_days_month,
+          WHERE ar.section_id = s.id AND ar.attend_date BETWEEN $2::date AND $3::date AND ar.school_id = $1) AS attendance_days_month,
          (SELECT COUNT(DISTINCT th.homework_date)::int FROM teacher_homework th
-          WHERE th.teacher_id = u.id AND th.school_id = $1
+          WHERE th.teacher_id = ct.id AND th.school_id = $1
             AND th.homework_date BETWEEN $2::date AND $3::date) AS homework_days_month,
          (SELECT LEAST(COUNT(*), 15)::int FROM student_observations obs
-          WHERE obs.teacher_id = u.id AND obs.school_id = $1
+          WHERE obs.teacher_id = ct.id AND obs.school_id = $1
             AND obs.obs_date BETWEEN $2::date AND $3::date) AS obs_score,
          (SELECT LEAST(COUNT(*), 10)::int FROM feed_posts fp
-          WHERE fp.posted_by = u.id AND fp.school_id = $1
+          WHERE fp.posted_by = ct.id AND fp.school_id = $1
             AND fp.created_at::date BETWEEN $2::date AND $3::date) AS feed_score,
          COALESCE(ts.current_streak, 0) AS current_streak
-       FROM users u
-       JOIN roles r ON r.id = u.role_id
-       LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $1
-       WHERE u.school_id = $1 AND r.name IN ('teacher','class teacher','supporting teacher') AND u.is_active = true`,
+       FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       LEFT JOIN users ct ON ct.id = s.class_teacher_id AND ct.is_active = true
+       LEFT JOIN teacher_streaks ts ON ts.teacher_id = ct.id AND ts.school_id = $1
+       WHERE s.school_id = $1`,
       [school_id, monthStart, today]
     );
 
-    const sorted = allRows.rows.map((t: any) => {
-      const ps = Math.min(40, Math.round((t.completions_month / schoolDays) * 40));
-      const as_ = Math.min(20, Math.round((Math.min(t.attendance_days_month, schoolDays) / schoolDays) * 20));
-      const hs = Math.min(15, Math.round((Math.min(t.homework_days_month, schoolDays) / schoolDays) * 15));
-      const score = ps + as_ + hs + (t.obs_score || 0) + (t.feed_score || 0);
-      return {
-        id: t.id, name: t.name,
-        score,
-        rate: Math.min(100, Math.round((t.completions_month / schoolDays) * 100)),
-        completions: t.completions_month,
-        streak: t.current_streak,
-        is_me: t.id === user_id,
-      };
-    }).sort((a: any, b: any) => b.score - a.score || b.streak - a.streak);
+    const sorted = allRows.rows
+      .filter((t: any) => t.class_teacher_id)
+      .map((t: any) => {
+        const ps  = Math.min(40, Math.round((t.completions_month / schoolDays) * 40));
+        const as_ = Math.min(20, Math.round((Math.min(t.attendance_days_month, schoolDays) / schoolDays) * 20));
+        const hs  = Math.min(15, Math.round((Math.min(t.homework_days_month, schoolDays) / schoolDays) * 15));
+        const score = ps + as_ + hs + (t.obs_score || 0) + (t.feed_score || 0);
+        // is_me = this teacher is either the class teacher OR a supporting teacher of this section
+        const is_me = t.class_teacher_id === user_id;
+        return {
+          section_id: t.section_id,
+          class_name: `${t.class_name} — Sec ${t.section_label}`,
+          class_teacher: t.class_teacher_name || '',
+          supporting_teachers: t.supporting_teachers || null,
+          class_teacher_id: t.class_teacher_id,
+          score, rate: Math.min(100, Math.round((t.completions_month / schoolDays) * 100)),
+          completions: t.completions_month, streak: t.current_streak, is_me,
+        };
+      }).sort((a: any, b: any) => b.score - a.score || b.streak - a.streak);
 
-    // Assign tied ranks based on composite score
+    // Assign tied ranks
     let curRank = 1;
     const leaderboard = sorted.map((t: any, i: number) => {
-      if (i > 0 && sorted[i].score === sorted[i-1].score) {
-        // tied — same rank
-      } else { curRank = i + 1; }
+      if (i > 0 && sorted[i].score === sorted[i-1].score) { /* tied */ } else { curRank = i + 1; }
       return {
         rank: curRank,
-        name: t.name,
-        initials: t.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase(),
-        score: t.score,
-        rate: t.rate,
-        completions: t.completions,
-        streak: t.streak,
-        is_me: t.is_me,
+        name: t.class_name,
+        class_teacher: t.class_teacher,
+        supporting_teachers: t.supporting_teachers,
+        initials: t.class_name.replace(' — ', '').replace('Sec ', '').replace(/[a-z ]/g, '').slice(0, 3),
+        score: t.score, rate: t.rate, completions: t.completions, streak: t.streak, is_me: t.is_me,
       };
     });
 
     const myRank = leaderboard.find((t: any) => t.is_me)?.rank ?? 1;
-    const total = sorted.length;
+    const total = sorted.length; // number of sections/classes
     const topScore = sorted[0]?.score ?? 0;
     const myScore = totalScore;
     const daysToTop = myScore < topScore ? topScore - myScore : 0;
 
-    const reasons = [
+    const reasons = isSupporting ? [
+      { factor: 'Attendance submission (35pts)', your_value: `${attScore}/35 — ${att_rate}%`, school_avg: '—', impact: 'high' as const, status: (attScore >= 30 ? 'good' : attScore >= 20 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Homework sent to parents (25pts)', your_value: `${hwScore}/25 — ${hw_rate}%`, school_avg: '—', impact: 'high' as const, status: (hwScore >= 20 ? 'good' : hwScore >= 12 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Student observations (25pts)', your_value: `${obsScore}/25 — ${me.observations_month} written`, school_avg: '—', impact: 'medium' as const, status: (obsScore >= 18 ? 'good' : obsScore >= 10 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Class feed posts (15pts)', your_value: `${feedScore}/15 — ${me.feed_posts_month || 0} posts`, school_avg: '—', impact: 'medium' as const, status: (feedScore >= 12 ? 'good' : feedScore >= 6 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Plan completion', your_value: 'Not applicable for supporting teachers', school_avg: '—', impact: 'low' as const, status: 'good' as 'good'|'warn'|'bad' },
+    ] : [
       { factor: 'Plan completion (40pts)', your_value: `${planScore}/40 — ${my_rate}% (${me.completions_month}/${schoolDays} days)`, school_avg: '—', impact: 'high' as const, status: (planScore >= 36 ? 'good' : planScore >= 28 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
       { factor: 'Attendance submission (20pts)', your_value: `${attScore}/20 — ${att_rate}%`, school_avg: '—', impact: 'high' as const, status: (attScore >= 18 ? 'good' : attScore >= 14 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
       { factor: 'Homework sent to parents (15pts)', your_value: `${hwScore}/15 — ${hw_rate}%`, school_avg: '—', impact: 'medium' as const, status: (hwScore >= 12 ? 'good' : hwScore >= 8 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
@@ -393,11 +427,11 @@ router.get('/performance', async (req: Request, res: Response) => {
 
     const tips: string[] = [];
     if (myRank > 1 && daysToTop > 0) tips.push(`You are ${daysToTop} point${daysToTop !== 1 ? 's' : ''} behind #1. Focus on the areas below to close the gap.`);
-    if (planScore < 40) tips.push(`Complete your plan every school day — each day completed adds ${Math.round(40/schoolDays)} points.`);
-    if (attScore < 20) tips.push(`Submit attendance every morning. Missing ${schoolDays - me.attendance_days_month} day${(schoolDays - me.attendance_days_month) !== 1 ? 's' : ''} this month.`);
-    if (hwScore < 15) tips.push(`Send homework to parents more regularly — use Homework & Notes after your plan is done.`);
-    if (obsScore < 10) tips.push(`Write ${10 - obsScore} more student observations to earn ${10 - obsScore} more points. Use Child Journey.`);
-    if (feedScore < 10) tips.push(`Post ${10 - feedScore} more photos to the class feed. Parents love seeing what children do in class.`);
+    if (!isSupporting && planScore < 40) tips.push(`Complete your plan every school day — each day adds ${Math.round(40/schoolDays)} points.`);
+    if (attScore < (isSupporting ? 35 : 20)) tips.push(`Submit attendance every morning — you are missing ${schoolDays - me.attendance_days_month} day${(schoolDays - me.attendance_days_month) !== 1 ? 's' : ''} this month.`);
+    if (hwScore < (isSupporting ? 25 : 15)) tips.push(`Send homework to parents more regularly — use Homework & Notes after your plan is done.`);
+    if (obsScore < (isSupporting ? 18 : 10)) tips.push(`Write ${(isSupporting ? 18 : 10) - obsScore} more student observations to earn ${(isSupporting ? 18 : 10) - obsScore} more points. Use Child Journey.`);
+    if (feedScore < (isSupporting ? 12 : 8)) tips.push(`Post ${(isSupporting ? 12 : 8) - feedScore} more photos to the class feed to earn more points.`);
     if (tips.length === 0) tips.push(`Perfect score! You are the Star of the Month. Keep this up!`);
 
     const dailyResult = await pool.query(
@@ -410,6 +444,7 @@ router.get('/performance', async (req: Request, res: Response) => {
 
     return res.json({
       name: me.name, month: today.substring(0, 7),
+      is_supporting: isSupporting,
       completion_rate_month: my_rate,
       completions_month: me.completions_month,
       school_days_month: schoolDays,
