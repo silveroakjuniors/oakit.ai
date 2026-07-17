@@ -343,10 +343,9 @@ router.get('/performance', async (req: Request, res: Response) => {
          (SELECT string_agg(u2.name, ', ' ORDER BY u2.name)
           FROM teacher_sections ts_sup
           JOIN users u2 ON u2.id = ts_sup.teacher_id
-          JOIN roles r2 ON r2.id = u2.role_id
           WHERE ts_sup.section_id = s.id
             AND u2.id != COALESCE(s.class_teacher_id, '00000000-0000-0000-0000-000000000000'::uuid)
-            AND r2.name = 'supporting teacher' AND u2.is_active = true
+            AND u2.is_active = true
          ) AS supporting_teachers,
          (SELECT COUNT(DISTINCT dc.completion_date)::int FROM daily_completions dc
           WHERE dc.teacher_id = ct.id AND dc.school_id = $1
