@@ -390,10 +390,10 @@ router.get('/performance', async (req: Request, res: Response) => {
         };
       }).sort((a: any, b: any) => b.score - a.score || b.streak - a.streak);
 
-    // Assign tied ranks
+    // Assign dense ranks (no gaps for ties: 1,2,2,2,3 not 1,2,2,2,5)
     let curRank = 1;
     const leaderboard = sorted.map((t: any, i: number) => {
-      if (i > 0 && sorted[i].score === sorted[i-1].score) { /* tied */ } else { curRank = i + 1; }
+      if (i > 0 && sorted[i].score !== sorted[i-1].score) { curRank++; }
       return {
         rank: curRank,
         name: t.class_name,
@@ -427,10 +427,62 @@ router.get('/performance', async (req: Request, res: Response) => {
     const tips: string[] = [];
     if (myRank > 1 && daysToTop > 0) tips.push(`You are ${daysToTop} point${daysToTop !== 1 ? 's' : ''} behind #1. Focus on the areas below to close the gap.`);
     if (!isSupporting && planScore < 40) tips.push(`Complete your plan every school day — each day adds ${Math.round(40/schoolDays)} points.`);
-    if (attScore < (isSupporting ? 35 : 20)) tips.push(`Submit attendance every morning — you are missing ${schoolDays - me.attendance_days_month} day${(schoolDays - me.attendance_days_month) !== 1 ? 's' : ''} this month.`);
-    if (hwScore < (isSupporting ? 25 : 15)) tips.push(`Send homework to parents more regularly — use Homework & Notes after your plan is done.`);
-    if (obsScore < (isSupporting ? 18 : 10)) tips.push(`Write ${(isSupporting ? 18 : 10) - obsScore} more student observations to earn ${(isSupporting ? 18 : 10) - obsScore} more points. Use Child Journey.`);
-    if (feedScore < (isSupporting ? 12 : 8)) tips.push(`Post ${(isSupporting ? 12 : 8) - feedScore} more photos to the class feed to earn more points.`);
+
+    // Specific missed attendance dates
+    if (attScore < (isSupporting ? 35 : 20)) {
+      try {
+        const missedAtt = await pool.query(
+          `SELECT to_char(gs.d::date, 'DD Mon') AS missed_date
+           FROM generate_series($3::date, $4::date, '1 day'::interval) gs(d)
+           WHERE EXTRACT(DOW FROM gs.d) NOT IN (0, 6)
+             AND NOT EXISTS (
+               SELECT 1 FROM attendance_records ar
+               JOIN sections s2 ON s2.id = ar.section_id
+               WHERE ar.attend_date = gs.d::date
+                 AND ar.school_id = $2
+                 AND (s2.class_teacher_id = $1 OR s2.id IN (
+                   SELECT ts2.section_id FROM teacher_sections ts2 WHERE ts2.teacher_id = $1)))
+           ORDER BY gs.d DESC LIMIT 5`,
+          [user_id, school_id, monthStart, today]
+        );
+        if (missedAtt.rows.length > 0) {
+          const dates = missedAtt.rows.map((r: any) => r.missed_date).join(', ');
+          tips.push(`Attendance not submitted on: ${dates}. Submit every morning to earn full attendance points.`);
+        }
+      } catch {
+        tips.push(`Submit attendance every morning — you have ${schoolDays - me.attendance_days_month} missing day${(schoolDays - me.attendance_days_month) !== 1 ? 's' : ''} this month.`);
+      }
+    }
+
+    // Specific missed homework dates (last 5 school days without homework)
+    if (hwScore < (isSupporting ? 25 : 15)) {
+      try {
+        const missedHw = await pool.query(
+          `SELECT to_char(gs.d::date, 'DD Mon') AS missed_date
+           FROM generate_series($3::date, $4::date, '1 day'::interval) gs(d)
+           WHERE EXTRACT(DOW FROM gs.d) NOT IN (0, 6)
+             AND NOT EXISTS (
+               SELECT 1 FROM teacher_homework th
+               WHERE th.homework_date = gs.d::date
+                 AND th.teacher_id = $1 AND th.school_id = $2)
+           ORDER BY gs.d DESC LIMIT 5`,
+          [user_id, school_id, monthStart, today]
+        );
+        if (missedHw.rows.length > 0) {
+          const dates = missedHw.rows.map((r: any) => r.missed_date).join(', ');
+          tips.push(`Homework not sent on: ${dates}. Use Homework & Notes after completing your daily plan.`);
+        }
+      } catch {
+        tips.push(`Send homework to parents more regularly — use Homework & Notes after your plan is done.`);
+      }
+    }
+
+    if (obsScore < (isSupporting ? 18 : 10)) {
+      tips.push(`Write ${(isSupporting ? 18 : 10) - obsScore} more student observations this month. Use Child Journey to record what you notice about each student.`);
+    }
+    if (feedScore < (isSupporting ? 12 : 8)) {
+      tips.push(`Post ${(isSupporting ? 12 : 8) - feedScore} more photos/updates to the class feed. Parents love seeing classroom moments.`);
+    }
     if (tips.length === 0) tips.push(`Perfect score! You are the Star of the Month. Keep this up!`);
 
     const dailyResult = await pool.query(
