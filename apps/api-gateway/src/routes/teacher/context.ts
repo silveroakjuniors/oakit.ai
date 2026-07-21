@@ -417,11 +417,11 @@ router.get('/performance', async (req: Request, res: Response) => {
       { factor: 'Class feed posts (15pts)', your_value: `${feedScore}/15 — ${me.feed_posts_month || 0} posts`, school_avg: '—', impact: 'medium' as const, status: (feedScore >= 12 ? 'good' : feedScore >= 6 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
       { factor: 'Plan completion', your_value: 'Not applicable for supporting teachers', school_avg: '—', impact: 'low' as const, status: 'good' as 'good'|'warn'|'bad' },
     ] : [
-      { factor: 'Plan completion (40pts)', your_value: `${planScore}/40 — ${my_rate}% (${me.completions_month}/${schoolDays} days)`, school_avg: '—', impact: 'high' as const, status: (planScore >= 36 ? 'good' : planScore >= 28 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Attendance submission (20pts)', your_value: `${attScore}/20 — ${att_rate}%`, school_avg: '—', impact: 'high' as const, status: (attScore >= 18 ? 'good' : attScore >= 14 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Homework sent to parents (15pts)', your_value: `${hwScore}/15 — ${hw_rate}%`, school_avg: '—', impact: 'medium' as const, status: (hwScore >= 12 ? 'good' : hwScore >= 8 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Student observations (15pts)', your_value: `${obsScore}/15 — ${me.observations_month} written`, school_avg: '—', impact: 'medium' as const, status: (obsScore >= 10 ? 'good' : obsScore >= 5 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Class feed posts (10pts)', your_value: `${feedScore}/10 — ${me.feed_posts_month || 0} posts`, school_avg: '—', impact: 'low' as const, status: (feedScore >= 8 ? 'good' : feedScore >= 4 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Plan completion (40pts)',       your_value: `${planScore}/40 — ${my_rate}% (${me.completions_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const,   status: (planScore >= 36 ? 'good' : planScore >= 28 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Attendance submission (20pts)',  your_value: `${attScore}/20 — ${att_rate}% (${me.attendance_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const,   status: (attScore >= 18 ? 'good' : attScore >= 14 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Homework sent to parents (15pts)', your_value: `${hwScore}/15 — ${hw_rate}% (${me.homework_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'medium' as const, status: (hwScore >= 12 ? 'good' : hwScore >= 8 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Student observations (15pts)',   your_value: `${obsScore}/15 — ${me.observations_month} written this month (max 15pts at 15 obs)`, school_avg: '—', impact: 'medium' as const,      status: (obsScore >= 10 ? 'good' : obsScore >= 5 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Class feed posts (10pts)',        your_value: `${feedScore}/10 — ${me.feed_posts_month || 0} posts this month (max 10pts at 10 posts)`, school_avg: '—', impact: 'low' as const,   status: (feedScore >= 8 ? 'good' : feedScore >= 4 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
     ];
 
     const tips: string[] = [];
