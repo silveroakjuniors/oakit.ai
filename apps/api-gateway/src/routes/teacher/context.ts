@@ -285,12 +285,28 @@ router.get('/performance', async (req: Request, res: Response) => {
          (SELECT COUNT(DISTINCT th.homework_date)::int FROM teacher_homework th
           WHERE th.teacher_id = $1 AND th.school_id = $2
             AND th.homework_date BETWEEN $3::date AND $4::date) AS homework_days_month,
-         (SELECT COUNT(*)::int FROM student_observations obs
+         -- Observations: count students in section who have at least 1 obs this month
+         (SELECT COUNT(DISTINCT obs.student_id)::int
+          FROM student_observations obs
+          JOIN students st ON st.id = obs.student_id
           WHERE obs.teacher_id = $1 AND obs.school_id = $2
-            AND obs.obs_date BETWEEN $3::date AND $4::date) AS observations_month,
-         (SELECT COUNT(*)::int FROM feed_posts fp
+            AND obs.obs_date BETWEEN $3::date AND $4::date
+            AND st.section_id IN (
+              SELECT ts2.section_id FROM teacher_sections ts2 WHERE ts2.teacher_id = $1
+              UNION SELECT s3.id FROM sections s3 WHERE s3.class_teacher_id = $1)
+         ) AS students_observed_month,
+         -- Total active students in teacher's sections
+         (SELECT COUNT(DISTINCT st.id)::int
+          FROM students st
+          WHERE st.is_active = true
+            AND st.section_id IN (
+              SELECT ts2.section_id FROM teacher_sections ts2 WHERE ts2.teacher_id = $1
+              UNION SELECT s3.id FROM sections s3 WHERE s3.class_teacher_id = $1)
+         ) AS total_students,
+         -- Feed: count distinct school days with at least 1 post
+         (SELECT COUNT(DISTINCT fp.created_at::date)::int FROM feed_posts fp
           WHERE fp.posted_by = $1 AND fp.school_id = $2
-            AND fp.created_at::date BETWEEN $3::date AND $4::date) AS feed_posts_month
+            AND fp.created_at::date BETWEEN $3::date AND $4::date) AS feed_days_month
        FROM users u
        LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $2
        WHERE u.id = $1`,
@@ -311,25 +327,33 @@ router.get('/performance', async (req: Request, res: Response) => {
     // Composite score — supporting teachers are not responsible for plan completion
     // Class teacher: plans(40) + att(20) + hw(15) + obs(15) + feed(10) = 100
     // Supporting teacher: att(35) + hw(25) + obs(25) + feed(15) = 100
+    // Obs: based on % of students observed (every student needs at least 1 obs)
+    // Feed: based on % of school days with at least 1 post
+    const totalStudents = me.total_students || 1;
+    const studentsObserved = me.students_observed_month || 0;
+    const feedDays = me.feed_days_month || 0;
+
     let planScore: number, attScore: number, hwScore: number, obsScore: number, feedScore: number;
     if (isSupporting) {
-      planScore = 0; // not their responsibility
+      planScore = 0;
       attScore  = Math.min(35, Math.round((Math.min(me.attendance_days_month, schoolDays) / schoolDays) * 35));
       hwScore   = Math.min(25, Math.round((Math.min(me.homework_days_month, schoolDays) / schoolDays) * 25));
-      obsScore  = Math.min(25, me.observations_month);
-      feedScore = Math.min(15, me.feed_posts_month || 0);
+      obsScore  = Math.min(25, Math.round((studentsObserved / totalStudents) * 25));
+      feedScore = Math.min(15, Math.round((feedDays / schoolDays) * 15));
     } else {
       planScore = Math.min(40, Math.round((me.completions_month / schoolDays) * 40));
       attScore  = Math.min(20, Math.round((Math.min(me.attendance_days_month, schoolDays) / schoolDays) * 20));
       hwScore   = Math.min(15, Math.round((Math.min(me.homework_days_month, schoolDays) / schoolDays) * 15));
-      obsScore  = Math.min(15, me.observations_month);
-      feedScore = Math.min(10, me.feed_posts_month || 0);
+      obsScore  = Math.min(15, Math.round((studentsObserved / totalStudents) * 15));
+      feedScore = Math.min(10, Math.round((feedDays / schoolDays) * 10));
     }
     const totalScore = planScore + attScore + hwScore + obsScore + feedScore;
 
     const my_rate    = Math.min(100, Math.round((me.completions_month / schoolDays) * 100));
     const att_rate   = Math.min(100, Math.round((me.attendance_days_month / schoolDays) * 100));
     const hw_rate    = Math.min(100, Math.round((me.homework_days_month / schoolDays) * 100));
+    const obs_pct    = Math.round((studentsObserved / totalStudents) * 100);
+    const feed_pct   = Math.round((feedDays / schoolDays) * 100);
     const effectiveStreak = me.completions_month > 0 ? me.current_streak : 0;
 
     // All teachers this month — rank by class/section, class teacher owns the score
@@ -411,17 +435,17 @@ router.get('/performance', async (req: Request, res: Response) => {
     const daysToTop = myScore < topScore ? topScore - myScore : 0;
 
     const reasons = isSupporting ? [
-      { factor: 'Attendance submission (35pts)', your_value: `${attScore}/35 — ${att_rate}%`, school_avg: '—', impact: 'high' as const, status: (attScore >= 30 ? 'good' : attScore >= 20 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Homework sent to parents (25pts)', your_value: `${hwScore}/25 — ${hw_rate}%`, school_avg: '—', impact: 'high' as const, status: (hwScore >= 20 ? 'good' : hwScore >= 12 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Student observations (25pts)', your_value: `${obsScore}/25 — ${me.observations_month} written`, school_avg: '—', impact: 'medium' as const, status: (obsScore >= 18 ? 'good' : obsScore >= 10 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Class feed posts (15pts)', your_value: `${feedScore}/15 — ${me.feed_posts_month || 0} posts`, school_avg: '—', impact: 'medium' as const, status: (feedScore >= 12 ? 'good' : feedScore >= 6 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Attendance submission (35pts)', your_value: `${attScore}/35 — ${att_rate}% (${me.attendance_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const, status: (attScore >= 30 ? 'good' : attScore >= 20 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Homework sent to parents (25pts)', your_value: `${hwScore}/25 — ${hw_rate}% (${me.homework_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const, status: (hwScore >= 20 ? 'good' : hwScore >= 12 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Student observations (25pts)', your_value: `${obsScore}/25 — ${studentsObserved}/${totalStudents} students observed this month (1 obs per student needed)`, school_avg: '—', impact: 'medium' as const, status: (studentsObserved >= totalStudents ? 'good' : studentsObserved >= Math.ceil(totalStudents * 0.7) ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Class feed posts (15pts)', your_value: `${feedScore}/15 — ${feedDays}/${schoolDays} days had a post this month (1 post per school day)`, school_avg: '—', impact: 'medium' as const, status: (feed_pct >= 90 ? 'good' : feed_pct >= 60 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
       { factor: 'Plan completion', your_value: 'Not applicable for supporting teachers', school_avg: '—', impact: 'low' as const, status: 'good' as 'good'|'warn'|'bad' },
     ] : [
-      { factor: 'Plan completion (40pts)',       your_value: `${planScore}/40 — ${my_rate}% (${me.completions_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const,   status: (planScore >= 36 ? 'good' : planScore >= 28 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Attendance submission (20pts)',  your_value: `${attScore}/20 — ${att_rate}% (${me.attendance_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const,   status: (attScore >= 18 ? 'good' : attScore >= 14 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Homework sent to parents (15pts)', your_value: `${hwScore}/15 — ${hw_rate}% (${me.homework_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'medium' as const, status: (hwScore >= 12 ? 'good' : hwScore >= 8 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Student observations (15pts)',   your_value: `${obsScore}/15 — ${me.observations_month} written this month (max 15pts at 15 obs)`, school_avg: '—', impact: 'medium' as const,      status: (obsScore >= 10 ? 'good' : obsScore >= 5 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
-      { factor: 'Class feed posts (10pts)',        your_value: `${feedScore}/10 — ${me.feed_posts_month || 0} posts this month (max 10pts at 10 posts)`, school_avg: '—', impact: 'low' as const,   status: (feedScore >= 8 ? 'good' : feedScore >= 4 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Plan completion (40pts)',          your_value: `${planScore}/40 — ${my_rate}% (${me.completions_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const,   status: (planScore >= 36 ? 'good' : planScore >= 28 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Attendance submission (20pts)',     your_value: `${attScore}/20 — ${att_rate}% (${me.attendance_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'high' as const, status: (attScore >= 18 ? 'good' : attScore >= 14 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Homework sent to parents (15pts)',  your_value: `${hwScore}/15 — ${hw_rate}% (${me.homework_days_month}/${schoolDays} days this month)`, school_avg: '—', impact: 'medium' as const,  status: (hwScore >= 12 ? 'good' : hwScore >= 8 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Student observations (15pts)',      your_value: `${obsScore}/15 — ${studentsObserved}/${totalStudents} students observed this month (1 obs per student needed)`, school_avg: '—', impact: 'medium' as const, status: (studentsObserved >= totalStudents ? 'good' : studentsObserved >= Math.ceil(totalStudents * 0.7) ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
+      { factor: 'Class feed posts (10pts)',           your_value: `${feedScore}/10 — ${feedDays}/${schoolDays} days had a post this month (1 post per school day)`, school_avg: '—', impact: 'low' as const,   status: (feed_pct >= 90 ? 'good' : feed_pct >= 60 ? 'warn' : 'bad') as 'good'|'warn'|'bad' },
     ];
 
     const tips: string[] = [];
@@ -478,10 +502,34 @@ router.get('/performance', async (req: Request, res: Response) => {
     }
 
     if (obsScore < (isSupporting ? 18 : 10)) {
-      tips.push(`Write ${(isSupporting ? 18 : 10) - obsScore} more student observations this month. Use Child Journey to record what you notice about each student.`);
+      try {
+        // Get names of students not yet observed this month
+        const unobservedRows = await pool.query(
+          `SELECT st.name FROM students st
+           WHERE st.is_active = true
+             AND st.section_id IN (
+               SELECT ts2.section_id FROM teacher_sections ts2 WHERE ts2.teacher_id = $1
+               UNION SELECT s3.id FROM sections s3 WHERE s3.class_teacher_id = $1)
+             AND st.id NOT IN (
+               SELECT DISTINCT obs.student_id FROM student_observations obs
+               WHERE obs.teacher_id = $1 AND obs.school_id = $2
+                 AND obs.obs_date BETWEEN $3::date AND $4::date)
+           ORDER BY st.name LIMIT 5`,
+          [user_id, school_id, monthStart, today]
+        );
+        const remaining = totalStudents - studentsObserved;
+        if (unobservedRows.rows.length > 0) {
+          const names = unobservedRows.rows.map((r: any) => r.name).join(', ');
+          const more = remaining > 5 ? ` and ${remaining - 5} more` : '';
+          tips.push(`${remaining} student${remaining !== 1 ? 's' : ''} have no observation this month: ${names}${more}. Open Child Journey to add one for each.`);
+        }
+      } catch {
+        tips.push(`Observe all ${totalStudents} students — ${totalStudents - studentsObserved} still have no observation this month. Use Child Journey.`);
+      }
     }
     if (feedScore < (isSupporting ? 12 : 8)) {
-      tips.push(`Post ${(isSupporting ? 12 : 8) - feedScore} more photos/updates to the class feed. Parents love seeing classroom moments.`);
+      const missingFeedDays = schoolDays - feedDays;
+      tips.push(`${missingFeedDays} school day${missingFeedDays !== 1 ? 's' : ''} had no class feed post this month. Post at least 1 photo or update every school day to earn full feed points.`);
     }
     if (tips.length === 0) tips.push(`Perfect score! You are the Star of the Month. Keep this up!`);
 
@@ -501,8 +549,9 @@ router.get('/performance', async (req: Request, res: Response) => {
       school_days_month: schoolDays,
       attendance_rate_month: att_rate,
       homework_rate_month: hw_rate,
-      observations_month: me.observations_month,
-      feed_posts_month: me.feed_posts_month || 0,
+      students_observed: studentsObserved,
+      total_students: totalStudents,
+      feed_days_month: feedDays,
       total_score: myScore,
       current_streak: effectiveStreak,
       best_streak: me.best_streak,
