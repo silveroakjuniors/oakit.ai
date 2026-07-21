@@ -450,10 +450,15 @@ router.get('/performance', async (req: Request, res: Response) => {
 
     const tips: string[] = [];
     if (myRank > 1 && daysToTop > 0) tips.push(`You are ${daysToTop} point${daysToTop !== 1 ? 's' : ''} behind #1. Focus on the areas below to close the gap.`);
-    if (!isSupporting && planScore < 40) tips.push(`Complete your plan every school day — each day adds ${Math.round(40/schoolDays)} points.`);
 
-    // Specific missed attendance dates
-    if (attScore < (isSupporting ? 35 : 20)) {
+    // Plan completion — only for class teachers and only if < 100%
+    if (!isSupporting && me.completions_month < schoolDays) {
+      const missing = schoolDays - me.completions_month;
+      tips.push(`Complete your plan every school day — you have ${missing} missing day${missing !== 1 ? 's' : ''} this month. Each day adds ${Math.round(40/schoolDays)} points.`);
+    }
+
+    // Attendance — generate tip if < 100%
+    if (me.attendance_days_month < schoolDays) {
       try {
         const missedAtt = await pool.query(
           `SELECT to_char(gs.d::date, 'DD Mon') AS missed_date
@@ -471,15 +476,18 @@ router.get('/performance', async (req: Request, res: Response) => {
         );
         if (missedAtt.rows.length > 0) {
           const dates = missedAtt.rows.map((r: any) => r.missed_date).join(', ');
-          tips.push(`Attendance not submitted on: ${dates}. Submit every morning to earn full attendance points.`);
+          const totalMissing = schoolDays - me.attendance_days_month;
+          const more = totalMissing > 5 ? ` and ${totalMissing - 5} more` : '';
+          tips.push(`Attendance not submitted on: ${dates}${more}. Submit every morning to earn full attendance points.`);
         }
       } catch {
-        tips.push(`Submit attendance every morning — you have ${schoolDays - me.attendance_days_month} missing day${(schoolDays - me.attendance_days_month) !== 1 ? 's' : ''} this month.`);
+        const missing = schoolDays - me.attendance_days_month;
+        tips.push(`Submit attendance every morning — you have ${missing} missing day${missing !== 1 ? 's' : ''} this month.`);
       }
     }
 
-    // Specific missed homework dates (last 5 school days without homework)
-    if (hwScore < (isSupporting ? 25 : 15)) {
+    // Homework — generate tip if < 100%
+    if (me.homework_days_month < schoolDays) {
       try {
         const missedHw = await pool.query(
           `SELECT to_char(gs.d::date, 'DD Mon') AS missed_date
@@ -494,14 +502,18 @@ router.get('/performance', async (req: Request, res: Response) => {
         );
         if (missedHw.rows.length > 0) {
           const dates = missedHw.rows.map((r: any) => r.missed_date).join(', ');
-          tips.push(`Homework not sent on: ${dates}. Use Homework & Notes after completing your daily plan.`);
+          const totalMissing = schoolDays - me.homework_days_month;
+          const more = totalMissing > 5 ? ` and ${totalMissing - 5} more` : '';
+          tips.push(`Homework not sent on: ${dates}${more}. Use Homework & Notes after completing your daily plan.`);
         }
       } catch {
-        tips.push(`Send homework to parents more regularly — use Homework & Notes after your plan is done.`);
+        const missing = schoolDays - me.homework_days_month;
+        tips.push(`Send homework to parents more regularly — you have ${missing} missing day${missing !== 1 ? 's' : ''} this month.`);
       }
     }
 
-    if (obsScore < (isSupporting ? 18 : 10)) {
+    // Observations — generate tip if < 100% of students observed
+    if (studentsObserved < totalStudents) {
       try {
         // Get names of students not yet observed this month
         const unobservedRows = await pool.query(
@@ -524,13 +536,37 @@ router.get('/performance', async (req: Request, res: Response) => {
           tips.push(`${remaining} student${remaining !== 1 ? 's' : ''} have no observation this month: ${names}${more}. Open Child Journey to add one for each.`);
         }
       } catch {
-        tips.push(`Observe all ${totalStudents} students — ${totalStudents - studentsObserved} still have no observation this month. Use Child Journey.`);
+        const remaining = totalStudents - studentsObserved;
+        tips.push(`Observe all ${totalStudents} students — ${remaining} still have no observation this month. Use Child Journey.`);
       }
     }
-    if (feedScore < (isSupporting ? 12 : 8)) {
-      const missingFeedDays = schoolDays - feedDays;
-      tips.push(`${missingFeedDays} school day${missingFeedDays !== 1 ? 's' : ''} had no class feed post this month. Post at least 1 photo or update every school day to earn full feed points.`);
+
+    // Feed posts — generate tip if < 100%, with specific dates
+    if (feedDays < schoolDays) {
+      try {
+        const missedFeed = await pool.query(
+          `SELECT to_char(gs.d::date, 'DD Mon') AS missed_date
+           FROM generate_series($3::date, $4::date, '1 day'::interval) gs(d)
+           WHERE EXTRACT(DOW FROM gs.d) NOT IN (0, 6)
+             AND NOT EXISTS (
+               SELECT 1 FROM feed_posts fp
+               WHERE fp.created_at::date = gs.d::date
+                 AND fp.posted_by = $1 AND fp.school_id = $2)
+           ORDER BY gs.d DESC LIMIT 5`,
+          [user_id, school_id, monthStart, today]
+        );
+        if (missedFeed.rows.length > 0) {
+          const dates = missedFeed.rows.map((r: any) => r.missed_date).join(', ');
+          const totalMissing = schoolDays - feedDays;
+          const more = totalMissing > 5 ? ` and ${totalMissing - 5} more` : '';
+          tips.push(`Class feed post missing on: ${dates}${more}. Post at least 1 photo or update every working day to earn full feed points.`);
+        }
+      } catch {
+        const missing = schoolDays - feedDays;
+        tips.push(`${missing} working day${missing !== 1 ? 's' : ''} had no class feed post this month. Post at least 1 photo or update every working day to earn full feed points.`);
+      }
     }
+
     if (tips.length === 0) tips.push(`Perfect score! You are the Star of the Month. Keep this up!`);
 
     const dailyResult = await pool.query(
