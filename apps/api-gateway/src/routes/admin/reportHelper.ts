@@ -103,27 +103,50 @@ export async function generateProgressReport(
      WHERE dc.section_id=$1 AND dc.completion_date BETWEEN $2 AND $3 ORDER BY cc.chunk_index`,
     [student.section_id, fromDate, toDate]);
 
+  // ── Curated fallback descriptions per subject (shown when no clean topics found) ──
+  const SUBJECT_FALLBACKS: Record<string, string[]> = {
+    'English Speaking':             ['Storytelling and oral communication', 'Speaking confidence and expression', 'Listening and responding activities'],
+    'English & Literacy':           ['Alphabet recognition and letter formation', 'Phonics, rhymes and early reading', 'Pre-writing and vocabulary building'],
+    'Math & Numbers':               ['Number recognition and counting', 'Shapes, patterns and sorting', 'Early numeracy through hands-on activities'],
+    'General Knowledge':            ['World around us — nature, animals, community', 'Rhymes, songs and cultural awareness', 'Curiosity and discovery activities'],
+    'Writing':                      ['Pencil grip and pre-writing strokes', 'Letter tracing and handwriting practice', 'Fine motor strengthening exercises'],
+    'Art & Creativity':             ['Drawing, colouring and craft activities', 'Creative expression through art', 'Sensory and imaginative play'],
+    'Music & Rhymes':               ['Nursery rhymes and action songs', 'Rhythm, beat and musical play', 'Memory and language through music'],
+    'Physical Activity':            ['Gross motor skills and movement games', 'Outdoor play and coordination activities', 'Body awareness and physical development'],
+    'Regional Language':            ['Vocabulary building in regional language', 'Rhymes, stories and letters', 'Listening and speaking in mother tongue'],
+    'Circle Time & Morning Routine':['Morning greetings and calendar activities', 'Show and tell, sharing circle', 'Social skills and classroom routines'],
+  };
+
+  function getFallbackTopics(subj: string): string[] {
+    return SUBJECT_FALLBACKS[subj] || [`${subj} concepts and activities`];
+  }
+
   // ── Build a clean learning map: subject → set of meaningful activity keywords ──
-  // Strategy: extract actual topic/activity names from chunk content, strip noise
   const learningMap: Record<string, Set<string>> = {};
 
-  // Helper: clean a raw activity string to human-readable form
+  // Helper: clean a raw activity string — returns null if it looks like a code/reference
   function cleanActivity(raw: string): string | null {
     if (!raw || raw.length < 3) return null;
-    // Strip trailing numbers (chunk IDs like "- 1478"), pg references, etc.
     let s = raw
-      .replace(/[-–]\s*\d{3,}$/g, '')        // trailing " - 1478"
-      .replace(/\bpg\.?\s*(no\.?\s*)?\d+\b/gi, '') // pg no. 6
+      .replace(/\b(res|ws|ls|at|pg|page|book|ref|no)\.?\s*[-–]?\s*\d+\b/gi, '') // Res. 1515, Ws-218, Ls-218, Book 5
+      .replace(/[-–]\s*\(?\w{1,4}\d{3,}\w*\)?/g, '')   // - w9301, - (w9303)
+      .replace(/[-–]\s*\d{3,}(\s*,\s*\d+)*/g, '')       // - 337, 338, 339
+      .replace(/\(?\w{0,3}\d{4,}\w*\)?/g, '')           // standalone codes like w9301
+      .replace(/\bpg\.?\s*(no\.?\s*)?\d+\b/gi, '')
       .replace(/\bpage\s*\d+\b/gi, '')
       .replace(/\(\s*settling\s*time\s*\)/gi, '')
-      .replace(/learning\s*readiness\s*[:\-]?\s*/gi, '') // strip "Learning readiness:"
-      .replace(/\s*\+\s*$/, '')               // trailing " +"
+      .replace(/learning\s*readiness\s*[:\-–]?\s*/gi, '')
+      .replace(/\s*[+–]\s*$/, '')
+      .replace(/[-–]\s*$/, '')
       .replace(/\s{2,}/g, ' ')
       .trim();
-    // Skip if still looks like internal noise
+    // Reject if result is just a code, number, or too short
+    if (!s || s.length < 4) return null;
     if (/^\d+$/.test(s)) return null;
-    if (s.length < 3) return null;
-    // Capitalise first letter
+    if (/^[A-Z]{1,3}[-–\s]\d+/.test(s)) return null;   // still looks like "Ls-218"
+    if (/^(res|ws|ls|at)\b/i.test(s)) return null;      // starts with resource prefix
+    // Must contain at least one real word (3+ letters)
+    if (!/[a-zA-Z]{3,}/.test(s)) return null;
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
@@ -132,33 +155,26 @@ export async function generateProgressReport(
     const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
 
     for (const line of lines) {
-      // Pattern: "Subject: activity description"
       const subjectLine = line.match(/^([A-Za-z\s\/&]+?)\s*:\s*(.{5,})/);
       if (subjectLine) {
         const subjectPart = subjectLine[1].trim();
         const activityPart = subjectLine[2].trim();
         if (/^(objective|resources|materials|what to do|ask children|tip|note|offline support|ref|pg|page)/i.test(subjectPart)) continue;
         const subj = canonicalSubject(subjectPart);
-        // Split activity on " + " or " / " to get individual items
         const items = activityPart.split(/\s*[+\/]\s*/).map(cleanActivity).filter(Boolean) as string[];
         if (!learningMap[subj]) learningMap[subj] = new Set();
         items.forEach(item => learningMap[subj].add(item));
       }
     }
 
-    // Use topic_label if meaningful (not "Week X Day Y")
     if (row.topic_label && !/week\s*\d|day\s*\d/i.test(row.topic_label)) {
       const subj = canonicalSubject(row.topic_label);
       if (!learningMap[subj]) learningMap[subj] = new Set();
-      // Extract best activity line from content
       for (const line of lines) {
         if (line.length < 8) continue;
         if (/^(objective|resources|tip|note|what to do|ask children|ref|pg|page|\d)/i.test(line)) continue;
         const cleaned = cleanActivity(line);
-        if (cleaned && cleaned.length >= 5) {
-          learningMap[subj].add(cleaned);
-          break;
-        }
+        if (cleaned && cleaned.length >= 5) { learningMap[subj].add(cleaned); break; }
       }
     }
   }
@@ -329,12 +345,13 @@ export async function generateProgressReport(
     return 'Developing';
   }
 
-  // Build subjects array from real covered curriculum data
+  // Build subjects array — use fallback topics when no clean items extracted
   const subjectsData = coveredSubjects.map(subj => {
     const pct = rateSubject(subj);
     const rawTopics = [...(learningMap[subj] || new Set())];
-    const topics = summariseTopics(rawTopics);
-    // Find obs note for this subject
+    const cleanedTopics = summariseTopics(rawTopics);
+    // If all extracted topics were noise, use curated fallbacks
+    const topics = cleanedTopics.length > 0 ? cleanedTopics : getFallbackTopics(subj);
     const relatedCat = Object.entries(CAT_TO_SUBJECT).find(([, s]) => s === subj)?.[0];
     const obsNote = relatedCat && obsByCategory[relatedCat]?.[0]
       ? obsByCategory[relatedCat][0].slice(0, 60)
