@@ -290,7 +290,7 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
       {/* 2. QUICK SNAPSHOT — KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
         <KpiCard icon="✅" value={`${meta.attendance.pct}%`} label="Attendance" color="#16a34a" />
-        <KpiCard icon="📅" value={meta.attendance.present} label="Days Present" color={G} />
+        <KpiCard icon="📅" value={`${meta.attendance.present}/${meta.attendance.total}`} label="Days Present" color={G} />
         <KpiCard icon="📚" value={meta.curriculum.covered} label="Subjects" color="#2563eb" />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
@@ -350,16 +350,30 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
 
       {/* 5. ATTENDANCE */}
       <Section title="Attendance">
-        <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <CircularProgress pct={meta.attendance.pct} size={100} color={meta.attendance.pct >= 85 ? '#16a34a' : '#ea580c'} label="Attendance" />
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <AttendanceCalendar
-              present={meta.attendance.present}
-              absent={meta.attendance.absent}
-              absentDates={meta.attendance.absent_dates || []}
-              fromDate={meta.from_date}
-              toDate={meta.to_date}
-            />
+        <div style={{ display: 'flex', gap: 32, alignItems: 'center', flexWrap: 'wrap' }}>
+          <CircularProgress pct={meta.attendance.pct} size={110} color={meta.attendance.pct >= 85 ? '#16a34a' : '#ea580c'} label="Attendance Rate" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 24 }}>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: 24, fontWeight: 900, color: '#16a34a', margin: 0, lineHeight: 1 }}>{meta.attendance.present}</p>
+                <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0', fontWeight: 600 }}>Days Present</p>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: 24, fontWeight: 900, color: '#ef4444', margin: 0, lineHeight: 1 }}>{meta.attendance.absent}</p>
+                <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0', fontWeight: 600 }}>Days Absent</p>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: 24, fontWeight: 900, color: '#374151', margin: 0, lineHeight: 1 }}>{meta.attendance.total}</p>
+                <p style={{ fontSize: 11, color: '#6b7280', margin: '4px 0 0', fontWeight: 600 }}>School Days</p>
+              </div>
+            </div>
+            {meta.attendance.absent > 0 && (meta.attendance.absent_dates || []).length > 0 && (
+              <p style={{ fontSize: 11, color: '#9ca3af', margin: 0 }}>
+                Absent on: {(meta.attendance.absent_dates || []).map(d => {
+                  try { return new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); } catch { return d; }
+                }).join(', ')}
+              </p>
+            )}
           </div>
         </div>
       </Section>
