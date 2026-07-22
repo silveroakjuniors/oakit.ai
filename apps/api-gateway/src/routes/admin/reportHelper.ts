@@ -187,15 +187,20 @@ export async function generateProgressReport(
     return `• ${subj}: ${items || 'covered'}`;
   }).join('\n');
 
-  // Build clean topic lists for subject cards — deduplicated, max 4 per subject
-  // Group similar items (e.g. "Alphabet A", "Alphabet B" → "Alphabet A–F")
+  // Build clean topic lists — deduplicate and filter any remaining noise
   function summariseTopics(items: string[]): string[] {
-    // Deduplicate case-insensitively
     const seen = new Set<string>();
     const unique: string[] = [];
     for (const item of items) {
-      const key = item.toLowerCase().replace(/\s+/g, ' ');
-      if (!seen.has(key)) { seen.add(key); unique.push(item); }
+      // Final noise filter: reject if item contains bare numbers, reference codes, or is just punctuation
+      if (/\b\d{3,}\b/.test(item)) continue;           // contains 3+ digit numbers (338, 339, 1563)
+      if (/\b(ws|ls|at|res|pg|book)\b/i.test(item) && /\d/.test(item)) continue; // ref code with number
+      if (/^[\s\W]+$/.test(item)) continue;            // only punctuation/spaces
+      if (item.replace(/[^a-zA-Z]/g, '').length < 3) continue; // less than 3 letters total
+      const key = item.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item.trim());
     }
     return unique.slice(0, 5);
   }
@@ -320,43 +325,26 @@ export async function generateProgressReport(
   // milPctBase used as fallback base for subject scoring when milestones not configured
   const milPctBase = mil.total > 0 ? Math.round((mil.achieved / mil.total) * 100) : overallPct;
 
-  // Rate each covered subject:
-  // Base = milPctBase (how far through milestones for this class)
-  // Boost: +5 if teacher has obs for this subject, +5 if homework done well
-  // Penalty: -10 if absent on days this subject was taught (missed_topics)
-  function rateSubject(subj: string): number {
-    let score = milPctBase;
-    // Observation boost
-    const obsCount = subjectObsCount[subj] || 0;
-    if (obsCount >= 3) score += 10;
-    else if (obsCount >= 1) score += 5;
-    // Homework boost
-    if (hwPctBase >= 80) score += 5;
-    else if (hwPctBase < 50) score -= 5;
-    // Missed topic penalty
-    if (missedSubjects.includes(subj)) score -= 10;
-    return Math.min(100, Math.max(50, score));
-  }
-
-  function pctToStatus(pct: number): string {
-    if (pct >= 85) return 'Excellent';
-    if (pct >= 70) return 'Good';
-    if (pct >= 55) return 'Satisfactory';
+  // Subject status: since we have no per-subject assessment, use overall performance
+  // as a single indicator, not individual bars per subject
+  function subjectStatus(): string {
+    if (overallPct >= 85) return 'Excellent';
+    if (overallPct >= 70) return 'Good';
+    if (overallPct >= 55) return 'Satisfactory';
     return 'Developing';
   }
+  const sharedStatus = subjectStatus();
+  const sharedPct = overallPct; // same for all — reflects overall, not per-subject
 
-  // Build subjects array — use fallback topics when no clean items extracted
+  // Build subjects array — use shared overall status, fallback topics when no clean items
   const subjectsData = coveredSubjects.map(subj => {
-    const pct = rateSubject(subj);
-    const rawTopics = [...(learningMap[subj] || new Set())];
-    const cleanedTopics = summariseTopics(rawTopics);
-    // If all extracted topics were noise, use curated fallbacks
+    const cleanedTopics = summariseTopics([...(learningMap[subj] || new Set())]);
     const topics = cleanedTopics.length > 0 ? cleanedTopics : getFallbackTopics(subj);
     const relatedCat = Object.entries(CAT_TO_SUBJECT).find(([, s]) => s === subj)?.[0];
     const obsNote = relatedCat && obsByCategory[relatedCat]?.[0]
       ? obsByCategory[relatedCat][0].slice(0, 60)
       : '';
-    return { name: subj, pct, status: pctToStatus(pct), topics, note: obsNote };
+    return { name: subj, pct: sharedPct, status: sharedStatus, topics, note: obsNote };
   });
 
   // ── Skills: only show a score if teacher has actual observations for that domain ──
@@ -455,13 +443,13 @@ export async function generateProgressReport(
 
   // Radar from same data
   const radarData: Record<string, number> = {
-    'Language':     skillMap['Communication'],
-    'Numeracy':     rateSubject('Math & Numbers'),
-    'Motor Skills': skillMap['Fine Motor'],
-    'Creativity':   skillMap['Creativity'],
-    'Social Skills': skillMap['Social Skills'],
-    'Confidence':   skillMap['Confidence'],
-    'Thinking':     rateSubject('General Knowledge'),
+    'Language':      skillMap['Communication'] || sharedPct,
+    'Numeracy':      sharedPct,
+    'Motor Skills':  skillMap['Fine Motor']    || sharedPct,
+    'Creativity':    skillMap['Creativity']    || sharedPct,
+    'Social Skills': skillMap['Social Skills'] || sharedPct,
+    'Confidence':    skillMap['Confidence']    || sharedPct,
+    'Thinking':      sharedPct,
   };
 
   // ── AI prompt: ONLY text fields, no invented numbers ──────────────────────

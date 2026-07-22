@@ -333,10 +333,9 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
                     {s.status || statusLabel(s.pct)}
                   </span>
                 </div>
-                <ProgressBar pct={s.pct} color={statusColor(s.pct)} />
-                <p style={{ fontSize: 11, color: '#6b7280', margin: '6px 0 0', textAlign: 'right', fontWeight: 700 }}>{s.pct}%</p>
+                {/* No per-subject % bar — all subjects use overall performance */}
                 {s.topics.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
+                  <div style={{ marginTop: 4 }}>
                     <p style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 5px' }}>Covered this period</p>
                     <p style={{ fontSize: 11, color: '#374151', lineHeight: 1.6, margin: 0 }}>
                       {s.topics.join(' · ')}
