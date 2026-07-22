@@ -224,9 +224,32 @@ export async function generateProgressReport(
     if (subj) subjectObsCount[subj] = (subjectObsCount[subj] || 0) + texts.length;
   }
 
-  // Milestone pct as base for overall performance
-  const milPctBase = mil.total > 0 ? Math.round((mil.achieved / mil.total) * 100) : 70;
-  const hwPctBase = hw.total > 0 ? Math.round((hw.completed / hw.total) * 100) : 70;
+  // ── Overall Performance: attendance + homework + observations (milestones not used) ──
+  const hwPctBase = hw.total > 0 ? Math.round((hw.completed / hw.total) * 100) : 0;
+  const hasHomework   = hw.total > 0;
+  const hasObs        = obsRow.rows.length > 0;
+
+  // Attendance 40%, Homework 35%, Observations 25%
+  // Only include a component if real data exists for it
+  let overallPct: number;
+  let overallBasis: string;
+
+  if (hasHomework && hasObs) {
+    overallPct = Math.round(att_pct * 0.40 + hwPctBase * 0.35 + 85 * 0.25);
+    overallBasis = 'attendance, homework & observations';
+  } else if (hasHomework) {
+    overallPct = Math.round(att_pct * 0.55 + hwPctBase * 0.45);
+    overallBasis = 'attendance & homework';
+  } else if (hasObs) {
+    overallPct = Math.round(att_pct * 0.60 + 85 * 0.40);
+    overallBasis = 'attendance & observations';
+  } else {
+    overallPct = att_pct;
+    overallBasis = 'attendance only';
+  }
+
+  // milPctBase used as fallback base for subject scoring when milestones not configured
+  const milPctBase = mil.total > 0 ? Math.round((mil.achieved / mil.total) * 100) : overallPct;
 
   // Rate each covered subject:
   // Base = milPctBase (how far through milestones for this class)
@@ -557,6 +580,8 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
     missed_topics: missedSubjects,
     homework: { completed: hw.completed, partial: hw.partial, not_submitted: hw.not_submitted, total: hw.total },
     milestones: { achieved: mil.achieved, total: mil.total },
+    overall_pct: overallPct,
+    overall_basis: overallBasis,
     journey_highlights: highlights,
     structured: structuredData,
   };

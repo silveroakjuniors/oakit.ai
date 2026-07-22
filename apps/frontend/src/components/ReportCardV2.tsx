@@ -17,6 +17,8 @@ export interface ReportMeta {
   curriculum: { covered: number; subjects?: string[] };
   homework?: { completed: number; partial: number; not_submitted: number; total: number };
   milestones: { achieved: number; total: number };
+  overall_pct?: number;
+  overall_basis?: string;
   journey_highlights?: string[];
   structured?: StructuredReport;
   ai_report?: string;
@@ -236,9 +238,14 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
   const data: StructuredReport = meta.structured || buildFallback(meta);
   const hwPct = meta.homework && meta.homework.total > 0
     ? Math.round((meta.homework.completed / meta.homework.total) * 100) : null;
-  // milPct: if no milestones configured (0/0) default to 70 so we don't show "Needs Attention"
-  const milPct = meta.milestones.total > 0
-    ? Math.round((meta.milestones.achieved / meta.milestones.total) * 100) : 70;
+
+  // Use server-computed overall_pct (attendance + homework + obs weighted)
+  // Fall back to attendance if not available (older saved reports)
+  const overallPct  = meta.overall_pct ?? meta.attendance.pct;
+  const overallBasis = meta.overall_basis ?? 'attendance';
+  // milPct kept only for legacy fallback — not used for display
+  const milPct = meta.overall_pct ?? (meta.milestones.total > 0
+    ? Math.round((meta.milestones.achieved / meta.milestones.total) * 100) : 70);
 
   // Ensure radar always has data — fall back to subject-derived values if empty
   const radarData = Object.keys(data.radar).length >= 3
@@ -308,7 +315,7 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
         {hwPct !== null && <KpiCard icon="📝" value={`${hwPct}%`} label="Homework" color="#7c3aed" />}
         <KpiCard icon="🏆" value={`${meta.milestones.achieved}/${meta.milestones.total}`} label="Milestones" color={A} />
-        <KpiCard icon="⭐" value={meta.milestones.total > 0 ? statusLabel(milPct) : 'Good'} label="Performance" color={meta.milestones.total > 0 ? statusColor(milPct) : '#16a34a'} />
+        <KpiCard icon="⭐" value={statusLabel(overallPct)} label="Performance" color={statusColor(overallPct)} />
       </div>
 
       {/* 3. LEARNING PROGRESS — Subject Cards */}
