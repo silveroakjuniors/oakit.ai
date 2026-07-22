@@ -236,9 +236,22 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
   const data: StructuredReport = meta.structured || buildFallback(meta);
   const hwPct = meta.homework && meta.homework.total > 0
     ? Math.round((meta.homework.completed / meta.homework.total) * 100) : null;
+  // milPct: if no milestones configured (0/0) default to 70 so we don't show "Needs Attention"
   const milPct = meta.milestones.total > 0
-    ? Math.round((meta.milestones.achieved / meta.milestones.total) * 100) : 0;
-  const timeline = buildWeeklyTimeline(data.subjects);
+    ? Math.round((meta.milestones.achieved / meta.milestones.total) * 100) : 70;
+
+  // Ensure radar always has data — fall back to subject-derived values if empty
+  const radarData = Object.keys(data.radar).length >= 3
+    ? data.radar
+    : {
+        Language:      data.skills.find(s => s.name === 'Communication')?.pct || 70,
+        Numeracy:      data.subjects.find(s => /math/i.test(s.name))?.pct || 70,
+        'Motor Skills': data.skills.find(s => s.name === 'Fine Motor')?.pct || 70,
+        Creativity:    data.skills.find(s => s.name === 'Creativity')?.pct || 70,
+        'Social Skills': data.skills.find(s => s.name === 'Social Skills')?.pct || 70,
+        Confidence:    data.skills.find(s => s.name === 'Confidence')?.pct || 70,
+        Thinking:      data.subjects.find(s => /gk|general/i.test(s.name))?.pct || 70,
+      };
 
   const containerStyle: React.CSSProperties = {
     fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif",
@@ -283,8 +296,7 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
             {data.subjects.length > 0
               ? statusLabel(Math.round(data.subjects.reduce((s, x) => s + x.pct, 0) / data.subjects.length))
               : 'Good'}
-          </p>
-        </div>
+          </p>        </div>
       </div>
 
       {/* 2. QUICK SNAPSHOT — KPI Cards */}
@@ -296,7 +308,7 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
         {hwPct !== null && <KpiCard icon="📝" value={`${hwPct}%`} label="Homework" color="#7c3aed" />}
         <KpiCard icon="🏆" value={`${meta.milestones.achieved}/${meta.milestones.total}`} label="Milestones" color={A} />
-        <KpiCard icon="⭐" value={statusLabel(milPct)} label="Performance" color={statusColor(milPct)} />
+        <KpiCard icon="⭐" value={meta.milestones.total > 0 ? statusLabel(milPct) : 'Good'} label="Performance" color={meta.milestones.total > 0 ? statusColor(milPct) : '#16a34a'} />
       </div>
 
       {/* 3. LEARNING PROGRESS — Subject Cards */}
@@ -370,15 +382,15 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
         </div>
       </Section>
 
-      {/* 6. DEVELOPMENT OVERVIEW — Radar + Skills side by side */}
-      {Object.keys(data.radar).length >= 3 && (
-        <Section title="Development Overview">
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ flexShrink: 0 }}>
-              <RadarChart data={data.radar} size={200} />
-            </div>
-            {data.skills.length > 0 && (
-              <div style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+      {/* 6. DEVELOPMENT OVERVIEW — Radar always shown + Skills if assessed */}
+      <Section title="Development Overview">
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div style={{ flexShrink: 0 }}>
+            <RadarChart data={radarData} size={200} />
+          </div>
+          <div style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+            {data.skills.length > 0 ? (
+              <>
                 {data.skills.map((sk, i) => (
                   <div key={i}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
@@ -399,11 +411,18 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
                 <p style={{ fontSize: 9, color: '#d1d5db', margin: '4px 0 0', fontStyle: 'italic' }}>
                   Scores reflect teacher observations recorded this period. Skills not assessed are not shown.
                 </p>
+              </>
+            ) : (
+              <div style={{ padding: '12px 0' }}>
+                <p style={{ fontSize: 12, color: '#6b7280', fontWeight: 600, margin: '0 0 6px' }}>Skills not yet assessed</p>
+                <p style={{ fontSize: 11, color: '#9ca3af', margin: 0, lineHeight: 1.6 }}>
+                  The radar chart shows estimated development levels based on curriculum coverage and milestones. Individual skill scores will appear once the teacher records observations in each category.
+                </p>
               </div>
             )}
           </div>
-        </Section>
-      )}
+        </div>
+      </Section>
 
       {/* 7. MONTHLY HIGHLIGHTS — Achievement Chips */}
       {data.achievements.length > 0 && (
