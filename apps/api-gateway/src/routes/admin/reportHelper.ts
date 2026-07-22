@@ -222,10 +222,21 @@ export async function generateProgressReport(
   const hwRow = await pool.query(
     `SELECT COUNT(*) FILTER (WHERE status='completed')::int as completed,
             COUNT(*) FILTER (WHERE status='partial')::int as partial,
-            COUNT(*) FILTER (WHERE status='not_submitted')::int as not_submitted, COUNT(*)::int as total
+            COUNT(*) FILTER (WHERE status='not_submitted')::int as not_submitted, COUNT(*)::int as submitted
      FROM homework_submissions WHERE student_id=$1 AND homework_date BETWEEN $2 AND $3`,
     [studentId, fromDate, toDate]);
-  const hw = hwRow.rows[0];
+  const hwData = hwRow.rows[0];
+
+  // Use working days as denominator — days where homework wasn't submitted count as not done
+  // This prevents 8/8=100% when teacher only recorded 8 out of 35 school days
+  const hwWorkingDaysTotal = Math.max(workingDays, hwData.submitted, 1);
+  const hw = {
+    completed:     hwData.completed,
+    partial:       hwData.partial,
+    not_submitted: hwWorkingDaysTotal - hwData.completed - hwData.partial,
+    total:         hwWorkingDaysTotal,
+    submitted:     hwData.submitted,
+  };
 
   const journeyRow = await pool.query(
     `SELECT entry_type, beautified_text FROM child_journey_entries
@@ -644,7 +655,7 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
     attendance: { present: att.present, absent: att.absent, total, pct: att_pct, absent_dates: att.absent_dates||[], note: att.present < total ? 'Days not marked by teacher are considered present. Attendance is based on submitted records only.' : '' },
     curriculum: { covered: coveredSubjects.length, subjects: coveredSubjects, learning_summary: learningCompact },
     missed_topics: missedSubjects,
-    homework: { completed: hw.completed, partial: hw.partial, not_submitted: hw.not_submitted, total: hw.total },
+    homework: { completed: hw.completed, partial: hw.partial, not_submitted: hw.not_submitted, total: hw.total, note: hw.submitted < workingDays ? 'Homework completion is tracked against school working days. Days without a submission record are counted as not submitted.' : '' },
     milestones: { achieved: mil.achieved, total: mil.total },
     overall_pct: overallPct,
     overall_basis: overallBasis,
