@@ -486,12 +486,13 @@ export default function ClassPerformancePage() {
               <p className="text-[10px] text-neutral-500">Day Streak</p>
               <p className="text-[9px] text-neutral-400">Best: {data.streak?.best || 0}</p>
             </div>
-            <button onClick={() => setShowRankDrill(true)} className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-3 text-center hover:border-indigo-200 hover:shadow-md transition-all active:scale-95">
+            {/* School Rank card — disabled, re-enable when ready */}
+            {/* <button onClick={() => setShowRankDrill(true)} className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-3 text-center hover:border-indigo-200 hover:shadow-md transition-all active:scale-95">
               <Trophy size={18} className="text-indigo-500 mx-auto mb-1" />
               <p className="text-lg font-black text-neutral-800">#{data.school_rank?.rank || '—'}</p>
               <p className="text-[10px] text-neutral-500">School Rank</p>
               <p className="text-[9px] text-neutral-400">of {data.school_rank?.total || 0} sections</p>
-            </button>
+            </button> */}
             <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-3 text-center">
               <FileText size={18} className="text-cyan-500 mx-auto mb-1" />
               <p className="text-lg font-black text-neutral-800">{data.homework?.days_with_homework || 0}</p>

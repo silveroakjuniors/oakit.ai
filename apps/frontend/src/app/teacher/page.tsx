@@ -998,7 +998,6 @@ export default function TeacherPlanner() {
             { label: 'My HR', sub: 'Salary · Leave · Offer letter', icon: Wallet, gradient: 'from-teal-500 to-cyan-600', hover: 'hover:border-teal-200 hover:bg-teal-50/40', path: '/teacher/hr' },
             { label: 'Calendar', sub: 'Holidays & special days', icon: CalendarDays, gradient: 'from-cyan-500 to-sky-600', hover: 'hover:border-cyan-200 hover:bg-cyan-50/40', path: '/teacher/calendar' },
             { label: 'Class Performance', sub: 'Stats & insights', icon: TrendingUp, gradient: 'from-indigo-500 to-blue-600', hover: 'hover:border-indigo-200 hover:bg-indigo-50/40', path: '/teacher/class-performance' },
-            { label: 'My Performance', sub: 'Ranking & tips', icon: TrendingUp, gradient: 'from-violet-500 to-purple-600', hover: 'hover:border-violet-200 hover:bg-violet-50/40', path: '/teacher/my-performance' },
             { label: 'Attendance Trends', sub: 'Historical stats', icon: CalendarDays, gradient: 'from-emerald-500 to-teal-600', hover: 'hover:border-emerald-200 hover:bg-emerald-50/40', path: '/teacher/attendance-trends' },
           ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
             <button key={path} onClick={() => router.push(path)}

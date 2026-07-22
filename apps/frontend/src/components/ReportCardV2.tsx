@@ -13,7 +13,7 @@ export interface ReportMeta {
   mother_name?: string;
   from_date: string;
   to_date: string;
-  attendance: { present: number; absent: number; total: number; pct: number; absent_dates?: string[] };
+  attendance: { present: number; absent: number; total: number; pct: number; absent_dates?: string[]; note?: string };
   curriculum: { covered: number; subjects?: string[] };
   homework?: { completed: number; partial: number; not_submitted: number; total: number };
   milestones: { achieved: number; total: number };
@@ -333,20 +333,7 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
         </Section>
       )}
 
-      {/* 4. SKILLS DASHBOARD */}
-      {data.skills.length > 0 && (
-        <Section title="Skills Dashboard">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
-            {data.skills.map((sk, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 11, color: '#374151', fontWeight: 600, minWidth: 90 }}>{sk.name}</span>
-                <ProgressBar pct={sk.pct} color={statusColor(sk.pct)} />
-                <span style={{ fontSize: 11, fontWeight: 800, color: statusColor(sk.pct), minWidth: 32, textAlign: 'right' }}>{sk.pct}%</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+      {/* 4. SKILLS DASHBOARD — merged into Radar, removed for space */}
 
       {/* 5. ATTENDANCE */}
       <Section title="Attendance">
@@ -374,15 +361,33 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
                 }).join(', ')}
               </p>
             )}
+            {(meta.attendance as any).note && (
+              <p style={{ fontSize: 10, color: '#9ca3af', margin: 0, fontStyle: 'italic', maxWidth: 340 }}>
+                Note: {(meta.attendance as any).note}
+              </p>
+            )}
           </div>
         </div>
       </Section>
 
-      {/* 6. DEVELOPMENT OVERVIEW — Radar */}
+      {/* 6. DEVELOPMENT OVERVIEW — Radar + Skills side by side */}
       {Object.keys(data.radar).length >= 3 && (
         <Section title="Development Overview">
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <RadarChart data={data.radar} size={220} />
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ flexShrink: 0 }}>
+              <RadarChart data={data.radar} size={200} />
+            </div>
+            {data.skills.length > 0 && (
+              <div style={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center', paddingTop: 8 }}>
+                {data.skills.map((sk, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: '#374151', fontWeight: 600, minWidth: 88 }}>{sk.name}</span>
+                    <ProgressBar pct={sk.pct} color={statusColor(sk.pct)} />
+                    <span style={{ fontSize: 11, fontWeight: 800, color: statusColor(sk.pct), minWidth: 30, textAlign: 'right' }}>{sk.pct}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </Section>
       )}
@@ -404,27 +409,7 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
         </Section>
       )}
 
-      {/* 8. ACTIVITIES THIS MONTH — Timeline */}
-      {timeline.length > 0 && (
-        <Section title="Activities This Month">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-            {timeline.map((w, wi) => (
-              <div key={wi} style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
-                <div style={{ background: G, padding: '6px 12px' }}>
-                  <p style={{ color: '#fff', fontSize: 11, fontWeight: 800, margin: 0 }}>{w.week}</p>
-                </div>
-                <div style={{ padding: '8px 12px' }}>
-                  {w.topics.map((t, ti) => (
-                    <p key={ti} style={{ fontSize: 11, color: '#374151', margin: '0 0 4px', borderBottom: ti < w.topics.length - 1 ? '1px dashed #f3f4f6' : 'none', paddingBottom: 4 }}>
-                      {t.length > 40 ? t.slice(0, 38) + '…' : t}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+      {/* 8. ACTIVITIES THIS MONTH — removed to keep report within 2 A4 pages */}
 
       {/* 9. AI SUMMARY */}
       {data.summary && (

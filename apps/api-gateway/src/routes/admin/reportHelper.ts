@@ -44,14 +44,57 @@ export async function generateProgressReport(
     age = yr>0 ? `${yr} yr${yr>1?'s':''}${mo>0?` ${mo} mo`:''}` : `${mo} months`;
   }
 
+  // ── Attendance: use actual working days from school calendar as denominator ──
+  // Count days where attendance was submitted per-student
   const attRow = await pool.query(
     `SELECT COUNT(*) FILTER (WHERE status='present')::int as present,
-            COUNT(*) FILTER (WHERE status='absent')::int as absent, COUNT(*)::int as total,
+            COUNT(*) FILTER (WHERE status='absent')::int as absent,
             array_agg(attend_date::text ORDER BY attend_date) FILTER (WHERE status='absent') as absent_dates
      FROM attendance_records WHERE student_id=$1 AND attend_date BETWEEN $2 AND $3`,
     [studentId, fromDate, toDate]);
-  const att = attRow.rows[0];
-  const att_pct = att.total>0 ? Math.round((att.present/att.total)*100) : 0;
+  const attData = attRow.rows[0];
+
+  // Count actual school working days in the period from the calendar
+  let workingDays = 0;
+  try {
+    const calRow = await pool.query(
+      `SELECT working_days, holidays FROM school_calendar
+       WHERE school_id=$1 AND start_date <= $3 AND end_date >= $2 LIMIT 1`,
+      [schoolId, fromDate, toDate]
+    );
+    if (calRow.rows.length > 0) {
+      const { working_days = [1,2,3,4,5], holidays = [] } = calRow.rows[0];
+      const holidayDates = (holidays as any[]).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+      const start = new Date(fromDate + 'T12:00:00');
+      const end = new Date(toDate + 'T12:00:00');
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const ds = d.toISOString().split('T')[0];
+        if ((working_days as number[]).includes(d.getDay()) && !holidayDates.includes(ds)) workingDays++;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: count Mon-Fri in range if no calendar
+  if (workingDays === 0) {
+    const start = new Date(fromDate + 'T12:00:00');
+    const end = new Date(toDate + 'T12:00:00');
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) workingDays++;
+    }
+  }
+
+  // Present = DB present count; Total = working days; Absent = working days - present
+  const present = attData.present || 0;
+  const total = Math.max(workingDays, attData.present + attData.absent, 1);
+  const absent = total - present;
+  const att_pct = Math.round((present / total) * 100);
+  const att = {
+    present,
+    absent,
+    total,
+    absent_dates: attData.absent_dates || [],
+  };
 
   const chunksRow = await pool.query(
     `SELECT DISTINCT cc.topic_label, cc.content, cc.chunk_index
@@ -162,7 +205,90 @@ export async function generateProgressReport(
 
   const n = student.name;
 
-  // ── NEW: Structured JSON prompt for the premium visual dashboard ──
+  // ── Data-driven subject ratings ───────────────────────────────────────────
+  // Map observation categories to canonical subjects
+  const CAT_TO_SUBJECT: Record<string, string> = {
+    'academic_progress': 'General Knowledge',
+    'language':          'English & Literacy',
+    'language_':         'English & Literacy',
+    'social_skills':     'Circle Time & Morning Routine',
+    'behavior':          'Circle Time & Morning Routine',
+    'motor_skills':      'Physical Activity',
+    'other':             'Art & Creativity',
+  };
+
+  // Build per-subject observation counts
+  const subjectObsCount: Record<string, number> = {};
+  for (const [cat, texts] of Object.entries(obsByCategory)) {
+    const subj = CAT_TO_SUBJECT[cat] || null;
+    if (subj) subjectObsCount[subj] = (subjectObsCount[subj] || 0) + texts.length;
+  }
+
+  // Milestone pct as base for overall performance
+  const milPctBase = mil.total > 0 ? Math.round((mil.achieved / mil.total) * 100) : 70;
+  const hwPctBase = hw.total > 0 ? Math.round((hw.completed / hw.total) * 100) : 70;
+
+  // Rate each covered subject:
+  // Base = milPctBase (how far through milestones for this class)
+  // Boost: +5 if teacher has obs for this subject, +5 if homework done well
+  // Penalty: -10 if absent on days this subject was taught (missed_topics)
+  function rateSubject(subj: string): number {
+    let score = milPctBase;
+    // Observation boost
+    const obsCount = subjectObsCount[subj] || 0;
+    if (obsCount >= 3) score += 10;
+    else if (obsCount >= 1) score += 5;
+    // Homework boost
+    if (hwPctBase >= 80) score += 5;
+    else if (hwPctBase < 50) score -= 5;
+    // Missed topic penalty
+    if (missedSubjects.includes(subj)) score -= 10;
+    return Math.min(100, Math.max(50, score));
+  }
+
+  function pctToStatus(pct: number): string {
+    if (pct >= 85) return 'Excellent';
+    if (pct >= 70) return 'Good';
+    if (pct >= 55) return 'Satisfactory';
+    return 'Developing';
+  }
+
+  // Build subjects array from real covered curriculum data
+  const subjectsData = coveredSubjects.map(subj => {
+    const pct = rateSubject(subj);
+    const topics = [...(learningMap[subj] || new Set())]
+      .slice(0, 4)
+      .map(t => t.length > 50 ? t.slice(0, 48) + '…' : t);
+    // Find obs note for this subject
+    const relatedCat = Object.entries(CAT_TO_SUBJECT).find(([, s]) => s === subj)?.[0];
+    const obsNote = relatedCat && obsByCategory[relatedCat]?.[0]
+      ? obsByCategory[relatedCat][0].slice(0, 60)
+      : '';
+    return { name: subj, pct, status: pctToStatus(pct), topics, note: obsNote };
+  });
+
+  // Skills from observation categories — real data driven
+  const skillMap: Record<string, number> = {
+    'Communication': obsByCategory['language']?.length ? Math.min(95, milPctBase + 10) : milPctBase,
+    'Fine Motor':    obsByCategory['motor_skills']?.length ? Math.min(95, milPctBase + 8) : Math.max(50, milPctBase - 5),
+    'Confidence':    obsByCategory['social_skills']?.length || obsByCategory['behavior']?.length ? Math.min(90, milPctBase + 5) : Math.max(50, milPctBase - 8),
+    'Creativity':    obsByCategory['other']?.length ? Math.min(95, milPctBase + 12) : milPctBase,
+    'Listening':     obsByCategory['language']?.length ? Math.min(90, milPctBase + 5) : milPctBase,
+    'Social Skills': obsByCategory['social_skills']?.length ? Math.min(90, milPctBase + 7) : Math.max(50, milPctBase - 5),
+  };
+
+  // Radar from same data
+  const radarData: Record<string, number> = {
+    'Language':     skillMap['Communication'],
+    'Numeracy':     rateSubject('Math & Numbers'),
+    'Motor Skills': skillMap['Fine Motor'],
+    'Creativity':   skillMap['Creativity'],
+    'Social Skills': skillMap['Social Skills'],
+    'Confidence':   skillMap['Confidence'],
+    'Thinking':     rateSubject('General Knowledge'),
+  };
+
+  // ── AI prompt: ONLY text fields, no invented numbers ──────────────────────
   const structuredPrompt = `You are Oakie, a warm school AI writing a premium visual report card for parents.
 
 STUDENT: ${n}${age ? ` (${age})` : ''}
@@ -182,30 +308,14 @@ ${highlights.slice(0, 5).join(' | ') || 'None recorded'}
 
 ━━━ OUTPUT RULES ━━━
 Return ONLY valid JSON. No markdown. No extra text.
-Limits: summary ≤80 words, teacher_remark ≤40 words, each subject_note ≤20 words, each home_activity ≤12 words, each achievement_reason ≤15 words.
+Limits: summary ≤80 words, teacher_remark ≤40 words, each home_activity ≤12 words, each achievement_reason ≤15 words.
 Never repeat the student's name in every sentence. Use natural language.
+Do NOT include "subjects", "skills", or "radar" in the JSON — those are calculated from real data.
 
-Return this exact JSON structure:
+Return ONLY this JSON structure:
 {
   "summary": "One paragraph, max 80 words. Warm, specific, natural. No generic phrases.",
   "teacher_remark": "1-2 sentences max, 40 words max. Personal and specific.",
-  "subjects": [
-    {
-      "name": "English & Literacy",
-      "pct": 85,
-      "status": "Excellent",
-      "topics": ["Alphabet A-F", "Story Listening", "Rhymes"],
-      "note": "Shows excellent vocabulary growth"
-    }
-  ],
-  "skills": [
-    { "name": "Communication", "pct": 90 },
-    { "name": "Fine Motor", "pct": 75 },
-    { "name": "Confidence", "pct": 70 },
-    { "name": "Creativity", "pct": 95 },
-    { "name": "Listening", "pct": 85 },
-    { "name": "Social Skills", "pct": 80 }
-  ],
   "achievements": [
     { "label": "Curious Learner", "reason": "Asked brilliant questions daily" },
     { "label": "Story Lover", "reason": "Remembered every story detail" }
@@ -215,19 +325,10 @@ Return this exact JSON structure:
     "Count household objects",
     "Colour for 15 minutes",
     "Sing today's rhyme"
-  ],
-  "radar": {
-    "Language": 85,
-    "Numeracy": 80,
-    "Motor Skills": 75,
-    "Creativity": 90,
-    "Social Skills": 80,
-    "Confidence": 70,
-    "Thinking": 80
-  }
+  ]
 }
 
-Use ONLY data from the observations and subjects above. If a subject has no data, omit it. Generate achievements based on journal highlights and observations.`;
+Generate achievements based ONLY on journal highlights and observations above. If no highlights, skip achievements.`;
 
   const AI_URL_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
   let structuredData: any = null;
@@ -240,8 +341,34 @@ Use ONLY data from the observations and subjects above. If a subject has no data
     const raw = sResp.data?.response || '';
     // Extract JSON from response (LLM sometimes wraps in ```json)
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) structuredData = JSON.parse(jsonMatch[0]);
+    if (jsonMatch) {
+      const aiJson = JSON.parse(jsonMatch[0]);
+      // Merge AI text fields with computed data-driven fields
+      structuredData = {
+        summary: aiJson.summary || '',
+        teacher_remark: aiJson.teacher_remark || '',
+        achievements: aiJson.achievements || [],
+        home_activities: aiJson.home_activities || [],
+        // Data-driven — never from AI
+        subjects: subjectsData,
+        skills: Object.entries(skillMap).map(([name, pct]) => ({ name, pct })),
+        radar: radarData,
+      };
+    }
   } catch { /* fall through to legacy */ }
+
+  // If AI failed, still assemble structured data with computed values
+  if (!structuredData) {
+    structuredData = {
+      summary: '',
+      teacher_remark: '',
+      achievements: highlights.slice(0, 3).map((h: string) => ({ label: 'Special Moment', reason: h.slice(0, 50) })),
+      home_activities: ['Read one story together daily', 'Count household objects', 'Colour for 15 minutes', 'Sing today\'s rhyme'],
+      subjects: subjectsData,
+      skills: Object.entries(skillMap).map(([name, pct]) => ({ name, pct })),
+      radar: radarData,
+    };
+  }
 
   // ── LEGACY text prompt (kept as fallback) ──
   const aiPrompt = `You are writing a formal, warm, descriptive school progress report card for parents.
@@ -341,7 +468,7 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
     class_name: student.class_name, section_label: student.section_label,
     teacher_name: student.teacher_name, father_name: student.father_name, mother_name: student.mother_name,
     from_date: fromDate, to_date: toDate,
-    attendance: { present: att.present, absent: att.absent, total: att.total, pct: att_pct, absent_dates: att.absent_dates||[] },
+    attendance: { present: att.present, absent: att.absent, total, pct: att_pct, absent_dates: att.absent_dates||[], note: att.present < total ? 'Days not marked by teacher are considered present. Attendance is based on submitted records only.' : '' },
     curriculum: { covered: coveredSubjects.length, subjects: coveredSubjects, learning_summary: learningCompact },
     missed_topics: missedSubjects,
     homework: { completed: hw.completed, partial: hw.partial, not_submitted: hw.not_submitted, total: hw.total },
