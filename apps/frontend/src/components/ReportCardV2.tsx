@@ -26,7 +26,7 @@ export interface StructuredReport {
   summary: string;
   teacher_remark: string;
   subjects: { name: string; pct: number; status: string; topics: string[]; note: string }[];
-  skills: { name: string; pct: number }[];
+  skills: { name: string; pct: number; definition?: string; ptm_note?: string }[];
   achievements: { label: string; reason: string }[];
   home_activities: string[];
   radar: Record<string, number>;
@@ -378,14 +378,27 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
               <RadarChart data={data.radar} size={200} />
             </div>
             {data.skills.length > 0 && (
-              <div style={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', gap: 8, justifyContent: 'center', paddingTop: 8 }}>
+              <div style={{ flex: 1, minWidth: 200, display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
                 {data.skills.map((sk, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, color: '#374151', fontWeight: 600, minWidth: 88 }}>{sk.name}</span>
-                    <ProgressBar pct={sk.pct} color={statusColor(sk.pct)} />
-                    <span style={{ fontSize: 11, fontWeight: 800, color: statusColor(sk.pct), minWidth: 30, textAlign: 'right' }}>{sk.pct}%</span>
+                  <div key={i}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                      <span style={{ fontSize: 11, color: '#111827', fontWeight: 700, minWidth: 90 }}>{sk.name}</span>
+                      <ProgressBar pct={sk.pct} color={statusColor(sk.pct)} />
+                      <span style={{ fontSize: 11, fontWeight: 800, color: statusColor(sk.pct), minWidth: 30, textAlign: 'right' }}>{sk.pct}%</span>
+                    </div>
+                    {sk.definition && (
+                      <p style={{ fontSize: 10, color: '#9ca3af', margin: '0 0 2px', lineHeight: 1.4 }}>{sk.definition}</p>
+                    )}
+                    {sk.ptm_note && (
+                      <p style={{ fontSize: 10, color: '#6b7280', margin: 0, fontStyle: 'italic', borderLeft: `2px solid ${statusColor(sk.pct)}`, paddingLeft: 6 }}>
+                        PTM: {sk.ptm_note}
+                      </p>
+                    )}
                   </div>
                 ))}
+                <p style={{ fontSize: 9, color: '#d1d5db', margin: '4px 0 0', fontStyle: 'italic' }}>
+                  Scores reflect teacher observations recorded this period. Skills not assessed are not shown.
+                </p>
               </div>
             )}
           </div>

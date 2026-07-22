@@ -267,15 +267,99 @@ export async function generateProgressReport(
     return { name: subj, pct, status: pctToStatus(pct), topics, note: obsNote };
   });
 
-  // Skills from observation categories — real data driven
-  const skillMap: Record<string, number> = {
-    'Communication': obsByCategory['language']?.length ? Math.min(95, milPctBase + 10) : milPctBase,
-    'Fine Motor':    obsByCategory['motor_skills']?.length ? Math.min(95, milPctBase + 8) : Math.max(50, milPctBase - 5),
-    'Confidence':    obsByCategory['social_skills']?.length || obsByCategory['behavior']?.length ? Math.min(90, milPctBase + 5) : Math.max(50, milPctBase - 8),
-    'Creativity':    obsByCategory['other']?.length ? Math.min(95, milPctBase + 12) : milPctBase,
-    'Listening':     obsByCategory['language']?.length ? Math.min(90, milPctBase + 5) : milPctBase,
-    'Social Skills': obsByCategory['social_skills']?.length ? Math.min(90, milPctBase + 7) : Math.max(50, milPctBase - 5),
-  };
+  // ── Skills: only show a score if teacher has actual observations for that domain ──
+  // Each skill maps to an observation category. If no obs → mark as not_assessed.
+  // Score = milPctBase adjusted by observation quality (count & positivity)
+  // Definitions and PTM talking points are embedded here for the frontend to use.
+
+  interface SkillEntry {
+    name: string;
+    pct: number;
+    assessed: boolean;
+    definition: string;         // plain-language explanation for parents
+    ptm_note: string;           // what teacher should say at PTM
+  }
+
+  function scoreFromObs(catKey: string, boost: number): { pct: number; assessed: boolean } {
+    const obs = obsByCategory[catKey] || [];
+    if (obs.length === 0) return { pct: 0, assessed: false };
+    // More obs = more data = closer to milPctBase + boost
+    const rawScore = milPctBase + (obs.length >= 3 ? boost : Math.round(boost * 0.6));
+    return { pct: Math.min(95, Math.max(50, rawScore)), assessed: true };
+  }
+
+  const commSkill   = scoreFromObs('language', 10);
+  const motorSkill  = scoreFromObs('motor_skills', 8);
+  const confSkill   = (() => {
+    const social = obsByCategory['social_skills'] || [];
+    const behav  = obsByCategory['behavior'] || [];
+    const combined = [...social, ...behav];
+    if (combined.length === 0) return { pct: 0, assessed: false };
+    return { pct: Math.min(90, Math.max(50, milPctBase + (combined.length >= 3 ? 5 : 3))), assessed: true };
+  })();
+  const creativSkill = scoreFromObs('other', 12);
+  const listenSkill  = (() => {
+    // Listening comes from language obs + academic progress obs
+    const lang = obsByCategory['language'] || [];
+    const acad = obsByCategory['academic_progress'] || [];
+    const combined = [...lang, ...acad];
+    if (combined.length === 0) return { pct: 0, assessed: false };
+    return { pct: Math.min(90, Math.max(50, milPctBase + (combined.length >= 3 ? 5 : 3))), assessed: true };
+  })();
+  const socialSkill  = scoreFromObs('social_skills', 7);
+
+  const skillsData: SkillEntry[] = [
+    {
+      name: 'Communication',
+      ...commSkill,
+      definition: 'How well the child expresses themselves — speaking in sentences, asking questions, and sharing ideas with teachers and friends.',
+      ptm_note: commSkill.assessed
+        ? `Teacher has observed ${(obsByCategory['language']||[]).length} language-related moments this period. ${commSkill.pct >= 80 ? 'Your child communicates confidently.' : 'Encourage storytelling and conversation at home.'}`
+        : 'Teacher has not yet recorded language observations this period. Ask the teacher for verbal feedback.',
+    },
+    {
+      name: 'Fine Motor',
+      ...motorSkill,
+      definition: 'Small muscle control — holding a pencil, cutting with scissors, drawing shapes, and doing up buttons.',
+      ptm_note: motorSkill.assessed
+        ? `Based on motor skill observations. ${motorSkill.pct >= 80 ? 'Fine motor skills are developing well.' : 'Try activities like colouring, threading beads, or playdough at home.'}`
+        : 'Motor skill observations not yet recorded. Ask the teacher about pencil grip and hand coordination.',
+    },
+    {
+      name: 'Confidence',
+      ...confSkill,
+      definition: 'Whether the child participates willingly, tries new activities, speaks up in class, and handles small challenges independently.',
+      ptm_note: confSkill.assessed
+        ? `Based on social and behaviour observations. ${confSkill.pct >= 80 ? 'Shows good confidence and initiative.' : 'Praise effort over outcome at home — this builds confidence quickly.'}`
+        : 'Confidence observations not yet recorded this period. Ask the teacher how the child responds to new activities.',
+    },
+    {
+      name: 'Creativity',
+      ...creativSkill,
+      definition: 'How the child explores ideas, uses imagination in play, and engages with art, music, and storytelling activities.',
+      ptm_note: creativSkill.assessed
+        ? `Based on creative activity observations. ${creativSkill.pct >= 80 ? 'Shows strong imaginative expression.' : 'Encourage open-ended play, drawing, and singing at home.'}`
+        : 'Creative activity observations not yet recorded. Ask the teacher about art and play participation.',
+    },
+    {
+      name: 'Listening',
+      ...listenSkill,
+      definition: 'How well the child follows instructions, stays focused during stories and lessons, and remembers what was said.',
+      ptm_note: listenSkill.assessed
+        ? `Based on classroom attention observations. ${listenSkill.pct >= 80 ? 'Good focus and instruction-following.' : 'Reading aloud together and asking recall questions helps build listening skills.'}`
+        : 'Listening observations not yet recorded. Ask the teacher about attention during circle time.',
+    },
+    {
+      name: 'Social Skills',
+      ...socialSkill,
+      definition: 'How the child interacts with classmates — sharing, taking turns, resolving small conflicts, and making friends.',
+      ptm_note: socialSkill.assessed
+        ? `Based on peer interaction observations. ${socialSkill.pct >= 80 ? 'Interacts positively with classmates.' : 'Arrange playdates and group activities to build peer confidence.'}`
+        : 'Peer interaction observations not yet recorded. Ask the teacher about friendships and group work.',
+    },
+  ].filter(sk => sk.assessed); // Only show skills where teacher has actual data
+
+  const skillMap: Record<string, number> = Object.fromEntries(skillsData.map(s => [s.name, s.pct]));
 
   // Radar from same data
   const radarData: Record<string, number> = {
@@ -351,7 +435,7 @@ Generate achievements based ONLY on journal highlights and observations above. I
         home_activities: aiJson.home_activities || [],
         // Data-driven — never from AI
         subjects: subjectsData,
-        skills: Object.entries(skillMap).map(([name, pct]) => ({ name, pct })),
+        skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
         radar: radarData,
       };
     }
@@ -365,7 +449,7 @@ Generate achievements based ONLY on journal highlights and observations above. I
       achievements: highlights.slice(0, 3).map((h: string) => ({ label: 'Special Moment', reason: h.slice(0, 50) })),
       home_activities: ['Read one story together daily', 'Count household objects', 'Colour for 15 minutes', 'Sing today\'s rhyme'],
       subjects: subjectsData,
-      skills: Object.entries(skillMap).map(([name, pct]) => ({ name, pct })),
+      skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
       radar: radarData,
     };
   }
