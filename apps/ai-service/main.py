@@ -2126,3 +2126,176 @@ Write a warm 3-4 sentence summary for the parent about everything {req.child_nam
         top = unique_subjects[:5]
         summary = f"Since the start of school, {req.child_name} has covered a range of subjects including {', '.join(top[:3])} and more. It has been a wonderful learning journey so far!"
     return {"summary": summary}
+
+
+# ─── Report Card Generation ────────────────────────────────────────────────────
+
+class GenerateReportRequest(BaseModel):
+    prompt: str
+    student_name: str = "the student"
+    structured: bool = False
+
+@app.post("/internal/generate-report")
+async def generate_report(req: GenerateReportRequest):
+    """Generate a student progress report card from a structured prompt."""
+    from query_pipeline import _call_llm
+    import re, json as _json
+
+    if req.structured:
+        system = (
+            "You are Oakie, an AI assistant for a preschool platform. "
+            "You output ONLY valid JSON matching the schema requested. "
+            "No markdown, no explanation, no extra text — just the JSON object."
+        )
+    else:
+        system = (
+            "You are a warm, professional school report card writer. "
+            "Write in flowing paragraphs. No bullet points, no asterisks, no markdown bold. "
+            "Each section should be 3-5 sentences. Be specific and personal."
+        )
+
+    try:
+        result, _ = await _call_llm(req.prompt, system)
+        if result and len(result.strip()) > 10:
+            # Clean markdown bold/italic
+            cleaned = re.sub(r'\*\*([^*]+)\*\*', r'\1', result.strip())
+            cleaned = re.sub(r'\*([^*]+)\*', r'\1', cleaned)
+            return {"response": cleaned}
+    except Exception as e:
+        print(f"[generate-report] LLM error: {e}")
+
+    return {"response": ""}
+
+
+class ExportProgressReportPdfRequest(BaseModel):
+    student_name: str = ""
+    age: str = ""
+    class_name: str = ""
+    section_label: str = ""
+    teacher_name: str = ""
+    father_name: str = ""
+    mother_name: str = ""
+    school_name: str = ""
+    from_date: str = ""
+    to_date: str = ""
+    attendance_pct: int = 0
+    attendance_present: int = 0
+    attendance_total: int = 0
+    curriculum_covered: int = 0
+    milestones_achieved: int = 0
+    milestones_total: int = 0
+    homework_completed: int = 0
+    homework_total: int = 0
+    ai_report: str = ""
+
+@app.post("/internal/export-progress-report-pdf")
+async def export_progress_report_pdf(req: ExportProgressReportPdfRequest):
+    """Generate a printable PDF for a student progress report using reportlab."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    import io, re
+
+    GREEN = colors.HexColor('#1B4332')
+    AMBER = colors.HexColor('#E8960C')
+    LIGHT_GREEN = colors.HexColor('#f0fdf4')
+    LIGHT_GREY = colors.HexColor('#f8f9fa')
+    MID_GREY = colors.HexColor('#6b7280')
+    DARK = colors.HexColor('#111827')
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=12*mm)
+
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle('H1', parent=styles['Normal'], fontSize=18, fontName='Helvetica-Bold',
+        textColor=colors.white, spaceAfter=2)
+    h2 = ParagraphStyle('H2', parent=styles['Normal'], fontSize=10, fontName='Helvetica-Bold',
+        textColor=GREEN, spaceBefore=10, spaceAfter=4)
+    sub = ParagraphStyle('Sub', parent=styles['Normal'], fontSize=9, textColor=MID_GREY, spaceAfter=1)
+    body = ParagraphStyle('Body', parent=styles['Normal'], fontSize=9, leading=14,
+        textColor=DARK, spaceAfter=4)
+    small = ParagraphStyle('Small', parent=styles['Normal'], fontSize=8, textColor=MID_GREY)
+
+    story = []
+
+    # Header
+    header_data = [[
+        Paragraph(f"<b>{req.student_name}</b>", h1),
+        Paragraph(f"<font color='white' size=8>{req.school_name}<br/>{req.class_name} — Sec {req.section_label}<br/>"
+                  f"Teacher: {req.teacher_name or '—'}<br/>{req.from_date} to {req.to_date}</font>", styles['Normal'])
+    ]]
+    header_table = Table(header_data, colWidths=['50%', '50%'])
+    header_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), GREEN),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('PADDING', (0, 0), (-1, -1), 10),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 6*mm))
+
+    # KPI row
+    hw_pct = round((req.homework_completed / req.homework_total) * 100) if req.homework_total > 0 else 0
+    mil_pct = round((req.milestones_achieved / req.milestones_total) * 100) if req.milestones_total > 0 else 0
+    kpi_data = [[
+        Paragraph(f"<b>{req.attendance_pct}%</b><br/><font size=8>Attendance<br/>{req.attendance_present}/{req.attendance_total} days</font>", styles['Normal']),
+        Paragraph(f"<b>{req.curriculum_covered}</b><br/><font size=8>Subjects<br/>Covered</font>", styles['Normal']),
+        Paragraph(f"<b>{req.milestones_achieved}/{req.milestones_total}</b><br/><font size=8>Milestones<br/>Achieved</font>", styles['Normal']),
+        Paragraph(f"<b>{hw_pct}%</b><br/><font size=8>Homework<br/>Completed</font>", styles['Normal']),
+    ]]
+    kpi_table = Table(kpi_data, colWidths=['25%', '25%', '25%', '25%'])
+    kpi_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), LIGHT_GREY),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 13),
+        ('TEXTCOLOR', (0, 0), (-1, 0), GREEN),
+        ('PADDING', (0, 0), (-1, -1), 10),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e5e7eb')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+        ('ROUNDEDCORNERS', [4]),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 6*mm))
+
+    # AI report sections
+    if req.ai_report:
+        sections_raw = re.split(r'\n(?=## )', req.ai_report)
+        for sec in sections_raw:
+            lines = sec.strip().split('\n')
+            heading = lines[0].replace('## ', '').strip()
+            content = '\n'.join(lines[1:]).strip()
+            if heading:
+                story.append(Paragraph(heading, h2))
+                story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#e5e7eb'), spaceAfter=4))
+            if content:
+                for para in content.split('\n'):
+                    if para.strip():
+                        story.append(Paragraph(para.strip(), body))
+            story.append(Spacer(1, 3*mm))
+
+    story.append(Spacer(1, 6*mm))
+
+    # Footer
+    footer_data = [[
+        Paragraph(f"Class Teacher: <b>{req.teacher_name or '—'}</b>", small),
+        Paragraph(f"<b>{req.school_name}</b>", ParagraphStyle('FC', parent=small, alignment=TA_CENTER)),
+        Paragraph(f"Principal: ____________", ParagraphStyle('FR', parent=small, alignment=TA_RIGHT)),
+    ]]
+    footer_table = Table(footer_data, colWidths=['33%', '34%', '33%'])
+    footer_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), GREEN),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('PADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    story.append(footer_table)
+
+    doc.build(story)
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="Report_{req.student_name.replace(" ", "_")}.pdf"'})

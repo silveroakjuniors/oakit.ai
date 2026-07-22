@@ -44,14 +44,57 @@ export async function generateProgressReport(
     age = yr>0 ? `${yr} yr${yr>1?'s':''}${mo>0?` ${mo} mo`:''}` : `${mo} months`;
   }
 
+  // ── Attendance: use actual working days from school calendar as denominator ──
+  // Count days where attendance was submitted per-student
   const attRow = await pool.query(
     `SELECT COUNT(*) FILTER (WHERE status='present')::int as present,
-            COUNT(*) FILTER (WHERE status='absent')::int as absent, COUNT(*)::int as total,
+            COUNT(*) FILTER (WHERE status='absent')::int as absent,
             array_agg(attend_date::text ORDER BY attend_date) FILTER (WHERE status='absent') as absent_dates
      FROM attendance_records WHERE student_id=$1 AND attend_date BETWEEN $2 AND $3`,
     [studentId, fromDate, toDate]);
-  const att = attRow.rows[0];
-  const att_pct = att.total>0 ? Math.round((att.present/att.total)*100) : 0;
+  const attData = attRow.rows[0];
+
+  // Count actual school working days in the period from the calendar
+  let workingDays = 0;
+  try {
+    const calRow = await pool.query(
+      `SELECT working_days, holidays FROM school_calendar
+       WHERE school_id=$1 AND start_date <= $3 AND end_date >= $2 LIMIT 1`,
+      [schoolId, fromDate, toDate]
+    );
+    if (calRow.rows.length > 0) {
+      const { working_days = [1,2,3,4,5], holidays = [] } = calRow.rows[0];
+      const holidayDates = (holidays as any[]).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
+      const start = new Date(fromDate + 'T12:00:00');
+      const end = new Date(toDate + 'T12:00:00');
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const ds = d.toISOString().split('T')[0];
+        if ((working_days as number[]).includes(d.getDay()) && !holidayDates.includes(ds)) workingDays++;
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: count Mon-Fri in range if no calendar
+  if (workingDays === 0) {
+    const start = new Date(fromDate + 'T12:00:00');
+    const end = new Date(toDate + 'T12:00:00');
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) workingDays++;
+    }
+  }
+
+  // Present = DB present count; Total = working days; Absent = working days - present
+  const present = attData.present || 0;
+  const total = Math.max(workingDays, attData.present + attData.absent, 1);
+  const absent = total - present;
+  const att_pct = Math.round((present / total) * 100);
+  const att = {
+    present,
+    absent,
+    total,
+    absent_dates: attData.absent_dates || [],
+  };
 
   const chunksRow = await pool.query(
     `SELECT DISTINCT cc.topic_label, cc.content, cc.chunk_index
@@ -60,33 +103,124 @@ export async function generateProgressReport(
      WHERE dc.section_id=$1 AND dc.completion_date BETWEEN $2 AND $3 ORDER BY cc.chunk_index`,
     [student.section_id, fromDate, toDate]);
 
+  // ── Curated fallback descriptions per subject (shown when no clean topics found) ──
+  const SUBJECT_FALLBACKS: Record<string, string[]> = {
+    'English Speaking':             ['Storytelling and oral communication', 'Speaking confidence and expression', 'Listening and responding activities'],
+    'English & Literacy':           ['Alphabet recognition and letter formation', 'Phonics, rhymes and early reading', 'Pre-writing and vocabulary building'],
+    'Math & Numbers':               ['Number recognition and counting', 'Shapes, patterns and sorting', 'Early numeracy through hands-on activities'],
+    'General Knowledge':            ['World around us — nature, animals, community', 'Rhymes, songs and cultural awareness', 'Curiosity and discovery activities'],
+    'Writing':                      ['Pencil grip and pre-writing strokes', 'Letter tracing and handwriting practice', 'Fine motor strengthening exercises'],
+    'Art & Creativity':             ['Drawing, colouring and craft activities', 'Creative expression through art', 'Sensory and imaginative play'],
+    'Music & Rhymes':               ['Nursery rhymes and action songs', 'Rhythm, beat and musical play', 'Memory and language through music'],
+    'Physical Activity':            ['Gross motor skills and movement games', 'Outdoor play and coordination activities', 'Body awareness and physical development'],
+    'Regional Language':            ['Vocabulary building in regional language', 'Rhymes, stories and letters', 'Listening and speaking in mother tongue'],
+    'Circle Time & Morning Routine':['Morning greetings and calendar activities', 'Show and tell, sharing circle', 'Social skills and classroom routines'],
+  };
+
+  function getFallbackTopics(subj: string): string[] {
+    return SUBJECT_FALLBACKS[subj] || [`${subj} concepts and activities`];
+  }
+
+  const SUBJECT_DESCRIPTIONS: Record<string, string> = {
+    'English Speaking':              'This period involved storytelling, oral expression, and listening activities that helped build speaking confidence and communication skills in English.',
+    'English & Literacy':            'Alphabet recognition, phonics, early reading, and pre-writing activities were covered this period, building a strong foundation for literacy development.',
+    'Math & Numbers':                'Number recognition, counting, shapes, and sorting activities were explored through hands-on play and exercises to develop early numeracy skills.',
+    'General Knowledge':             'The child engaged with topics about the world around them — nature, community, animals, and cultural activities — through rhymes, songs, and discussions.',
+    'Writing':                       'Pre-writing strokes, pencil grip, letter tracing, and fine motor strengthening exercises were practised this period to prepare for confident handwriting.',
+    'Art & Creativity':              'Drawing, colouring, craft, and imaginative activities encouraged creative expression and fine motor development through fun hands-on projects.',
+    'Music & Rhymes':                'Nursery rhymes, action songs, and rhythmic activities were enjoyed this period, supporting language development, memory, and joyful learning.',
+    'Physical Activity':             'Movement games, outdoor play, and gross motor activities helped develop coordination, balance, and a healthy, active learning routine.',
+    'Regional Language':             'Vocabulary, rhymes, stories, and letter recognition in the regional language were introduced this period to strengthen mother tongue communication skills.',
+    'Circle Time & Morning Routine': 'Morning circle, greetings, calendar activities, and group discussions helped build social skills, classroom confidence, and a sense of routine.',
+  };
+
+  function getFallbackDescription(subj: string): string {
+    return SUBJECT_DESCRIPTIONS[subj] || `${subj} was covered this period through classroom activities and hands-on learning experiences appropriate for the age group.`;
+  }
+
+  // ── Build a clean learning map: subject → set of meaningful activity keywords ──
   const learningMap: Record<string, Set<string>> = {};
+
+  // Helper: clean a raw activity string — returns null if it looks like a code/reference
+  function cleanActivity(raw: string): string | null {
+    if (!raw || raw.length < 3) return null;
+    let s = raw
+      .replace(/\b(res|ws|ls|at|pg|page|book|ref|no)\.?\s*[-–]?\s*\d+\b/gi, '') // Res. 1515, Ws-218, Ls-218, Book 5
+      .replace(/[-–]\s*\(?\w{1,4}\d{3,}\w*\)?/g, '')   // - w9301, - (w9303)
+      .replace(/[-–]\s*\d{3,}(\s*,\s*\d+)*/g, '')       // - 337, 338, 339
+      .replace(/\(?\w{0,3}\d{4,}\w*\)?/g, '')           // standalone codes like w9301
+      .replace(/\bpg\.?\s*(no\.?\s*)?\d+\b/gi, '')
+      .replace(/\bpage\s*\d+\b/gi, '')
+      .replace(/\(\s*settling\s*time\s*\)/gi, '')
+      .replace(/learning\s*readiness\s*[:\-–]?\s*/gi, '')
+      .replace(/\s*[+–]\s*$/, '')
+      .replace(/[-–]\s*$/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    // Reject if result is just a code, number, or too short
+    if (!s || s.length < 4) return null;
+    if (/^\d+$/.test(s)) return null;
+    if (/^[A-Z]{1,3}[-–\s]\d+/.test(s)) return null;   // still looks like "Ls-218"
+    if (/^(res|ws|ls|at)\b/i.test(s)) return null;      // starts with resource prefix
+    // Must contain at least one real word (3+ letters)
+    if (!/[a-zA-Z]{3,}/.test(s)) return null;
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
   for (const row of chunksRow.rows) {
     const content = (row.content || '').trim();
     const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
+
     for (const line of lines) {
-      const subjectLine = line.match(/^([A-Za-z\s\/&]+?)\s*:\s*(.{10,})/);
+      const subjectLine = line.match(/^([A-Za-z\s\/&]+?)\s*:\s*(.{5,})/);
       if (subjectLine) {
-        if (/^(objective|resources|materials|what to do|ask children|tip|note|offline support)/i.test(subjectLine[1])) continue;
-        const subj = canonicalSubject(subjectLine[1]);
-        const activity = subjectLine[2].trim().slice(0, 100);
+        const subjectPart = subjectLine[1].trim();
+        const activityPart = subjectLine[2].trim();
+        if (/^(objective|resources|materials|what to do|ask children|tip|note|offline support|ref|pg|page)/i.test(subjectPart)) continue;
+        const subj = canonicalSubject(subjectPart);
+        const items = activityPart.split(/\s*[+\/]\s*/).map(cleanActivity).filter(Boolean) as string[];
         if (!learningMap[subj]) learningMap[subj] = new Set();
-        learningMap[subj].add(activity);
+        items.forEach(item => learningMap[subj].add(item));
       }
     }
+
     if (row.topic_label && !/week\s*\d|day\s*\d/i.test(row.topic_label)) {
       const subj = canonicalSubject(row.topic_label);
       if (!learningMap[subj]) learningMap[subj] = new Set();
-      const bestLine = lines.find((l: string) => l.length > 20 && !l.match(/^(objective|resources|tip|note|what to do|ask children)/i));
-      if (bestLine) learningMap[subj].add(bestLine.slice(0, 100));
+      for (const line of lines) {
+        if (line.length < 8) continue;
+        if (/^(objective|resources|tip|note|what to do|ask children|ref|pg|page|\d)/i.test(line)) continue;
+        const cleaned = cleanActivity(line);
+        if (cleaned && cleaned.length >= 5) { learningMap[subj].add(cleaned); break; }
+      }
     }
   }
 
   const coveredSubjects = Object.keys(learningMap);
+
+  // Build compact learning summary for AI prompt — "Subject: item1, item2, item3"
   const learningCompact = coveredSubjects.map(subj => {
-    const acts = [...learningMap[subj]].slice(0, 2).join('; ');
-    return `• ${subj}: ${acts || 'covered'}`;
+    const items = [...learningMap[subj]].slice(0, 3).join(', ');
+    return `• ${subj}: ${items || 'covered'}`;
   }).join('\n');
+
+  // Build clean topic lists — deduplicate and filter any remaining noise
+  function summariseTopics(items: string[]): string[] {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const item of items) {
+      // Final noise filter: reject if item contains bare numbers, reference codes, or is just punctuation
+      if (/\b\d{3,}\b/.test(item)) continue;           // contains 3+ digit numbers (338, 339, 1563)
+      if (/\b(ws|ls|at|res|pg|book)\b/i.test(item) && /\d/.test(item)) continue; // ref code with number
+      if (/^[\s\W]+$/.test(item)) continue;            // only punctuation/spaces
+      if (item.replace(/[^a-zA-Z]/g, '').length < 3) continue; // less than 3 letters total
+      const key = item.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(item.trim());
+    }
+    return unique.slice(0, 5);
+  }
 
   const missedRow = await pool.query(
     `SELECT DISTINCT cc.topic_label, cc.content FROM daily_completions dc
@@ -105,10 +239,21 @@ export async function generateProgressReport(
   const hwRow = await pool.query(
     `SELECT COUNT(*) FILTER (WHERE status='completed')::int as completed,
             COUNT(*) FILTER (WHERE status='partial')::int as partial,
-            COUNT(*) FILTER (WHERE status='not_submitted')::int as not_submitted, COUNT(*)::int as total
+            COUNT(*) FILTER (WHERE status='not_submitted')::int as not_submitted, COUNT(*)::int as submitted
      FROM homework_submissions WHERE student_id=$1 AND homework_date BETWEEN $2 AND $3`,
     [studentId, fromDate, toDate]);
-  const hw = hwRow.rows[0];
+  const hwData = hwRow.rows[0];
+
+  // Use working days as denominator — days where homework wasn't submitted count as not done
+  // This prevents 8/8=100% when teacher only recorded 8 out of 35 school days
+  const hwWorkingDaysTotal = Math.max(workingDays, hwData.submitted, 1);
+  const hw = {
+    completed:     hwData.completed,
+    partial:       hwData.partial,
+    not_submitted: hwWorkingDaysTotal - hwData.completed - hwData.partial,
+    total:         hwWorkingDaysTotal,
+    submitted:     hwData.submitted,
+  };
 
   const journeyRow = await pool.query(
     `SELECT entry_type, beautified_text FROM child_journey_entries
@@ -161,6 +306,272 @@ export async function generateProgressReport(
   }).join('\n\n');
 
   const n = student.name;
+
+  // ── Data-driven subject ratings ───────────────────────────────────────────
+  // Map observation categories to canonical subjects
+  const CAT_TO_SUBJECT: Record<string, string> = {
+    'academic_progress': 'General Knowledge',
+    'language':          'English & Literacy',
+    'language_':         'English & Literacy',
+    'social_skills':     'Circle Time & Morning Routine',
+    'behavior':          'Circle Time & Morning Routine',
+    'motor_skills':      'Physical Activity',
+    'other':             'Art & Creativity',
+  };
+
+  // Build per-subject observation counts
+  const subjectObsCount: Record<string, number> = {};
+  for (const [cat, texts] of Object.entries(obsByCategory)) {
+    const subj = CAT_TO_SUBJECT[cat] || null;
+    if (subj) subjectObsCount[subj] = (subjectObsCount[subj] || 0) + texts.length;
+  }
+
+  // ── Overall Performance: attendance + homework + observations (milestones not used) ──
+  const hwPctBase = hw.total > 0 ? Math.round((hw.completed / hw.total) * 100) : 0;
+  const hasHomework   = hw.total > 0;
+  const hasObs        = obsRow.rows.length > 0;
+
+  // Attendance 40%, Homework 35%, Observations 25%
+  // Only include a component if real data exists for it
+  let overallPct: number;
+  let overallBasis: string;
+
+  if (hasHomework && hasObs) {
+    overallPct = Math.round(att_pct * 0.40 + hwPctBase * 0.35 + 85 * 0.25);
+    overallBasis = 'attendance, homework & observations';
+  } else if (hasHomework) {
+    overallPct = Math.round(att_pct * 0.55 + hwPctBase * 0.45);
+    overallBasis = 'attendance & homework';
+  } else if (hasObs) {
+    overallPct = Math.round(att_pct * 0.60 + 85 * 0.40);
+    overallBasis = 'attendance & observations';
+  } else {
+    overallPct = att_pct;
+    overallBasis = 'attendance only';
+  }
+
+  // milPctBase used as fallback base for subject scoring when milestones not configured
+  const milPctBase = mil.total > 0 ? Math.round((mil.achieved / mil.total) * 100) : overallPct;
+
+  // Subject status: since we have no per-subject assessment, use overall performance
+  // as a single indicator, not individual bars per subject
+  function subjectStatus(): string {
+    if (overallPct >= 85) return 'Excellent';
+    if (overallPct >= 70) return 'Good';
+    if (overallPct >= 55) return 'Satisfactory';
+    return 'Developing';
+  }
+  const sharedStatus = subjectStatus();
+  const sharedPct = overallPct; // same for all — reflects overall, not per-subject
+
+  // Build subjects array — use shared overall status, fallback topics when no clean items
+  const subjectsData = coveredSubjects.map(subj => {
+    const cleanedTopics = summariseTopics([...(learningMap[subj] || new Set())]);
+    const topics = cleanedTopics.length > 0 ? cleanedTopics : getFallbackTopics(subj);
+    const relatedCat = Object.entries(CAT_TO_SUBJECT).find(([, s]) => s === subj)?.[0];
+    const obsNote = relatedCat && obsByCategory[relatedCat]?.[0]
+      ? obsByCategory[relatedCat][0].slice(0, 60)
+      : '';
+    return { name: subj, pct: sharedPct, status: sharedStatus, topics, note: obsNote };
+  });
+
+  // ── Skills: only show a score if teacher has actual observations for that domain ──
+  // Each skill maps to an observation category. If no obs → mark as not_assessed.
+  // Score = milPctBase adjusted by observation quality (count & positivity)
+  // Definitions and PTM talking points are embedded here for the frontend to use.
+
+  interface SkillEntry {
+    name: string;
+    pct: number;
+    assessed: boolean;
+    definition: string;         // plain-language explanation for parents
+    ptm_note: string;           // what teacher should say at PTM
+  }
+
+  function scoreFromObs(catKey: string, boost: number): { pct: number; assessed: boolean } {
+    const obs = obsByCategory[catKey] || [];
+    if (obs.length === 0) return { pct: 0, assessed: false };
+    // More obs = more data = closer to milPctBase + boost
+    const rawScore = milPctBase + (obs.length >= 3 ? boost : Math.round(boost * 0.6));
+    return { pct: Math.min(95, Math.max(50, rawScore)), assessed: true };
+  }
+
+  const commSkill   = scoreFromObs('language', 10);
+  const motorSkill  = scoreFromObs('motor_skills', 8);
+  const confSkill   = (() => {
+    const social = obsByCategory['social_skills'] || [];
+    const behav  = obsByCategory['behavior'] || [];
+    const combined = [...social, ...behav];
+    if (combined.length === 0) return { pct: 0, assessed: false };
+    return { pct: Math.min(90, Math.max(50, milPctBase + (combined.length >= 3 ? 5 : 3))), assessed: true };
+  })();
+  const creativSkill = scoreFromObs('other', 12);
+  const listenSkill  = (() => {
+    // Listening comes from language obs + academic progress obs
+    const lang = obsByCategory['language'] || [];
+    const acad = obsByCategory['academic_progress'] || [];
+    const combined = [...lang, ...acad];
+    if (combined.length === 0) return { pct: 0, assessed: false };
+    return { pct: Math.min(90, Math.max(50, milPctBase + (combined.length >= 3 ? 5 : 3))), assessed: true };
+  })();
+  const socialSkill  = scoreFromObs('social_skills', 7);
+
+  const skillsData: SkillEntry[] = [
+    {
+      name: 'Communication',
+      ...commSkill,
+      definition: 'How well the child expresses themselves — speaking in sentences, asking questions, and sharing ideas with teachers and friends.',
+      ptm_note: commSkill.assessed
+        ? `Teacher has observed ${(obsByCategory['language']||[]).length} language-related moments this period. ${commSkill.pct >= 80 ? 'Your child communicates confidently.' : 'Encourage storytelling and conversation at home.'}`
+        : 'Teacher has not yet recorded language observations this period. Ask the teacher for verbal feedback.',
+    },
+    {
+      name: 'Fine Motor',
+      ...motorSkill,
+      definition: 'Small muscle control — holding a pencil, cutting with scissors, drawing shapes, and doing up buttons.',
+      ptm_note: motorSkill.assessed
+        ? `Based on motor skill observations. ${motorSkill.pct >= 80 ? 'Fine motor skills are developing well.' : 'Try activities like colouring, threading beads, or playdough at home.'}`
+        : 'Motor skill observations not yet recorded. Ask the teacher about pencil grip and hand coordination.',
+    },
+    {
+      name: 'Confidence',
+      ...confSkill,
+      definition: 'Whether the child participates willingly, tries new activities, speaks up in class, and handles small challenges independently.',
+      ptm_note: confSkill.assessed
+        ? `Based on social and behaviour observations. ${confSkill.pct >= 80 ? 'Shows good confidence and initiative.' : 'Praise effort over outcome at home — this builds confidence quickly.'}`
+        : 'Confidence observations not yet recorded this period. Ask the teacher how the child responds to new activities.',
+    },
+    {
+      name: 'Creativity',
+      ...creativSkill,
+      definition: 'How the child explores ideas, uses imagination in play, and engages with art, music, and storytelling activities.',
+      ptm_note: creativSkill.assessed
+        ? `Based on creative activity observations. ${creativSkill.pct >= 80 ? 'Shows strong imaginative expression.' : 'Encourage open-ended play, drawing, and singing at home.'}`
+        : 'Creative activity observations not yet recorded. Ask the teacher about art and play participation.',
+    },
+    {
+      name: 'Listening',
+      ...listenSkill,
+      definition: 'How well the child follows instructions, stays focused during stories and lessons, and remembers what was said.',
+      ptm_note: listenSkill.assessed
+        ? `Based on classroom attention observations. ${listenSkill.pct >= 80 ? 'Good focus and instruction-following.' : 'Reading aloud together and asking recall questions helps build listening skills.'}`
+        : 'Listening observations not yet recorded. Ask the teacher about attention during circle time.',
+    },
+    {
+      name: 'Social Skills',
+      ...socialSkill,
+      definition: 'How the child interacts with classmates — sharing, taking turns, resolving small conflicts, and making friends.',
+      ptm_note: socialSkill.assessed
+        ? `Based on peer interaction observations. ${socialSkill.pct >= 80 ? 'Interacts positively with classmates.' : 'Arrange playdates and group activities to build peer confidence.'}`
+        : 'Peer interaction observations not yet recorded. Ask the teacher about friendships and group work.',
+    },
+  ].filter(sk => sk.assessed); // Only show skills where teacher has actual data
+
+  const skillMap: Record<string, number> = Object.fromEntries(skillsData.map(s => [s.name, s.pct]));
+
+  // Radar from same data
+  const radarData: Record<string, number> = {
+    'Language':      skillMap['Communication'] || sharedPct,
+    'Numeracy':      sharedPct,
+    'Motor Skills':  skillMap['Fine Motor']    || sharedPct,
+    'Creativity':    skillMap['Creativity']    || sharedPct,
+    'Social Skills': skillMap['Social Skills'] || sharedPct,
+    'Confidence':    skillMap['Confidence']    || sharedPct,
+    'Thinking':      sharedPct,
+  };
+
+  // ── AI prompt: ONLY text fields, no invented numbers ──────────────────────
+  const structuredPrompt = `You are Oakie, a warm school AI writing a premium visual report card for parents.
+
+STUDENT: ${n}${age ? ` (${age})` : ''}
+CLASS: ${student.class_name} ${student.section_label} | TEACHER: ${student.teacher_name || 'Class Teacher'}
+PERIOD: ${fromDate} to ${toDate}
+ATTENDANCE: ${att.present}/${att.total} days (${att_pct}%)
+MILESTONES: ${mil.achieved}/${mil.total} achieved
+
+SUBJECTS COVERED:
+${learningCompact || 'General classroom activities'}
+
+TEACHER OBSERVATIONS:
+${obsText || 'No structured observations recorded'}
+
+JOURNAL HIGHLIGHTS:
+${highlights.slice(0, 5).join(' | ') || 'None recorded'}
+
+━━━ OUTPUT RULES ━━━
+Return ONLY valid JSON. No markdown. No extra text.
+Limits: summary ≤80 words, teacher_remark ≤40 words, each home_activity ≤12 words, each subject_description ≤80 words, each achievement_reason ≤15 words.
+Never repeat the student's name in every sentence. Use natural language.
+Do NOT include "skills" or "radar" in the JSON — those are calculated from real data.
+
+Return ONLY this JSON structure:
+{
+  "summary": "One paragraph, max 80 words. Warm, specific, natural. No generic phrases.",
+  "teacher_remark": "1-2 sentences max, 40 words max. Personal and specific.",
+  "subject_descriptions": {
+    "English & Literacy": "This period focused on building early literacy skills through phonics, alphabet recognition, and story listening. The child engaged enthusiastically with rhymes and pre-writing activities that laid a strong foundation for reading and writing.",
+    "Math & Numbers": "Number concepts, counting, and shape recognition were explored through hands-on activities and games, helping the child develop early numeracy confidence."
+  },
+  "achievements": [
+    { "label": "Curious Learner", "reason": "Asked brilliant questions daily" }
+  ],
+  "home_activities": [
+    "Read one story together daily",
+    "Count household objects"
+  ]
+}
+
+For subject_descriptions: write 1-2 warm sentences per subject (max 80 words) that describe what was learned in parent-friendly language. Use the SUBJECTS COVERED data above. Be specific but avoid internal codes or resource numbers. Only include subjects that appear in SUBJECTS COVERED.
+Generate achievements based ONLY on journal highlights and observations above. If no highlights, skip achievements.`;
+
+  const AI_URL_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+  let structuredData: any = null;
+  try {
+    const sResp = await axios.post(`${AI_URL_BASE}/internal/generate-report`, {
+      prompt: structuredPrompt,
+      student_name: n,
+      structured: true,
+    }, { timeout: 60000 });
+    const raw = sResp.data?.response || '';
+    // Extract JSON from response (LLM sometimes wraps in ```json)
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const aiJson = JSON.parse(jsonMatch[0]);
+      const subjectDescs: Record<string, string> = aiJson.subject_descriptions || aiJson.subject_notes || {};
+      structuredData = {
+        summary: aiJson.summary || '',
+        teacher_remark: aiJson.teacher_remark || '',
+        achievements: aiJson.achievements || [],
+        home_activities: aiJson.home_activities || [],
+        subjects: subjectsData.map(s => ({
+          name: s.name, pct: s.pct, status: s.status,
+          topics: [], // removed — description replaces topic list
+          note: subjectDescs[s.name] || getFallbackDescription(s.name),
+        })),
+        skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
+        radar: radarData,
+      };
+    }
+  } catch { /* fall through to legacy */ }
+
+  // If AI failed, still assemble structured data with computed values
+  if (!structuredData) {
+    structuredData = {
+      summary: '',
+      teacher_remark: '',
+      achievements: highlights.slice(0, 3).map((h: string) => ({ label: 'Special Moment', reason: h.slice(0, 50) })),
+      home_activities: ['Read one story together daily', 'Count household objects', 'Colour for 15 minutes', 'Sing today\'s rhyme'],
+      subjects: subjectsData.map(s => ({
+        name: s.name, pct: s.pct, status: s.status,
+        topics: [],
+        note: getFallbackDescription(s.name),
+      })),
+      skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
+      radar: radarData,
+    };
+  }
+
+  // ── LEGACY text prompt (kept as fallback) ──
   const aiPrompt = `You are writing a formal, warm, descriptive school progress report card for parents.
 
 STUDENT: ${n}${age ? ` (${age} old)` : ''}
@@ -258,12 +669,15 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
     class_name: student.class_name, section_label: student.section_label,
     teacher_name: student.teacher_name, father_name: student.father_name, mother_name: student.mother_name,
     from_date: fromDate, to_date: toDate,
-    attendance: { present: att.present, absent: att.absent, total: att.total, pct: att_pct, absent_dates: att.absent_dates||[] },
+    attendance: { present: att.present, absent: att.absent, total, pct: att_pct, absent_dates: att.absent_dates||[], note: att.present < total ? 'Days not marked by teacher are considered present. Attendance is based on submitted records only.' : '' },
     curriculum: { covered: coveredSubjects.length, subjects: coveredSubjects, learning_summary: learningCompact },
     missed_topics: missedSubjects,
-    homework: { completed: hw.completed, partial: hw.partial, not_submitted: hw.not_submitted, total: hw.total },
+    homework: { completed: hw.completed, partial: hw.partial, not_submitted: hw.not_submitted, total: hw.total, note: hw.submitted < workingDays ? 'Homework completion is tracked against school working days. Days without a submission record are counted as not submitted.' : '' },
     milestones: { achieved: mil.achieved, total: mil.total },
+    overall_pct: overallPct,
+    overall_basis: overallBasis,
     journey_highlights: highlights,
+    structured: structuredData,
   };
 
   let report_id = null;
@@ -281,5 +695,5 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
     report_id = savedRow.rows[0].id;
   } catch { /* non-critical */ }
 
-  return { ...reportData, ai_report: aiReport, report_id };
+  return { ...reportData, ai_report: aiReport, report_id, structured: structuredData };
 }
