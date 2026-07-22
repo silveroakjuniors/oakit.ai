@@ -1,7 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { BookOpen } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { BookOpen, Printer } from 'lucide-react';
 import { apiGet } from '@/lib/api';
+import ReportCardV2 from './ReportCardV2';
 
 interface Student { id: string; name: string; class_name?: string; section_label?: string; }
 interface Class { id: string; name: string; }
@@ -46,6 +47,7 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(fixedStudentId || '');
 
+  const reportRef = useRef<HTMLDivElement>(null);
   const [generating, setGenerating] = useState(false);
   const [report, setReport] = useState<string | null>(null);
   const [reportMeta, setReportMeta] = useState<any>(null);
@@ -104,71 +106,21 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
 
   const canGenerate = !!(fixedStudentId || selectedStudent);
 
-  function downloadReportText(reportText: string, meta: any, fromDate: string, toDate: string) {
-    const lines = [
-      `PROGRESS REPORT CARD`,
-      `Student: ${meta.student_name}`,
-      `School: ${meta.school_name}`,
-      `Class: ${meta.class_name} · Section ${meta.section_label}`,
-      `Teacher: ${meta.teacher_name || '—'}`,
-      `Period: ${fromDate} to ${toDate}`,
-      `Attendance: ${meta.attendance?.present ?? 0}/${meta.attendance?.total ?? 0} days (${meta.attendance?.pct ?? 0}%)`,
-      `Milestones: ${meta.milestones?.achieved ?? 0}/${meta.milestones?.total ?? 0}`,
-      ``,
-      reportText.replace(/^## /gm, '\n━━━ ').replace(/^# /gm, '\n═══ '),
-    ];
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `report_card_${meta.student_name.replace(/\s+/g, '_')}_${fromDate}_${toDate}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function downloadReportPdf(reportText: string, meta: any, fromDate: string, toDate: string) {
-    // Create a printable HTML document and trigger print-to-PDF
+  function printReport() {
+    const el = reportRef.current;
+    if (!el) return;
     const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Report Card - ${meta.student_name}</title>
+<html><head><meta charset="utf-8"><title>Report Card — ${reportMeta?.student_name || ''}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 700px; margin: 0 auto; padding: 40px 30px; color: #1a1a1a; line-height: 1.6; }
-  .header { background: linear-gradient(135deg, #1B4332, #2d6a4f); color: white; padding: 24px; border-radius: 12px; margin-bottom: 24px; }
-  .header h1 { margin: 0; font-size: 20px; } .header p { margin: 4px 0 0; opacity: 0.85; font-size: 12px; }
-  .stats { display: flex; gap: 16px; margin-bottom: 24px; }
-  .stat { flex: 1; text-align: center; padding: 12px; background: #f8f9fa; border-radius: 8px; }
-  .stat .value { font-size: 18px; font-weight: 700; color: #1B4332; } .stat .label { font-size: 10px; color: #666; }
-  h2 { font-size: 14px; color: #1B4332; margin-top: 20px; margin-bottom: 8px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
-  p { font-size: 12px; margin: 0 0 12px; }
-  .footer { margin-top: 30px; padding-top: 16px; border-top: 2px solid #1B4332; font-size: 11px; color: #666; }
-  @media print { body { padding: 20px; } .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; padding: 20px; background: #f8f7f4; font-family: 'Inter', system-ui, sans-serif; }
+  @media print { body { padding: 10px; } }
 </style></head><body>
-<div class="header">
-  <h1>${meta.student_name}</h1>
-  <p>${meta.school_name} · ${meta.class_name} · Section ${meta.section_label}</p>
-  <p>Period: ${fromDate} to ${toDate} · Teacher: ${meta.teacher_name || '—'}</p>
-</div>
-<div class="stats">
-  <div class="stat"><div class="value">${meta.attendance?.pct ?? 0}%</div><div class="label">Attendance (${meta.attendance?.present ?? 0}/${meta.attendance?.total ?? 0} days)</div></div>
-  <div class="stat"><div class="value">${meta.curriculum?.covered ?? 0}</div><div class="label">Subjects Covered</div></div>
-  <div class="stat"><div class="value">${meta.milestones?.achieved ?? 0}/${meta.milestones?.total ?? 0}</div><div class="label">Milestones</div></div>
-</div>
-${reportText.split('\n').map(line => {
-      if (line.startsWith('## ')) return '<h2>' + line.replace(/^## /, '').replace(/[🧠🗣️🤝💪🎨🌟🏫📅📝🌱👨‍👩‍👧💡🚀]/g, '').trim() + '</h2>';
-      if (line.trim()) return '<p>' + line.trim() + '</p>';
-      return '';
-    }).join('\n')}
-<div class="footer">
-  <p>Class Teacher: ${meta.teacher_name || '—'}</p>
-  <p>Generated on: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-</div>
+${el.innerHTML}
 </body></html>`;
-
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(html);
-      printWindow.document.close();
-      setTimeout(() => printWindow.print(), 500);
-    }
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 600); }
   }
 
   return (
@@ -241,46 +193,17 @@ ${reportText.split('\n').map(line => {
 
       {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
 
-      {/* Generated report */}
-      {report && reportMeta && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mt-2">
-          <div className="bg-gradient-to-r from-emerald-600 to-emerald-500 px-5 py-4">
-            <p className="text-white font-black text-base">{reportMeta.student_name}</p>
-            <p className="text-white/80 text-xs mt-0.5">{reportMeta.class_name} · Section {reportMeta.section_label} · {reportMeta.school_name}</p>
-            <p className="text-white/70 text-xs mt-0.5">Period: {from} to {to} · Teacher: {reportMeta.teacher_name || '—'}</p>
+      {/* Generated report — V2 visual dashboard */}
+      {report !== null && reportMeta && (
+        <div>
+          <div ref={reportRef}>
+            <ReportCardV2 meta={reportMeta} />
           </div>
-          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-            <div className="px-3 py-2.5 text-center">
-              <p className="text-xs text-gray-400">Attendance</p>
-              <p className="text-sm font-bold text-emerald-600">{reportMeta.attendance?.pct ?? 0}%</p>
-              <p className="text-[10px] text-gray-400">{reportMeta.attendance?.present ?? 0}d present</p>
-            </div>
-            <div className="px-3 py-2.5 text-center">
-              <p className="text-xs text-gray-400">Subjects</p>
-              <p className="text-sm font-bold text-blue-600">{reportMeta.curriculum?.covered ?? 0}</p>
-              <p className="text-[10px] text-gray-400">areas covered</p>
-            </div>
-            <div className="px-3 py-2.5 text-center">
-              <p className="text-xs text-gray-400">Milestones</p>
-              <p className="text-sm font-bold text-purple-600">{reportMeta.milestones?.achieved ?? 0}/{reportMeta.milestones?.total ?? 0}</p>
-              <p className="text-[10px] text-gray-400">achieved</p>
-            </div>
-          </div>
-          <div className="px-5 py-5">{renderReport(report)}</div>
-          {reportMeta.teacher_name && (
-            <div className="px-5 pb-4 border-t border-gray-100">
-              <p className="text-xs text-gray-400 pt-3">Class Teacher: <span className="font-semibold text-gray-600">{reportMeta.teacher_name}</span></p>
-            </div>
-          )}
-          {/* Download as PDF */}
-          <div className="px-5 pb-5 border-t border-gray-100 pt-3 flex gap-2">
-            <button onClick={() => downloadReportPdf(report, reportMeta, from, to)}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-bold transition-colors">
-              📄 Download PDF
-            </button>
-            <button onClick={() => downloadReportText(report, reportMeta, from, to)}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
-              📋 Text
+          <div className="flex gap-2 mt-4">
+            <button onClick={printReport}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white transition-colors"
+              style={{ background: '#1B4332' }}>
+              <Printer size={15} /> Print / Save PDF
             </button>
           </div>
         </div>

@@ -161,6 +161,89 @@ export async function generateProgressReport(
   }).join('\n\n');
 
   const n = student.name;
+
+  // ── NEW: Structured JSON prompt for the premium visual dashboard ──
+  const structuredPrompt = `You are Oakie, a warm school AI writing a premium visual report card for parents.
+
+STUDENT: ${n}${age ? ` (${age})` : ''}
+CLASS: ${student.class_name} ${student.section_label} | TEACHER: ${student.teacher_name || 'Class Teacher'}
+PERIOD: ${fromDate} to ${toDate}
+ATTENDANCE: ${att.present}/${att.total} days (${att_pct}%)
+MILESTONES: ${mil.achieved}/${mil.total} achieved
+
+SUBJECTS COVERED:
+${learningCompact || 'General classroom activities'}
+
+TEACHER OBSERVATIONS:
+${obsText || 'No structured observations recorded'}
+
+JOURNAL HIGHLIGHTS:
+${highlights.slice(0, 5).join(' | ') || 'None recorded'}
+
+━━━ OUTPUT RULES ━━━
+Return ONLY valid JSON. No markdown. No extra text.
+Limits: summary ≤80 words, teacher_remark ≤40 words, each subject_note ≤20 words, each home_activity ≤12 words, each achievement_reason ≤15 words.
+Never repeat the student's name in every sentence. Use natural language.
+
+Return this exact JSON structure:
+{
+  "summary": "One paragraph, max 80 words. Warm, specific, natural. No generic phrases.",
+  "teacher_remark": "1-2 sentences max, 40 words max. Personal and specific.",
+  "subjects": [
+    {
+      "name": "English & Literacy",
+      "pct": 85,
+      "status": "Excellent",
+      "topics": ["Alphabet A-F", "Story Listening", "Rhymes"],
+      "note": "Shows excellent vocabulary growth"
+    }
+  ],
+  "skills": [
+    { "name": "Communication", "pct": 90 },
+    { "name": "Fine Motor", "pct": 75 },
+    { "name": "Confidence", "pct": 70 },
+    { "name": "Creativity", "pct": 95 },
+    { "name": "Listening", "pct": 85 },
+    { "name": "Social Skills", "pct": 80 }
+  ],
+  "achievements": [
+    { "label": "Curious Learner", "reason": "Asked brilliant questions daily" },
+    { "label": "Story Lover", "reason": "Remembered every story detail" }
+  ],
+  "home_activities": [
+    "Read one story together daily",
+    "Count household objects",
+    "Colour for 15 minutes",
+    "Sing today's rhyme"
+  ],
+  "radar": {
+    "Language": 85,
+    "Numeracy": 80,
+    "Motor Skills": 75,
+    "Creativity": 90,
+    "Social Skills": 80,
+    "Confidence": 70,
+    "Thinking": 80
+  }
+}
+
+Use ONLY data from the observations and subjects above. If a subject has no data, omit it. Generate achievements based on journal highlights and observations.`;
+
+  const AI_URL_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+  let structuredData: any = null;
+  try {
+    const sResp = await axios.post(`${AI_URL_BASE}/internal/generate-report`, {
+      prompt: structuredPrompt,
+      student_name: n,
+      structured: true,
+    }, { timeout: 60000 });
+    const raw = sResp.data?.response || '';
+    // Extract JSON from response (LLM sometimes wraps in ```json)
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (jsonMatch) structuredData = JSON.parse(jsonMatch[0]);
+  } catch { /* fall through to legacy */ }
+
+  // ── LEGACY text prompt (kept as fallback) ──
   const aiPrompt = `You are writing a formal, warm, descriptive school progress report card for parents.
 
 STUDENT: ${n}${age ? ` (${age} old)` : ''}
@@ -264,6 +347,7 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
     homework: { completed: hw.completed, partial: hw.partial, not_submitted: hw.not_submitted, total: hw.total },
     milestones: { achieved: mil.achieved, total: mil.total },
     journey_highlights: highlights,
+    structured: structuredData,
   };
 
   let report_id = null;
@@ -281,5 +365,5 @@ ${missedSubjects.length > 0 ? '## 📅 Absence Note' : ''}
     report_id = savedRow.rows[0].id;
   } catch { /* non-critical */ }
 
-  return { ...reportData, ai_report: aiReport, report_id };
+  return { ...reportData, ai_report: aiReport, report_id, structured: structuredData };
 }
