@@ -103,33 +103,86 @@ export async function generateProgressReport(
      WHERE dc.section_id=$1 AND dc.completion_date BETWEEN $2 AND $3 ORDER BY cc.chunk_index`,
     [student.section_id, fromDate, toDate]);
 
+  // ── Build a clean learning map: subject → set of meaningful activity keywords ──
+  // Strategy: extract actual topic/activity names from chunk content, strip noise
   const learningMap: Record<string, Set<string>> = {};
+
+  // Helper: clean a raw activity string to human-readable form
+  function cleanActivity(raw: string): string | null {
+    if (!raw || raw.length < 3) return null;
+    // Strip trailing numbers (chunk IDs like "- 1478"), pg references, etc.
+    let s = raw
+      .replace(/[-–]\s*\d{3,}$/g, '')        // trailing " - 1478"
+      .replace(/\bpg\.?\s*(no\.?\s*)?\d+\b/gi, '') // pg no. 6
+      .replace(/\bpage\s*\d+\b/gi, '')
+      .replace(/\(\s*settling\s*time\s*\)/gi, '')
+      .replace(/learning\s*readiness\s*[:\-]?\s*/gi, '') // strip "Learning readiness:"
+      .replace(/\s*\+\s*$/, '')               // trailing " +"
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    // Skip if still looks like internal noise
+    if (/^\d+$/.test(s)) return null;
+    if (s.length < 3) return null;
+    // Capitalise first letter
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
   for (const row of chunksRow.rows) {
     const content = (row.content || '').trim();
     const lines = content.split('\n').map((l: string) => l.trim()).filter(Boolean);
+
     for (const line of lines) {
-      const subjectLine = line.match(/^([A-Za-z\s\/&]+?)\s*:\s*(.{10,})/);
+      // Pattern: "Subject: activity description"
+      const subjectLine = line.match(/^([A-Za-z\s\/&]+?)\s*:\s*(.{5,})/);
       if (subjectLine) {
-        if (/^(objective|resources|materials|what to do|ask children|tip|note|offline support)/i.test(subjectLine[1])) continue;
-        const subj = canonicalSubject(subjectLine[1]);
-        const activity = subjectLine[2].trim().slice(0, 100);
+        const subjectPart = subjectLine[1].trim();
+        const activityPart = subjectLine[2].trim();
+        if (/^(objective|resources|materials|what to do|ask children|tip|note|offline support|ref|pg|page)/i.test(subjectPart)) continue;
+        const subj = canonicalSubject(subjectPart);
+        // Split activity on " + " or " / " to get individual items
+        const items = activityPart.split(/\s*[+\/]\s*/).map(cleanActivity).filter(Boolean) as string[];
         if (!learningMap[subj]) learningMap[subj] = new Set();
-        learningMap[subj].add(activity);
+        items.forEach(item => learningMap[subj].add(item));
       }
     }
+
+    // Use topic_label if meaningful (not "Week X Day Y")
     if (row.topic_label && !/week\s*\d|day\s*\d/i.test(row.topic_label)) {
       const subj = canonicalSubject(row.topic_label);
       if (!learningMap[subj]) learningMap[subj] = new Set();
-      const bestLine = lines.find((l: string) => l.length > 20 && !l.match(/^(objective|resources|tip|note|what to do|ask children)/i));
-      if (bestLine) learningMap[subj].add(bestLine.slice(0, 100));
+      // Extract best activity line from content
+      for (const line of lines) {
+        if (line.length < 8) continue;
+        if (/^(objective|resources|tip|note|what to do|ask children|ref|pg|page|\d)/i.test(line)) continue;
+        const cleaned = cleanActivity(line);
+        if (cleaned && cleaned.length >= 5) {
+          learningMap[subj].add(cleaned);
+          break;
+        }
+      }
     }
   }
 
   const coveredSubjects = Object.keys(learningMap);
+
+  // Build compact learning summary for AI prompt — "Subject: item1, item2, item3"
   const learningCompact = coveredSubjects.map(subj => {
-    const acts = [...learningMap[subj]].slice(0, 2).join('; ');
-    return `• ${subj}: ${acts || 'covered'}`;
+    const items = [...learningMap[subj]].slice(0, 3).join(', ');
+    return `• ${subj}: ${items || 'covered'}`;
   }).join('\n');
+
+  // Build clean topic lists for subject cards — deduplicated, max 4 per subject
+  // Group similar items (e.g. "Alphabet A", "Alphabet B" → "Alphabet A–F")
+  function summariseTopics(items: string[]): string[] {
+    // Deduplicate case-insensitively
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const item of items) {
+      const key = item.toLowerCase().replace(/\s+/g, ' ');
+      if (!seen.has(key)) { seen.add(key); unique.push(item); }
+    }
+    return unique.slice(0, 5);
+  }
 
   const missedRow = await pool.query(
     `SELECT DISTINCT cc.topic_label, cc.content FROM daily_completions dc
@@ -279,9 +332,8 @@ export async function generateProgressReport(
   // Build subjects array from real covered curriculum data
   const subjectsData = coveredSubjects.map(subj => {
     const pct = rateSubject(subj);
-    const topics = [...(learningMap[subj] || new Set())]
-      .slice(0, 4)
-      .map(t => t.length > 50 ? t.slice(0, 48) + '…' : t);
+    const rawTopics = [...(learningMap[subj] || new Set())];
+    const topics = summariseTopics(rawTopics);
     // Find obs note for this subject
     const relatedCat = Object.entries(CAT_TO_SUBJECT).find(([, s]) => s === subj)?.[0];
     const obsNote = relatedCat && obsByCategory[relatedCat]?.[0]
@@ -415,26 +467,28 @@ ${highlights.slice(0, 5).join(' | ') || 'None recorded'}
 
 ━━━ OUTPUT RULES ━━━
 Return ONLY valid JSON. No markdown. No extra text.
-Limits: summary ≤80 words, teacher_remark ≤40 words, each home_activity ≤12 words, each achievement_reason ≤15 words.
+Limits: summary ≤80 words, teacher_remark ≤40 words, each home_activity ≤12 words, each achievement_reason ≤15 words, each subject_note ≤15 words.
 Never repeat the student's name in every sentence. Use natural language.
-Do NOT include "subjects", "skills", or "radar" in the JSON — those are calculated from real data.
+Do NOT include "skills" or "radar" in the JSON — those are calculated from real data.
 
 Return ONLY this JSON structure:
 {
   "summary": "One paragraph, max 80 words. Warm, specific, natural. No generic phrases.",
   "teacher_remark": "1-2 sentences max, 40 words max. Personal and specific.",
+  "subject_notes": {
+    "English & Literacy": "Practised letter formation and early reading through rhymes and stories",
+    "Math & Numbers": "Explored counting, shapes and number recognition through hands-on activities"
+  },
   "achievements": [
-    { "label": "Curious Learner", "reason": "Asked brilliant questions daily" },
-    { "label": "Story Lover", "reason": "Remembered every story detail" }
+    { "label": "Curious Learner", "reason": "Asked brilliant questions daily" }
   ],
   "home_activities": [
     "Read one story together daily",
-    "Count household objects",
-    "Colour for 15 minutes",
-    "Sing today's rhyme"
+    "Count household objects"
   ]
 }
 
+For subject_notes: write ONE crisp sentence per subject (max 15 words) describing what was actually taught, using the SUBJECTS COVERED data above. Only include subjects that appear in SUBJECTS COVERED. No generic phrases.
 Generate achievements based ONLY on journal highlights and observations above. If no highlights, skip achievements.`;
 
   const AI_URL_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -450,6 +504,7 @@ Generate achievements based ONLY on journal highlights and observations above. I
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const aiJson = JSON.parse(jsonMatch[0]);
+      const subjectNotes: Record<string, string> = aiJson.subject_notes || {};
       // Merge AI text fields with computed data-driven fields
       structuredData = {
         summary: aiJson.summary || '',
@@ -457,7 +512,10 @@ Generate achievements based ONLY on journal highlights and observations above. I
         achievements: aiJson.achievements || [],
         home_activities: aiJson.home_activities || [],
         // Data-driven — never from AI
-        subjects: subjectsData,
+        subjects: subjectsData.map(s => ({
+          ...s,
+          note: subjectNotes[s.name] || s.note,
+        })),
         skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
         radar: radarData,
       };
@@ -471,7 +529,10 @@ Generate achievements based ONLY on journal highlights and observations above. I
       teacher_remark: '',
       achievements: highlights.slice(0, 3).map((h: string) => ({ label: 'Special Moment', reason: h.slice(0, 50) })),
       home_activities: ['Read one story together daily', 'Count household objects', 'Colour for 15 minutes', 'Sing today\'s rhyme'],
-      subjects: subjectsData,
+      subjects: subjectsData.map(s => ({
+        ...s,
+        note: s.topics.length > 0 ? s.topics.slice(0, 3).join(', ') : s.note,
+      })),
       skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
       radar: radarData,
     };
