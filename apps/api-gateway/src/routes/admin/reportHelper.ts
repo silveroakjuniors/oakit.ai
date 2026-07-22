@@ -121,6 +121,23 @@ export async function generateProgressReport(
     return SUBJECT_FALLBACKS[subj] || [`${subj} concepts and activities`];
   }
 
+  const SUBJECT_DESCRIPTIONS: Record<string, string> = {
+    'English Speaking':              'This period involved storytelling, oral expression, and listening activities that helped build speaking confidence and communication skills in English.',
+    'English & Literacy':            'Alphabet recognition, phonics, early reading, and pre-writing activities were covered this period, building a strong foundation for literacy development.',
+    'Math & Numbers':                'Number recognition, counting, shapes, and sorting activities were explored through hands-on play and exercises to develop early numeracy skills.',
+    'General Knowledge':             'The child engaged with topics about the world around them — nature, community, animals, and cultural activities — through rhymes, songs, and discussions.',
+    'Writing':                       'Pre-writing strokes, pencil grip, letter tracing, and fine motor strengthening exercises were practised this period to prepare for confident handwriting.',
+    'Art & Creativity':              'Drawing, colouring, craft, and imaginative activities encouraged creative expression and fine motor development through fun hands-on projects.',
+    'Music & Rhymes':                'Nursery rhymes, action songs, and rhythmic activities were enjoyed this period, supporting language development, memory, and joyful learning.',
+    'Physical Activity':             'Movement games, outdoor play, and gross motor activities helped develop coordination, balance, and a healthy, active learning routine.',
+    'Regional Language':             'Vocabulary, rhymes, stories, and letter recognition in the regional language were introduced this period to strengthen mother tongue communication skills.',
+    'Circle Time & Morning Routine': 'Morning circle, greetings, calendar activities, and group discussions helped build social skills, classroom confidence, and a sense of routine.',
+  };
+
+  function getFallbackDescription(subj: string): string {
+    return SUBJECT_DESCRIPTIONS[subj] || `${subj} was covered this period through classroom activities and hands-on learning experiences appropriate for the age group.`;
+  }
+
   // ── Build a clean learning map: subject → set of meaningful activity keywords ──
   const learningMap: Record<string, Set<string>> = {};
 
@@ -483,7 +500,7 @@ ${highlights.slice(0, 5).join(' | ') || 'None recorded'}
 
 ━━━ OUTPUT RULES ━━━
 Return ONLY valid JSON. No markdown. No extra text.
-Limits: summary ≤80 words, teacher_remark ≤40 words, each home_activity ≤12 words, each achievement_reason ≤15 words, each subject_note ≤15 words.
+Limits: summary ≤80 words, teacher_remark ≤40 words, each home_activity ≤12 words, each subject_description ≤80 words, each achievement_reason ≤15 words.
 Never repeat the student's name in every sentence. Use natural language.
 Do NOT include "skills" or "radar" in the JSON — those are calculated from real data.
 
@@ -491,9 +508,9 @@ Return ONLY this JSON structure:
 {
   "summary": "One paragraph, max 80 words. Warm, specific, natural. No generic phrases.",
   "teacher_remark": "1-2 sentences max, 40 words max. Personal and specific.",
-  "subject_notes": {
-    "English & Literacy": "Practised letter formation and early reading through rhymes and stories",
-    "Math & Numbers": "Explored counting, shapes and number recognition through hands-on activities"
+  "subject_descriptions": {
+    "English & Literacy": "This period focused on building early literacy skills through phonics, alphabet recognition, and story listening. The child engaged enthusiastically with rhymes and pre-writing activities that laid a strong foundation for reading and writing.",
+    "Math & Numbers": "Number concepts, counting, and shape recognition were explored through hands-on activities and games, helping the child develop early numeracy confidence."
   },
   "achievements": [
     { "label": "Curious Learner", "reason": "Asked brilliant questions daily" }
@@ -504,7 +521,7 @@ Return ONLY this JSON structure:
   ]
 }
 
-For subject_notes: write ONE crisp sentence per subject (max 15 words) describing what was actually taught, using the SUBJECTS COVERED data above. Only include subjects that appear in SUBJECTS COVERED. No generic phrases.
+For subject_descriptions: write 1-2 warm sentences per subject (max 80 words) that describe what was learned in parent-friendly language. Use the SUBJECTS COVERED data above. Be specific but avoid internal codes or resource numbers. Only include subjects that appear in SUBJECTS COVERED.
 Generate achievements based ONLY on journal highlights and observations above. If no highlights, skip achievements.`;
 
   const AI_URL_BASE = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -520,17 +537,16 @@ Generate achievements based ONLY on journal highlights and observations above. I
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const aiJson = JSON.parse(jsonMatch[0]);
-      const subjectNotes: Record<string, string> = aiJson.subject_notes || {};
-      // Merge AI text fields with computed data-driven fields
+      const subjectDescs: Record<string, string> = aiJson.subject_descriptions || aiJson.subject_notes || {};
       structuredData = {
         summary: aiJson.summary || '',
         teacher_remark: aiJson.teacher_remark || '',
         achievements: aiJson.achievements || [],
         home_activities: aiJson.home_activities || [],
-        // Data-driven — never from AI
         subjects: subjectsData.map(s => ({
-          ...s,
-          note: subjectNotes[s.name] || s.note,
+          name: s.name, pct: s.pct, status: s.status,
+          topics: [], // removed — description replaces topic list
+          note: subjectDescs[s.name] || getFallbackDescription(s.name),
         })),
         skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
         radar: radarData,
@@ -546,8 +562,9 @@ Generate achievements based ONLY on journal highlights and observations above. I
       achievements: highlights.slice(0, 3).map((h: string) => ({ label: 'Special Moment', reason: h.slice(0, 50) })),
       home_activities: ['Read one story together daily', 'Count household objects', 'Colour for 15 minutes', 'Sing today\'s rhyme'],
       subjects: subjectsData.map(s => ({
-        ...s,
-        note: s.topics.length > 0 ? s.topics.slice(0, 3).join(', ') : s.note,
+        name: s.name, pct: s.pct, status: s.status,
+        topics: [],
+        note: getFallbackDescription(s.name),
       })),
       skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
       radar: radarData,

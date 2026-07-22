@@ -333,16 +333,9 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
                     {s.status || statusLabel(s.pct)}
                   </span>
                 </div>
-                {/* No per-subject % bar — all subjects use overall performance */}
-                {s.topics.length > 0 && (
-                  <div style={{ marginTop: 4 }}>
-                    <p style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 5px' }}>Covered this period</p>
-                    <p style={{ fontSize: 11, color: '#374151', lineHeight: 1.6, margin: 0 }}>
-                      {s.topics.join(' · ')}
-                    </p>
-                  </div>
+                {s.note && (
+                  <p style={{ fontSize: 11, color: '#374151', lineHeight: 1.65, margin: 0 }}>{s.note}</p>
                 )}
-                {s.note && <p style={{ fontSize: 11, color: G, fontStyle: 'italic', margin: '8px 0 0', borderTop: '1px solid #f3f4f6', paddingTop: 6 }}>"{s.note}"</p>}
               </div>
             ))}
           </div>
