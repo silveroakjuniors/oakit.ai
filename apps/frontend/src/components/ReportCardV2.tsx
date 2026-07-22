@@ -450,9 +450,9 @@ export default function ReportCardV2({ meta, printMode = false }: { meta: Report
 
       {/* 8. ACTIVITIES THIS MONTH — removed to keep report within 2 A4 pages */}
 
-      {/* 9. AI SUMMARY */}
+      {/* 9. OAKIE SUMMARY */}
       {data.summary && (
-        <Section title="AI Summary">
+        <Section title="Oakie Summary">
           <p style={{ fontSize: 13, color: '#1f2937', lineHeight: 1.75, margin: 0, fontStyle: 'italic' }}>
             {data.summary}
           </p>

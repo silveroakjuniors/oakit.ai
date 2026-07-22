@@ -113,7 +113,10 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
     if (!remarkInput.trim() || !reportMeta) return;
     setRemarkGenerating(true);
     try {
-      const res = await apiPost<{ remark: string }>('/api/v1/teacher/report-card/generate-remark', {
+      const remarkUrl = role === 'teacher'
+        ? '/api/v1/teacher/report-card/generate-remark'
+        : '/api/v1/admin/reports/generate-remark';
+      const res = await apiPost<{ remark: string }>(remarkUrl, {
         student_name: reportMeta.student_name,
         teacher_notes: remarkInput.trim(),
         class_name: reportMeta.class_name,
