@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { BookOpen, Printer } from 'lucide-react';
-import { apiGet } from '@/lib/api';
+import { BookOpen, Printer, Pencil, Sparkles, Check, X, RefreshCw } from 'lucide-react';
+import { apiGet, apiPost } from '@/lib/api';
 import ReportCardV2 from './ReportCardV2';
 
 interface Student { id: string; name: string; class_name?: string; section_label?: string; }
@@ -52,6 +52,11 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
   const [report, setReport] = useState<string | null>(null);
   const [reportMeta, setReportMeta] = useState<any>(null);
   const [error, setError] = useState('');
+  // Teacher remark editor state
+  const [remarkEditing, setRemarkEditing] = useState(false);
+  const [remarkInput, setRemarkInput] = useState('');
+  const [remarkGenerating, setRemarkGenerating] = useState(false);
+  const [remarkDraft, setRemarkDraft] = useState('');
 
   // Load students for teacher (their class only)
   useEffect(() => {
@@ -102,6 +107,40 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function generateRemark() {
+    if (!remarkInput.trim() || !reportMeta) return;
+    setRemarkGenerating(true);
+    try {
+      const res = await apiPost<{ remark: string }>('/api/v1/teacher/report-card/generate-remark', {
+        student_name: reportMeta.student_name,
+        teacher_notes: remarkInput.trim(),
+        class_name: reportMeta.class_name,
+        attendance_pct: reportMeta.attendance?.pct,
+        subjects_covered: (reportMeta.curriculum?.subjects || []).slice(0, 5).join(', '),
+      }, token);
+      setRemarkDraft(res.remark || '');
+    } catch {
+      setRemarkDraft('');
+    } finally {
+      setRemarkGenerating(false);
+    }
+  }
+
+  function acceptRemark(text: string) {
+    if (!reportMeta || !text.trim()) return;
+    const updated = {
+      ...reportMeta,
+      structured: {
+        ...(reportMeta.structured || {}),
+        teacher_remark: text.trim(),
+      },
+    };
+    setReportMeta(updated);
+    setRemarkEditing(false);
+    setRemarkDraft('');
+    setRemarkInput('');
   }
 
   const canGenerate = !!(fixedStudentId || selectedStudent);
@@ -199,6 +238,102 @@ ${el.innerHTML}
           <div ref={reportRef}>
             <ReportCardV2 meta={reportMeta} />
           </div>
+
+          {/* Teacher Remark Editor — only for teacher/admin, not parent */}
+          {role !== 'parent' && (
+            <div className="mt-4 bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-neutral-100 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-neutral-800">Teacher's Remark</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">Edit or ask Oakie to write a personalised remark</p>
+                </div>
+                {!remarkEditing && (
+                  <button onClick={() => {
+                    setRemarkEditing(true);
+                    setRemarkInput(reportMeta?.structured?.teacher_remark || '');
+                    setRemarkDraft('');
+                  }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors">
+                    <Pencil size={12} /> Edit
+                  </button>
+                )}
+              </div>
+
+              {!remarkEditing ? (
+                <div className="px-4 py-3">
+                  <p className="text-sm text-neutral-700 leading-relaxed italic">
+                    {reportMeta?.structured?.teacher_remark || 'No remark added yet.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="px-4 py-4 space-y-3">
+                  {/* Current remark display */}
+                  {reportMeta?.structured?.teacher_remark && !remarkDraft && (
+                    <div className="bg-neutral-50 rounded-xl p-3">
+                      <p className="text-xs text-neutral-400 font-semibold mb-1">Current remark</p>
+                      <p className="text-sm text-neutral-600 italic leading-relaxed">{reportMeta.structured.teacher_remark}</p>
+                      <button onClick={() => acceptRemark(reportMeta.structured.teacher_remark)}
+                        className="mt-2 text-xs text-emerald-600 font-semibold hover:underline">
+                        Keep this
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Teacher input */}
+                  <div>
+                    <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1.5 block">
+                      Your notes for Oakie
+                    </label>
+                    <textarea
+                      value={remarkInput}
+                      onChange={e => setRemarkInput(e.target.value)}
+                      placeholder={`e.g. "${reportMeta?.student_name?.split(' ')[0] || 'Student'} is very enthusiastic, loves drawing, sometimes needs reminders to focus, parents should encourage reading at home"`}
+                      rows={3}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30 resize-none"
+                    />
+                    <p className="text-[10px] text-neutral-400 mt-1">Write your raw thoughts — Oakie will turn them into a polished 2–3 sentence remark</p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={generateRemark}
+                      disabled={!remarkInput.trim() || remarkGenerating}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50"
+                      style={{ background: '#1B4332' }}>
+                      {remarkGenerating
+                        ? <><RefreshCw size={13} className="animate-spin" /> Writing…</>
+                        : <><Sparkles size={13} /> Ask Oakie</>}
+                    </button>
+                    <button onClick={() => { setRemarkEditing(false); setRemarkDraft(''); setRemarkInput(''); }}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-neutral-500 bg-neutral-100 hover:bg-neutral-200 transition-colors">
+                      <X size={13} /> Cancel
+                    </button>
+                  </div>
+
+                  {/* Oakie-generated draft */}
+                  {remarkDraft && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+                      <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide">Oakie's suggestion</p>
+                      <p className="text-sm text-neutral-800 leading-relaxed italic">{remarkDraft}</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => acceptRemark(remarkDraft)}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors">
+                          <Check size={13} /> Use this
+                        </button>
+                        <button onClick={generateRemark} disabled={remarkGenerating}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-emerald-700 bg-white border border-emerald-200 hover:bg-emerald-50 transition-colors disabled:opacity-50">
+                          <RefreshCw size={12} className={remarkGenerating ? 'animate-spin' : ''} /> Retry
+                        </button>
+                        <button onClick={() => { setRemarkEditing(false); setRemarkDraft(''); setRemarkInput(''); }}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-neutral-400 hover:text-neutral-600 transition-colors">
+                          <X size={12} /> Discard
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2 mt-4">
             <button onClick={printReport}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white transition-colors"
