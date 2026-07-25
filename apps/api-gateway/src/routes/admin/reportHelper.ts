@@ -54,19 +54,38 @@ export async function generateProgressReport(
     [studentId, fromDate, toDate]);
   const attData = attRow.rows[0];
 
-  // Count actual school working days in the period from the calendar
+  // Get today's date (school time-machine aware)
+  const todayForAtt = await (async () => {
+    try {
+      const t = await pool.query(
+        `SELECT value FROM school_settings WHERE school_id=$1 AND key='time_machine_date' LIMIT 1`,
+        [schoolId]
+      );
+      return t.rows[0]?.value || new Date().toISOString().split('T')[0];
+    } catch { return new Date().toISOString().split('T')[0]; }
+  })();
+
+  // Count working days from fromDate up to YESTERDAY only
+  // Today is excluded — attendance may not have been submitted yet
+  const effectiveEndDate = todayForAtt > toDate ? toDate : (() => {
+    const d = new Date(todayForAtt + 'T12:00:00');
+    d.setDate(d.getDate() - 1); // yesterday
+    const y = d.toISOString().split('T')[0];
+    return y < fromDate ? fromDate : y;
+  })();
+
   let workingDays = 0;
   try {
     const calRow = await pool.query(
       `SELECT working_days, holidays FROM school_calendar
        WHERE school_id=$1 AND start_date <= $3 AND end_date >= $2 LIMIT 1`,
-      [schoolId, fromDate, toDate]
+      [schoolId, fromDate, effectiveEndDate]
     );
     if (calRow.rows.length > 0) {
       const { working_days = [1,2,3,4,5], holidays = [] } = calRow.rows[0];
       const holidayDates = (holidays as any[]).map((h: any) => typeof h === 'string' ? h.split('T')[0] : '');
       const start = new Date(fromDate + 'T12:00:00');
-      const end = new Date(toDate + 'T12:00:00');
+      const end = new Date(effectiveEndDate + 'T12:00:00');
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
         const ds = d.toISOString().split('T')[0];
         if ((working_days as number[]).includes(d.getDay()) && !holidayDates.includes(ds)) workingDays++;
@@ -74,26 +93,31 @@ export async function generateProgressReport(
     }
   } catch { /* fall through */ }
 
-  // Fallback: count Mon-Fri in range if no calendar
+  // Fallback: count Mon-Fri up to effectiveEndDate if no calendar
   if (workingDays === 0) {
     const start = new Date(fromDate + 'T12:00:00');
-    const end = new Date(toDate + 'T12:00:00');
+    const end = new Date(effectiveEndDate + 'T12:00:00');
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dow = d.getDay();
       if (dow !== 0 && dow !== 6) workingDays++;
     }
   }
 
-  // Present = DB present count; Total = working days; Absent = working days - present
-  const present = attData.present || 0;
-  const total = Math.max(workingDays, attData.present + attData.absent, 1);
-  const absent = total - present;
+  // RULE: unrecorded days = PRESENT (teacher may not have submitted yet)
+  // absent = only days explicitly marked absent in DB
+  // present = working days - absent (i.e. all recorded + unrecorded days = present)
+  const absent = attData.absent || 0;
+  const total = Math.max(workingDays, attData.present + absent, 1);
+  const present = total - absent;
   const att_pct = Math.round((present / total) * 100);
   const att = {
     present,
     absent,
     total,
     absent_dates: attData.absent_dates || [],
+    note: absent < (total - (attData.present + absent))
+      ? 'Days not marked by teacher are counted as present. Attendance reflects submitted records only.'
+      : '',
   };
 
   const chunksRow = await pool.query(

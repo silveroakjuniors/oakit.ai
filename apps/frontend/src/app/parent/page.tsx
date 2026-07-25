@@ -833,13 +833,13 @@ export default function ParentPage() {
  </div>
  </main>
 
- {/* -- CLASS FEED COLUMN (desktop only) -- */}
- <aside className="hidden xl:flex flex-col w-64 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
+ {/* -- CLASS FEED COLUMN (desktop only, xl+) -- */}
+ <aside className="hidden xl:flex flex-col w-60 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
  <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
  </aside>
 
- {/* -- WEEKLY SCHEDULE COLUMN (desktop only) -- */}
- <aside className="hidden xl:flex flex-col w-56 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
+ {/* -- WEEKLY SCHEDULE COLUMN (desktop, lg+) -- */}
+ <aside className="hidden lg:flex flex-col w-52 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
  <SchedulePanel
  progress={activeCache?.progress ?? null}
  activeChild={activeChild}
@@ -1423,14 +1423,14 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  <ChevronRight size={16} className="text-emerald-400 flex-shrink-0" />
  </button>
 
- {/* Class Feed  mobile only (desktop shows in right column) */}
+ {/* Class Feed  mobile/tablet only (desktop xl+ shows in right column) */}
  <div className="xl:hidden">
  <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
  </div>
 
- {/* Weekly Schedule  mobile only (desktop shows in right column) */}
+ {/* Weekly Schedule  mobile/tablet only (desktop lg+ shows in right column) */}
  {activeChild && (
- <div className="xl:hidden">
+ <div className="lg:hidden">
  <SchedulePanel
  progress={progress}
  activeChild={activeChild}
