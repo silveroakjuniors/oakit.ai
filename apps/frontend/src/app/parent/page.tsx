@@ -133,7 +133,7 @@ interface Announcement { id: string; title: string; body: string; created_at: st
 interface ParentMessage { teacher_id: string; student_id: string; teacher_name: string; student_name: string; last_message: string; last_sent_at: string; last_sender: string; unread_count: number; }
 interface HomeworkRecord { homework_date: string; status: string; teacher_note: string | null; homework_text: string | null; }
 interface ChatMsg { role: 'user' | 'ai'; text: string; ts: number; }
-interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; }
+interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; classFeed: any[]; invoice: any | null; }
 
 // --- New Feature Types --------------------------------------------------------
 interface EmergencyContact {
@@ -305,10 +305,8 @@ export default function ParentPage() {
  const [chatLoading, setChatLoading] = useState(false);
  const [noteModal, setNoteModal] = useState<NoteItem | null>(null);
  const chatEndRef = useRef<HTMLDivElement>(null);
- const [classFeed, setClassFeed] = useState<any[]>([]);
  const [schoolInstagram, setSchoolInstagram] = useState<string>('');
  const [schoolTranslationEnabled, setSchoolTranslationEnabled] = useState<boolean>(true);
- const [invoice, setInvoice] = useState<any | null>(null);
  const [parentProfile, setParentProfile] = useState<{ name: string; mobile: string; mobile_can_update?: boolean } | null>(null);
  const [profileOpen, setProfileOpen] = useState(false);
  const profileRef = useRef<HTMLDivElement>(null);
@@ -358,6 +356,8 @@ export default function ParentPage() {
 
  const activeChild = children.find(c => c.id === activeChildId) ?? null;
  const activeCache = activeChildId ? cache[activeChildId] : null;
+ const classFeed = activeCache?.classFeed ?? [];
+ const invoice = activeCache?.invoice ?? null;
  const chatMsgs = activeChildId ? (chatMap[activeChildId] ?? defaultChat(activeChild?.name)) : [];
  const unreadMessages = messageThreads.reduce((s, t) => s + Number(t.unread_count), 0);
  const unreadNotifs = notifications.length;
@@ -464,24 +464,23 @@ export default function ParentPage() {
  apiGet<ProgressData[]>('/api/v1/parent/progress', token).catch(() => [] as ProgressData[]),
  ]);
  const prog = Array.isArray(progList) ? (progList.find((p: any) => p.student_id === childId) ?? null) : null;
- setCache(prev => ({ ...prev, [childId]: { feed: (feed ?? prev[childId]?.feed ?? null) as ChildFeed | null, attendance: att, progress: prog } }));
+ setCache(prev => ({ ...prev, [childId]: { ...prev[childId], feed: (feed ?? prev[childId]?.feed ?? null) as ChildFeed | null, attendance: att, progress: prog, classFeed: prev[childId]?.classFeed ?? [], invoice: prev[childId]?.invoice ?? null } }));
  if (feed && (feed as any).instagram_handle) setSchoolInstagram((feed as any).instagram_handle);
  if (feed && typeof (feed as any).translation_enabled === 'boolean') setSchoolTranslationEnabled((feed as any).translation_enabled);
+ // Fetch class feed and invoice — keyed per child in cache
  if (child?.section_id) {
  apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
- .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setClassFeed(posts.slice(0, 8)); })
+ .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setCache(prev => ({ ...prev, [childId]: { ...prev[childId], classFeed: posts.slice(0, 8) } })); })
  .catch(() => {});
  }
  apiGet<any>(`/api/v1/parent/fees/invoice/${childId}`, token)
- .then(setInvoice)
- .catch((err) => {
- console.error('[parent fees invoice]', err?.message || err);
- setInvoice(null);
- });
+ .then(inv => setCache(prev => ({ ...prev, [childId]: { ...prev[childId], invoice: inv } })))
+ .catch(() => setCache(prev => ({ ...prev, [childId]: { ...prev[childId], invoice: null } })));
  } finally { setChildLoading(false); }
  }, [cache, token, children]);
 
- async function switchChild(childId: string) { setActiveChildId(childId); setClassFeed([]); await fetchChildData(childId); }
+ // switchChild: just set the active ID — all data comes from per-child cache
+ async function switchChild(childId: string) { setActiveChildId(childId); if (!cache[childId]?.feed) await fetchChildData(childId); }
 
  async function sendChat() {
  const text = chatInput.trim();
