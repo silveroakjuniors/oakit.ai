@@ -1428,6 +1428,21 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  <div className="xl:hidden">
  <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
  </div>
+
+ {/* Weekly Schedule  mobile only (desktop shows in right column) */}
+ {activeChild && (
+ <div className="xl:hidden">
+ <SchedulePanel
+ progress={progress}
+ activeChild={activeChild}
+ invoice={invoice}
+ onFeesClick={() => onTabChange('fees')}
+ token={token}
+ notifications={[]}
+ announcements={announcements}
+ />
+ </div>
+ )}
  </div>
  );
 }
