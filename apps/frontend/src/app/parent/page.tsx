@@ -2579,6 +2579,17 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  <div className="space-y-4">
  <h2 className="text-lg font-bold text-gray-800">Fees</h2>
 
+ {/* Notice: payments still on SchoolElement */}
+ <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+ <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+ <div>
+ <p className="text-sm font-bold text-amber-800 mb-0.5">Fee payment is on SchoolElement</p>
+ <p className="text-xs text-amber-700 leading-relaxed">
+ Online fee payment and receipt download are available on the <strong>SchoolElement app</strong>. This screen shows your fee summary only. Full payment integration with Oakit.ai is coming soon.
+ </p>
+ </div>
+ </div>
+
  {/* Summary card */}
  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
  <div className="flex items-center justify-between mb-4">
