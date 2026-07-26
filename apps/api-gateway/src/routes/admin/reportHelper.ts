@@ -561,16 +561,17 @@ Generate achievements based ONLY on journal highlights and observations above. I
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const aiJson = JSON.parse(jsonMatch[0]);
-      const subjectDescs: Record<string, string> = aiJson.subject_descriptions || aiJson.subject_notes || {};
       structuredData = {
         summary: aiJson.summary || '',
         teacher_remark: aiJson.teacher_remark || '',
         achievements: aiJson.achievements || [],
         home_activities: aiJson.home_activities || [],
+        // Subject descriptions are ALWAYS from the curated SUBJECT_DESCRIPTIONS map
+        // so they're consistent for all students in the same class
         subjects: subjectsData.map(s => ({
           name: s.name, pct: s.pct, status: s.status,
-          topics: [], // removed — description replaces topic list
-          note: subjectDescs[s.name] || getFallbackDescription(s.name),
+          topics: [],
+          note: getFallbackDescription(s.name),
         })),
         skills: skillsData.map(s => ({ name: s.name, pct: s.pct, definition: s.definition, ptm_note: s.ptm_note })),
         radar: radarData,

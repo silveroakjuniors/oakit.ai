@@ -23,13 +23,14 @@ function fmtDate(d: string) {
   try { return new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return d; }
 }
 
-// ─── Saved Report Viewer (with inline remark edit) ────────────────────────────
+// ─── Saved Report Viewer (with inline remark edit + regenerate) ───────────────
 function SavedReportViewer({ reportId, token, onClose, onDelete }: {
   reportId: string; token: string; onClose: () => void; onDelete: (id: string) => void;
 }) {
   const printRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
   const [remarkEditing, setRemarkEditing] = useState(false);
   const [remarkInput, setRemarkInput] = useState('');
   const [remarkDraft, setRemarkDraft] = useState('');
@@ -42,6 +43,20 @@ function SavedReportViewer({ reportId, token, onClose, onDelete }: {
     apiGet<any>(`/api/v1/teacher/report-card/saved/${reportId}`, token)
       .then(setData).catch(() => {}).finally(() => setLoading(false));
   }, [reportId, token]);
+
+  async function regenerateReport() {
+    if (!data) return;
+    setRegenerating(true);
+    try {
+      // Re-generate using the same student + date range, which overwrites the saved report
+      const fresh = await apiGet<any>(
+        `/api/v1/teacher/report-card/generate?student_id=${data.student_id || ''}&from=${data.from_date}&to=${data.to_date}`,
+        token
+      );
+      if (fresh) setData(fresh);
+    } catch { /* ignore */ }
+    finally { setRegenerating(false); }
+  }
 
   async function generateRemark() {
     if (!remarkInput.trim() || !data) return;
@@ -99,6 +114,9 @@ body { margin: 0; padding: 20px; background: #f8f7f4; font-family: 'Inter', syst
           <ChevronLeft size={16} /> Back to saved
         </button>
         <div className="flex gap-2">
+          <button onClick={regenerateReport} disabled={regenerating} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors disabled:opacity-50" title="Re-generate with latest data">
+            {regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh
+          </button>
           <button onClick={printReport} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: '#1B4332' }}>
             <Printer size={12} /> Print PDF
           </button>
