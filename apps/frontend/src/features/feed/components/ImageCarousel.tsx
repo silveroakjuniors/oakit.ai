@@ -19,16 +19,17 @@ export default function ImageCarousel({ images, mediaTypes }: { images: string[]
         onClick={() => setLightbox(true)}>
         {/* Main media */}
         {currentIsVideo ? (
-          <div className="relative w-full h-full">
+          <div className="relative w-full h-full bg-black">
             <video
               src={images[idx]}
               className="w-full h-full object-cover"
               playsInline
               preload="metadata"
               muted
+              onError={e => { (e.currentTarget as HTMLVideoElement).style.display = 'none'; }}
             />
             {/* Play button overlay */}
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
               </div>

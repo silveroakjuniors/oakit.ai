@@ -121,7 +121,7 @@ export default function FeedCard({ post, onLike, onDelete, schoolName, instagram
       </div>
 
       {/* Images */}
-      <ImageCarousel images={post.images} />
+      <ImageCarousel images={post.images} mediaTypes={post.media_types} />
 
       {/* Actions */}
       <div className="flex items-center gap-3 px-4 py-3">

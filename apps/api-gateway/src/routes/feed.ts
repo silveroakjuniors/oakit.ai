@@ -223,7 +223,9 @@ router.get('/', async (req: Request, res: Response) => {
              COALESCE(fb.cnt, 0) AS facebook_shares,
              COALESCE(dl.cnt, 0) AS downloads,
              ARRAY_AGG(fpi.cdn_url ORDER BY fpi.display_order)
-               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images
+               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images,
+             ARRAY_AGG(fpi.media_type ORDER BY fpi.display_order)
+               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS media_types
       FROM feed_posts fp
       LEFT JOIN sections s ON s.id = fp.section_id
       LEFT JOIN (
@@ -259,6 +261,7 @@ router.get('/', async (req: Request, res: Response) => {
       poster_name: r.poster_name,
       poster_role: r.poster_role,
       images: r.images || [],
+      media_types: r.media_types || [],
       like_count: Number(r.like_count),
       liked_by_me: Boolean(r.liked_by_me),
       instagram_shares: Number(r.instagram_shares || 0),
