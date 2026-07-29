@@ -224,15 +224,8 @@ router.get('/', async (req: Request, res: Response) => {
              COALESCE(dl.cnt, 0) AS downloads,
              ARRAY_AGG(fpi.cdn_url ORDER BY fpi.display_order)
                FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images,
-             ARRAY_AGG(
-               CASE 
-                 WHEN fpi.media_type = 'video' THEN 'video'
-                 WHEN fpi.cdn_url ~* '\.(mp4|mov|webm|3gp|m4v|avi|mkv|quicktime)(\?|$)' THEN 'video'
-                 WHEN fpi.storage_path ~* '\.(mp4|mov|webm|3gp|m4v|quicktime)$' THEN 'video'
-                 ELSE 'image'
-               END
-               ORDER BY fpi.display_order
-             ) FILTER (WHERE fpi.cdn_url IS NOT NULL) AS media_types
+             ARRAY_AGG(fpi.media_type ORDER BY fpi.display_order)
+               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS media_types
       FROM feed_posts fp
       LEFT JOIN sections s ON s.id = fp.section_id
       LEFT JOIN (
