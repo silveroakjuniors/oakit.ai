@@ -1448,7 +1448,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
 // --- Class Feed Column --------------------------------------------------------
 function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any[]; schoolInstagram?: string; token: string }) {
- const [lightbox, setLightbox] = useState<{ images: string[]; index: number; caption?: string } | null>(null);
+ const [lightbox, setLightbox] = useState<{ images: string[]; index: number; caption?: string; mediaTypes?: string[] } | null>(null);
  // local like state: postId ? { count, likedByMe }
  const [likes, setLikes] = useState<Record<string, { count: number; likedByMe: boolean }>>(() =>
  Object.fromEntries(classFeed.map(p => [p.id, { count: p.like_count ?? 0, likedByMe: p.liked_by_me ?? false }]))
@@ -1483,8 +1483,8 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  }
  }
 
- function openLightbox(images: string[], index: number, caption?: string) {
- setLightbox({ images, index, caption });
+ function openLightbox(images: string[], index: number, caption?: string, mediaTypes?: string[]) {
+ setLightbox({ images, index, caption, mediaTypes });
  }
  function closeLightbox() { setLightbox(null); }
  function prevPhoto() { setLightbox(lb => lb && lb.index > 0 ? { ...lb, index: lb.index - 1 } : lb); }
@@ -1577,22 +1577,58 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  return (
  <div key={post.id} className="p-3">
  {img ? (
- <img src={img} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption)}
- className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity" style={{ height: 150 }} />
+   (() => {
+     const mediaType = post.media_types?.[0];
+     const isVideo = mediaType === 'video' ||
+       ['.mp4','.mov','.webm','.3gp','.m4v'].some(ext => img.toLowerCase().includes(ext));
+     return isVideo ? (
+       <div className="relative w-full rounded-xl overflow-hidden mb-2.5 cursor-pointer bg-black"
+         style={{ height: 150 }}
+         onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}>
+         <video src={img} className="w-full h-full object-cover" playsInline preload="metadata" muted />
+         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+           <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+           </div>
+         </div>
+         <div className="absolute top-1.5 left-1.5 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+           <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+           Video
+         </div>
+       </div>
+     ) : (
+       <img src={img} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
+         className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity" style={{ height: 150 }} />
+     );
+   })()
  ) : (
- <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2.5" style={{ height: 100 }}>
- <ImageIcon size={28} className="text-emerald-300" />
- </div>
+   <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2.5" style={{ height: 100 }}>
+     <ImageIcon size={28} className="text-emerald-300" />
+   </div>
  )}
  {/* Extra images row */}
  {post.images?.length > 1 && (
  <div className="flex gap-1.5 mb-2">
- {post.images.slice(1, 4).map((img2: string, i: number) => (
- <img key={i} src={img2} alt="" onClick={() => openLightbox(post.images, i + 1, post.caption)}
- className="w-14 h-14 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity" />
- ))}
+   {post.images.slice(1, 4).map((img2: string, i: number) => {
+     const mt = post.media_types?.[i + 1];
+     const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','.m4v'].some(ext => img2.toLowerCase().includes(ext));
+     return isVid ? (
+       <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer bg-black"
+         onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}>
+         <video src={img2} className="w-full h-full object-cover" playsInline preload="metadata" muted />
+         <div className="absolute inset-0 flex items-center justify-center">
+           <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+             <svg width="10" height="10" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+           </div>
+         </div>
+       </div>
+     ) : (
+       <img key={i} src={img2} alt="" onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}
+         className="w-14 h-14 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity" />
+     );
+   })}
  {post.images.length > 4 && (
- <div onClick={() => openLightbox(post.images, 4, post.caption)}
+ <div onClick={() => openLightbox(post.images, 4, post.caption, post.media_types)}
  className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0 cursor-pointer hover:bg-gray-200 transition-colors">
  +{post.images.length - 4}
  </div>
@@ -1695,14 +1731,31 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  ></button>
  )}
 
- {/* Image */}
+ {/* Image or Video */}
  <div className="flex flex-col items-center gap-3 px-16 max-w-3xl w-full" onClick={e => e.stopPropagation()}>
- <img
- src={lightbox.images[lightbox.index]}
- alt={lightbox.caption ?? ''}
- className="rounded-2xl object-contain shadow-2xl"
- style={{ maxHeight: '75vh', maxWidth: '100%', animation: 'scaleIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}
- />
+   {(() => {
+     const url = lightbox.images[lightbox.index];
+     const mt = lightbox.mediaTypes?.[lightbox.index];
+     const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','.m4v'].some(ext => url.toLowerCase().includes(ext));
+     return isVid ? (
+       <video
+         src={url}
+         controls
+         autoPlay
+         playsInline
+         className="rounded-2xl shadow-2xl"
+         style={{ maxHeight: '75vh', maxWidth: '100%', animation: 'scaleIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}
+         onClick={e => e.stopPropagation()}
+       />
+     ) : (
+       <img
+         src={url}
+         alt={lightbox.caption ?? ''}
+         className="rounded-2xl object-contain shadow-2xl"
+         style={{ maxHeight: '75vh', maxWidth: '100%', animation: 'scaleIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}
+       />
+     );
+   })()}
  {lightbox.caption && (
  <p className="text-white/80 text-sm text-center leading-relaxed">{lightbox.caption}</p>
  )}
