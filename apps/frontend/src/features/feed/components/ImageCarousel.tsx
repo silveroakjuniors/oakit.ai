@@ -3,7 +3,13 @@ import { useState } from 'react';
 
 function isVideoUrl(url: string): boolean {
   const lower = url.toLowerCase();
-  return lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') || lower.includes('.3gp') || lower.includes('video');
+  // Check common video extensions
+  if (lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') ||
+      lower.includes('.3gp') || lower.includes('.quicktime') || lower.includes('.m4v') ||
+      lower.includes('.avi') || lower.includes('.mkv')) return true;
+  // Check for video in the storage path (Supabase paths use the original filename)
+  // Some mobile uploads come as .mov but Supabase URL may not show extension clearly
+  return false;
 }
 
 export default function ImageCarousel({ images, mediaTypes }: { images: string[]; mediaTypes?: string[] }) {
