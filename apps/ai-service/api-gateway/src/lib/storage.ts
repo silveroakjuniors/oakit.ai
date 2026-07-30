@@ -109,7 +109,7 @@ export async function uploadToGoogleDrive(opts: {
   actorRole?: string;
   folderId?: string;
   driveFolderName?: string;
-}): Promise<{ driveFileId: string; driveUrl: string; storagePath: string }> {
+}): Promise<{ driveFileId: string; driveUrl: string; storagePath: string; classFolderId: string | null }> {
   const ext = path.extname(opts.originalName) || '';
   const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
 
@@ -142,17 +142,25 @@ export async function uploadToGoogleDrive(opts: {
 
       if (authConfig.type === 'oauth' && authConfig.refresh_token && authConfig.client_id && authConfig.client_secret) {
         // ── OAuth refresh token flow (personal Google account) ──────────────
-        // Exchange refresh_token for a fresh access_token. No expiry management needed.
-        const tokenRes = await axios.post<{ access_token: string; expires_in: number }>(
-          'https://oauth2.googleapis.com/token',
-          new URLSearchParams({
-            client_id:     authConfig.client_id,
-            client_secret: authConfig.client_secret,
-            refresh_token: authConfig.refresh_token,
-            grant_type:    'refresh_token',
-          }).toString(),
-          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        );
+        const tokenBody = new URLSearchParams({
+          client_id:     authConfig.client_id,
+          client_secret: authConfig.client_secret,
+          refresh_token: authConfig.refresh_token,
+          grant_type:    'refresh_token',
+        }).toString();
+
+        let tokenRes: any;
+        try {
+          tokenRes = await axios.post<{ access_token: string; expires_in: number }>(
+            'https://oauth2.googleapis.com/token',
+            tokenBody,
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+          );
+        } catch (tokenErr: any) {
+          const detail = tokenErr.response?.data || tokenErr.message;
+          console.error('[google drive token error]', JSON.stringify(detail));
+          throw new Error(`Failed to refresh Google OAuth token: ${JSON.stringify(detail)}`);
+        }
         accessToken = tokenRes.data.access_token;
         console.log('[google drive] OAuth access token refreshed via refresh_token');
 
@@ -196,13 +204,16 @@ export async function uploadToGoogleDrive(opts: {
   const fileBuffer = fs.readFileSync(opts.localPath);
 
   // ── 1. Resolve / create the target folder path ───────────────────────────
-  // Walk SOJS2627 / YYYY-MM-DD [/ EventName] inside the configured root folder
+  // Walk ClassName / YYYY-MM-DD [/ EventName] inside the configured root folder
   let targetFolderId = folderId;
+  let classFolderId: string | null = null; // ID of the first-level (class) subfolder
+
   if (opts.driveFolderName) {
     const parts = opts.driveFolderName.split('/').map(p => p.trim()).filter(Boolean);
     let currentFolderId = folderId;
 
-    for (const folderName of parts) {
+    for (let i = 0; i < parts.length; i++) {
+      const folderName = parts[i];
       // Check if sub-folder already exists
       const existing = await axios.get<{ files: { id: string }[] }>(
         'https://www.googleapis.com/drive/v3/files',
@@ -239,6 +250,8 @@ export async function uploadToGoogleDrive(opts: {
         );
         currentFolderId = created.data.id;
       }
+      // Capture the first-level folder ID (the class/section folder)
+      if (i === 0) classFolderId = currentFolderId;
     }
     targetFolderId = currentFolderId;
   }
@@ -308,6 +321,7 @@ export async function uploadToGoogleDrive(opts: {
     driveFileId: uploadResponse.id,
     driveUrl: uploadResponse.webViewLink || uploadResponse.webContentLink || '',
     storagePath: `google_drive:${uploadResponse.id}`,
+    classFolderId: classFolderId,
   };
 }
 

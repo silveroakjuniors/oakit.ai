@@ -109,7 +109,7 @@ export async function uploadToGoogleDrive(opts: {
   actorRole?: string;
   folderId?: string;
   driveFolderName?: string;
-}): Promise<{ driveFileId: string; driveUrl: string; storagePath: string }> {
+}): Promise<{ driveFileId: string; driveUrl: string; storagePath: string; classFolderId: string | null }> {
   const ext = path.extname(opts.originalName) || '';
   const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
 
@@ -204,13 +204,16 @@ export async function uploadToGoogleDrive(opts: {
   const fileBuffer = fs.readFileSync(opts.localPath);
 
   // ── 1. Resolve / create the target folder path ───────────────────────────
-  // Walk SOJS2627 / YYYY-MM-DD [/ EventName] inside the configured root folder
+  // Walk ClassName / YYYY-MM-DD [/ EventName] inside the configured root folder
   let targetFolderId = folderId;
+  let classFolderId: string | null = null; // ID of the first-level (class) subfolder
+
   if (opts.driveFolderName) {
     const parts = opts.driveFolderName.split('/').map(p => p.trim()).filter(Boolean);
     let currentFolderId = folderId;
 
-    for (const folderName of parts) {
+    for (let i = 0; i < parts.length; i++) {
+      const folderName = parts[i];
       // Check if sub-folder already exists
       const existing = await axios.get<{ files: { id: string }[] }>(
         'https://www.googleapis.com/drive/v3/files',
@@ -247,6 +250,8 @@ export async function uploadToGoogleDrive(opts: {
         );
         currentFolderId = created.data.id;
       }
+      // Capture the first-level folder ID (the class/section folder)
+      if (i === 0) classFolderId = currentFolderId;
     }
     targetFolderId = currentFolderId;
   }
@@ -316,6 +321,7 @@ export async function uploadToGoogleDrive(opts: {
     driveFileId: uploadResponse.id,
     driveUrl: uploadResponse.webViewLink || uploadResponse.webContentLink || '',
     storagePath: `google_drive:${uploadResponse.id}`,
+    classFolderId: classFolderId,
   };
 }
 

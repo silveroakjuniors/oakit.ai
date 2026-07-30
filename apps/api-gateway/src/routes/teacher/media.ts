@@ -109,6 +109,24 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
       driveFolderName: driveFolderName,
     });
 
+    // Save the class subfolder ID so parents/teachers can get a direct link
+    if (result.classFolderId) {
+      const classFolderUrl = `https://drive.google.com/drive/folders/${result.classFolderId}`;
+      await pool.query(
+        `INSERT INTO drive_class_folders (school_id, section_id, class_name, drive_folder_id, drive_folder_url, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (school_id, class_name) DO UPDATE
+         SET drive_folder_id = EXCLUDED.drive_folder_id,
+             drive_folder_url = EXCLUDED.drive_folder_url,
+             updated_at = now()`,
+        [school_id, sectionRow.rows[0]?.section_id || null, classFolderName, result.classFolderId, classFolderUrl]
+      ).catch(e => console.error('[drive_class_folders upsert]', e));
+    }
+
+    const classFolderUrl = result.classFolderId
+      ? `https://drive.google.com/drive/folders/${result.classFolderId}`
+      : `https://drive.google.com/drive/folders/${folderId}`;
+
     return res.status(201).json({
       success: true,
       file_id: result.driveFileId,
@@ -117,6 +135,7 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
       file_name: file.originalname,
       folder_path: driveFolderName,
       class_folder: classFolderName,
+      class_folder_url: classFolderUrl,
       file_type: file.mimetype.split('/')[0],
     });
   } catch (err: any) {
