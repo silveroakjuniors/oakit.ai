@@ -726,122 +726,130 @@ export default function SettingsPage() {
 
                 {settings.google_drive_enabled && (
                   <div className="space-y-5">
-                    {/* OAuth Setup Instructions */}
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                      <p className="text-xs font-semibold text-emerald-800 mb-3 flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                        OAuth Setup Required (One-time)
-                      </p>
-                      <ol className="text-[11px] text-emerald-900 space-y-2 ml-3.5">
-                        <li>
-                          <span className="font-semibold">1. Create Service Account:</span> Go to Google Cloud Console → API & Services → Credentials → Create Credentials → Service Account
-                        </li>
-                        <li>
-                          <span className="font-semibold">2. Enable Drive API:</span> API & Services → Library → Search "Google Drive API" → Enable
-                        </li>
-                        <li>
-                          <span className="font-semibold">3. Download JSON Key:</span> Service Account → Keys → Add Key → Create JSON → Save the file
-                        </li>
-                        <li>
-                          <span className="font-semibold">4. Share Your Folder:</span> Right-click the Google Drive folder → "Share" → Add the service account email (from JSON) as Editor
-                        </li>
-                        <li>
-                          <span className="font-semibold">5. Copy Folder ID:</span> Right-click folder → "Get link" → Copy the ID portion
-                        </li>
-                        <li>
-                          <span className="font-semibold">6. Store Credentials:</span> Run the SQL query below in your database to upload the JSON key file content
-                        </li>
-                      </ol>
-                    </div>
 
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                      <p className="text-xs text-amber-800 mb-2 font-semibold">Configuration Required</p>
-                      <p className="text-xs text-amber-700 mb-3">
-                        Enter the Google Drive Folder ID where media will be uploaded. This should be a shared folder accessible by the school.
+                    {/* Step-by-step Setup Guide */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <p className="text-xs font-bold text-blue-900 mb-3 flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0">i</span>
+                        One-time Setup Guide — Personal Google Drive (OAuth)
                       </p>
-                      <label className="text-xs font-semibold text-neutral-700 mb-2 block">Google Drive Folder ID</label>
-                      <input
-                        value={settings.google_drive_folder_id || ''}
-                        onChange={e => setSettings(s => ({ ...s, google_drive_folder_id: e.target.value.trim() }))}
-                        placeholder="e.g., 1abc123xyz..."
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                      />
-                      <p className="text-[10px] text-neutral-400 mt-2">
-                        To find the Folder ID: Right-click folder in Google Drive → "Get link" → Copy the ID from the link
-                      </p>
-                    </div>
+                      <div className="space-y-3 text-[11px] text-blue-900">
 
-                    <div>
-                      <label className="text-xs font-semibold text-neutral-700 mb-2 block">Class Folder Base Name</label>
-                      <input
-                        value={settings.google_drive_class_folder || ''}
-                        onChange={e => setSettings(s => ({ ...s, google_drive_class_folder: e.target.value.trim() }))}
-                        placeholder="e.g., SOJS2627"
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                      />
-                      <p className="text-[10px] text-neutral-400 mt-1">
-                        This prefix will be used for all uploaded files (e.g., "SOJS2627/2025-07-28/EventName"). Default is "SOJS2627".
-                      </p>
-                    </div>
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">1</span>
+                          <div>
+                            <p className="font-semibold">Go to Google Cloud Console</p>
+                            <p className="text-blue-700 mt-0.5">Open <span className="font-mono bg-blue-100 px-1 rounded">console.cloud.google.com</span> and open your project (or create one)</p>
+                          </div>
+                        </div>
 
-                    {/* SQL Command Box */}
-                    <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-4">
-                      <p className="text-xs font-semibold text-neutral-800 mb-2">SQL Command to Upload Service Account Key</p>
-                      <div className="bg-white border border-neutral-200 rounded-lg p-3">
-                        <p className="text-[10px] text-neutral-500 mb-2">
-                          Copy and paste this SQL in your database (update the JSON with your service account credentials):
-                        </p>
-                        <textarea
-                          readOnly
-                          value={`UPDATE school_settings 
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">2</span>
+                          <div>
+                            <p className="font-semibold">Enable Google Drive API</p>
+                            <p className="text-blue-700 mt-0.5">APIs &amp; Services → Library → search "Google Drive API" → Enable</p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">3</span>
+                          <div>
+                            <p className="font-semibold">Create OAuth 2.0 Credentials</p>
+                            <p className="text-blue-700 mt-0.5">APIs &amp; Services → Credentials → Create Credentials → OAuth client ID → Web application</p>
+                            <p className="text-blue-700 mt-0.5">Add redirect URI: <span className="font-mono bg-blue-100 px-1 rounded">https://developers.google.com/oauthplayground</span></p>
+                            <p className="text-blue-700 mt-1 font-medium">Download the JSON — note Client ID and Client Secret</p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">4</span>
+                          <div>
+                            <p className="font-semibold">Set up OAuth Consent Screen</p>
+                            <p className="text-blue-700 mt-0.5">Google Auth Platform → Audience → Make External → add your Gmail as a Test User → Save</p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">5</span>
+                          <div>
+                            <p className="font-semibold">Get Refresh Token from OAuth Playground</p>
+                            <p className="text-blue-700 mt-0.5">Go to <span className="font-mono bg-blue-100 px-1 rounded">developers.google.com/oauthplayground</span></p>
+                            <p className="text-blue-700 mt-0.5">Click gear icon → check "Use your own OAuth credentials" → enter your Client ID &amp; Secret</p>
+                            <p className="text-blue-700 mt-0.5">Left panel → Drive API v3 → select <span className="font-mono bg-blue-100 px-1 rounded">https://www.googleapis.com/auth/drive.file</span></p>
+                            <p className="text-blue-700 mt-0.5">Authorize APIs → sign in with your Gmail → Exchange authorization code for tokens</p>
+                            <p className="text-blue-700 mt-1 font-medium">Copy the <span className="font-mono bg-blue-100 px-1 rounded">refresh_token</span> (starts with 1//)</p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">6</span>
+                          <div>
+                            <p className="font-semibold">Create Google Drive Folder</p>
+                            <p className="text-blue-700 mt-0.5">In your personal Google Drive, create a folder (e.g. "SOJS Class Photos")</p>
+                            <p className="text-blue-700 mt-0.5">Right-click → Get link → copy the ID from the URL (the part after /folders/)</p>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[9px] flex items-center justify-center font-bold shrink-0 mt-0.5">7</span>
+                          <div>
+                            <p className="font-semibold">Store credentials in database (one-time SQL)</p>
+                            <p className="text-blue-700 mt-0.5">Run this in Supabase SQL editor:</p>
+                            <div className="bg-white border border-blue-200 rounded-lg p-2 mt-1.5 font-mono text-[10px] text-neutral-800 leading-relaxed whitespace-pre-wrap break-all">
+{`UPDATE school_settings
 SET google_drive_auth = '{
-  "type": "service_account",
-  "project_id": "your-project-id",
-  "private_key_id": "your-key-id",
-  "private_key": "-----BEGIN PRIVATE KEY-----\\n your-private-key-here\\n-----END PRIVATE KEY-----\\n",
-  "client_email": "your-service-account@your-project.iam.gserviceaccount.com",
-  "client_id": "your-client-id",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token"
+  "type": "oauth",
+  "client_id": "YOUR_CLIENT_ID",
+  "client_secret": "YOUR_CLIENT_SECRET",
+  "refresh_token": "1//YOUR_REFRESH_TOKEN"
 }'::jsonb
-WHERE school_id = 'your-school-uuid';`}
-                          rows={7}
-                          className="w-full bg-neutral-50 border border-neutral-200 rounded-lg p-2 text-[10px] font-mono text-neutral-700 focus:outline-none resize-none"
-                        />
+WHERE school_id = (SELECT id FROM schools LIMIT 1);`}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-neutral-500 mt-2">
-                        Replace <span className="font-mono text-neutral-700 bg-neutral-200 px-0.5 rounded">your-school-uuid</span> with your school's actual UUID from the <span className="font-mono text-neutral-700 bg-neutral-200 px-0.5 rounded">schools</span> table.
-                      </p>
                     </div>
 
-                    {/* Service Account JSON Input */}
-                    <div>
-                      <label className="text-xs font-semibold text-neutral-700 mb-2 block">
-                        Service Account JSON (Optional)
-                        <span className="font-normal text-neutral-400"> - If you have the JSON key file content</span>
-                      </label>
-                      <textarea
-                        value={settings.google_drive_auth || ''}
-                        onChange={e => setSettings(s => ({ ...s, google_drive_auth: e.target.value.trim() }))}
-                        placeholder='{"type":"service_account",...}'
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400/30 min-h-[100px]"
-                      />
-                      <p className="text-[10px] text-neutral-400 mt-1">
-                        Paste your Google Service Account JSON key file content here. This is required for automatic authentication.
-                      </p>
+                    {/* Folder ID input */}
+                    <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 space-y-3">
+                      <p className="text-xs font-semibold text-neutral-800">Drive Folder Settings</p>
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 mb-1.5 block">Google Drive Folder ID</label>
+                        <input
+                          value={settings.google_drive_folder_id || ''}
+                          onChange={e => setSettings(s => ({ ...s, google_drive_folder_id: e.target.value.trim() }))}
+                          placeholder="e.g., 1GgIKBU3yw1TFK-vuQ1v_mdP2vGmO_H9o"
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                        />
+                        <p className="text-[10px] text-neutral-400 mt-1.5">
+                          From the folder URL: drive.google.com/drive/folders/<span className="font-mono font-bold text-neutral-600">THIS_PART</span>
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 mb-1.5 block">Class Folder Name</label>
+                        <input
+                          value={settings.google_drive_class_folder || ''}
+                          onChange={e => setSettings(s => ({ ...s, google_drive_class_folder: e.target.value.trim() }))}
+                          placeholder="e.g., SOJS2627"
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                        />
+                        <p className="text-[10px] text-neutral-400 mt-1">
+                          Photos will be organized as: <span className="font-mono text-neutral-600">SOJS2627 / 2026-07-30 / EventName</span>
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Test Connection Button */}
+                    {/* Test Connection */}
                     <div className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl p-3">
                       <div>
                         <p className="text-xs font-semibold text-emerald-800">Test Connection</p>
                         <p className="text-[10px] text-emerald-700 mt-0.5">
-                          Verify your Google Drive configuration is working
+                          Uploads a test file to verify everything is working
                         </p>
                       </div>
                       <button
                         onClick={handleTestConnection}
-                        disabled={saving}
+                        disabled={googleDriveSaving || saving}
                         className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50"
                       >
                         Test Upload
