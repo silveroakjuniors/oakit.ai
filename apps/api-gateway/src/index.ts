@@ -118,6 +118,7 @@ import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
 import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
+import parentDriveFolderRouter from './routes/parent/driveFolderLink';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
 import pushSubscriptionRouter from './routes/shared/pushSubscription';
@@ -426,6 +427,7 @@ app.use('/api/v1/financial',                financialModuleGuard, financialInsig
 
 // Parent fees (guarded by financialModuleGuard)
 app.use('/api/v1/parent/fees', financialModuleGuard, parentFeesRouter);
+app.use('/api/v1/parent/drive-folder', parentDriveFolderRouter);
 
 app.listen(PORT, () => {
   console.log(`Oakit API Gateway running on port ${PORT}`);

@@ -20,6 +20,7 @@ import adminAnnouncementsRouter, { teacherAnnouncementsRouter, parentAnnouncemen
 import adminDashboardRouter from './routes/admin/dashboard';
 import adminAuditRouter from './routes/admin/audit';
 import timeMachineRouter from './routes/admin/timeMachine';
+import adminGoogleDriveRouter from './routes/admin/googleDrive';
 import teacherPlansRouter from './routes/teacher/plans';
 import teacherCoverageRouter from './routes/teacher/coverage';
 import teacherAttendanceRouter from './routes/teacher/attendance';
@@ -43,6 +44,7 @@ import teacherVideosRouter from './routes/teacher/videos';
 import teacherHrRouter from './routes/teacher/hr';
 import teacherInsightsRouter from './routes/teacher/insights';
 import teacherClassPerformanceRouter from './routes/teacher/classPerformance';
+import teacherFaceAttendanceRouter from './routes/teacher/faceAttendance';
 import principalDashboardRouter from './routes/principal/dashboard';
 import principalAttendanceRouter from './routes/principal/attendance';
 import principalTeachersRouter from './routes/principal/teachers';
@@ -116,6 +118,7 @@ import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
 import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
+import parentDriveFolderRouter from './routes/parent/driveFolderLink';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
 import pushSubscriptionRouter from './routes/shared/pushSubscription';
@@ -277,6 +280,7 @@ app.use('/api/v1/admin/announcements', adminAnnouncementsRouter);
 app.use('/api/v1/admin/dashboard', adminDashboardRouter);
 app.use('/api/v1/admin/audit', adminAuditRouter);
 app.use('/api/v1/admin/time-machine', timeMachineRouter);
+app.use('/api/v1/admin/google-drive', adminGoogleDriveRouter);
 
 // Teacher
 app.use('/api/v1/teacher/plan', teacherPlansRouter);
@@ -387,10 +391,11 @@ app.use('/api/v1/admin/smart-alerts', adminSmartAlertsRouter);
 app.use('/api/v1/admin/uniform', adminUniformRouter);
 app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 
-// Teacher — Student Credentials, Quiz & Report Card
+// Teacher — Student Credentials, Quiz, Report Card & Face Attendance
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
 app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
+app.use('/api/v1/teacher/face-attendance', teacherFaceAttendanceRouter);
 
 // Student Portal
 app.use('/api/v1/student', studentFeedRouter);
@@ -422,6 +427,7 @@ app.use('/api/v1/financial',                financialModuleGuard, financialInsig
 
 // Parent fees (guarded by financialModuleGuard)
 app.use('/api/v1/parent/fees', financialModuleGuard, parentFeesRouter);
+app.use('/api/v1/parent/drive-folder', parentDriveFolderRouter);
 
 app.listen(PORT, () => {
   console.log(`Oakit API Gateway running on port ${PORT}`);

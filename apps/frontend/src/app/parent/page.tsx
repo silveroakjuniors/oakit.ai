@@ -133,7 +133,7 @@ interface Announcement { id: string; title: string; body: string; created_at: st
 interface ParentMessage { teacher_id: string; student_id: string; teacher_name: string; student_name: string; last_message: string; last_sent_at: string; last_sender: string; unread_count: number; }
 interface HomeworkRecord { homework_date: string; status: string; teacher_note: string | null; homework_text: string | null; }
 interface ChatMsg { role: 'user' | 'ai'; text: string; ts: number; }
-interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; classFeed: any[]; invoice: any | null; }
+interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; classFeed: any[]; invoice: any | null; driveFolderUrl?: string | null; }
 
 // --- New Feature Types --------------------------------------------------------
 interface EmergencyContact {
@@ -472,6 +472,14 @@ export default function ParentPage() {
  apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
  .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setCache(prev => ({ ...prev, [childId]: { ...prev[childId], classFeed: posts.slice(0, 8) } })); })
  .catch(() => {});
+ // Fetch Drive folder link for this child's class
+ apiGet<{ drive_folder_url: string | null; class_folder_name: string | null; google_drive_enabled: boolean }>(
+   `/api/v1/parent/drive-folder?section_id=${child.section_id}`, token
+ ).then(d => {
+   if (d?.drive_folder_url) {
+     setCache(prev => ({ ...prev, [childId]: { ...prev[childId], driveFolderUrl: d.drive_folder_url } }));
+   }
+ }).catch(() => {});
  }
  apiGet<any>(`/api/v1/parent/fees/invoice/${childId}`, token)
  .then(inv => setCache(prev => ({ ...prev, [childId]: { ...prev[childId], invoice: inv } })))
@@ -835,7 +843,7 @@ export default function ParentPage() {
 
  {/* -- CLASS FEED COLUMN (desktop only, xl+) -- */}
  <aside className="hidden xl:flex flex-col w-60 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
- <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
+ <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} driveFolderUrl={activeCache?.driveFolderUrl} />
  </aside>
 
  {/* -- WEEKLY SCHEDULE COLUMN (desktop, lg+) -- */}
@@ -1425,7 +1433,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
  {/* Class Feed  mobile/tablet only (desktop xl+ shows in right column) */}
  <div className="xl:hidden">
- <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
+ <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} driveFolderUrl={activeCache?.driveFolderUrl} />
  </div>
 
  {/* Weekly Schedule  mobile/tablet only (desktop lg+ shows in right column) */}
@@ -1447,7 +1455,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 }
 
 // --- Class Feed Column --------------------------------------------------------
-function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any[]; schoolInstagram?: string; token: string }) {
+function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: { classFeed: any[]; schoolInstagram?: string; token: string; driveFolderUrl?: string | null }) {
  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; caption?: string; mediaTypes?: string[] } | null>(null);
  // local like state: postId ? { count, likedByMe }
  const [likes, setLikes] = useState<Record<string, { count: number; likedByMe: boolean }>>(() =>
@@ -1549,9 +1557,25 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  <p className="text-sm font-bold text-gray-800">Class Feed</p>
  <p className="text-xs text-gray-400">Photos from school</p>
  </div>
- <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
- <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
- </span>
+ <div className="flex items-center gap-2">
+   {driveFolderUrl && (
+     <a
+       href={driveFolderUrl}
+       target="_blank"
+       rel="noopener noreferrer"
+       className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full hover:bg-emerald-100 transition-colors"
+       title="View all class photos on Google Drive"
+     >
+       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+       </svg>
+       All Photos
+     </a>
+   )}
+   <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
+   <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
+   </span>
+ </div>
  </div>
 
  {/* Feed items */}
