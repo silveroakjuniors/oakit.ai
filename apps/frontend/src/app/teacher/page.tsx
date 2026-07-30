@@ -226,6 +226,13 @@ export default function TeacherPlanner() {
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
   const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
+  // Google Drive config for class photos link
+  const [config, setConfig] = useState<{
+    google_drive_enabled: boolean;
+    drive_folder_url: string | null;
+    class_folder_name: string | null;
+  } | null>(null);
+
   // Per-chunk homework state (Req 1.1–1.3, 6.5)
   interface HomeworkState { status: 'none' | 'saved'; record?: { id: string; chunk_id: string; topic_label?: string; raw_text: string; formatted_text: string; teacher_comments?: string } }
   const [homeworkByChunk, setHomeworkByChunk] = useState<Record<string, HomeworkState>>({});
@@ -267,17 +274,21 @@ export default function TeacherPlanner() {
   async function loadAll() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
+    // Load Drive config for the class photos button (non-critical)
+    fetch(`${API_BASE}/api/v1/teacher/media/config`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }).then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.google_drive_enabled) setConfig(data); })
+      .catch(() => {});
     // Run AI plan and announcements in parallel — don't let AI block announcements
     if (!todayCompletedRef.current) autoShowDailyPlan(effectiveToday);
     // Load announcements (non-critical)
     apiGet<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>(
       '/api/v1/teacher/announcements', token
     ).then(data => {
-      console.log('[announcements]', data);
       setAnnouncements(data);
-    }).catch(err => {
-      console.error('[announcements error]', err);
-    });
+    }).catch(() => {});
   }
 
   async function loadStreak() {
@@ -935,9 +946,31 @@ export default function TeacherPlanner() {
               );
             })()}
 
-            {/* Photo Suggestions */}
-            {!todayCompleted && plan?.chunks?.length > 0 && (
-              <PhotoSuggestions token={token} sectionId={sectionId} planDate={today} />
+            {/* Google Drive Photos Button */}
+            {config?.google_drive_enabled && config?.drive_folder_url && (
+              <a
+                href={config.drive_folder_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-4 py-3 bg-white rounded-2xl border border-neutral-100 shadow-sm hover:shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-800">View Class Photos</p>
+                    <p className="text-[10px] text-neutral-400 mt-0.5">{config.class_folder_name || 'Google Drive'}</p>
+                  </div>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-emerald-600 transition-colors">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </a>
             )}
 
             {/* Quick help chips */}

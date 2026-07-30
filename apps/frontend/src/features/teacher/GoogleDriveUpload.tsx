@@ -346,17 +346,6 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
               {folderPath && (
                 <p className="text-[10px] text-emerald-700 mt-0.5 font-mono truncate">{folderPath}</p>
               )}
-              {config?.drive_folder_url && (
-                <a
-                  href={config.drive_folder_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-900 mt-1 underline underline-offset-2"
-                >
-                  <FolderOpen size={11} />
-                  View class folder on Google Drive
-                </a>
-              )}
             </div>
           </div>
         )}

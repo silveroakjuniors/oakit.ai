@@ -195,10 +195,23 @@ router.get('/config', async (req: Request, res: Response) => {
       class_folder_name = section_label ? `${class_name} - ${section_label}` : class_name;
     }
 
-    // Build a shareable Drive folder URL for parents
-    const drive_folder_url = row.google_drive_folder_id
-      ? `https://drive.google.com/drive/folders/${row.google_drive_folder_id}`
-      : null;
+    // Build a shareable Drive folder URL — prefer class subfolder, fall back to root
+    let drive_folder_url: string | null = null;
+    if (row.google_drive_folder_id) {
+      // Check if we have a class-specific subfolder already created
+      const classFolderRow = await pool.query(
+        `SELECT drive_folder_id FROM drive_class_folders
+         WHERE school_id = $1 AND class_name = $2 LIMIT 1`,
+        [school_id, class_folder_name]
+      ).catch(() => ({ rows: [] }));
+
+      if (classFolderRow.rows.length > 0) {
+        drive_folder_url = `https://drive.google.com/drive/folders/${classFolderRow.rows[0].drive_folder_id}`;
+      } else {
+        // Fall back to root folder until first upload creates the subfolder
+        drive_folder_url = `https://drive.google.com/drive/folders/${row.google_drive_folder_id}`;
+      }
+    }
 
     console.log('[media config] school_id=%s enabled=%s folder=%s auth=%s class=%s',
       school_id, row.google_drive_enabled, row.google_drive_folder_id, row.auth_configured, class_folder_name);
