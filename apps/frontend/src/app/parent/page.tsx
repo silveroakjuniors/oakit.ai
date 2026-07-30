@@ -823,6 +823,7 @@ export default function ParentPage() {
  parentProfile={parentProfile}
  classFeed={classFeed}
  schoolInstagram={schoolInstagram}
+ driveFolderUrl={activeCache?.driveFolderUrl ?? null}
  />
  )}
  {tab === 'calendar' && <CalendarTab token={token} activeChild={activeChild} />}
@@ -1060,7 +1061,7 @@ function StudentProfileModal({ child, token, onClose }: { child: Child; token: s
 }
 
 // --- Home Tab ----------------------------------------------------------------
-function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed, schoolInstagram }: {
+function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed, schoolInstagram, driveFolderUrl }: {
  feed: ChildFeed | null; progress: ProgressData | null; attendance: AttendanceData | null; activeChild: Child | null;
  announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
  token: string; onChildUpdate: (url: string) => void;
@@ -1068,6 +1069,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  parentProfile: { name: string; mobile: string; mobile_can_update?: boolean } | null;
  classFeed: any[];
  schoolInstagram: string;
+ driveFolderUrl?: string | null;
 }) {
  const [aiSummary, setAiSummary] = useState<string | null>(null);
  const [summaryLoading, setSummaryLoading] = useState(false);
@@ -1433,7 +1435,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 
  {/* Class Feed  mobile/tablet only (desktop xl+ shows in right column) */}
  <div className="xl:hidden">
- <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} driveFolderUrl={activeCache?.driveFolderUrl} />
+ <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} driveFolderUrl={driveFolderUrl} />
  </div>
 
  {/* Weekly Schedule  mobile/tablet only (desktop lg+ shows in right column) */}
