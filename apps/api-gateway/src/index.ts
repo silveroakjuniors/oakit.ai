@@ -20,6 +20,7 @@ import adminAnnouncementsRouter, { teacherAnnouncementsRouter, parentAnnouncemen
 import adminDashboardRouter from './routes/admin/dashboard';
 import adminAuditRouter from './routes/admin/audit';
 import timeMachineRouter from './routes/admin/timeMachine';
+import adminGoogleDriveRouter from './routes/admin/googleDrive';
 import teacherPlansRouter from './routes/teacher/plans';
 import teacherCoverageRouter from './routes/teacher/coverage';
 import teacherAttendanceRouter from './routes/teacher/attendance';
@@ -27,6 +28,7 @@ import teacherCompletionRouter from './routes/teacher/completion';
 import teacherExportRouter from './routes/teacher/export';
 import teacherContextRouter from './routes/teacher/context';
 import teacherSectionsRouter from './routes/teacher/sections';
+import teacherMediaRouter from './routes/teacher/media';
 import teacherNotesRouter from './routes/teacher/notes';
 import teacherStreaksRouter from './routes/teacher/streaks';
 import teacherCalendarRouter from './routes/teacher/calendar';
@@ -42,6 +44,7 @@ import teacherVideosRouter from './routes/teacher/videos';
 import teacherHrRouter from './routes/teacher/hr';
 import teacherInsightsRouter from './routes/teacher/insights';
 import teacherClassPerformanceRouter from './routes/teacher/classPerformance';
+import teacherFaceAttendanceRouter from './routes/teacher/faceAttendance';
 import principalDashboardRouter from './routes/principal/dashboard';
 import principalAttendanceRouter from './routes/principal/attendance';
 import principalTeachersRouter from './routes/principal/teachers';
@@ -276,6 +279,7 @@ app.use('/api/v1/admin/announcements', adminAnnouncementsRouter);
 app.use('/api/v1/admin/dashboard', adminDashboardRouter);
 app.use('/api/v1/admin/audit', adminAuditRouter);
 app.use('/api/v1/admin/time-machine', timeMachineRouter);
+app.use('/api/v1/admin/google-drive', adminGoogleDriveRouter);
 
 // Teacher
 app.use('/api/v1/teacher/plan', teacherPlansRouter);
@@ -285,6 +289,7 @@ app.use('/api/v1/teacher/completion', teacherCompletionRouter);
 app.use('/api/v1/teacher/export', teacherExportRouter);
 app.use('/api/v1/teacher/context', teacherContextRouter);
 app.use('/api/v1/teacher/sections', teacherSectionsRouter);
+app.use('/api/v1/teacher/media', teacherMediaRouter);
 app.use('/api/v1/teacher/notes', teacherNotesRouter);
 app.use('/api/v1/teacher/homework', teacherHomeworkRouter);
 app.use('/api/v1/teacher/supplementary', teacherSupplementaryRouter);
@@ -385,10 +390,11 @@ app.use('/api/v1/admin/smart-alerts', adminSmartAlertsRouter);
 app.use('/api/v1/admin/uniform', adminUniformRouter);
 app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 
-// Teacher — Student Credentials, Quiz & Report Card
+// Teacher — Student Credentials, Quiz, Report Card & Face Attendance
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
 app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
+app.use('/api/v1/teacher/face-attendance', teacherFaceAttendanceRouter);
 
 // Student Portal
 app.use('/api/v1/student', studentFeedRouter);

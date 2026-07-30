@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { API_BASE, apiGet, apiPut, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { applyBrandColor, saveTagline } from '@/lib/branding';
+import { FileText, X } from 'lucide-react';
 
 interface Settings {
   school_name: string;
@@ -18,6 +19,10 @@ interface Settings {
   primary_color: string;
   tagline: string;
   instagram_handle: string;
+  google_drive_enabled: boolean;
+  google_drive_folder_id: string | null;
+  google_drive_class_folder: string;
+  google_drive_auth?: string | null;
 }
 
 interface PortalClass {
@@ -294,16 +299,24 @@ export default function SettingsPage() {
     school_name: '', subdomain: '', contact_email: '',
     contact_phone: '', contact_address: '', notes_expiry_days: 14,
     ai_plan_mode: 'standard', voice_enabled: false, logo_url: null, primary_color: '#1A3C2E', tagline: '', instagram_handle: '',
+    google_drive_enabled: false, google_drive_folder_id: null, google_drive_class_folder: 'SOJS2627',
+    google_drive_auth: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [showGoogleDriveConfig, setShowGoogleDriveConfig] = useState(false);
+  const [googleDriveSaving, setGoogleDriveSaving] = useState(false);
 
   useEffect(() => {
     apiGet<Settings>('/api/v1/admin/settings', token)
-      .then(s => { setSettings(s); setLoading(false); })
+      .then(s => { 
+        // Merge with defaults to ensure all fields exist
+        setSettings(prev => ({ ...prev, ...s })); 
+        setLoading(false); 
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -318,6 +331,71 @@ export default function SettingsPage() {
       setTimeout(() => setSaved(false), 3000);
     } catch (e: any) { setError(e.message || 'Failed to save'); }
     finally { setSaving(false); }
+  }
+
+  async function handleTestConnection() {
+    if (!settings.google_drive_enabled) {
+      setError('Google Drive is not enabled');
+      return;
+    }
+    if (!settings.google_drive_folder_id) {
+      setError('Google Drive folder ID is required for testing');
+      return;
+    }
+
+    setError('');
+    setSaving(true);
+    try {
+      const res = await apiPost<{ success: boolean; message?: string; error?: string }>(
+        '/api/v1/admin/google-drive/test', {}, token
+      );
+      if (res.success) {
+        setError(`✓ ${res.message}`);
+        setTimeout(() => setError(''), 5000);
+      } else {
+        setError(`Test failed: ${res.error || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      const errData = e.message || 'Failed to test connection';
+      setError(`Test failed: ${errData}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveGoogleDriveConfig() {
+    setGoogleDriveSaving(true); setError('');
+    try {
+      // Validate JSON if provided
+      if (settings.google_drive_auth) {
+        try { JSON.parse(settings.google_drive_auth); }
+        catch { setError('Service Account JSON is invalid. Please paste the full JSON key file content.'); setGoogleDriveSaving(false); return; }
+      }
+      const res = await apiPut<{ 
+        success: boolean; 
+        google_drive_enabled: boolean; 
+        google_drive_folder_id: string | null 
+      }>('/api/v1/admin/google-drive/config', {
+        enabled: settings.google_drive_enabled,
+        folder_id: settings.google_drive_folder_id,
+        class_folder: settings.google_drive_class_folder,
+        auth: settings.google_drive_auth || null,
+      }, token);
+      
+      if (res.success) {
+        setSettings(s => ({
+          ...s,
+          google_drive_enabled: res.google_drive_enabled,
+          google_drive_folder_id: res.google_drive_folder_id,
+        }));
+        setError('✓ Google Drive configuration saved successfully');
+        setTimeout(() => { setError(''); setShowGoogleDriveConfig(false); }, 2000);
+      }
+    } catch (e: any) {
+      setError(e.message || 'Failed to save Google Drive configuration');
+    } finally {
+      setGoogleDriveSaving(false);
+    }
   }
 
   async function uploadLogo(file: File) {
@@ -577,8 +655,215 @@ export default function SettingsPage() {
           {/* Student Portal Config */}
           <StudentPortalSection token={token} />
 
+          {/* Google Drive Configuration */}
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-neutral-100 bg-emerald-50/50">
+              <p className="text-sm font-semibold text-neutral-800">Google Drive Upload</p>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                Configure Google Drive for teachers to upload photos and videos
+              </p>
+            </div>
+            <div className="p-5">
+              <div className="flex items-start gap-4 mb-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${settings.google_drive_enabled ? 'bg-emerald-100' : 'bg-neutral-100'}`}>
+                  <FileText className={`w-6 h-6 ${settings.google_drive_enabled ? 'text-emerald-600' : 'text-neutral-400'}`} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-neutral-800 mb-1">
+                    {settings.google_drive_enabled ? 'Google Drive is enabled' : 'Google Drive is not configured'}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    {settings.google_drive_enabled 
+                      ? `Media uploaded by teachers will be stored in folder: ${settings.google_drive_folder_id || '(not set)'}` 
+                      : 'Admin needs to configure Google Drive (OAuth + folder ID) for this feature to work'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowGoogleDriveConfig(true)}
+                className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors">
+                {settings.google_drive_enabled ? 'Manage Configuration' : 'Configure Google Drive'}
+              </button>
+            </div>
+          </div>
+
           {/* Student Credentials */}
           <StudentCredentialsSection token={token} />
+        </div>
+      )}
+
+      {/* Google Drive Configuration Modal */}
+      {showGoogleDriveConfig && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-8">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
+            <div className="px-5 pt-5 pb-3 border-b border-neutral-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-600" />
+                <p className="text-base font-bold text-neutral-900">Google Drive Configuration</p>
+              </div>
+              <button onClick={() => setShowGoogleDriveConfig(false)} className="w-7 h-7 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center shrink-0">
+                <X className="w-4 h-4 text-neutral-500" />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto max-h-[calc(90vh-10rem)]">
+              <p className="text-sm text-neutral-600 mb-4">
+                Configure Google Drive for teachers to upload photos and videos. Each class will have its own folder organized by date.
+              </p>
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-800">Enable Google Drive Uploads</p>
+                    <p className="text-xs text-neutral-500">Allow teachers to upload media directly to Google Drive</p>
+                  </div>
+                  <button
+                    onClick={() => setSettings(s => ({ ...s, google_drive_enabled: !s.google_drive_enabled }))}
+                    disabled={saving}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.google_drive_enabled ? 'bg-emerald-500' : 'bg-neutral-300'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${settings.google_drive_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+
+                {settings.google_drive_enabled && (
+                  <div className="space-y-5">
+                    {/* OAuth Setup Instructions */}
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-emerald-800 mb-3 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                        OAuth Setup Required (One-time)
+                      </p>
+                      <ol className="text-[11px] text-emerald-900 space-y-2 ml-3.5">
+                        <li>
+                          <span className="font-semibold">1. Create Service Account:</span> Go to Google Cloud Console → API & Services → Credentials → Create Credentials → Service Account
+                        </li>
+                        <li>
+                          <span className="font-semibold">2. Enable Drive API:</span> API & Services → Library → Search "Google Drive API" → Enable
+                        </li>
+                        <li>
+                          <span className="font-semibold">3. Download JSON Key:</span> Service Account → Keys → Add Key → Create JSON → Save the file
+                        </li>
+                        <li>
+                          <span className="font-semibold">4. Share Your Folder:</span> Right-click the Google Drive folder → "Share" → Add the service account email (from JSON) as Editor
+                        </li>
+                        <li>
+                          <span className="font-semibold">5. Copy Folder ID:</span> Right-click folder → "Get link" → Copy the ID portion
+                        </li>
+                        <li>
+                          <span className="font-semibold">6. Store Credentials:</span> Run the SQL query below in your database to upload the JSON key file content
+                        </li>
+                      </ol>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <p className="text-xs text-amber-800 mb-2 font-semibold">Configuration Required</p>
+                      <p className="text-xs text-amber-700 mb-3">
+                        Enter the Google Drive Folder ID where media will be uploaded. This should be a shared folder accessible by the school.
+                      </p>
+                      <label className="text-xs font-semibold text-neutral-700 mb-2 block">Google Drive Folder ID</label>
+                      <input
+                        value={settings.google_drive_folder_id || ''}
+                        onChange={e => setSettings(s => ({ ...s, google_drive_folder_id: e.target.value.trim() }))}
+                        placeholder="e.g., 1abc123xyz..."
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                      />
+                      <p className="text-[10px] text-neutral-400 mt-2">
+                        To find the Folder ID: Right-click folder in Google Drive → "Get link" → Copy the ID from the link
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-neutral-700 mb-2 block">Class Folder Base Name</label>
+                      <input
+                        value={settings.google_drive_class_folder || ''}
+                        onChange={e => setSettings(s => ({ ...s, google_drive_class_folder: e.target.value.trim() }))}
+                        placeholder="e.g., SOJS2627"
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                      />
+                      <p className="text-[10px] text-neutral-400 mt-1">
+                        This prefix will be used for all uploaded files (e.g., "SOJS2627/2025-07-28/EventName"). Default is "SOJS2627".
+                      </p>
+                    </div>
+
+                    {/* SQL Command Box */}
+                    <div className="bg-neutral-100 border border-neutral-200 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-neutral-800 mb-2">SQL Command to Upload Service Account Key</p>
+                      <div className="bg-white border border-neutral-200 rounded-lg p-3">
+                        <p className="text-[10px] text-neutral-500 mb-2">
+                          Copy and paste this SQL in your database (update the JSON with your service account credentials):
+                        </p>
+                        <textarea
+                          readOnly
+                          value={`UPDATE school_settings 
+SET google_drive_auth = '{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "your-key-id",
+  "private_key": "-----BEGIN PRIVATE KEY-----\\n your-private-key-here\\n-----END PRIVATE KEY-----\\n",
+  "client_email": "your-service-account@your-project.iam.gserviceaccount.com",
+  "client_id": "your-client-id",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token"
+}'::jsonb
+WHERE school_id = 'your-school-uuid';`}
+                          rows={7}
+                          className="w-full bg-neutral-50 border border-neutral-200 rounded-lg p-2 text-[10px] font-mono text-neutral-700 focus:outline-none resize-none"
+                        />
+                      </div>
+                      <p className="text-[10px] text-neutral-500 mt-2">
+                        Replace <span className="font-mono text-neutral-700 bg-neutral-200 px-0.5 rounded">your-school-uuid</span> with your school's actual UUID from the <span className="font-mono text-neutral-700 bg-neutral-200 px-0.5 rounded">schools</span> table.
+                      </p>
+                    </div>
+
+                    {/* Service Account JSON Input */}
+                    <div>
+                      <label className="text-xs font-semibold text-neutral-700 mb-2 block">
+                        Service Account JSON (Optional)
+                        <span className="font-normal text-neutral-400"> - If you have the JSON key file content</span>
+                      </label>
+                      <textarea
+                        value={settings.google_drive_auth || ''}
+                        onChange={e => setSettings(s => ({ ...s, google_drive_auth: e.target.value.trim() }))}
+                        placeholder='{"type":"service_account",...}'
+                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm font-mono text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400/30 min-h-[100px]"
+                      />
+                      <p className="text-[10px] text-neutral-400 mt-1">
+                        Paste your Google Service Account JSON key file content here. This is required for automatic authentication.
+                      </p>
+                    </div>
+
+                    {/* Test Connection Button */}
+                    <div className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                      <div>
+                        <p className="text-xs font-semibold text-emerald-800">Test Connection</p>
+                        <p className="text-[10px] text-emerald-700 mt-0.5">
+                          Verify your Google Drive configuration is working
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleTestConnection}
+                        disabled={saving}
+                        className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        Test Upload
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-neutral-100 flex items-center justify-between bg-neutral-50/50 shrink-0">
+              <p className="text-[10px] text-neutral-400">
+                Note: Service account JSON with private key is used to generate access tokens automatically.
+              </p>
+              <div className="flex items-center gap-2">
+                <button onClick={handleSaveGoogleDriveConfig}
+                  disabled={saving || (settings.google_drive_enabled && !settings.google_drive_folder_id)}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50">
+                  {saving ? 'Saving...' : 'Save Configuration'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

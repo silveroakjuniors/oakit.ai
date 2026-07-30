@@ -18,6 +18,7 @@ import SessionRecorder from '@/components/SessionRecorder';
 import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
+import GoogleDriveUpload from '@/features/teacher/GoogleDriveUpload';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
@@ -790,6 +791,9 @@ export default function TeacherPlanner() {
             action={{ label: 'Add observations →', onClick: () => router.push('/teacher/journey') }}
           />
         )}
+
+        {/* Google Drive Upload */}
+        <GoogleDriveUpload token={token} />
 
         {/* Today completed */}
         {todayCompleted ? (
