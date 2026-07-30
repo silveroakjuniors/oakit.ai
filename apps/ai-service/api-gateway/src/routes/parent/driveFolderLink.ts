@@ -27,27 +27,32 @@ router.get('/', async (req: Request, res: Response) => {
 
     const rootFolderId = settings.rows[0].google_drive_folder_id;
 
-    // Try to get the class-specific subfolder
+    // Try to get the class-specific subfolder (graceful fallback if table doesn't exist)
     if (section_id) {
-      // First try by section_id
-      const bySection = await pool.query(
-        `SELECT drive_folder_id, drive_folder_url, class_name
-         FROM drive_class_folders
-         WHERE school_id = $1 AND section_id = $2
-         LIMIT 1`,
-        [school_id, section_id]
-      );
+      let classFolderData: { drive_folder_url?: string; drive_folder_id?: string; class_name?: string } | null = null;
 
-      if (bySection.rows.length > 0) {
+      try {
+        // First try by section_id
+        const bySection = await pool.query(
+          `SELECT drive_folder_id, drive_folder_url, class_name
+           FROM drive_class_folders
+           WHERE school_id = $1 AND section_id = $2
+           LIMIT 1`,
+          [school_id, section_id]
+        );
+        if (bySection.rows.length > 0) classFolderData = bySection.rows[0];
+      } catch { /* table may not exist yet */ }
+
+      if (classFolderData) {
         return res.json({
           google_drive_enabled: true,
-          drive_folder_url: bySection.rows[0].drive_folder_url ||
-            `https://drive.google.com/drive/folders/${bySection.rows[0].drive_folder_id}`,
-          class_name: bySection.rows[0].class_name,
+          drive_folder_url: classFolderData.drive_folder_url ||
+            `https://drive.google.com/drive/folders/${classFolderData.drive_folder_id}`,
+          class_name: classFolderData.class_name,
         });
       }
 
-      // Try to match by class name using the section
+      // Try to match by class name
       const sectionRow = await pool.query(
         `SELECT c.name AS class_name, s.label AS section_label
          FROM sections s JOIN classes c ON c.id = s.class_id
@@ -59,22 +64,23 @@ router.get('/', async (req: Request, res: Response) => {
         const { class_name, section_label } = sectionRow.rows[0];
         const folderName = section_label ? `${class_name} - ${section_label}` : class_name;
 
-        const byName = await pool.query(
-          `SELECT drive_folder_id, drive_folder_url FROM drive_class_folders
-           WHERE school_id = $1 AND class_name = $2 LIMIT 1`,
-          [school_id, folderName]
-        );
+        try {
+          const byName = await pool.query(
+            `SELECT drive_folder_id, drive_folder_url FROM drive_class_folders
+             WHERE school_id = $1 AND class_name = $2 LIMIT 1`,
+            [school_id, folderName]
+          );
+          if (byName.rows.length > 0) {
+            return res.json({
+              google_drive_enabled: true,
+              drive_folder_url: byName.rows[0].drive_folder_url ||
+                `https://drive.google.com/drive/folders/${byName.rows[0].drive_folder_id}`,
+              class_name: folderName,
+            });
+          }
+        } catch { /* table may not exist yet */ }
 
-        if (byName.rows.length > 0) {
-          return res.json({
-            google_drive_enabled: true,
-            drive_folder_url: byName.rows[0].drive_folder_url ||
-              `https://drive.google.com/drive/folders/${byName.rows[0].drive_folder_id}`,
-            class_name: folderName,
-          });
-        }
-
-        // Class folder not yet created — return root folder
+        // Folder not yet created — return root folder
         return res.json({
           google_drive_enabled: true,
           drive_folder_url: `https://drive.google.com/drive/folders/${rootFolderId}`,

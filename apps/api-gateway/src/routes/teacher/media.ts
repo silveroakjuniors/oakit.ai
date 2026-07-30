@@ -195,22 +195,27 @@ router.get('/config', async (req: Request, res: Response) => {
       class_folder_name = section_label ? `${class_name} - ${section_label}` : class_name;
     }
 
-    // Build a shareable Drive folder URL — prefer class subfolder, fall back to root
+    // Build a shareable Drive folder URL — prefer class subfolder if known, else root folder
     let drive_folder_url: string | null = null;
     if (row.google_drive_folder_id) {
-      // Check if we have a class-specific subfolder already created
-      const classFolderRow = await pool.query(
-        `SELECT drive_folder_id FROM drive_class_folders
-         WHERE school_id = $1 AND class_name = $2 LIMIT 1`,
-        [school_id, class_folder_name]
-      ).catch(() => ({ rows: [] }));
-
-      if (classFolderRow.rows.length > 0) {
-        drive_folder_url = `https://drive.google.com/drive/folders/${classFolderRow.rows[0].drive_folder_id}`;
-      } else {
-        // Fall back to root folder until first upload creates the subfolder
-        drive_folder_url = `https://drive.google.com/drive/folders/${row.google_drive_folder_id}`;
+      // Try to get class-specific subfolder (graceful fallback if table doesn't exist yet)
+      let classFolderId: string | null = null;
+      try {
+        const classFolderRow = await pool.query(
+          `SELECT drive_folder_id FROM drive_class_folders
+           WHERE school_id = $1 AND class_name = $2 LIMIT 1`,
+          [school_id, class_folder_name]
+        );
+        if (classFolderRow.rows.length > 0) {
+          classFolderId = classFolderRow.rows[0].drive_folder_id;
+        }
+      } catch {
+        // drive_class_folders table may not exist yet — use root folder
       }
+
+      drive_folder_url = classFolderId
+        ? `https://drive.google.com/drive/folders/${classFolderId}`
+        : `https://drive.google.com/drive/folders/${row.google_drive_folder_id}`;
     }
 
     console.log('[media config] school_id=%s enabled=%s folder=%s auth=%s class=%s',
