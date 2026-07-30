@@ -7,6 +7,8 @@ interface DriveConfig {
   google_drive_enabled: boolean;
   google_drive_folder_id: string | null;
   google_drive_class_folder: string | null;
+  class_folder_name: string | null;
+  drive_folder_url: string | null;
   auth_configured: boolean;
 }
 
@@ -34,7 +36,7 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
   const inputRef = useRef<HTMLInputElement>(null);
 
   const today = new Date().toISOString().split('T')[0];
-  const base = config?.google_drive_class_folder || 'SOJS2627'; // Use class folder from config
+  const base = config?.class_folder_name || config?.google_drive_class_folder || 'Class';
   const previewPath = loadingConfig
     ? 'Loading...'
     : eventName.trim()
@@ -337,12 +339,23 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
         {successCount > 0 && !uploading && (
           <div className="flex items-start gap-2.5 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5">
             <CheckCircle2 size={14} className="text-emerald-600 shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-emerald-800">
-                {successCount} file{successCount > 1 ? 's' : ''} uploaded
+                {successCount} file{successCount > 1 ? 's' : ''} uploaded to Google Drive
               </p>
               {folderPath && (
-                <p className="text-[10px] text-emerald-700 mt-0.5 font-mono">{folderPath}</p>
+                <p className="text-[10px] text-emerald-700 mt-0.5 font-mono truncate">{folderPath}</p>
+              )}
+              {config?.drive_folder_url && (
+                <a
+                  href={config.drive_folder_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-900 mt-1 underline underline-offset-2"
+                >
+                  <FolderOpen size={11} />
+                  View class folder on Google Drive
+                </a>
               )}
             </div>
           </div>

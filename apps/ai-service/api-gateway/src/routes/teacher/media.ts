@@ -65,11 +65,31 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
     }
 
     const folderId = config.rows[0].google_drive_folder_id;
-    const baseFolderName = config.rows[0].google_drive_class_folder || 'SOJS2627';
     const today = new Date().toISOString().split('T')[0];
-    
-    // Build folder path: SOJS2627/YYYY-MM-DD[/EventName]
-    let driveFolderName = `${baseFolderName}/${today}`;
+
+    // Look up the teacher's primary section → class name + section label
+    const sectionRow = await pool.query(
+      `SELECT c.name AS class_name, s.label AS section_label
+       FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       LEFT JOIN teacher_sections ts ON ts.section_id = s.id AND ts.teacher_id = $1
+       WHERE s.school_id = $2
+         AND (ts.teacher_id IS NOT NULL OR s.class_teacher_id = $1)
+       LIMIT 1`,
+      [user_id, school_id]
+    );
+
+    // Build folder path: ClassName - Section Label / YYYY-MM-DD [/ EventName]
+    let classFolderName = config.rows[0].google_drive_class_folder || 'Classes';
+    if (sectionRow.rows.length > 0) {
+      const { class_name, section_label } = sectionRow.rows[0];
+      // e.g. "Nursery - Section A" or "Play Group" (if only one section)
+      classFolderName = section_label
+        ? `${class_name} - ${section_label}`
+        : class_name;
+    }
+
+    let driveFolderName = `${classFolderName}/${today}`;
     if (event_name && typeof event_name === 'string' && event_name.trim()) {
       driveFolderName += `/${event_name.trim()}`;
     }
@@ -96,6 +116,7 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
       display_url: result.driveUrl,
       file_name: file.originalname,
       folder_path: driveFolderName,
+      class_folder: classFolderName,
       file_type: file.mimetype.split('/')[0],
     });
   } catch (err: any) {
@@ -111,7 +132,7 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
  */
 router.get('/config', async (req: Request, res: Response) => {
   try {
-    const { school_id } = req.user!;
+    const { school_id, user_id } = req.user!;
 
     // Upsert a settings row if one doesn't exist yet
     await pool.query(
@@ -130,6 +151,18 @@ router.get('/config', async (req: Request, res: Response) => {
       [school_id]
     );
 
+    // Look up teacher's class/section for the path preview
+    const sectionRow = await pool.query(
+      `SELECT c.name AS class_name, s.label AS section_label
+       FROM sections s
+       JOIN classes c ON c.id = s.class_id
+       LEFT JOIN teacher_sections ts ON ts.section_id = s.id AND ts.teacher_id = $1
+       WHERE s.school_id = $2
+         AND (ts.teacher_id IS NOT NULL OR s.class_teacher_id = $1)
+       LIMIT 1`,
+      [user_id, school_id]
+    );
+
     const row = config.rows[0] ?? {
       google_drive_enabled: false,
       google_drive_folder_id: null,
@@ -137,10 +170,21 @@ router.get('/config', async (req: Request, res: Response) => {
       auth_configured: false,
     };
 
-    console.log('[media config] school_id=%s enabled=%s folder=%s auth=%s',
-      school_id, row.google_drive_enabled, row.google_drive_folder_id, row.auth_configured);
+    let class_folder_name = row.google_drive_class_folder || 'Classes';
+    if (sectionRow.rows.length > 0) {
+      const { class_name, section_label } = sectionRow.rows[0];
+      class_folder_name = section_label ? `${class_name} - ${section_label}` : class_name;
+    }
 
-    return res.json(row);
+    // Build a shareable Drive folder URL for parents
+    const drive_folder_url = row.google_drive_folder_id
+      ? `https://drive.google.com/drive/folders/${row.google_drive_folder_id}`
+      : null;
+
+    console.log('[media config] school_id=%s enabled=%s folder=%s auth=%s class=%s',
+      school_id, row.google_drive_enabled, row.google_drive_folder_id, row.auth_configured, class_folder_name);
+
+    return res.json({ ...row, class_folder_name, drive_folder_url });
   } catch (err) {
     console.error('[media config]', err);
     return res.status(500).json({ error: 'Failed to load configuration' });
