@@ -31,8 +31,12 @@ export default function UploadModal({ token, sectionId, onClose, onPosted }: Upl
     for (const f of Array.from(selected)) {
       if (!allTypes.includes(f.type)) continue;
       if (VIDEO_TYPES.includes(f.type)) {
-        if (videoCount >= 1) { setError('Maximum 1 video per post'); continue; }
-        if (f.size > MAX_VIDEO_MB * 1024 * 1024) { setError(`Video must be under ${MAX_VIDEO_MB}MB`); continue; }
+        if (videoCount >= 1) { setError('Only 1 video per post is allowed. Remove the existing video to add a new one.'); continue; }
+        if (f.size > MAX_VIDEO_MB * 1024 * 1024) {
+          const sizeMB = (f.size / 1024 / 1024).toFixed(1);
+          setError(`"${f.name}" is ${sizeMB}MB — videos must be under ${MAX_VIDEO_MB}MB. Try trimming the video or record a shorter clip.`);
+          continue;
+        }
         videoCount++;
       }
       valid.push(f);
@@ -166,9 +170,13 @@ export default function UploadModal({ token, sectionId, onClose, onPosted }: Upl
             onChange={e => handleFiles(e.target.files)} />
 
           {hasVideo && (
-            <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-              Videos are limited to {MAX_VIDEO_MB}MB and will be automatically removed after 5 days to save storage.
-            </p>
+            <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <p className="text-[10px] text-emerald-800 leading-relaxed">
+                Video added. Parents will be able to watch it in the class feed.
+                <span className="text-emerald-600 block mt-0.5">Max size: 25MB · Kept for 5 days</span>
+              </p>
+            </div>
           )}
 
           {/* Caption + Ask Oakie */}
@@ -197,7 +205,12 @@ export default function UploadModal({ token, sectionId, onClose, onPosted }: Upl
           </div>
           <p className="text-[10px] text-neutral-400 -mt-2 text-right">{caption.length}/500</p>
 
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <p className="text-xs text-red-700 leading-relaxed">{error}</p>
+            </div>
+          )}
 
           <button
             onClick={handleSubmit}
