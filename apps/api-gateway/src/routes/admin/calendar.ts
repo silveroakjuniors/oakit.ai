@@ -1120,11 +1120,8 @@ router.delete('/plans/class/:class_id', async (req: Request, res: Response) => {
     const sectionIds = sections.rows.map((r: any) => r.id);
     if (sectionIds.length === 0) return res.json({ deleted: 0, message: 'No sections found' });
 
-    // Delete daily_completions first (they reference sections)
-    await pool.query(
-      'DELETE FROM daily_completions WHERE section_id = ANY($1::uuid[]) AND school_id = $2',
-      [sectionIds, school_id]
-    );
+    // IMPORTANT: daily_completions are teacher history — never delete them when clearing plans.
+    // Only delete the day_plans schedule.
 
     // Delete day_plans
     const result = await pool.query(
@@ -1148,11 +1145,8 @@ router.delete('/plans/:section_id/month', async (req: Request, res: Response) =>
     const year = parseInt(req.query.year as string);
     if (!month || !year) return res.status(400).json({ error: 'month and year are required' });
 
-    await pool.query(
-      `DELETE FROM daily_completions WHERE section_id = $1 AND school_id = $2
-       AND EXTRACT(MONTH FROM completion_date) = $3 AND EXTRACT(YEAR FROM completion_date) = $4`,
-      [section_id, school_id, month, year]
-    );
+    // IMPORTANT: daily_completions are teacher history — never delete them when clearing plans.
+    // Only force-regenerate (via generate-plans with force=true) should clear completions for that month.
     const result = await pool.query(
       `DELETE FROM day_plans WHERE section_id = $1 AND school_id = $2
        AND EXTRACT(MONTH FROM plan_date) = $3 AND EXTRACT(YEAR FROM plan_date) = $4 RETURNING id`,
