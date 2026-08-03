@@ -878,7 +878,8 @@ router.post('/generate-plans', async (req: Request, res: Response) => {
     const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
     const mode = month ? 'monthly' : 'full_year';
 
-    // Fire and forget
+    // Fire and forget — generate the requested month
+    // If monthly + force, also cascade-regenerate all subsequent months so chunk_start_idx stays correct
     Promise.all(
       sections.map(s =>
         axios.post(`${AI_URL}/internal/generate-plans`, {
@@ -889,7 +890,49 @@ router.post('/generate-plans', async (req: Request, res: Response) => {
           console.error(`Plan generation failed for section ${s.id}:`, err.message)
         )
       )
-    ).then(() => console.log(`Plan generation (${mode}) complete for class ${class_id}`));
+    ).then(async () => {
+      console.log(`Plan generation (${mode}) complete for class ${class_id}`);
+
+      // Cascade: after a monthly force-regeneration, regenerate all subsequent months
+      // so chunk_start_idx (which counts prior curriculum days) stays correct for each month.
+      if (month && plan_year && force) {
+        const calRow = await pool.query(
+          `SELECT end_date FROM school_calendar WHERE school_id = $1 AND academic_year = $2 LIMIT 1`,
+          [school_id, academic_year]
+        ).catch(() => null);
+
+        if (calRow && calRow.rows.length > 0) {
+          const calEnd = new Date(calRow.rows[0].end_date);
+          let cascadeMonth = month + 1;
+          let cascadeYear = plan_year;
+          if (cascadeMonth > 12) { cascadeMonth = 1; cascadeYear++; }
+
+          while (new Date(cascadeYear, cascadeMonth - 1, 1) <= calEnd) {
+            // Delete existing plans for cascade month
+            for (const s of sections) {
+              await pool.query(
+                `DELETE FROM day_plans WHERE section_id = $1 AND school_id = $2
+                   AND EXTRACT(MONTH FROM plan_date) = $3 AND EXTRACT(YEAR FROM plan_date) = $4`,
+                [s.id, school_id, cascadeMonth, cascadeYear]
+              ).catch(() => {});
+            }
+            // Regenerate
+            await Promise.all(sections.map(s =>
+              axios.post(`${AI_URL}/internal/generate-plans`, {
+                class_id, section_id: s.id, school_id, academic_year,
+                month: cascadeMonth, plan_year: cascadeYear,
+              }, { timeout: 120000 }).catch(err =>
+                console.error(`Cascade generation failed for section ${s.id} month ${cascadeMonth}/${cascadeYear}:`, err.message)
+              )
+            ));
+            console.log(`Cascade regenerated ${cascadeMonth}/${cascadeYear} for class ${class_id}`);
+
+            cascadeMonth++;
+            if (cascadeMonth > 12) { cascadeMonth = 1; cascadeYear++; }
+          }
+        }
+      }
+    });
 
     const modeLabel = month
       ? `${new Date(2000, month - 1).toLocaleString('default', { month: 'long' })} ${plan_year || ''}`
