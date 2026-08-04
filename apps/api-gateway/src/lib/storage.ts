@@ -302,12 +302,12 @@ export async function uploadToGoogleDrive(opts: {
       { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
     // Use the correct URL format based on media type:
-    // Images: uc?export=view works directly in <img> tags
-    // Videos: uc?export=download works in <video src> tags (streams content)
+    // Images: thumbnail URL works reliably in <img> tags without CORS issues
+    // Videos: webContentLink for direct streaming
     const isVideo = opts.mimeType.startsWith('video/');
     directUrl = isVideo
-      ? `https://drive.google.com/uc?export=download&id=${uploadResponse.id}`
-      : `https://drive.google.com/uc?export=view&id=${uploadResponse.id}`;
+      ? (uploadResponse.webContentLink || `https://drive.google.com/uc?export=download&id=${uploadResponse.id}`)
+      : `https://drive.google.com/thumbnail?id=${uploadResponse.id}&sz=w1200`;
     console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
     console.error('[google drive permission error]', permErr.response?.data || permErr.message);
