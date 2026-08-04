@@ -5,6 +5,7 @@ import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import { jwtVerify, forceResetGuard, schoolScope } from '../middleware/auth';
 import { pool } from '../lib/db';
+import { uploadToGoogleDrive } from '../lib/storage';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
@@ -136,39 +137,53 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } | null 
 async function uploadFeedImage(
   localPath: string, schoolId: string, postId: string, scope: string,
   sectionId: string | null, filename: string, mimeType: string,
-  skipCompression: boolean = false
+  skipCompression: boolean = false,
+  actorId?: string, actorName?: string, actorRole?: string,
+  sectionLabel?: string, className?: string,
 ): Promise<{ storagePath: string; cdnUrl: string }> {
-  const supabase = getSupabase();
-  const ext = path.extname(filename) || '.jpg';
-  const safeName = `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-  const storagePath = scope === 'school'
-    ? `${schoolId}/memory-feed/school/${postId}/${safeName}`
-    : `${schoolId}/memory-feed/sections/${sectionId}/${postId}/${safeName}`;
 
-  // Videos: upload raw (no compression). Images: compress to 300KB
-  const buf = skipCompression
-    ? fs.readFileSync(localPath)
-    : await compressImage(localPath, mimeType);
+  // ── Google Drive only — no Supabase storage ───────────────────────────────
+  // All feed media goes to Google Drive to avoid Supabase egress costs.
+  // Admin must configure Google Drive in Settings first.
 
-  if (!supabase) {
-    const dir = path.resolve('./uploads/feed', postId);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const dest = path.join(dir, safeName);
-    fs.writeFileSync(dest, buf);
-    console.log(`[feed-upload] local fallback: ${dest} (${buf.length} bytes)`);
-    return { storagePath: dest, cdnUrl: `/uploads/feed/${postId}/${safeName}` };
+  const driveConfig = await pool.query(
+    `SELECT google_drive_enabled, google_drive_folder_id
+     FROM school_settings WHERE school_id = $1`,
+    [schoolId]
+  );
+  const cfg = driveConfig.rows[0];
+
+  if (!cfg?.google_drive_enabled || !cfg?.google_drive_folder_id) {
+    fs.unlink(localPath, () => {});
+    throw new Error(
+      'Google Drive is not configured for this school. Please ask your admin to set it up in Settings → Google Drive before posting to the class feed.'
+    );
   }
 
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, buf, { contentType: mimeType, upsert: false });
-  if (error) {
-    console.error(`[feed-upload] Supabase storage failed for ${storagePath}:`, error.message);
-    throw new Error(`Storage upload failed: ${error.message}`);
-  }
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-  console.log(`[feed-upload] success: ${storagePath} → ${data.publicUrl} (${buf.length} bytes)`);
-  return { storagePath, cdnUrl: data.publicUrl };
+  const today = new Date().toISOString().split('T')[0];
+  // Folder structure: Class Feed / ClassName - SectionLabel / YYYY-MM-DD
+  const classPart = className
+    ? (sectionLabel ? `${className} - ${sectionLabel}` : className)
+    : 'All Classes';
+  const driveFolderName = `Class Feed/${classPart}/${today}`;
+
+  const result = await uploadToGoogleDrive({
+    schoolId,
+    localPath,
+    originalName: filename,
+    mimeType,
+    actorId,
+    actorName,
+    actorRole,
+    folderId: cfg.google_drive_folder_id,
+    driveFolderName,
+  });
+
+  console.log(`[feed-upload] Google Drive: ${result.driveFileId} path=${driveFolderName}`);
+  return {
+    storagePath: result.storagePath,
+    cdnUrl: result.directUrl || result.driveUrl,
+  };
 }
 
 // ── GET /api/v1/feed ──────────────────────────────────────────────────────────
@@ -371,6 +386,22 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
     const retentionDays = hasVideo ? VIDEO_RETENTION_DAYS : settings.retention_days;
     const expiresAt = new Date(Date.now() + retentionDays * 86400000);
 
+    // Resolve class + section names for Drive folder structure
+    let sectionLabelForDrive = '';
+    let classNameForDrive = '';
+    if (sectionId) {
+      const nameRow = await pool.query(
+        `SELECT s.label, c.name AS class_name
+         FROM sections s JOIN classes c ON c.id = s.class_id
+         WHERE s.id = $1`,
+        [sectionId]
+      );
+      if (nameRow.rows.length > 0) {
+        sectionLabelForDrive = nameRow.rows[0].label || '';
+        classNameForDrive = nameRow.rows[0].class_name || '';
+      }
+    }
+
     const postResult = await pool.query(
       `INSERT INTO feed_posts
          (school_id, section_id, class_id, posted_by, poster_name, poster_role, post_scope, caption, expires_at)
@@ -387,7 +418,9 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
       const { storagePath, cdnUrl } = await uploadFeedImage(
         file.path, user.school_id, postId, postScope, sectionId,
         file.originalname || `media${i}${isVideo ? '.mp4' : '.jpg'}`, file.mimetype,
-        isVideo // skip compression for videos
+        isVideo,
+        user.user_id, posterName, user.role,
+        sectionLabelForDrive, classNameForDrive
       );
       uploadedPaths.push(storagePath);
       imageRows.push({ storagePath, cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });

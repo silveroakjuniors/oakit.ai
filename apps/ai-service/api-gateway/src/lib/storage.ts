@@ -109,7 +109,7 @@ export async function uploadToGoogleDrive(opts: {
   actorRole?: string;
   folderId?: string;
   driveFolderName?: string;
-}): Promise<{ driveFileId: string; driveUrl: string; storagePath: string; classFolderId: string | null }> {
+}): Promise<{ driveFileId: string; driveUrl: string; directUrl: string; storagePath: string; classFolderId: string | null }> {
   const ext = path.extname(opts.originalName) || '';
   const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
 
@@ -293,6 +293,22 @@ export async function uploadToGoogleDrive(opts: {
     throw new Error(`Google Drive upload failed: ${googleMsg}`);
   }
 
+  // Make the file publicly readable so parents can view it in the app
+  let directUrl: string = uploadResponse.webViewLink || '';
+  try {
+    await axios.post(
+      `https://www.googleapis.com/drive/v3/files/${uploadResponse.id}/permissions?supportsAllDrives=true`,
+      { role: 'reader', type: 'anyone' },
+      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+    );
+    // Direct thumbnail/media URL for embedding in <img> and <video> tags
+    directUrl = `https://drive.google.com/uc?export=view&id=${uploadResponse.id}`;
+    console.log('[google drive] File made public:', directUrl);
+  } catch (permErr: any) {
+    console.error('[google drive permission error]', permErr.response?.data || permErr.message);
+    // Non-fatal — fall back to webViewLink
+  }
+
   // Log to audit
   if (opts.actorId) {
     await pool.query(
@@ -319,7 +335,8 @@ export async function uploadToGoogleDrive(opts: {
 
   return {
     driveFileId: uploadResponse.id,
-    driveUrl: uploadResponse.webViewLink || uploadResponse.webContentLink || '',
+    driveUrl: directUrl || uploadResponse.webViewLink || uploadResponse.webContentLink || '',
+    directUrl,
     storagePath: `google_drive:${uploadResponse.id}`,
     classFolderId: classFolderId,
   };
