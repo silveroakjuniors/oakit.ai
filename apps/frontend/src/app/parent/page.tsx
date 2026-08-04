@@ -1607,24 +1607,40 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
      const mediaType = post.media_types?.[0];
      const isVideo = mediaType === 'video' ||
        ['.mp4','.mov','.webm','.3gp','.m4v'].some(ext => img.toLowerCase().includes(ext));
+     // Drive iframe for video, no-referrer for images
+     const isDrive = img.includes('drive.google.com');
+     const imgSrc = isDrive && !isVideo
+       ? img.replace(/uc\?export=(view|download)/, 'thumbnail?sz=w600').replace(/&id=/, '&id=')
+           .includes('thumbnail') ? img : `https://drive.google.com/thumbnail?id=${img.match(/id=([^&]+)/)?.[1] || ''}&sz=w600`
+       : img;
      return isVideo ? (
-       <div className="relative w-full rounded-xl overflow-hidden mb-2.5 cursor-pointer bg-black"
-         style={{ height: 150 }}
-         onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}>
-         <video src={img} className="w-full h-full object-cover" playsInline preload="metadata" muted />
-         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-           <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
-             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
-           </div>
-         </div>
-         <div className="absolute top-1.5 left-1.5 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-           <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-           Video
-         </div>
+       <div className="relative w-full rounded-xl overflow-hidden mb-2.5 bg-black"
+         style={{ height: 150 }}>
+         {isDrive ? (
+           <iframe
+             src={img.replace('uc?export=download', 'file/d/').replace(/^.*?id=([^&]+).*$/, 'https://drive.google.com/file/d/$1/preview')}
+             className="w-full h-full"
+             frameBorder="0"
+             allow="autoplay"
+             allowFullScreen
+           />
+         ) : (
+           <>
+             <video src={img} className="w-full h-full object-cover" playsInline preload="metadata" muted />
+             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+               <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+               </div>
+             </div>
+           </>
+         )}
        </div>
      ) : (
-       <img src={img} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
-         className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity" style={{ height: 150 }} />
+       <img src={imgSrc} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
+         className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity"
+         style={{ height: 150 }}
+         referrerPolicy={isDrive ? 'no-referrer' : undefined}
+       />
      );
    })()
  ) : (

@@ -301,13 +301,10 @@ export async function uploadToGoogleDrive(opts: {
       { role: 'reader', type: 'anyone' },
       { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
-    // Use the correct URL format based on media type:
-    // Images: thumbnail URL works reliably in <img> tags without CORS issues
-    // Videos: webContentLink for direct streaming
+    // Store a proxy URL — the API server fetches from Drive and serves the bytes
+    // This avoids all CORS/referrer issues when displaying in <img> and <video> tags
     const isVideo = opts.mimeType.startsWith('video/');
-    directUrl = isVideo
-      ? (uploadResponse.webContentLink || `https://drive.google.com/uc?export=download&id=${uploadResponse.id}`)
-      : `https://drive.google.com/thumbnail?id=${uploadResponse.id}&sz=w1200`;
+    directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}`;
     console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
     console.error('[google drive permission error]', permErr.response?.data || permErr.message);

@@ -119,9 +119,11 @@ import financialInsightsRouter from './routes/financial/insights';
 import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
 import parentDriveFolderRouter from './routes/parent/driveFolderLink';
+import socialMediaRouter from './routes/admin/socialMedia';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
 import pushSubscriptionRouter from './routes/shared/pushSubscription';
+import driveProxyRouter from './routes/shared/driveProxy';
 import staffHrRouter from './routes/staff/hr';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
@@ -256,6 +258,7 @@ app.use('/api/v1/public/uniform', publicUniformRouter);
 // Shared (any authenticated role)
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
 app.use('/api/v1/push', pushSubscriptionRouter);
+app.use('/api/v1/drive-proxy', driveProxyRouter);
 
 // Staff HR (leave, offer letters, payslips)
 app.use('/api/v1/staff/hr', staffHrRouter);
@@ -428,6 +431,7 @@ app.use('/api/v1/financial',                financialModuleGuard, financialInsig
 // Parent fees (guarded by financialModuleGuard)
 app.use('/api/v1/parent/fees', financialModuleGuard, parentFeesRouter);
 app.use('/api/v1/parent/drive-folder', parentDriveFolderRouter);
+app.use('/api/v1/social', socialMediaRouter);
 
 app.listen(PORT, () => {
   console.log(`Oakit API Gateway running on port ${PORT}`);
