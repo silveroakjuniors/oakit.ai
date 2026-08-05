@@ -293,35 +293,30 @@ export async function uploadToGoogleDrive(opts: {
     throw new Error(`Google Drive upload failed: ${googleMsg}`);
   }
 
-  // Make the file publicly readable so parents can view it in the app
-  let directUrl: string = uploadResponse.webViewLink || '';
+  // Make the file publicly readable (belt-and-suspenders — proxy also works without this)
+  let directUrl: string = '';
   try {
     await axios.post(
       `https://www.googleapis.com/drive/v3/files/${uploadResponse.id}/permissions?supportsAllDrives=true`,
       { role: 'reader', type: 'anyone' },
       { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
-    // Store a signed proxy URL — backend fetches from Drive and streams to client
-    // HMAC signature means no JWT needed, works in <img> and <video> tags on all browsers
-    const crypto = require('crypto');
-    const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
-    const sig = crypto
-      .createHmac('sha256', PROXY_SECRET)
-      .update(`${uploadResponse.id}:${opts.schoolId}`)
-      .digest('hex')
-      .slice(0, 16);
-    // Store direct Google Drive URL — files are public so no proxy needed
-    // Images: thumbnail URL serves bytes directly in <img> tags
-    // Videos: export=download URL supports range requests for <video> streaming
-    const isVideoUpload = opts.mimeType.startsWith('video/');
-    directUrl = isVideoUpload
-      ? `https://drive.google.com/uc?export=download&id=${uploadResponse.id}&confirm=t`
-      : `https://drive.google.com/thumbnail?id=${uploadResponse.id}&sz=w1200`;
-    console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
-    console.error('[google drive permission error]', permErr.response?.data || permErr.message);
-    // Non-fatal — fall back to webViewLink
+    console.error('[google drive permission warning]', permErr.response?.data?.error?.message || permErr.message);
+    // Non-fatal — proxy still works via OAuth credentials
   }
+
+  // Always store a signed proxy URL — backend streams bytes, browser never touches Drive directly.
+  // HMAC signature means no JWT needed, safe in <img src> and <video src> tags.
+  const crypto = require('crypto');
+  const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
+  const sig = crypto
+    .createHmac('sha256', PROXY_SECRET)
+    .update(`${uploadResponse.id}:${opts.schoolId}`)
+    .digest('hex')
+    .slice(0, 16);
+  directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}&school=${opts.schoolId}&sig=${sig}`;
+  console.log('[google drive] stored proxy URL for file:', uploadResponse.id);
 
   // Log to audit
   if (opts.actorId) {
