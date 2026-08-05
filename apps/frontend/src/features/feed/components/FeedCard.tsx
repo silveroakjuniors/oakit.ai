@@ -82,6 +82,14 @@ export default function FeedCard({ post, onLike, onDelete, schoolName, instagram
     trackEngagement('download');
     const img = post.images?.[0];
     if (!img) return;
+    // Extract Drive file ID from gdrive: scheme or Drive URL
+    const driveMatch = img.startsWith('gdrive:')
+      ? img.slice(7)
+      : (img.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || img.match(/[?&]id=([a-zA-Z0-9_-]{20,})/))?.[1];
+    if (driveMatch) {
+      window.open(`https://drive.google.com/uc?export=download&id=${driveMatch}&confirm=t`, '_blank');
+      return;
+    }
     try {
       const response = await fetch(img);
       const blob = await response.blob();
