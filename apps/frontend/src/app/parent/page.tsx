@@ -1610,23 +1610,51 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
 
      // Convert any Drive URL to directly embeddable format
      function toDisplay(u: string, vid: boolean): string {
-       if (u.includes('lh3.googleusercontent.com') || u.includes('export=download')) return u;
-       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/);
-       if (idM) return vid ? `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t` : `https://lh3.googleusercontent.com/d/${idM[1]}`;
+       // New signed proxy URL — prepend API base
+       if (u.startsWith('/api/v1/drive-proxy')) return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${u}`;
+       if (u.includes('/api/v1/drive-proxy')) return u;
+       // gdrive: scheme — extract ID
+       if (u.startsWith('gdrive:')) {
+         const id = u.slice(7);
+         return vid ? `https://drive.google.com/file/d/${id}/preview` : `https://drive.google.com/thumbnail?id=${id}&sz=w800`;
+       }
+       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+       if (idM) return vid ? `https://drive.google.com/file/d/${idM[1]}/preview` : `https://drive.google.com/thumbnail?id=${idM[1]}&sz=w800`;
+       return u;
+     }
+     function toDownload(u: string): string {
+       if (u.startsWith('gdrive:')) return `https://drive.google.com/uc?export=download&id=${u.slice(7)}&confirm=t`;
+       if (u.includes('/api/v1/drive-proxy')) return u.replace('drive-proxy?', 'drive-proxy?download=1&');
+       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+       if (idM) return `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t`;
        return u;
      }
 
      const displaySrc = toDisplay(img, isVideo);
+     const isSignedProxy = img.includes('/api/v1/drive-proxy');
 
      return isVideo ? (
        <div className="relative w-full rounded-xl overflow-hidden mb-2.5 bg-black"
          style={{ height: 150 }}>
-         <video src={displaySrc} className="w-full h-full object-cover" playsInline preload="metadata" muted />
-         <div className="absolute inset-0 flex items-center justify-center bg-black/20" onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}>
-           <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center cursor-pointer">
-             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
-           </div>
-         </div>
+         {isSignedProxy ? (
+           // New proxy URL — use <video> tag directly (streams from our server)
+           <>
+             <video src={displaySrc} className="w-full h-full object-cover" playsInline preload="metadata" muted
+               onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)} />
+             <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
+               <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
+                 <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+               </div>
+             </div>
+           </>
+         ) : (
+           // Old gdrive: URL — open in Drive (most reliable on mobile)
+           <a href={toDownload(img)} target="_blank" rel="noopener noreferrer"
+             className="w-full h-full flex flex-col items-center justify-center gap-2">
+             <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+             <span className="text-white text-xs font-medium">Tap to watch video</span>
+           </a>
+         )}
        </div>
      ) : (
        <img src={displaySrc} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
