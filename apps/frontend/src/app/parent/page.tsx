@@ -1606,41 +1606,32 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
    (() => {
      const mediaType = post.media_types?.[0];
      const isVideo = mediaType === 'video' ||
-       ['.mp4','.mov','.webm','.3gp','.m4v'].some(ext => img.toLowerCase().includes(ext));
-     // Drive iframe for video, no-referrer for images
-     const isDrive = img.includes('drive.google.com');
-     const imgSrc = isDrive && !isVideo
-       ? img.replace(/uc\?export=(view|download)/, 'thumbnail?sz=w600').replace(/&id=/, '&id=')
-           .includes('thumbnail') ? img : `https://drive.google.com/thumbnail?id=${img.match(/id=([^&]+)/)?.[1] || ''}&sz=w600`
-       : img;
+       ['.mp4','.mov','.webm','.3gp','.m4v','export=download'].some(ext => img.toLowerCase().includes(ext));
+
+     // Convert any Drive URL to directly embeddable format
+     function toDisplay(u: string, vid: boolean): string {
+       if (u.includes('lh3.googleusercontent.com') || u.includes('export=download')) return u;
+       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/);
+       if (idM) return vid ? `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t` : `https://lh3.googleusercontent.com/d/${idM[1]}`;
+       return u;
+     }
+
+     const displaySrc = toDisplay(img, isVideo);
+
      return isVideo ? (
        <div className="relative w-full rounded-xl overflow-hidden mb-2.5 bg-black"
          style={{ height: 150 }}>
-         {isDrive ? (
-           <iframe
-             src={img.replace('uc?export=download', 'file/d/').replace(/^.*?id=([^&]+).*$/, 'https://drive.google.com/file/d/$1/preview')}
-             className="w-full h-full"
-             frameBorder="0"
-             allow="autoplay"
-             allowFullScreen
-           />
-         ) : (
-           <>
-             <video src={img} className="w-full h-full object-cover" playsInline preload="metadata" muted />
-             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-               <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
-                 <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
-               </div>
-             </div>
-           </>
-         )}
+         <video src={displaySrc} className="w-full h-full object-cover" playsInline preload="metadata" muted />
+         <div className="absolute inset-0 flex items-center justify-center bg-black/20" onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}>
+           <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center cursor-pointer">
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+           </div>
+         </div>
        </div>
      ) : (
-       <img src={imgSrc} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
+       <img src={displaySrc} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
          className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity"
-         style={{ height: 150 }}
-         referrerPolicy={isDrive ? 'no-referrer' : undefined}
-       />
+         style={{ height: 150 }} referrerPolicy="no-referrer" />
      );
    })()
  ) : (
@@ -1778,24 +1769,19 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
    {(() => {
      const url = lightbox.images[lightbox.index];
      const mt = lightbox.mediaTypes?.[lightbox.index];
-     const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','.m4v'].some(ext => url.toLowerCase().includes(ext));
+     const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','export=download'].some(ext => url.toLowerCase().includes(ext));
+     function toDisplay(u: string, vid: boolean): string {
+       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/);
+       if (idM) return vid ? `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t` : `https://lh3.googleusercontent.com/d/${idM[1]}`;
+       return u;
+     }
+     const src = toDisplay(url, isVid);
      return isVid ? (
-       <video
-         src={url}
-         controls
-         autoPlay
-         playsInline
-         className="rounded-2xl shadow-2xl"
-         style={{ maxHeight: '75vh', maxWidth: '100%', animation: 'scaleIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}
-         onClick={e => e.stopPropagation()}
-       />
+       <video src={src} controls autoPlay playsInline className="rounded-2xl shadow-2xl"
+         style={{ maxHeight: '75vh', maxWidth: '100%' }} onClick={e => e.stopPropagation()} />
      ) : (
-       <img
-         src={url}
-         alt={lightbox.caption ?? ''}
-         className="rounded-2xl object-contain shadow-2xl"
-         style={{ maxHeight: '75vh', maxWidth: '100%', animation: 'scaleIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}
-       />
+       <img src={src} alt={lightbox.caption ?? ''} className="rounded-2xl object-contain shadow-2xl"
+         style={{ maxHeight: '75vh', maxWidth: '100%' }} referrerPolicy="no-referrer" />
      );
    })()}
  {lightbox.caption && (
