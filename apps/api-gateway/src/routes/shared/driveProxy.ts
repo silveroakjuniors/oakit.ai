@@ -86,7 +86,7 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     // Forward content type and cache headers
-    const contentType = driveRes.headers['content-type'] || 'application/octet-stream';
+    const contentType = String(driveRes.headers['content-type'] || 'application/octet-stream');
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400'); // cache 1 day in browser
     res.setHeader('Access-Control-Allow-Origin', '*');
