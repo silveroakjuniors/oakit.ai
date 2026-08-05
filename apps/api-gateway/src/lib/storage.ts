@@ -301,9 +301,17 @@ export async function uploadToGoogleDrive(opts: {
       { role: 'reader', type: 'anyone' },
       { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
-    // Store a proxy URL — the API server fetches from Drive and serves the bytes
-    // This avoids all CORS/referrer issues when displaying in <img> and <video> tags
-    directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}`;
+    // Use Google's public content URLs that work in <img> and <video> tags
+    // after the file has been shared with anyone as reader
+    const isVideo = opts.mimeType.startsWith('video/');
+    if (isVideo) {
+      // Videos: use the direct download link (works for publicly shared files)
+      directUrl = `https://drive.google.com/uc?export=download&id=${uploadResponse.id}&confirm=t`;
+    } else {
+      // Images: use lh3.googleusercontent.com which works reliably in <img> tags
+      // for publicly shared files with no auth/CORS issues
+      directUrl = `https://lh3.googleusercontent.com/d/${uploadResponse.id}`;
+    }
     console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
     console.error('[google drive permission error]', permErr.response?.data || permErr.message);

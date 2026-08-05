@@ -1,99 +1,96 @@
 'use client';
 import { useState } from 'react';
-import { API_BASE } from '@/lib/api';
-import { getToken } from '@/lib/auth';
 
-function isVideoUrl(url: string): boolean {
+// Detect if a URL is a video
+function isVideoUrl(url: string, mediaType?: string): boolean {
+  if (mediaType === 'video') return true;
   const lower = url.toLowerCase();
-  if (lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') ||
-      lower.includes('.3gp') || lower.includes('.quicktime') || lower.includes('.m4v') ||
-      lower.includes('.avi') || lower.includes('.mkv')) return true;
-  return false;
+  return lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') ||
+    lower.includes('.3gp') || lower.includes('export=download');
 }
 
-// Build a viewable URL from any Drive/proxy URL format
-// Appends the JWT token as a query param so <img> and <video> tags can authenticate
-function buildDriveViewUrl(url: string, _isVideo: boolean): { src: string; isDrive: boolean } {
-  const token = getToken();
-  const tokenSuffix = token ? `&token=${encodeURIComponent(token)}` : '';
+// Convert any Drive URL to a publicly embeddable URL
+// Files are made public (anyone reader) on upload, so no auth needed
+function toDisplayUrl(url: string, isVideo: boolean): string {
+  if (!url) return url;
 
-  // Already a proxy URL (relative path) — prepend API base + token
-  if (url.startsWith('/api/v1/drive-proxy')) {
-    return { src: `${API_BASE}${url}${tokenSuffix}`, isDrive: true };
+  // Already an lh3 URL (images) — use as-is
+  if (url.includes('lh3.googleusercontent.com')) return url;
+
+  // Already an export=download URL (videos) — use as-is
+  if (url.includes('export=download')) return url;
+
+  // Extract Drive file ID from any Drive URL format
+  const idMatch =
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||          // /d/FILE_ID
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||        // ?id= or &id=
+    url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/); // proxy URL
+
+  if (idMatch) {
+    const fileId = idMatch[1];
+    return isVideo
+      ? `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`
+      : `https://lh3.googleusercontent.com/d/${fileId}`;
   }
-  // Already a full proxy URL — just append token
-  if (url.includes('/api/v1/drive-proxy')) {
-    return { src: `${url}${tokenSuffix}`, isDrive: true };
-  }
-  // Drive URL stored before proxy — extract file ID and route through proxy
-  const driveMatch = url.match(/(?:drive\.google\.com\/(?:file\/d\/|uc\?.*?id=|thumbnail\?.*?id=)|[?&]id=)([a-zA-Z0-9_-]{20,})/);
-  if (driveMatch) {
-    const fileId = driveMatch[1];
-    return { src: `${API_BASE}/api/v1/drive-proxy?id=${fileId}${tokenSuffix}`, isDrive: true };
-  }
-  // Supabase or regular URL — use as-is
-  return { src: url, isDrive: false };
+
+  // Supabase or other URL — use as-is
+  return url;
 }
 
-export default function ImageCarousel({ images, mediaTypes }: { images: string[]; mediaTypes?: string[] }) {
+export default function ImageCarousel({ images, mediaTypes }: {
+  images: string[];
+  mediaTypes?: string[];
+}) {
   const [idx, setIdx] = useState(0);
   const [lightbox, setLightbox] = useState(false);
+
   if (images.length === 0) return null;
 
-  const currentIsVideo = mediaTypes?.[idx] === 'video' || isVideoUrl(images[idx]);
-  const { src: currentSrc, isDrive: currentIsDrive } = buildDriveViewUrl(images[idx], currentIsVideo);
+  const currentMediaType = mediaTypes?.[idx];
+  const currentIsVideo = isVideoUrl(images[idx], currentMediaType);
+  const currentSrc = toDisplayUrl(images[idx], currentIsVideo);
 
   return (
     <>
-      <div className="relative w-full bg-black cursor-pointer" style={{ aspectRatio: '4/3' }}
-        onClick={() => setLightbox(true)}>
-        {/* Main media */}
+      <div
+        className="relative w-full bg-black cursor-pointer"
+        style={{ aspectRatio: '4/3' }}
+        onClick={() => setLightbox(true)}
+      >
         {currentIsVideo ? (
-          currentIsDrive ? (
-            // Drive video — use iframe embed (most reliable)
-            <div className="relative w-full h-full bg-black">
-              <iframe
-                src={currentSrc}
-                className="w-full h-full"
-                allow="autoplay"
-                frameBorder="0"
-                allowFullScreen
-              />
-              <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 pointer-events-none">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                Video
+          <div className="relative w-full h-full bg-black">
+            <video
+              src={currentSrc}
+              className="w-full h-full object-cover"
+              playsInline
+              preload="metadata"
+              muted
+            />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                  <polygon points="8 5 19 12 8 19 8 5" />
+                </svg>
               </div>
             </div>
-          ) : (
-            <div className="relative w-full h-full bg-black">
-              <video
-                src={currentSrc}
-                className="w-full h-full object-cover"
-                playsInline
-                preload="metadata"
-                muted
-                onError={e => { (e.currentTarget as HTMLVideoElement).style.display = 'none'; }}
-              />
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
-                </div>
-              </div>
+            <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              Video
             </div>
-          )
+          </div>
         ) : (
-          // Image — Drive thumbnail needs no-referrer
           <img
             src={currentSrc}
             alt={`Photo ${idx + 1}`}
             className="w-full h-full object-cover"
             loading="lazy"
-            referrerPolicy={currentIsDrive ? 'no-referrer' : undefined}
-            crossOrigin={currentIsDrive ? 'anonymous' : undefined}
+            referrerPolicy="no-referrer"
           />
         )}
 
-        {/* Multi-media nav */}
+        {/* Navigation dots and arrows for multi-media */}
         {images.length > 1 && (
           <>
             {idx > 0 && (
@@ -122,60 +119,39 @@ export default function ImageCarousel({ images, mediaTypes }: { images: string[]
             </div>
           </>
         )}
-
-        {/* Video indicator */}
-        {currentIsVideo && (
-          <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Video
-          </div>
-        )}
       </div>
 
       {/* Lightbox */}
       {lightbox && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center"
-          onClick={() => setLightbox(false)}>
-          {/* Close button */}
-          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center text-2xl z-10"
+        <div
+          className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center"
+          onClick={() => setLightbox(false)}
+        >
+          <button
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center text-2xl z-10"
             style={{ marginTop: 'env(safe-area-inset-top)' }}
-            onClick={() => setLightbox(false)}>
-            &times;
-          </button>
+            onClick={() => setLightbox(false)}
+          >&times;</button>
 
-          {/* Full media */}
           {currentIsVideo ? (
-            currentIsDrive ? (
-              <iframe
-                src={buildDriveViewUrl(images[idx], true).src}
-                className="max-w-[95vw] max-h-[85vh] rounded-lg w-full"
-                style={{ minHeight: '300px' }}
-                allow="autoplay"
-                frameBorder="0"
-                allowFullScreen
-                onClick={e => e.stopPropagation()}
-              />
-            ) : (
-              <video
-                src={images[idx]}
-                className="max-w-[95vw] max-h-[85vh] rounded-lg"
-                controls
-                autoPlay
-                playsInline
-                onClick={e => e.stopPropagation()}
-              />
-            )
+            <video
+              src={currentSrc}
+              className="max-w-[95vw] max-h-[85vh] rounded-lg"
+              controls
+              autoPlay
+              playsInline
+              onClick={e => e.stopPropagation()}
+            />
           ) : (
             <img
-              src={buildDriveViewUrl(images[idx], false).src}
+              src={currentSrc}
               alt={`Photo ${idx + 1}`}
               className="max-w-[95vw] max-h-[85vh] object-contain rounded-lg"
-              referrerPolicy={buildDriveViewUrl(images[idx], false).isDrive ? 'no-referrer' : undefined}
+              referrerPolicy="no-referrer"
               onClick={e => e.stopPropagation()}
             />
           )}
 
-          {/* Nav arrows in lightbox */}
           {images.length > 1 && (
             <>
               {idx > 0 && (
