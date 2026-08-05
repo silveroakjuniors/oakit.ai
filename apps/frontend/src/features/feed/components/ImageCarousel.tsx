@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { API_BASE } from '@/lib/api';
 
 function isVideoUrl(url: string): boolean {
   const lower = url.toLowerCase();
@@ -9,19 +10,23 @@ function isVideoUrl(url: string): boolean {
   return false;
 }
 
-// Build a viewable URL from any Drive URL format
-function buildDriveViewUrl(url: string, isVideo: boolean): { src: string; isDrive: boolean } {
-  // Already a proxy URL — use as-is
+// Build a viewable URL from any Drive/proxy URL format
+function buildDriveViewUrl(url: string, _isVideo: boolean): { src: string; isDrive: boolean } {
+  // Already a proxy URL (relative) — prepend API base
+  if (url.startsWith('/api/v1/drive-proxy')) {
+    return { src: `${API_BASE}${url}`, isDrive: true };
+  }
+  // Already a full proxy URL
   if (url.includes('/api/v1/drive-proxy')) {
     return { src: url, isDrive: true };
   }
-  // Drive thumbnail URL stored from before proxy was added
-  const driveMatch = url.match(/(?:drive\.google\.com\/(?:file\/d\/|uc\?.*?id=|thumbnail\?.*?id=)|id=)([a-zA-Z0-9_-]{20,})/);
+  // Drive URL stored before proxy — extract file ID and route through proxy
+  const driveMatch = url.match(/(?:drive\.google\.com\/(?:file\/d\/|uc\?.*?id=|thumbnail\?.*?id=)|[\?&]id=)([a-zA-Z0-9_-]{20,})/);
   if (driveMatch) {
     const fileId = driveMatch[1];
-    // Route through proxy — backend handles auth and serves bytes directly
-    return { src: `/api/v1/drive-proxy?id=${fileId}`, isDrive: true };
+    return { src: `${API_BASE}/api/v1/drive-proxy?id=${fileId}`, isDrive: true };
   }
+  // Supabase or regular URL — use as-is
   return { src: url, isDrive: false };
 }
 

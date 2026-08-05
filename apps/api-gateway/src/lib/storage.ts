@@ -303,7 +303,6 @@ export async function uploadToGoogleDrive(opts: {
     );
     // Store a proxy URL — the API server fetches from Drive and serves the bytes
     // This avoids all CORS/referrer issues when displaying in <img> and <video> tags
-    const isVideo = opts.mimeType.startsWith('video/');
     directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}`;
     console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
