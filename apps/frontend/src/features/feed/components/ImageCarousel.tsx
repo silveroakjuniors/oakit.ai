@@ -1,66 +1,35 @@
 'use client';
 import { useState } from 'react';
-import { API_BASE } from '@/lib/api';
 
-// Extract Google Drive file ID from any URL format we store
-function getDriveFileId(url: string): string | null {
-  if (!url) return null;
-  // gdrive:FILE_ID (old scheme)
-  if (url.startsWith('gdrive:')) return url.slice(7);
-  // /d/FILE_ID or file/d/FILE_ID
-  const m1 = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
-  if (m1) return m1[1];
-  // ?id=FILE_ID or &id=FILE_ID
-  const m2 = url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-  if (m2) return m2[1];
-  // drive-proxy?id=FILE_ID
-  const m3 = url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/);
-  if (m3) return m3[1];
-  return null;
-}
-
-function isDriveUrl(url: string): boolean {
-  return url.startsWith('gdrive:') ||
-    url.includes('drive.google.com') ||
-    url.includes('drive-proxy');
-}
-
-function isVideoUrl(url: string, mediaType?: string): boolean {
-  if (mediaType === 'video') return true;
-  const lower = url.toLowerCase();
-  return lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') ||
-    lower.includes('.3gp');
-}
-
-// Build the best displayable URL for the given stored URL
+// Convert any stored Drive URL to a displayable URL
+// Files are publicly shared so no auth needed
 function toDisplayUrl(url: string): string {
   if (!url) return url;
-  // Signed proxy URL (new) — prepend API_BASE
-  if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}`;
-  if (url.includes('/api/v1/drive-proxy')) return url;
-  // gdrive:FILE_ID (old) — we can't sign it client-side, use thumbnail for images
-  if (url.startsWith('gdrive:')) {
-    const fileId = url.slice(7);
-    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
-  }
-  // Legacy Drive URL
+  // Already a thumbnail or download URL — use directly
+  if (url.includes('drive.google.com/thumbnail') || url.includes('export=download')) return url;
+  // Old proxy URL — convert to thumbnail
+  const proxyMatch = url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/);
+  if (proxyMatch) return `https://drive.google.com/thumbnail?id=${proxyMatch[1]}&sz=w1200`;
+  // Old gdrive: scheme
+  if (url.startsWith('gdrive:')) return `https://drive.google.com/thumbnail?id=${url.slice(7)}&sz=w1200`;
+  // Old Drive URL — extract file ID
   const idMatch = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-  if (idMatch) return `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w800`;
+  if (idMatch) return `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w1200`;
+  // Supabase or other — use as-is
   return url;
 }
 
 function toVideoPreviewUrl(url: string): string {
   if (!url) return url;
-  // Extract file ID from any URL format
+  // Already a download URL — use as video src
+  if (url.includes('export=download')) return url;
+  // Extract file ID and use download URL for video streaming
   const idMatch =
     url.startsWith('gdrive:') ? [null, url.slice(7)] :
     url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
     url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
     url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-  if (idMatch) {
-    // Use Drive's direct streaming URL — supports range requests on mobile
-    return `https://drive.google.com/uc?export=download&id=${idMatch[1]}&confirm=t`;
-  }
+  if (idMatch) return `https://drive.google.com/uc?export=download&id=${idMatch[1]}&confirm=t`;
   return url;
 }
 

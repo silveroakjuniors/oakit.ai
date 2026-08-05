@@ -1608,56 +1608,60 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
      const isVideo = mediaType === 'video' ||
        ['.mp4','.mov','.webm','.3gp','.m4v','export=download'].some(ext => img.toLowerCase().includes(ext));
 
-     // Convert any Drive URL to directly streamable format
+     // Extract Drive file ID from any URL format (proxy, gdrive:, full Drive URL)
+     function extractDriveId(u: string): string | null {
+       if (!u) return null;
+       if (u.startsWith('gdrive:')) return u.slice(7);
+       const m = u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+         u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||
+         u.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+       return m ? m[1] : null;
+     }
+     // Convert any Drive URL to directly displayable format — no proxy needed (files are public)
      function toDisplay(u: string, vid: boolean): string {
-       // Signed proxy URL — prepend API base
-       if (u.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${u}`;
-       if (u.includes('/api/v1/drive-proxy')) return u;
-       // Extract file ID from any format
-       const idM = u.startsWith('gdrive:') ? [null, u.slice(7)] :
-         u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
-         u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
-         u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-       if (idM) {
+       // Already a direct Drive URL — use as-is
+       if (u.includes('drive.google.com/thumbnail') || u.includes('export=download')) return u;
+       const id = extractDriveId(u);
+       if (id) {
          return vid
-           ? `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t`  // range requests work
-           : `https://drive.google.com/thumbnail?id=${idM[1]}&sz=w800`;
+           ? `https://drive.google.com/uc?export=download&id=${id}&confirm=t`
+           : `https://drive.google.com/thumbnail?id=${id}&sz=w800`;
        }
        return u;
      }
      function toDownload(u: string): string {
-       if (u.startsWith('gdrive:')) return `https://drive.google.com/uc?export=download&id=${u.slice(7)}&confirm=t`;
-       if (u.includes('/api/v1/drive-proxy')) return u.replace('drive-proxy?', 'drive-proxy?download=1&');
-       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-       if (idM) return `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t`;
+       const id = extractDriveId(u);
+       if (id) return `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
        return u;
      }
 
      const displaySrc = toDisplay(img, isVideo);
-     const isSignedProxy = img.includes('/api/v1/drive-proxy');
 
      return isVideo ? (
        <div className="relative w-full rounded-xl overflow-hidden mb-2.5 bg-black"
          style={{ height: 150 }}>
-         {isSignedProxy ? (
-           // New proxy URL — use <video> tag directly (streams from our server)
-           <>
-             <video src={displaySrc} className="w-full h-full object-cover" playsInline preload="metadata" muted
-               onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)} />
-             <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
-               <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
-                 <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
-               </div>
-             </div>
-           </>
-         ) : (
-           // Old gdrive: URL — open in Drive (most reliable on mobile)
-           <a href={toDownload(img)} target="_blank" rel="noopener noreferrer"
-             className="w-full h-full flex flex-col items-center justify-center gap-2">
+         <>
+           <video src={displaySrc} className="w-full h-full object-cover" playsInline preload="metadata" muted
+             onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
+             onError={(e) => {
+               (e.currentTarget as HTMLVideoElement).style.display = 'none';
+               const fb = e.currentTarget.nextElementSibling as HTMLElement;
+               if (fb) fb.style.display = 'flex';
+             }} />
+           {/* Fallback: open in Drive if video fails */}
+           <a href={`https://drive.google.com/file/d/${extractDriveId(img) ?? ''}/view`}
+             target="_blank" rel="noopener noreferrer"
+             className="w-full h-full flex-col items-center justify-center gap-2 hidden"
+             style={{ position: 'absolute', inset: 0 }}>
              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
              <span className="text-white text-xs font-medium">Tap to watch video</span>
            </a>
-         )}
+           <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
+             <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
+               <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+             </div>
+           </div>
+         </>
        </div>
      ) : (
        <img src={displaySrc} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
@@ -1676,10 +1680,22 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
    {post.images.slice(1, 4).map((img2: string, i: number) => {
      const mt = post.media_types?.[i + 1];
      const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','.m4v'].some(ext => img2.toLowerCase().includes(ext));
+     const thumb2 = (() => {
+       if (!img2) return img2;
+       if (img2.includes('drive.google.com/thumbnail') || img2.includes('export=download')) return img2;
+       const idM2 = img2.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+         img2.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||
+         img2.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
+         (img2.startsWith('gdrive:') ? [null, img2.slice(7)] : null);
+       if (idM2) return isVid
+         ? `https://drive.google.com/uc?export=download&id=${idM2[1]}&confirm=t`
+         : `https://drive.google.com/thumbnail?id=${idM2[1]}&sz=w200`;
+       return img2;
+     })();
      return isVid ? (
        <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer bg-black"
          onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}>
-         <video src={img2} className="w-full h-full object-cover" playsInline preload="metadata" muted />
+         <video src={thumb2} className="w-full h-full object-cover" playsInline preload="metadata" muted />
          <div className="absolute inset-0 flex items-center justify-center">
            <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
              <svg width="10" height="10" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
@@ -1687,8 +1703,8 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
          </div>
        </div>
      ) : (
-       <img key={i} src={img2} alt="" onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}
-         className="w-14 h-14 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity" />
+       <img key={i} src={thumb2} alt="" onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}
+         className="w-14 h-14 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity" referrerPolicy="no-referrer" />
      );
    })}
  {post.images.length > 4 && (
@@ -1801,12 +1817,18 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
      const url = lightbox.images[lightbox.index];
      const mt = lightbox.mediaTypes?.[lightbox.index];
      const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','export=download'].some(ext => url.toLowerCase().includes(ext));
-     function toDisplay(u: string, vid: boolean): string {
-       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/);
-       if (idM) return vid ? `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t` : `https://lh3.googleusercontent.com/d/${idM[1]}`;
+     function toDisplayLightbox(u: string, vid: boolean): string {
+       if (u.includes('drive.google.com/thumbnail') || u.includes('export=download')) return u;
+       const idM = u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+         u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||
+         u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
+         (u.startsWith('gdrive:') ? [null, u.slice(7)] : null);
+       if (idM) return vid
+         ? `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t`
+         : `https://drive.google.com/thumbnail?id=${idM[1]}&sz=w1200`;
        return u;
      }
-     const src = toDisplay(url, isVid);
+     const src = toDisplayLightbox(url, isVid);
      return isVid ? (
        <video src={src} controls autoPlay playsInline className="rounded-2xl shadow-2xl"
          style={{ maxHeight: '75vh', maxWidth: '100%' }} onClick={e => e.stopPropagation()} />

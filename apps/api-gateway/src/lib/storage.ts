@@ -310,7 +310,13 @@ export async function uploadToGoogleDrive(opts: {
       .update(`${uploadResponse.id}:${opts.schoolId}`)
       .digest('hex')
       .slice(0, 16);
-    directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}&school=${opts.schoolId}&sig=${sig}`;
+    // Store direct Google Drive URL — files are public so no proxy needed
+    // Images: thumbnail URL serves bytes directly in <img> tags
+    // Videos: export=download URL supports range requests for <video> streaming
+    const isVideoUpload = opts.mimeType.startsWith('video/');
+    directUrl = isVideoUpload
+      ? `https://drive.google.com/uc?export=download&id=${uploadResponse.id}&confirm=t`
+      : `https://drive.google.com/thumbnail?id=${uploadResponse.id}&sz=w1200`;
     console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
     console.error('[google drive permission error]', permErr.response?.data || permErr.message);

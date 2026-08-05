@@ -179,19 +179,18 @@ async function uploadFeedImage(
     }
   }
 
-  // ── Build smart filename: YYYY-MM-DD_ClassName_SectionLabel_N.ext ─────────
+  // ── Build Oaklets_ filename: Oaklets_ClassName_SectionLabel_N.ext ─────────
   const classSlug = className
     ? (sectionLabel ? `${className}_${sectionLabel}` : className).replace(/[^a-zA-Z0-9]/g, '_')
     : 'Class';
+  const classSlugBase = `Oaklets_${classSlug}`;
   const ext = isVideo ? '.mp4' : (path.extname(filename) || '.jpg');
   const seq = seqNum || 1;
-  const smartFilename = `${today}_${classSlug}_${seq}${ext}`;
+  const smartFilename = `${classSlugBase}_${seq}${ext}`;
 
-  // ── Upload to Drive ────────────────────────────────────────────────────────
-  const classPart = className
-    ? (sectionLabel ? `${className} - ${sectionLabel}` : className)
-    : 'All Classes';
-  const driveFolderName = `Class Feed/${classPart}/${today}`;
+  // ── Upload to Drive: Oaklets_ClassName_SectionLabel / YYYY-MM-DD / Photos|Videos
+  const mediaSubfolder = isVideo ? 'Videos' : 'Photos';
+  const driveFolderName = `${classSlugBase}/${today}/${mediaSubfolder}`;
 
   const result = await uploadToGoogleDrive({
     schoolId,
