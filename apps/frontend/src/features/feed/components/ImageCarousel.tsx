@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { API_BASE } from '@/lib/api';
+import { getToken } from '@/lib/auth';
 
 function isVideoUrl(url: string): boolean {
   const lower = url.toLowerCase();
@@ -11,20 +12,24 @@ function isVideoUrl(url: string): boolean {
 }
 
 // Build a viewable URL from any Drive/proxy URL format
+// Appends the JWT token as a query param so <img> and <video> tags can authenticate
 function buildDriveViewUrl(url: string, _isVideo: boolean): { src: string; isDrive: boolean } {
-  // Already a proxy URL (relative) — prepend API base
+  const token = getToken();
+  const tokenSuffix = token ? `&token=${encodeURIComponent(token)}` : '';
+
+  // Already a proxy URL (relative path) — prepend API base + token
   if (url.startsWith('/api/v1/drive-proxy')) {
-    return { src: `${API_BASE}${url}`, isDrive: true };
+    return { src: `${API_BASE}${url}${tokenSuffix}`, isDrive: true };
   }
-  // Already a full proxy URL
+  // Already a full proxy URL — just append token
   if (url.includes('/api/v1/drive-proxy')) {
-    return { src: url, isDrive: true };
+    return { src: `${url}${tokenSuffix}`, isDrive: true };
   }
   // Drive URL stored before proxy — extract file ID and route through proxy
-  const driveMatch = url.match(/(?:drive\.google\.com\/(?:file\/d\/|uc\?.*?id=|thumbnail\?.*?id=)|[\?&]id=)([a-zA-Z0-9_-]{20,})/);
+  const driveMatch = url.match(/(?:drive\.google\.com\/(?:file\/d\/|uc\?.*?id=|thumbnail\?.*?id=)|[?&]id=)([a-zA-Z0-9_-]{20,})/);
   if (driveMatch) {
     const fileId = driveMatch[1];
-    return { src: `${API_BASE}/api/v1/drive-proxy?id=${fileId}`, isDrive: true };
+    return { src: `${API_BASE}/api/v1/drive-proxy?id=${fileId}${tokenSuffix}`, isDrive: true };
   }
   // Supabase or regular URL — use as-is
   return { src: url, isDrive: false };

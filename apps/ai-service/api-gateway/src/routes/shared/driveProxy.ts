@@ -1,37 +1,53 @@
 /**
- * GET /api/v1/drive-proxy?id=FILE_ID
+ * GET /api/v1/drive-proxy?id=FILE_ID&token=JWT
  * Proxies a Google Drive file through the API so browsers can display it
- * without CORS / referrer issues. Requires a valid JWT token.
+ * without CORS / referrer issues. Token can be in Authorization header
+ * OR as a query param (needed for <img src> and <video src> tags).
  */
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import { pool } from '../../lib/db';
-import { jwtVerify, schoolScope } from '../../middleware/auth';
 import { JWT as GoogleJWT } from 'google-auth-library';
+import { verifyToken } from '../../lib/jwt';
 
 const router = Router();
-router.use(jwtVerify, schoolScope);
 
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const { school_id } = req.user!;
-    const fileId = req.query.id as string;
+    // Accept token from Authorization header OR query param (for <img> and <video> tags)
+    const authHeader = req.headers.authorization;
+    const queryToken = req.query.token as string | undefined;
+    const rawToken = authHeader?.replace('Bearer ', '').trim() || queryToken?.trim();
 
-    if (!fileId || !/^[a-zA-Z0-9_-]{10,}$/.test(fileId)) {
-      return res.status(400).json({ error: 'Invalid file ID' });
+    if (!rawToken) return res.status(401).send('Unauthorized');
+
+    // Verify token using the same logic as the rest of the API
+    let school_id: string | null;
+    try {
+      const decoded = verifyToken(rawToken);
+      school_id = decoded.school_id;
+    } catch {
+      return res.status(401).send('Invalid or expired token');
     }
 
-    // Get the school's Google Drive access token
+    if (!school_id) return res.status(401).send('No school context');
+
+    const fileId = req.query.id as string;
+    if (!fileId || !/^[a-zA-Z0-9_-]{10,}$/.test(fileId)) {
+      return res.status(400).send('Invalid file ID');
+    }
+
+    // Get the school's Google Drive credentials
     const cfg = await pool.query(
       `SELECT google_drive_auth FROM school_settings WHERE school_id = $1`,
       [school_id]
     );
     const authConfig: any = cfg.rows[0]?.google_drive_auth;
-    if (!authConfig) return res.status(400).json({ error: 'Google Drive not configured' });
+    if (!authConfig) return res.status(400).send('Google Drive not configured');
 
     // Generate access token
-    let accessToken: string | null = null;
     const parsed = typeof authConfig === 'string' ? JSON.parse(authConfig) : authConfig;
+    let accessToken: string | null = null;
 
     if (parsed.type === 'oauth' && parsed.refresh_token) {
       const tokenRes = await axios.post(
@@ -45,7 +61,7 @@ router.get('/', async (req: Request, res: Response) => {
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
       );
       accessToken = tokenRes.data.access_token;
-    } else if (parsed.type === 'service_account') {
+    } else if (parsed.type === 'service_account' && parsed.private_key) {
       const jwtClient = new GoogleJWT({
         key: parsed.private_key,
         email: parsed.client_email,
@@ -57,9 +73,9 @@ router.get('/', async (req: Request, res: Response) => {
       accessToken = parsed.access_token;
     }
 
-    if (!accessToken) return res.status(401).json({ error: 'Could not get Drive access token' });
+    if (!accessToken) return res.status(401).send('Could not get Drive access token');
 
-    // Fetch the file from Drive and stream it
+    // Fetch the file from Drive and stream it directly to the client
     const driveRes = await axios.get(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       {
@@ -69,17 +85,17 @@ router.get('/', async (req: Request, res: Response) => {
       }
     );
 
-    // Forward content-type and cache headers
+    // Forward content type and cache headers
     const contentType = driveRes.headers['content-type'] || 'application/octet-stream';
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // cache 1 day
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // cache 1 day in browser
     res.setHeader('Access-Control-Allow-Origin', '*');
 
     driveRes.data.pipe(res);
   } catch (err: any) {
     const status = err.response?.status || 500;
     console.error('[drive-proxy]', err.response?.data || err.message);
-    return res.status(status).json({ error: 'Failed to fetch file from Drive' });
+    if (!res.headersSent) res.status(status).send('Failed to fetch from Drive');
   }
 });
 
