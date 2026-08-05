@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { jwtVerify, forceResetGuard, schoolScope } from '../middleware/auth';
 import { pool } from '../lib/db';
 import { uploadToGoogleDrive } from '../lib/storage';
+import { compressVideo, isFfmpegAvailable } from '../lib/videoCompress';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
@@ -140,12 +141,10 @@ async function uploadFeedImage(
   skipCompression: boolean = false,
   actorId?: string, actorName?: string, actorRole?: string,
   sectionLabel?: string, className?: string,
+  seqNum?: number,
 ): Promise<{ storagePath: string; cdnUrl: string }> {
 
   // ── Google Drive only — no Supabase storage ───────────────────────────────
-  // All feed media goes to Google Drive to avoid Supabase egress costs.
-  // Admin must configure Google Drive in Settings first.
-
   const driveConfig = await pool.query(
     `SELECT google_drive_enabled, google_drive_folder_id
      FROM school_settings WHERE school_id = $1`,
@@ -156,12 +155,39 @@ async function uploadFeedImage(
   if (!cfg?.google_drive_enabled || !cfg?.google_drive_folder_id) {
     fs.unlink(localPath, () => {});
     throw new Error(
-      'Google Drive is not configured for this school. Please ask your admin to set it up in Settings → Google Drive before posting to the class feed.'
+      'Google Drive is not configured. Please ask your admin to set it up in Settings → Google Drive.'
     );
   }
 
+  const isVideo = mimeType.startsWith('video/');
   const today = new Date().toISOString().split('T')[0];
-  // Folder structure: Class Feed / ClassName - SectionLabel / YYYY-MM-DD
+
+  // ── Compress video using FFmpeg if available ───────────────────────────────
+  let finalPath = localPath;
+  if (isVideo) {
+    try {
+      const ffAvailable = await isFfmpegAvailable();
+      if (ffAvailable) {
+        const compressed = await compressVideo(localPath);
+        finalPath = compressed.outputPath;
+        const savings = Math.round((1 - compressed.outputSize / compressed.inputSize) * 100);
+        console.log(`[feed-upload] compressed video ${savings}% smaller`);
+      }
+    } catch (compressErr: any) {
+      console.error('[feed-upload] compression failed, using original:', compressErr.message);
+      finalPath = localPath;
+    }
+  }
+
+  // ── Build smart filename: YYYY-MM-DD_ClassName_SectionLabel_N.ext ─────────
+  const classSlug = className
+    ? (sectionLabel ? `${className}_${sectionLabel}` : className).replace(/[^a-zA-Z0-9]/g, '_')
+    : 'Class';
+  const ext = isVideo ? '.mp4' : (path.extname(filename) || '.jpg');
+  const seq = seqNum || 1;
+  const smartFilename = `${today}_${classSlug}_${seq}${ext}`;
+
+  // ── Upload to Drive ────────────────────────────────────────────────────────
   const classPart = className
     ? (sectionLabel ? `${className} - ${sectionLabel}` : className)
     : 'All Classes';
@@ -169,9 +195,9 @@ async function uploadFeedImage(
 
   const result = await uploadToGoogleDrive({
     schoolId,
-    localPath,
-    originalName: filename,
-    mimeType,
+    localPath: finalPath,
+    originalName: smartFilename,
+    mimeType: isVideo ? 'video/mp4' : mimeType,
     actorId,
     actorName,
     actorRole,
@@ -179,7 +205,7 @@ async function uploadFeedImage(
     driveFolderName,
   });
 
-  console.log(`[feed-upload] Google Drive: ${result.driveFileId} path=${driveFolderName}`);
+  console.log(`[feed-upload] Google Drive: ${smartFilename} → ${result.directUrl}`);
   return {
     storagePath: result.storagePath,
     cdnUrl: result.directUrl || result.driveUrl,
@@ -420,7 +446,8 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
         file.originalname || `media${i}${isVideo ? '.mp4' : '.jpg'}`, file.mimetype,
         isVideo,
         user.user_id, posterName, user.role,
-        sectionLabelForDrive, classNameForDrive
+        sectionLabelForDrive, classNameForDrive,
+        i + 1  // sequence number starting from 1
       );
       uploadedPaths.push(storagePath);
       imageRows.push({ storagePath, cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });

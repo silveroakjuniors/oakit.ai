@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { uploadToGoogleDrive } from '../../lib/storage';
+import { compressVideo, formatBytes, isFfmpegAvailable } from '../../lib/videoCompress';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
@@ -96,12 +98,50 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
 
     console.log('[media upload] school=%s folder_id=%s path=%s', school_id, folderId, driveFolderName);
 
+    // ── Compress video if possible ────────────────────────────────────────────
+    let localPath = file.path;
+    let originalSize = file.size;
+    let finalSize = file.size;
+    const isVideo = file.mimetype.startsWith('video/');
+
+    if (isVideo) {
+      try {
+        const ffAvailable = await isFfmpegAvailable();
+        if (ffAvailable) {
+          const compressed = await compressVideo(file.path);
+          localPath = compressed.outputPath;
+          originalSize = compressed.inputSize;
+          finalSize = compressed.outputSize;
+          const savings = Math.round((1 - finalSize / originalSize) * 100);
+          console.log(`[media upload] compressed video: ${formatBytes(originalSize)} → ${formatBytes(finalSize)} (${savings}% smaller)`);
+        }
+      } catch (compressErr: any) {
+        console.error('[media upload] video compression failed, uploading original:', compressErr.message);
+        localPath = file.path; // fall back to original
+      }
+    }
+
+    // ── Build sequential filename: YYYY-MM-DD_ClassName_N.ext ────────────────
+    // Count existing files in this folder for the sequence number
+    const ext = isVideo ? '.mp4' : path.extname(file.originalname) || '.jpg';
+    const classSlug = classFolderName.replace(/[^a-zA-Z0-9]/g, '_');
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM audit_logs
+       WHERE school_id = $1 AND action = 'upload_photo'
+         AND entity_type = 'google_drive_media'
+         AND created_at::date = CURRENT_DATE
+         AND metadata->>'folder_path' LIKE $2`,
+      [school_id, `${classFolderName}%`]
+    ).catch(() => ({ rows: [{ count: '0' }] }));
+    const seq = parseInt(countResult.rows[0]?.count || '0') + 1;
+    const friendlyName = `${today}_${classSlug}_${seq}${ext}`;
+
     // Upload to Google Drive
     const result = await uploadToGoogleDrive({
       schoolId: school_id,
-      localPath: file.path,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
+      localPath,
+      originalName: friendlyName,
+      mimeType: isVideo ? 'video/mp4' : file.mimetype,
       actorId: user_id,
       actorName: (req.user as any).name || 'Teacher',
       actorRole: req.user!.role,
@@ -132,11 +172,14 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
       file_id: result.driveFileId,
       drive_url: result.driveUrl,
       display_url: result.driveUrl,
-      file_name: file.originalname,
+      file_name: friendlyName,
       folder_path: driveFolderName,
       class_folder: classFolderName,
       class_folder_url: classFolderUrl,
-      file_type: file.mimetype.split('/')[0],
+      file_type: isVideo ? 'video' : 'image',
+      original_size: formatBytes(originalSize),
+      compressed_size: formatBytes(finalSize),
+      savings_pct: isVideo && finalSize < originalSize ? Math.round((1 - finalSize / originalSize) * 100) : 0,
     });
   } catch (err: any) {
     const detail = err?.response?.data?.error || err?.response?.data || err?.message || err;
