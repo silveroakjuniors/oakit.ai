@@ -1611,7 +1611,7 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
      // Convert any Drive URL to directly streamable format
      function toDisplay(u: string, vid: boolean): string {
        // Signed proxy URL — prepend API base
-       if (u.startsWith('/api/v1/drive-proxy')) return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${u}`;
+       if (u.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${u}`;
        if (u.includes('/api/v1/drive-proxy')) return u;
        // Extract file ID from any format
        const idM = u.startsWith('gdrive:') ? [null, u.slice(7)] :
