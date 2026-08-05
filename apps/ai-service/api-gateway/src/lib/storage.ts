@@ -301,17 +301,16 @@ export async function uploadToGoogleDrive(opts: {
       { role: 'reader', type: 'anyone' },
       { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
-    // Use Google's public content URLs that work in <img> and <video> tags
-    // after the file has been shared with anyone as reader
-    const isVideo = opts.mimeType.startsWith('video/');
-    if (isVideo) {
-      // Videos: use the direct download link (works for publicly shared files)
-      directUrl = `https://drive.google.com/uc?export=download&id=${uploadResponse.id}&confirm=t`;
-    } else {
-      // Images: use lh3.googleusercontent.com which works reliably in <img> tags
-      // for publicly shared files with no auth/CORS issues
-      directUrl = `https://lh3.googleusercontent.com/d/${uploadResponse.id}`;
-    }
+    // Store a signed proxy URL — backend fetches from Drive and streams to client
+    // HMAC signature means no JWT needed, works in <img> and <video> tags on all browsers
+    const crypto = require('crypto');
+    const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
+    const sig = crypto
+      .createHmac('sha256', PROXY_SECRET)
+      .update(`${uploadResponse.id}:${opts.schoolId}`)
+      .digest('hex')
+      .slice(0, 16);
+    directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}&school=${opts.schoolId}&sig=${sig}`;
     console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
     console.error('[google drive permission error]', permErr.response?.data || permErr.message);
