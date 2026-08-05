@@ -50,15 +50,25 @@ function toDisplayUrl(url: string): string {
 
 function toVideoPreviewUrl(url: string): string {
   if (!url) return url;
-  // Signed proxy URL — use as-is (it streams the video directly)
+  // For proxy URLs — use directly in <video> tag (streams from our server)
   if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}`;
   if (url.includes('/api/v1/drive-proxy')) return url;
-  // gdrive: or Drive URL — use iframe preview
+  // For gdrive: or Drive URLs — return the proxy-style download URL
   const idMatch =
     url.startsWith('gdrive:') ? [null, url.slice(7)] :
     url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
     url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-  if (idMatch) return `https://drive.google.com/file/d/${idMatch[1]}/preview`;
+  if (idMatch) return `https://drive.google.com/uc?export=download&id=${idMatch[1]}&confirm=t`;
+  return url;
+}
+
+function toDriveOpenUrl(url: string): string {
+  const idMatch =
+    url.startsWith('gdrive:') ? [null, url.slice(7)] :
+    url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (idMatch) return `https://drive.google.com/file/d/${idMatch[1]}/view`;
   return url;
 }
 
@@ -97,17 +107,36 @@ export default function ImageCarousel({ images, mediaTypes }: {
         onClick={() => setLightbox(true)}
       >
         {currentIsVideo ? (
-          // Video — show iframe preview with play overlay
-          <div className="relative w-full h-full bg-black">
-            <iframe
+          // Video — use <video> tag with proxy URL, fallback "Open" button
+          <div className="relative w-full h-full bg-black" onClick={() => setLightbox(true)}>
+            <video
               src={previewSrc}
-              className="w-full h-full"
-              allow="autoplay"
-              allowFullScreen
-              style={{ border: 'none' }}
+              className="w-full h-full object-cover"
+              playsInline
+              preload="metadata"
+              muted
+              onError={(e) => {
+                // If video fails to load, hide it and show the fallback
+                (e.currentTarget as HTMLVideoElement).style.display = 'none';
+                const fallback = (e.currentTarget as HTMLVideoElement).nextElementSibling as HTMLElement;
+                if (fallback) fallback.style.display = 'flex';
+              }}
             />
+            {/* Fallback shown if video fails to load */}
+            <div className="absolute inset-0 flex-col items-center justify-center gap-2 bg-black hidden">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="white" opacity="0.6"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <a href={toDriveOpenUrl(rawUrl)} target="_blank" rel="noopener noreferrer"
+                className="text-white text-xs underline"
+                onClick={e => e.stopPropagation()}>Open video</a>
+            </div>
+            {/* Play button overlay */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+              </div>
+            </div>
             <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 pointer-events-none">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Video
             </div>
           </div>
@@ -154,14 +183,20 @@ export default function ImageCarousel({ images, mediaTypes }: {
             onClick={() => setLightbox(false)}>&times;</button>
 
           {currentIsVideo ? (
-            <iframe
-              src={lightboxSrc}
-              className="max-w-[95vw] rounded-lg"
-              style={{ width: '95vw', height: '60vh', border: 'none' }}
-              allow="autoplay"
-              allowFullScreen
-              onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            />
+            <div className="flex flex-col items-center gap-3 max-w-[95vw]" onClick={e => e.stopPropagation()}>
+              <video
+                src={previewSrc}
+                className="max-w-[95vw] max-h-[75vh] rounded-lg"
+                controls
+                autoPlay
+                playsInline
+              />
+              <a href={toDriveOpenUrl(rawUrl)} target="_blank" rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="text-white/70 text-xs underline">
+                Not playing? Open in Drive
+              </a>
+            </div>
           ) : (
             <img
               src={lightboxSrc}
