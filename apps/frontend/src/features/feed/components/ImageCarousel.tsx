@@ -51,15 +51,16 @@ function toDisplayUrl(url: string): string {
 
 function toVideoPreviewUrl(url: string): string {
   if (!url) return url;
-  // For proxy URLs — use directly in <video> tag (streams from our server)
-  if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}`;
-  if (url.includes('/api/v1/drive-proxy')) return url;
-  // For gdrive: or Drive URLs — return the proxy-style download URL
+  // Extract file ID from any URL format
   const idMatch =
     url.startsWith('gdrive:') ? [null, url.slice(7)] :
+    url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
     url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
     url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-  if (idMatch) return `https://drive.google.com/uc?export=download&id=${idMatch[1]}&confirm=t`;
+  if (idMatch) {
+    // Use Drive's direct streaming URL — supports range requests on mobile
+    return `https://drive.google.com/uc?export=download&id=${idMatch[1]}&confirm=t`;
+  }
   return url;
 }
 

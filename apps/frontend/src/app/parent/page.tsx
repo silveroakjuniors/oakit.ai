@@ -1608,18 +1608,21 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
      const isVideo = mediaType === 'video' ||
        ['.mp4','.mov','.webm','.3gp','.m4v','export=download'].some(ext => img.toLowerCase().includes(ext));
 
-     // Convert any Drive URL to directly embeddable format
+     // Convert any Drive URL to directly streamable format
      function toDisplay(u: string, vid: boolean): string {
-       // New signed proxy URL — prepend API base
+       // Signed proxy URL — prepend API base
        if (u.startsWith('/api/v1/drive-proxy')) return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}${u}`;
        if (u.includes('/api/v1/drive-proxy')) return u;
-       // gdrive: scheme — extract ID
-       if (u.startsWith('gdrive:')) {
-         const id = u.slice(7);
-         return vid ? `https://drive.google.com/file/d/${id}/preview` : `https://drive.google.com/thumbnail?id=${id}&sz=w800`;
+       // Extract file ID from any format
+       const idM = u.startsWith('gdrive:') ? [null, u.slice(7)] :
+         u.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+         u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
+         u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+       if (idM) {
+         return vid
+           ? `https://drive.google.com/uc?export=download&id=${idM[1]}&confirm=t`  // range requests work
+           : `https://drive.google.com/thumbnail?id=${idM[1]}&sz=w800`;
        }
-       const idM = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
-       if (idM) return vid ? `https://drive.google.com/file/d/${idM[1]}/preview` : `https://drive.google.com/thumbnail?id=${idM[1]}&sz=w800`;
        return u;
      }
      function toDownload(u: string): string {
