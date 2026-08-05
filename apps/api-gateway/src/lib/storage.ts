@@ -301,8 +301,16 @@ export async function uploadToGoogleDrive(opts: {
       { role: 'reader', type: 'anyone' },
       { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
-    // Store just the Google Drive file ID — the frontend constructs the proxy URL at display time
-    directUrl = `gdrive:${uploadResponse.id}`;
+    // Store a signed proxy URL — backend fetches from Drive and streams to client
+    // HMAC signature means no JWT needed, works in <img> and <video> tags on all browsers
+    const crypto = require('crypto');
+    const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
+    const sig = crypto
+      .createHmac('sha256', PROXY_SECRET)
+      .update(`${uploadResponse.id}:${opts.schoolId}`)
+      .digest('hex')
+      .slice(0, 16);
+    directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}&school=${opts.schoolId}&sig=${sig}`;
     console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
     console.error('[google drive permission error]', permErr.response?.data || permErr.message);

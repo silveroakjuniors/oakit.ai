@@ -4,7 +4,7 @@ import { useState } from 'react';
 // Extract Google Drive file ID from any URL format we store
 function getDriveFileId(url: string): string | null {
   if (!url) return null;
-  // gdrive:FILE_ID (our new scheme)
+  // gdrive:FILE_ID (old scheme)
   if (url.startsWith('gdrive:')) return url.slice(7);
   // /d/FILE_ID or file/d/FILE_ID
   const m1 = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
@@ -31,21 +31,45 @@ function isVideoUrl(url: string, mediaType?: string): boolean {
     lower.includes('.3gp');
 }
 
-// Get the best displayable URL for an image from Drive
-function driveImageSrc(fileId: string): string {
-  // thumbnail URL — works in <img> without auth for publicly shared files
-  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
+// Build the best displayable URL for the given stored URL
+function toDisplayUrl(url: string): string {
+  if (!url) return url;
+  // Signed proxy URL (new) — prepend API_BASE
+  if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}`;
+  if (url.includes('/api/v1/drive-proxy')) return url;
+  // gdrive:FILE_ID (old) — we can't sign it client-side, use thumbnail for images
+  if (url.startsWith('gdrive:')) {
+    const fileId = url.slice(7);
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
+  }
+  // Legacy Drive URL
+  const idMatch = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (idMatch) return `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w800`;
+  return url;
 }
 
-// Get the best displayable URL for a video from Drive
-// Use iframe embed via /preview
-function driveVideoPreviewSrc(fileId: string): string {
-  return `https://drive.google.com/file/d/${fileId}/preview`;
+function toVideoPreviewUrl(url: string): string {
+  if (!url) return url;
+  // Signed proxy URL — use as-is (it streams the video directly)
+  if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}`;
+  if (url.includes('/api/v1/drive-proxy')) return url;
+  // gdrive: or Drive URL — use iframe preview
+  const idMatch =
+    url.startsWith('gdrive:') ? [null, url.slice(7)] :
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (idMatch) return `https://drive.google.com/file/d/${idMatch[1]}/preview`;
+  return url;
 }
 
-// Get the download URL
-function driveDownloadUrl(fileId: string): string {
-  return `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
+function toDownloadUrl(url: string): string {
+  const idMatch =
+    url.startsWith('gdrive:') ? [null, url.slice(7)] :
+    url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/) ||
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/);
+  if (idMatch) return `https://drive.google.com/uc?export=download&id=${idMatch[1]}&confirm=t`;
+  return url;
 }
 
 export default function ImageCarousel({ images, mediaTypes }: {
@@ -60,18 +84,10 @@ export default function ImageCarousel({ images, mediaTypes }: {
   const rawUrl = images[idx];
   const mediaType = mediaTypes?.[idx];
   const currentIsVideo = isVideoUrl(rawUrl, mediaType);
-  const fileId = getDriveFileId(rawUrl);
-  const isDrive = isDriveUrl(rawUrl) || fileId !== null;
 
-  const previewSrc = fileId
-    ? (currentIsVideo ? driveVideoPreviewSrc(fileId) : driveImageSrc(fileId))
-    : rawUrl;
-
-  const lightboxSrc = fileId
-    ? (currentIsVideo ? driveVideoPreviewSrc(fileId) : driveImageSrc(fileId))
-    : rawUrl;
-
-  const downloadSrc = fileId ? driveDownloadUrl(fileId) : rawUrl;
+  const previewSrc = currentIsVideo ? toVideoPreviewUrl(rawUrl) : toDisplayUrl(rawUrl);
+  const lightboxSrc = currentIsVideo ? toVideoPreviewUrl(rawUrl) : toDisplayUrl(rawUrl);
+  const downloadSrc = toDownloadUrl(rawUrl);
 
   return (
     <>
