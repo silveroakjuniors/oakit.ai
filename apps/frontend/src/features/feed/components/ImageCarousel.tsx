@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { API_BASE } from '@/lib/api';
 
 // Extract Google Drive file ID from any URL format we store
 function getDriveFileId(url: string): string | null {
