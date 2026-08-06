@@ -215,7 +215,7 @@ router.get('/pending', async (req: Request, res: Response) => {
        FROM day_plans dp
        LEFT JOIN special_days sd ON sd.school_id = $3 AND sd.day_date = dp.plan_date
        WHERE dp.section_id = $1 AND dp.plan_date < $2::date
-         AND dp.status NOT IN ('holiday', 'weekend')
+         AND dp.status NOT IN ('holiday', 'weekend', 'settling', 'completed', 'event')
        ORDER BY dp.plan_date ASC`,
       [section_id, today, school_id]
     );
@@ -253,17 +253,8 @@ router.get('/pending', async (req: Request, res: Response) => {
         if (chunks.rows.length > 0) {
           pending.push({ plan_date: planDate, chunks: chunks.rows });
         }
-      } else {
-        // Special day / event / settling day — no chunks but still needs completion
-        const label = plan.special_day_label || plan.status || 'Special Day';
-        pending.push({
-          plan_date: planDate,
-          is_special_day: true,
-          special_day_label: label,
-          special_day_type: plan.special_day_type || plan.status,
-          chunks: [],
-        });
       }
+      // Days with no chunks (settling/event that slipped filter) are skipped — not pending
     }
 
     return res.json(pending);
