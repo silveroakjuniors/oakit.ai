@@ -200,9 +200,6 @@ export async function uploadToGoogleDrive(opts: {
     throw new Error('Google Drive credentials not configured. Please configure the service account in Admin → Settings → Google Drive.');
   }
 
-  // Read file
-  const fileBuffer = fs.readFileSync(opts.localPath);
-
   // ── 1. Resolve / create the target folder path ───────────────────────────
   // Walk ClassName / YYYY-MM-DD [/ EventName] inside the configured root folder
   let targetFolderId = folderId;
@@ -257,7 +254,7 @@ export async function uploadToGoogleDrive(opts: {
   }
 
   // ── 2. Upload the file directly into the target folder (multipart) ────────
-  // Using multipart upload sets parents at creation time — no patch needed.
+  // Stream file directly — don't buffer entire file in memory (important for large videos)
   const FormDataNode = (await import('form-data')).default;
   const form = new FormDataNode();
 
@@ -267,16 +264,16 @@ export async function uploadToGoogleDrive(opts: {
     parents: [targetFolderId],
   }), { contentType: 'application/json' });
 
-  // Media part
-  form.append('file', fileBuffer, {
+  // Media part — stream from disk
+  form.append('file', fs.createReadStream(opts.localPath), {
     filename: opts.originalName,
     contentType: opts.mimeType,
+    knownLength: fs.statSync(opts.localPath).size,
   });
 
   let uploadResponse: { id: string; webViewLink: string; webContentLink?: string };
   try {
     const res = await axios.post<{ id: string; webViewLink: string; webContentLink?: string }>(
-      // supportsAllDrives=true  → file is billed to the folder owner's quota, not the service account
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink,webContentLink',
       form,
       {
@@ -284,41 +281,46 @@ export async function uploadToGoogleDrive(opts: {
           Authorization: `Bearer ${accessToken}`,
           ...form.getHeaders(),
         },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 120000, // 2 min timeout for large video uploads
       }
     );
     uploadResponse = res.data;
   } catch (uploadErr: any) {
     const googleMsg = uploadErr.response?.data?.error?.message || uploadErr.message;
-    console.error('[google drive upload 403 detail]', JSON.stringify(uploadErr.response?.data || {}));
+    console.error('[google drive upload error]', JSON.stringify(uploadErr.response?.data || {}));
     throw new Error(`Google Drive upload failed: ${googleMsg}`);
   }
 
-  // Make the file publicly readable so parents can view it in the app
-  let directUrl: string = uploadResponse.webViewLink || '';
+  // Make the file publicly readable (belt-and-suspenders — proxy also works without this)
+  let directUrl: string = '';
   try {
     await axios.post(
       `https://www.googleapis.com/drive/v3/files/${uploadResponse.id}/permissions?supportsAllDrives=true`,
       { role: 'reader', type: 'anyone' },
       { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
-    // Store a signed proxy URL — backend fetches from Drive and streams to client
-    // HMAC signature means no JWT needed, works in <img> and <video> tags on all browsers
-    const crypto = require('crypto');
-    const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
-    const sig = crypto
-      .createHmac('sha256', PROXY_SECRET)
-      .update(`${uploadResponse.id}:${opts.schoolId}`)
-      .digest('hex')
-      .slice(0, 16);
-    directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}&school=${opts.schoolId}&sig=${sig}`;
-    console.log('[google drive] File made public:', directUrl);
   } catch (permErr: any) {
-    console.error('[google drive permission error]', permErr.response?.data || permErr.message);
-    // Non-fatal — fall back to webViewLink
+    console.error('[google drive permission warning]', permErr.response?.data?.error?.message || permErr.message);
+    // Non-fatal — proxy still works via OAuth credentials
   }
+
+  // Always store a signed proxy URL — backend streams bytes, browser never touches Drive directly.
+  // HMAC signature means no JWT needed, safe in <img src> and <video src> tags.
+  const crypto = require('crypto');
+  const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
+  const sig = crypto
+    .createHmac('sha256', PROXY_SECRET)
+    .update(`${uploadResponse.id}:${opts.schoolId}`)
+    .digest('hex')
+    .slice(0, 16);
+  directUrl = `/api/v1/drive-proxy?id=${uploadResponse.id}&school=${opts.schoolId}&sig=${sig}`;
+  console.log('[google drive] stored proxy URL for file:', uploadResponse.id);
 
   // Log to audit
   if (opts.actorId) {
+    const fileSize = (() => { try { return fs.statSync(opts.localPath).size; } catch { return 0; } })();
     await pool.query(
       `INSERT INTO audit_logs (school_id, actor_id, actor_name, actor_role, action, entity_type, metadata, storage_path)
        VALUES ($1, $2, $3, $4, 'upload_photo', 'google_drive_media', $5, $6)`,
@@ -329,7 +331,7 @@ export async function uploadToGoogleDrive(opts: {
         opts.actorRole || null,
         JSON.stringify({
           file_name: opts.originalName,
-          file_size: fileBuffer.length,
+          file_size: fileSize,
           drive_file_id: uploadResponse.id,
           drive_url: uploadResponse.webViewLink,
           folder_path: opts.driveFolderName || null,

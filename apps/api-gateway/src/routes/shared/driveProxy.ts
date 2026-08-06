@@ -1,8 +1,10 @@
 /**
- * GET /api/v1/drive-proxy?id=FILE_ID&school=SCHOOL_ID&sig=HMAC
- * Proxies Google Drive file bytes through the API.
- * Uses HMAC signature — no JWT required (safe for <img> and <video> tags).
- * Supports Range requests so videos can seek correctly (206 Partial Content).
+ * GET /api/v1/drive-proxy?id=FILE_ID&school=SCHOOL_ID&sig=HMAC[&download=1]
+ *
+ * Streams a Google Drive file through the API to the browser.
+ * - HMAC signature auth — no JWT required, safe in <img> and <video> src.
+ * - Supports Range requests for video seeking (206 Partial Content).
+ * - Token cached per school for 55 minutes.
  */
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
@@ -14,10 +16,10 @@ const router = Router();
 
 const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
 
-// Cache access tokens per school (expire 55 min, Drive tokens last 60 min)
+// ── Token cache: avoid refreshing on every request ─────────────────────────
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
-async function getAccessToken(schoolId: string): Promise<string | null> {
+async function getAccessToken(schoolId: string): Promise<string> {
   const cached = tokenCache.get(schoolId);
   if (cached && cached.expiresAt > Date.now()) return cached.token;
 
@@ -25,86 +27,80 @@ async function getAccessToken(schoolId: string): Promise<string | null> {
     `SELECT google_drive_auth FROM school_settings WHERE school_id = $1`,
     [schoolId]
   );
-  const authConfig: any = cfg.rows[0]?.google_drive_auth;
-  if (!authConfig) return null;
+  const raw: any = cfg.rows[0]?.google_drive_auth;
+  if (!raw) throw new Error('Drive not configured for school');
 
-  const parsed = typeof authConfig === 'string' ? JSON.parse(authConfig) : authConfig;
-  let accessToken: string | null = null;
+  const auth = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  let token: string | null = null;
 
-  if (parsed.type === 'oauth' && parsed.refresh_token) {
-    const tokenRes = await axios.post(
+  if (auth.type === 'oauth' && auth.refresh_token) {
+    const r = await axios.post<{ access_token: string }>(
       'https://oauth2.googleapis.com/token',
       new URLSearchParams({
-        client_id: parsed.client_id,
-        client_secret: parsed.client_secret,
-        refresh_token: parsed.refresh_token,
-        grant_type: 'refresh_token',
+        client_id:     auth.client_id,
+        client_secret: auth.client_secret,
+        refresh_token: auth.refresh_token,
+        grant_type:    'refresh_token',
       }).toString(),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
-    accessToken = tokenRes.data.access_token;
-  } else if (parsed.type === 'service_account' && parsed.private_key) {
-    const jwtClient = new GoogleJWT({
-      key: parsed.private_key,
-      email: parsed.client_email,
-      scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive'],
+    token = r.data.access_token;
+  } else if (auth.type === 'service_account' && auth.private_key) {
+    const jwt = new GoogleJWT({
+      key:    auth.private_key,
+      email:  auth.client_email,
+      scopes: ['https://www.googleapis.com/auth/drive'],
     });
-    const { access_token } = await jwtClient.authorize();
-    accessToken = access_token;
-  } else if (parsed.access_token) {
-    accessToken = parsed.access_token;
+    const { access_token } = await jwt.authorize();
+    token = access_token;
+  } else if (auth.access_token) {
+    token = auth.access_token;
   }
 
-  if (accessToken) {
-    tokenCache.set(schoolId, { token: accessToken, expiresAt: Date.now() + 55 * 60 * 1000 });
-  }
-  return accessToken;
+  if (!token) throw new Error('Could not obtain Drive access token');
+  tokenCache.set(schoolId, { token, expiresAt: Date.now() + 55 * 60 * 1000 });
+  return token;
 }
 
-/** Generate a signed proxy URL for a Drive file (no JWT needed in browser). */
+// ── HMAC helpers ────────────────────────────────────────────────────────────
 export function signDriveUrl(fileId: string, schoolId: string): string {
-  const sig = crypto
-    .createHmac('sha256', PROXY_SECRET)
-    .update(`${fileId}:${schoolId}`)
-    .digest('hex')
-    .slice(0, 16);
+  const sig = crypto.createHmac('sha256', PROXY_SECRET)
+    .update(`${fileId}:${schoolId}`).digest('hex').slice(0, 16);
   return `/api/v1/drive-proxy?id=${fileId}&school=${schoolId}&sig=${sig}`;
 }
 
 function verifySig(fileId: string, schoolId: string, sig: string): boolean {
-  const expected = crypto
-    .createHmac('sha256', PROXY_SECRET)
-    .update(`${fileId}:${schoolId}`)
-    .digest('hex')
-    .slice(0, 16);
+  const expected = crypto.createHmac('sha256', PROXY_SECRET)
+    .update(`${fileId}:${schoolId}`).digest('hex').slice(0, 16);
   return sig === expected;
 }
 
+// ── Route handler ────────────────────────────────────────────────────────────
 router.get('/', async (req: Request, res: Response) => {
-  try {
-    const fileId   = req.query.id      as string;
-    const schoolId = req.query.school  as string;
-    const sig      = req.query.sig     as string;
-    const download = req.query.download === '1';
+  const fileId   = (req.query.id     as string || '').trim();
+  const schoolId = (req.query.school as string || '').trim();
+  const sig      = (req.query.sig    as string || '').trim();
+  const download = req.query.download === '1';
 
-    // Auth: HMAC signature (preferred — works in <img>/<video> without headers)
+  try {
+    // ── 1. Auth ──────────────────────────────────────────────────────────────
     let resolvedSchoolId = schoolId;
+
     if (sig && schoolId) {
       if (!verifySig(fileId, schoolId, sig)) {
+        console.warn('[drive-proxy] invalid sig for file=%s school=%s', fileId, schoolId);
         return res.status(403).send('Invalid signature');
       }
     } else {
-      // Fallback: JWT via Authorization header or ?token= param
-      const authHeader  = req.headers.authorization;
-      const queryToken  = req.query.token as string | undefined;
-      if (!authHeader && !queryToken) {
-        return res.status(400).send('Missing auth');
-      }
+      // Fallback: JWT token
+      const authHeader = req.headers.authorization;
+      const queryToken = req.query.token as string | undefined;
+      if (!authHeader && !queryToken) return res.status(400).send('Missing auth');
       try {
         const { verifyToken } = await import('../../lib/jwt');
-        const rawToken = authHeader?.replace('Bearer ', '').trim() || queryToken;
-        const decoded  = verifyToken(rawToken!);
-        resolvedSchoolId = decoded.school_id || schoolId;
+        const raw     = authHeader?.replace('Bearer ', '').trim() || queryToken!;
+        const decoded = verifyToken(raw);
+        resolvedSchoolId = (decoded as any).school_id || schoolId;
       } catch {
         return res.status(401).send('Invalid token');
       }
@@ -115,89 +111,71 @@ router.get('/', async (req: Request, res: Response) => {
     }
     if (!resolvedSchoolId) return res.status(400).send('Missing school');
 
-    const accessToken = await getAccessToken(resolvedSchoolId);
-    if (!accessToken) return res.status(503).send('Drive credentials not configured');
-
-    // First fetch file metadata to get content-type and size
-    let contentType  = 'application/octet-stream';
-    let contentLength: number | undefined;
+    // ── 2. Get Drive token ───────────────────────────────────────────────────
+    let accessToken: string;
     try {
-      const meta = await axios.get(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,size,name`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      contentType   = meta.data.mimeType   || contentType;
-      contentLength = meta.data.size       ? parseInt(meta.data.size) : undefined;
-    } catch {
-      // Non-fatal — proceed without metadata
+      accessToken = await getAccessToken(resolvedSchoolId);
+    } catch (tokenErr: any) {
+      console.error('[drive-proxy] token error school=%s:', resolvedSchoolId, tokenErr.message);
+      return res.status(503).send('Drive credentials not configured');
     }
 
-    const isVideo = contentType.startsWith('video/');
-
-    // Support Range requests for video seeking (RFC 7233)
+    // ── 3. Stream file from Drive ────────────────────────────────────────────
     const rangeHeader = req.headers['range'];
-
-    if (isVideo && rangeHeader && contentLength) {
-      // Parse "bytes=START-END"
-      const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
-      if (match) {
-        const start  = match[1] ? parseInt(match[1]) : 0;
-        const end    = match[2] ? parseInt(match[2]) : contentLength - 1;
-        const chunkSize = end - start + 1;
-
-        const driveRes = await axios.get(
-          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Range: `bytes=${start}-${end}`,
-            },
-            responseType: 'stream',
-            timeout: 60000,
-          }
-        );
-
-        res.writeHead(206, {
-          'Content-Range':  `bytes ${start}-${end}/${contentLength}`,
-          'Accept-Ranges':  'bytes',
-          'Content-Length': chunkSize,
-          'Content-Type':   contentType,
-          'Cache-Control':  'public, max-age=3600',
-        });
-        driveRes.data.pipe(res);
-        return;
-      }
-    }
-
-    // Regular (non-range) request
-    const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}` };
-
-    const driveRes = await axios.get(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-      {
-        headers,
-        responseType: 'stream',
-        timeout: 60000,
-      }
-    );
-
-    const responseHeaders: Record<string, string | number> = {
-      'Content-Type':  contentType,
-      'Cache-Control': isVideo ? 'public, max-age=3600' : 'public, max-age=86400',
-      'Accept-Ranges': 'bytes',
+    const driveHeaders: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
     };
-    if (contentLength) responseHeaders['Content-Length'] = contentLength;
-    if (download) {
-      responseHeaders['Content-Disposition'] = 'attachment';
+    if (rangeHeader) driveHeaders['Range'] = rangeHeader;
+
+    let driveRes: any;
+    try {
+      driveRes = await axios.get(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        {
+          headers:      driveHeaders,
+          responseType: 'stream',
+          timeout:      60000,
+          // Don't throw on 206 — axios treats non-2xx as errors by default
+          validateStatus: (s) => s < 400,
+        }
+      );
+    } catch (driveErr: any) {
+      const status = driveErr.response?.status;
+      console.error('[drive-proxy] Drive API error file=%s status=%s:', fileId, status, driveErr.message);
+      if (status === 404) return res.status(404).send('File not found in Drive');
+      if (status === 403) return res.status(403).send('Drive access denied');
+      return res.status(502).send('Failed to fetch from Drive');
     }
 
-    res.writeHead(200, responseHeaders);
+    // ── 4. Forward headers ───────────────────────────────────────────────────
+    const contentType = String(driveRes.headers['content-type'] || 'application/octet-stream');
+    const statusCode  = driveRes.status; // 200 or 206
+
+    const outHeaders: Record<string, string | number> = {
+      'Content-Type':  contentType,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': contentType.startsWith('video/') ? 'public, max-age=3600' : 'public, max-age=86400',
+    };
+
+    // Forward range-response headers
+    if (driveRes.headers['content-range'])  outHeaders['Content-Range']  = driveRes.headers['content-range'];
+    if (driveRes.headers['content-length']) outHeaders['Content-Length'] = driveRes.headers['content-length'];
+
+    if (download) outHeaders['Content-Disposition'] = 'attachment';
+
+    console.log('[drive-proxy] streaming file=%s school=%s status=%s type=%s',
+      fileId, resolvedSchoolId, statusCode, contentType);
+
+    res.writeHead(statusCode, outHeaders);
     driveRes.data.pipe(res);
 
+    driveRes.data.on('error', (e: Error) => {
+      console.error('[drive-proxy] stream error file=%s:', fileId, e.message);
+      if (!res.writableEnded) res.end();
+    });
+
   } catch (err: any) {
-    const status = err.response?.status;
-    if (status === 404) return res.status(404).send('File not found');
-    if (status === 403) return res.status(403).send('Access denied by Drive');
+    console.error('[drive-proxy] unexpected error file=%s:', fileId, err.message);
     if (!res.headersSent) res.status(500).send('Media unavailable');
   }
 });

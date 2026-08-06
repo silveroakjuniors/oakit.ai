@@ -2,11 +2,47 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { jwtVerify, forceResetGuard, schoolScope } from '../middleware/auth';
 import { pool } from '../lib/db';
 import { uploadToGoogleDrive } from '../lib/storage';
 import { compressVideo, isFfmpegAvailable } from '../lib/videoCompress';
+
+/**
+ * Normalize any stored media URL to a signed proxy URL.
+ * Handles: old thumbnail URLs, old download URLs, old proxy URLs, gdrive: scheme, new proxy paths.
+ * Returns a relative path like /api/v1/drive-proxy?id=X&school=Y&sig=Z
+ */
+function normalizeToProxyUrl(url: string, schoolId: string): string {
+  if (!url) return url;
+
+  const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
+
+  function sign(fileId: string): string {
+    const sig = crypto.createHmac('sha256', PROXY_SECRET)
+      .update(`${fileId}:${schoolId}`)
+      .digest('hex').slice(0, 16);
+    return `/api/v1/drive-proxy?id=${fileId}&school=${schoolId}&sig=${sig}`;
+  }
+
+  // Already a correctly-signed proxy path — use as-is
+  if (url.startsWith('/api/v1/drive-proxy')) return url;
+
+  // gdrive: scheme
+  if (url.startsWith('gdrive:')) return sign(url.slice(7));
+
+  // Extract Drive file ID from any URL format
+  const idMatch =
+    url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+
+  if (idMatch) return sign(idMatch[1]);
+
+  // Non-Drive URL (Supabase, local) — return as-is
+  return url;
+}
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
@@ -179,19 +215,18 @@ async function uploadFeedImage(
     }
   }
 
-  // ── Build smart filename: YYYY-MM-DD_ClassName_SectionLabel_N.ext ─────────
+  // ── Build Oaklets_ filename: Oaklets_ClassName_SectionLabel_N.ext ─────────
   const classSlug = className
     ? (sectionLabel ? `${className}_${sectionLabel}` : className).replace(/[^a-zA-Z0-9]/g, '_')
     : 'Class';
+  const classSlugBase = `Oaklets_${classSlug}`;
   const ext = isVideo ? '.mp4' : (path.extname(filename) || '.jpg');
   const seq = seqNum || 1;
-  const smartFilename = `${today}_${classSlug}_${seq}${ext}`;
+  const smartFilename = `${classSlugBase}_${seq}${ext}`;
 
-  // ── Upload to Drive ────────────────────────────────────────────────────────
-  const classPart = className
-    ? (sectionLabel ? `${className} - ${sectionLabel}` : className)
-    : 'All Classes';
-  const driveFolderName = `Class Feed/${classPart}/${today}`;
+  // ── Upload to Drive: Oaklets_ClassName_SectionLabel / YYYY-MM-DD / Photos|Videos
+  const mediaSubfolder = isVideo ? 'Videos' : 'Photos';
+  const driveFolderName = `${classSlugBase}/${today}/${mediaSubfolder}`;
 
   const result = await uploadToGoogleDrive({
     schoolId,
@@ -301,7 +336,8 @@ router.get('/', async (req: Request, res: Response) => {
       section_label: r.section_label || null,
       poster_name: r.poster_name,
       poster_role: r.poster_role,
-      images: r.images || [],
+      // Normalize all stored URLs to signed proxy paths — handles old & new records
+      images: (r.images || []).map((u: string) => normalizeToProxyUrl(u, user.school_id!)),
       media_types: r.media_types || [],
       like_count: Number(r.like_count),
       liked_by_me: Boolean(r.liked_by_me),
