@@ -1457,14 +1457,15 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
 }
 
 // --- Class Feed Column --------------------------------------------------------
-// Resolve proxy media URLs at runtime (not SSR-baked)
+// Resolve proxy media URLs at runtime — localhost for dev, Render for everything else
 function resolveFeedUrl(u: string): string {
   if (!u) return '';
   if (u.startsWith('/api/v1/')) {
-    if (typeof window === 'undefined') return u;
+    if (typeof window === 'undefined') return `https://oakit-api-gateway.onrender.com${u}`;
     const host = window.location.hostname;
-    const base = (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app'))
-      ? 'https://oakit-api-gateway.onrender.com' : 'http://localhost:3001';
+    const base = (host === 'localhost' || host === '127.0.0.1')
+      ? 'http://localhost:3001'
+      : 'https://oakit-api-gateway.onrender.com';
     return `${base}${u}`;
   }
   return u;

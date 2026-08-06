@@ -2,18 +2,13 @@
 import { useState } from 'react';
 
 /**
- * Resolve the API base URL at runtime in the browser.
- * Never uses the module-level API_BASE (which can be baked from SSR).
+ * Resolve the API base URL at runtime — localhost for dev, Render for everything else.
  */
 function getApiBase(): string {
-  if (typeof window === 'undefined') return '';
+  if (typeof window === 'undefined') return 'https://oakit-api-gateway.onrender.com';
   const host = window.location.hostname;
-  // Production / staging
-  if (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app')) {
-    return 'https://oakit-api-gateway.onrender.com';
-  }
-  // Localhost dev
-  return 'http://localhost:3001';
+  if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001';
+  return 'https://oakit-api-gateway.onrender.com';
 }
 
 /**

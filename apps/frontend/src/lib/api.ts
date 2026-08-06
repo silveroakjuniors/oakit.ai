@@ -12,21 +12,24 @@ function resolveApiBase(): string {
   // Runtime browser resolution
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    if (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app') || host.endsWith('.onrender.com')) {
-      return 'https://oakit-api-gateway.onrender.com';
-    }
+    // Local dev only — anything else uses production API
     if (host === 'localhost' || host === '127.0.0.1') {
       return 'http://localhost:3001';
     }
+    // All non-localhost = production
+    return 'https://oakit-api-gateway.onrender.com';
   }
 
-  // SSR fallback — will be overridden at runtime
-  return 'http://localhost:3001';
+  // SSR fallback (server-side — will be overridden at runtime in browser)
+  return 'https://oakit-api-gateway.onrender.com';
 }
 
-// Re-evaluated on each call so SSR-baked value never reaches production browser
+// Called at runtime so the correct URL is always resolved in the browser
 export function getApiBase(): string {
-  return resolveApiBase();
+  if (typeof window === 'undefined') return 'https://oakit-api-gateway.onrender.com';
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001';
+  return 'https://oakit-api-gateway.onrender.com';
 }
 
 export const API_BASE = resolveApiBase();
