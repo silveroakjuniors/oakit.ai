@@ -200,9 +200,6 @@ export async function uploadToGoogleDrive(opts: {
     throw new Error('Google Drive credentials not configured. Please configure the service account in Admin → Settings → Google Drive.');
   }
 
-  // Read file
-  const fileBuffer = fs.readFileSync(opts.localPath);
-
   // ── 1. Resolve / create the target folder path ───────────────────────────
   // Walk ClassName / YYYY-MM-DD [/ EventName] inside the configured root folder
   let targetFolderId = folderId;
@@ -257,7 +254,7 @@ export async function uploadToGoogleDrive(opts: {
   }
 
   // ── 2. Upload the file directly into the target folder (multipart) ────────
-  // Using multipart upload sets parents at creation time — no patch needed.
+  // Stream file directly — don't buffer entire file in memory (important for large videos)
   const FormDataNode = (await import('form-data')).default;
   const form = new FormDataNode();
 
@@ -267,16 +264,16 @@ export async function uploadToGoogleDrive(opts: {
     parents: [targetFolderId],
   }), { contentType: 'application/json' });
 
-  // Media part
-  form.append('file', fileBuffer, {
+  // Media part — stream from disk
+  form.append('file', fs.createReadStream(opts.localPath), {
     filename: opts.originalName,
     contentType: opts.mimeType,
+    knownLength: fs.statSync(opts.localPath).size,
   });
 
   let uploadResponse: { id: string; webViewLink: string; webContentLink?: string };
   try {
     const res = await axios.post<{ id: string; webViewLink: string; webContentLink?: string }>(
-      // supportsAllDrives=true  → file is billed to the folder owner's quota, not the service account
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink,webContentLink',
       form,
       {
@@ -284,12 +281,15 @@ export async function uploadToGoogleDrive(opts: {
           Authorization: `Bearer ${accessToken}`,
           ...form.getHeaders(),
         },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 120000, // 2 min timeout for large video uploads
       }
     );
     uploadResponse = res.data;
   } catch (uploadErr: any) {
     const googleMsg = uploadErr.response?.data?.error?.message || uploadErr.message;
-    console.error('[google drive upload 403 detail]', JSON.stringify(uploadErr.response?.data || {}));
+    console.error('[google drive upload error]', JSON.stringify(uploadErr.response?.data || {}));
     throw new Error(`Google Drive upload failed: ${googleMsg}`);
   }
 
@@ -320,6 +320,7 @@ export async function uploadToGoogleDrive(opts: {
 
   // Log to audit
   if (opts.actorId) {
+    const fileSize = (() => { try { return fs.statSync(opts.localPath).size; } catch { return 0; } })();
     await pool.query(
       `INSERT INTO audit_logs (school_id, actor_id, actor_name, actor_role, action, entity_type, metadata, storage_path)
        VALUES ($1, $2, $3, $4, 'upload_photo', 'google_drive_media', $5, $6)`,
@@ -330,7 +331,7 @@ export async function uploadToGoogleDrive(opts: {
         opts.actorRole || null,
         JSON.stringify({
           file_name: opts.originalName,
-          file_size: fileBuffer.length,
+          file_size: fileSize,
           drive_file_id: uploadResponse.id,
           drive_url: uploadResponse.webViewLink,
           folder_path: opts.driveFolderName || null,
