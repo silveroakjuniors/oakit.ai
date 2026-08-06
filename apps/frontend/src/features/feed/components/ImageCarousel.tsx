@@ -2,54 +2,51 @@
 import { useState } from 'react';
 
 /**
- * Resolve the API base URL at runtime — localhost for dev, Render for everything else.
+ * Extract Drive file ID from any stored URL format.
+ * Handles: /api/v1/drive-proxy?id=X, gdrive:X, https://drive.google.com/...
  */
-function getApiBase(): string {
-  if (typeof window === 'undefined') return 'https://oakit-api-gateway.onrender.com';
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001';
-  return 'https://oakit-api-gateway.onrender.com';
+function extractDriveId(url: string): string | null {
+  if (!url) return null;
+  if (url.startsWith('gdrive:')) return url.slice(7);
+  const m =
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  return m ? m[1] : null;
 }
 
 /**
- * Convert any stored media URL to a full absolute proxy URL (resolved at runtime).
- * Stored format (new):  /api/v1/drive-proxy?id=X&school=Y&sig=Z
- * Legacy formats:       gdrive:ID, https://drive.google.com/...
+ * Get a direct displayable URL for an image from Google Drive.
+ * Uses Google's lh3 CDN — public, fast, no auth needed.
  */
-function toProxyUrl(url: string): string {
+function toImageUrl(url: string): string {
   if (!url) return '';
-  // Relative proxy path — prepend runtime API base
-  if (url.startsWith('/api/v1/drive-proxy')) return `${getApiBase()}${url}`;
-  // Already an absolute URL (old Drive URLs, Supabase, etc.) — use as-is
-  if (url.startsWith('https://') || url.startsWith('http://')) return url;
-  // Legacy gdrive: scheme
-  if (url.startsWith('gdrive:')) {
-    const id = url.slice(7);
-    return `${getApiBase()}/api/v1/drive-proxy?id=${id}`;
-  }
+  const id = extractDriveId(url);
+  if (id) return `https://lh3.googleusercontent.com/d/${id}`;
+  // Supabase / local fallback
   return url;
 }
 
+/**
+ * Get a streamable URL for a video from Google Drive.
+ * uc?export=download supports range requests for mobile playback.
+ */
 function toVideoUrl(url: string): string {
   if (!url) return '';
-  if (url.startsWith('/api/v1/drive-proxy')) return `${getApiBase()}${url}`;
-  if (url.startsWith('https://') || url.startsWith('http://')) return url;
-  if (url.startsWith('gdrive:')) return `${getApiBase()}/api/v1/drive-proxy?id=${url.slice(7)}`;
+  const id = extractDriveId(url);
+  if (id) return `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
   return url;
 }
 
 function toDownloadUrl(url: string): string {
   if (!url) return '';
-  if (url.startsWith('/api/v1/drive-proxy')) return `${getApiBase()}${url}&download=1`;
-  if (url.startsWith('https://') || url.startsWith('http://')) return url;
-  if (url.startsWith('gdrive:')) return `${getApiBase()}/api/v1/drive-proxy?id=${url.slice(7)}&download=1`;
+  const id = extractDriveId(url);
+  if (id) return `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
   return url;
 }
 
 function toDriveOpenUrl(url: string): string {
-  const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
-  if (idMatch) return `https://drive.google.com/file/d/${idMatch[1]}/view`;
-  if (url.startsWith('gdrive:')) return `https://drive.google.com/file/d/${url.slice(7)}/view`;
+  const id = extractDriveId(url);
+  if (id) return `https://drive.google.com/file/d/${id}/view`;
   return url;
 }
 
@@ -72,12 +69,12 @@ export default function ImageCarousel({ images, mediaTypes }: {
 
   if (images.length === 0) return null;
 
-  const rawUrl     = images[idx];
-  const mediaType  = mediaTypes?.[idx];
+  const rawUrl         = images[idx];
+  const mediaType      = mediaTypes?.[idx];
   const currentIsVideo = isVideoUrl(rawUrl, mediaType);
 
-  const previewSrc  = currentIsVideo ? toVideoUrl(rawUrl)  : toProxyUrl(rawUrl);
-  const lightboxSrc = currentIsVideo ? toVideoUrl(rawUrl)  : toProxyUrl(rawUrl);
+  const previewSrc  = currentIsVideo ? toVideoUrl(rawUrl)  : toImageUrl(rawUrl);
+  const lightboxSrc = currentIsVideo ? toVideoUrl(rawUrl)  : toImageUrl(rawUrl);
   const downloadSrc = toDownloadUrl(rawUrl);
 
   return (
@@ -90,7 +87,6 @@ export default function ImageCarousel({ images, mediaTypes }: {
         {currentIsVideo ? (
           <div className="relative w-full h-full bg-black" onClick={() => setLightbox(true)}>
             {vidError ? (
-              // Fallback: open in Drive
               <a href={toDriveOpenUrl(rawUrl)} target="_blank" rel="noopener noreferrer"
                 className="w-full h-full flex flex-col items-center justify-center gap-2 bg-black"
                 onClick={e => e.stopPropagation()}>
@@ -107,7 +103,6 @@ export default function ImageCarousel({ images, mediaTypes }: {
                   muted
                   onError={() => setVidError(true)}
                 />
-                {/* Play overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
@@ -123,11 +118,10 @@ export default function ImageCarousel({ images, mediaTypes }: {
         ) : imgError ? (
           <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-200 gap-2 p-3">
             <span className="text-neutral-500 text-xs text-center">Unable to load image</span>
-            <a href={toProxyUrl(rawUrl)}
-              target="_blank" rel="noopener noreferrer"
+            <a href={toDriveOpenUrl(rawUrl)} target="_blank" rel="noopener noreferrer"
               className="text-blue-500 text-[10px] underline"
               onClick={e => e.stopPropagation()}>
-              Open directly
+              Open in Drive
             </a>
           </div>
         ) : (
@@ -136,7 +130,7 @@ export default function ImageCarousel({ images, mediaTypes }: {
             alt={`Photo ${idx + 1}`}
             className="w-full h-full object-cover"
             loading="lazy"
-            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             onError={() => setImgError(true)}
           />
         )}
@@ -193,12 +187,11 @@ export default function ImageCarousel({ images, mediaTypes }: {
               src={lightboxSrc}
               alt={`Photo ${idx + 1}`}
               className="max-w-[95vw] max-h-[80vh] object-contain rounded-lg"
-              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
               onClick={e => e.stopPropagation()}
             />
           )}
 
-          {/* Download */}
           <a
             href={downloadSrc}
             target="_blank"

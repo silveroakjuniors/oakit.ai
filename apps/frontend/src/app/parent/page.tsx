@@ -1471,6 +1471,28 @@ function resolveFeedUrl(u: string): string {
   return u;
 }
 
+/** Extract Drive file ID from any stored URL */
+function extractDriveId(u: string): string | null {
+  if (!u) return null;
+  if (u.startsWith('gdrive:')) return u.slice(7);
+  const m = u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || u.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  return m ? m[1] : null;
+}
+
+/** Direct Google CDN image URL — public, no auth, no proxy needed */
+function toFeedImageUrl(u: string): string {
+  const id = extractDriveId(u);
+  if (id) return `https://lh3.googleusercontent.com/d/${id}`;
+  return resolveFeedUrl(u);
+}
+
+/** Direct Drive download URL for videos */
+function toFeedVideoUrl(u: string): string {
+  const id = extractDriveId(u);
+  if (id) return `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
+  return resolveFeedUrl(u);
+}
+
 function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: { classFeed: any[]; schoolInstagram?: string; token: string; driveFolderUrl?: string | null }) {
  const [lightbox, setLightbox] = useState<{ images: string[]; index: number; caption?: string; mediaTypes?: string[] } | null>(null);
  // local like state: postId ? { count, likedByMe }
@@ -1620,10 +1642,10 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
    (() => {
      const mediaType = post.media_types?.[0];
      const isVideo = mediaType === 'video';
-     const displaySrc = resolveFeedUrl(img);
-     const driveIdMatch = img.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+     const displaySrc = isVideo ? toFeedVideoUrl(img) : toFeedImageUrl(img);
+     const driveIdMatch = extractDriveId(img);
      const driveOpenUrl = driveIdMatch
-       ? `https://drive.google.com/file/d/${driveIdMatch[1]}/view`
+       ? `https://drive.google.com/file/d/${driveIdMatch}/view`
        : img;
 
      return isVideo ? (
@@ -1665,7 +1687,7 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
    {post.images.slice(1, 4).map((img2: string, i: number) => {
      const mt = post.media_types?.[i + 1];
      const isVid = mt === 'video';
-     const src2 = resolveFeedUrl(img2);
+     const src2 = isVid ? toFeedVideoUrl(img2) : toFeedImageUrl(img2);
      return isVid ? (
        <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer bg-black"
          onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}>
@@ -1792,8 +1814,7 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
      const mt = lightbox.mediaTypes?.[lightbox.index];
      const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','export=download'].some(ext => url.toLowerCase().includes(ext));
      function toDisplayLightbox(u: string, vid: boolean): string {
-       if (u.startsWith('/api/v1/')) return resolveFeedUrl(u);
-       return u;
+       return vid ? toFeedVideoUrl(u) : toFeedImageUrl(u);
      }
      const src = toDisplayLightbox(url, isVid);
      return isVid ? (
