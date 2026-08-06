@@ -86,6 +86,7 @@ export default function UploadModal({ token, sectionId, onClose, onPosted }: Upl
     // ── Step 1: Compress video files on-device ────────────────────────────
     const readyFiles: File[] = [];
     const ffmpegOk = isFFmpegSupported();
+    console.log('[upload] FFmpeg WASM supported:', ffmpegOk);
 
     for (const file of files) {
       if (VIDEO_TYPES.includes(file.type) && ffmpegOk) {
