@@ -1606,8 +1606,19 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
    (() => {
      const mediaType = post.media_types?.[0];
      const isVideo = mediaType === 'video';
-     // Resolve URL: proxy paths get API_BASE prepended; full URLs used as-is
-     const displaySrc = img.startsWith('/api/v1/') ? `${API_BASE}${img}` : img;
+     // Resolve URL at runtime — proxy paths get runtime API base prepended
+     function resolveUrl(u: string): string {
+       if (!u) return '';
+       if (u.startsWith('/api/v1/')) {
+         if (typeof window === 'undefined') return u;
+         const host = window.location.hostname;
+         const base = (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app'))
+           ? 'https://oakit-api-gateway.onrender.com' : 'http://localhost:3001';
+         return `${base}${u}`;
+       }
+       return u;
+     }
+     const displaySrc = resolveUrl(img);
      const driveIdMatch = img.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
      const driveOpenUrl = driveIdMatch
        ? `https://drive.google.com/file/d/${driveIdMatch[1]}/view`
@@ -1652,7 +1663,7 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
    {post.images.slice(1, 4).map((img2: string, i: number) => {
      const mt = post.media_types?.[i + 1];
      const isVid = mt === 'video';
-     const src2 = img2.startsWith('/api/v1/') ? `${API_BASE}${img2}` : img2;
+     const src2 = img2.startsWith('/api/v1/') ? resolveUrl(img2) : img2;
      return isVid ? (
        <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer bg-black"
          onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}>
@@ -1779,8 +1790,8 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: 
      const mt = lightbox.mediaTypes?.[lightbox.index];
      const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','export=download'].some(ext => url.toLowerCase().includes(ext));
      function toDisplayLightbox(u: string, vid: boolean): string {
-       // Proxy URL — prepend API base
-       if (u.startsWith('/api/v1/')) return `${API_BASE}${u}`;
+       // Proxy URL — prepend runtime API base
+       if (u.startsWith('/api/v1/')) return resolveUrl(u);
        // Full URL — use as-is
        return u;
      }

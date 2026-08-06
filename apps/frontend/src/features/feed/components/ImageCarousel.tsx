@@ -1,49 +1,57 @@
 'use client';
 import { useState } from 'react';
-import { API_BASE } from '@/lib/api';
 
 /**
- * Convert a stored media URL to a full absolute proxy URL.
- * Stored format: /api/v1/drive-proxy?id=X&school=Y&sig=Z  (from new uploads)
- * Legacy formats: gdrive:ID, full Drive URLs, thumbnail URLs — handled gracefully.
+ * Resolve the API base URL at runtime in the browser.
+ * Never uses the module-level API_BASE (which can be baked from SSR).
+ */
+function getApiBase(): string {
+  if (typeof window === 'undefined') return '';
+  const host = window.location.hostname;
+  // Production / staging
+  if (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app')) {
+    return 'https://oakit-api-gateway.onrender.com';
+  }
+  // Localhost dev
+  return 'http://localhost:3001';
+}
+
+/**
+ * Convert any stored media URL to a full absolute proxy URL (resolved at runtime).
+ * Stored format (new):  /api/v1/drive-proxy?id=X&school=Y&sig=Z
+ * Legacy formats:       gdrive:ID, https://drive.google.com/...
  */
 function toProxyUrl(url: string): string {
   if (!url) return '';
-  // Already a full absolute URL (old direct Drive URLs or Supabase) — use as-is
+  // Relative proxy path — prepend runtime API base
+  if (url.startsWith('/api/v1/drive-proxy')) return `${getApiBase()}${url}`;
+  // Already an absolute URL (old Drive URLs, Supabase, etc.) — use as-is
   if (url.startsWith('https://') || url.startsWith('http://')) return url;
-  // Relative proxy path — prepend API base
-  if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}`;
-  // Legacy gdrive: scheme — wrap in proxy via extract
+  // Legacy gdrive: scheme
   if (url.startsWith('gdrive:')) {
     const id = url.slice(7);
-    return `https://drive.google.com/thumbnail?id=${id}&sz=w1200`;
+    return `${getApiBase()}/api/v1/drive-proxy?id=${id}`;
   }
   return url;
 }
 
 function toVideoUrl(url: string): string {
   if (!url) return '';
+  if (url.startsWith('/api/v1/drive-proxy')) return `${getApiBase()}${url}`;
   if (url.startsWith('https://') || url.startsWith('http://')) return url;
-  if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}`;
-  if (url.startsWith('gdrive:')) {
-    return `https://drive.google.com/uc?export=download&id=${url.slice(7)}&confirm=t`;
-  }
+  if (url.startsWith('gdrive:')) return `${getApiBase()}/api/v1/drive-proxy?id=${url.slice(7)}`;
   return url;
 }
 
 function toDownloadUrl(url: string): string {
   if (!url) return '';
-  // Proxy download: append download=1
-  if (url.startsWith('/api/v1/drive-proxy')) return `${API_BASE}${url}&download=1`;
-  if (url.startsWith('https://drive.google.com') || url.startsWith('http://')) return url;
-  if (url.startsWith('gdrive:')) {
-    return `https://drive.google.com/uc?export=download&id=${url.slice(7)}&confirm=t`;
-  }
+  if (url.startsWith('/api/v1/drive-proxy')) return `${getApiBase()}${url}&download=1`;
+  if (url.startsWith('https://') || url.startsWith('http://')) return url;
+  if (url.startsWith('gdrive:')) return `${getApiBase()}/api/v1/drive-proxy?id=${url.slice(7)}&download=1`;
   return url;
 }
 
 function toDriveOpenUrl(url: string): string {
-  // Extract file ID from proxy URL for "Open in Drive" fallback
   const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
   if (idMatch) return `https://drive.google.com/file/d/${idMatch[1]}/view`;
   if (url.startsWith('gdrive:')) return `https://drive.google.com/file/d/${url.slice(7)}/view`;
@@ -118,8 +126,14 @@ export default function ImageCarousel({ images, mediaTypes }: {
             </div>
           </div>
         ) : imgError ? (
-          <div className="w-full h-full flex items-center justify-center bg-neutral-200">
-            <span className="text-neutral-400 text-xs">Unable to load image</span>
+          <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-200 gap-2 p-3">
+            <span className="text-neutral-500 text-xs text-center">Unable to load image</span>
+            <a href={toProxyUrl(rawUrl)}
+              target="_blank" rel="noopener noreferrer"
+              className="text-blue-500 text-[10px] underline"
+              onClick={e => e.stopPropagation()}>
+              Open directly
+            </a>
           </div>
         ) : (
           <img
