@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import { Upload, FolderOpen, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import { API_BASE } from '@/lib/api';
+import { API_BASE, getApiBase } from '@/lib/api';
 
 interface DriveConfig {
   google_drive_enabled: boolean;
@@ -48,7 +48,7 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
       setLoadingConfig(true);
       try {
         // cache: 'no-store' prevents the browser from serving a stale cached response
-        const res = await fetch(`${API_BASE}/api/v1/teacher/media/config`, {
+        const res = await fetch(`${getApiBase()}/api/v1/teacher/media/config`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: 'no-store',
         });
@@ -110,7 +110,7 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
         fd.append('media', file);
         if (eventName.trim()) fd.append('event_name', eventName.trim());
 
-        const res = await fetch(`${API_BASE}/api/v1/teacher/media/upload`, {
+        const res = await fetch(`${getApiBase()}/api/v1/teacher/media/upload`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: fd,

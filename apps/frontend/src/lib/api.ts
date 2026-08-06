@@ -5,18 +5,28 @@ function normalizeBase(url: string): string {
 }
 
 function resolveApiBase(): string {
+  // Always prefer the env var (set in Vercel/Render dashboard)
   const envBase = (process.env.NEXT_PUBLIC_API_URL || '').trim();
   if (envBase) return normalizeBase(envBase);
 
-  // Production fallback to hosted API when env is missing/misconfigured.
+  // Runtime browser resolution
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
     if (host === 'oakit.silveroakjuniors.in' || host.endsWith('.vercel.app') || host.endsWith('.onrender.com')) {
       return 'https://oakit-api-gateway.onrender.com';
     }
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:3001';
+    }
   }
 
+  // SSR fallback — will be overridden at runtime
   return 'http://localhost:3001';
+}
+
+// Re-evaluated on each call so SSR-baked value never reaches production browser
+export function getApiBase(): string {
+  return resolveApiBase();
 }
 
 export const API_BASE = resolveApiBase();
@@ -31,7 +41,7 @@ async function tryRefreshToken(): Promise<string | null> {
     const current = getToken();
     if (!current) return null;
     try {
-      const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      const res = await fetch(`${getApiBase()}/api/v1/auth/refresh`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${current}` },
       });
@@ -87,7 +97,7 @@ async function fetchWithRefresh(
 
 export async function apiPost<T>(path: string, body: unknown, token?: string): Promise<T> {
   const res = await fetchWithRefresh(
-    `${API_BASE}${path}`,
+    `${getApiBase()}${path}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -103,7 +113,7 @@ export async function apiPost<T>(path: string, body: unknown, token?: string): P
 
 export async function apiGet<T>(path: string, token: string): Promise<T> {
   const res = await fetchWithRefresh(
-    `${API_BASE}${path}`,
+    `${getApiBase()}${path}`,
     { method: 'GET', headers: {} },
     token,
   );
@@ -114,7 +124,7 @@ export async function apiGet<T>(path: string, token: string): Promise<T> {
 
 export async function apiDelete(path: string, token: string): Promise<void> {
   const res = await fetchWithRefresh(
-    `${API_BASE}${path}`,
+    `${getApiBase()}${path}`,
     { method: 'DELETE', headers: {} },
     token,
   );
@@ -126,7 +136,7 @@ export async function apiDelete(path: string, token: string): Promise<void> {
 
 export async function apiPatch<T>(path: string, body: unknown, token: string): Promise<T> {
   const res = await fetchWithRefresh(
-    `${API_BASE}${path}`,
+    `${getApiBase()}${path}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -141,7 +151,7 @@ export async function apiPatch<T>(path: string, body: unknown, token: string): P
 
 export async function apiPut<T>(path: string, body: unknown, token: string): Promise<T> {
   const res = await fetchWithRefresh(
-    `${API_BASE}${path}`,
+    `${getApiBase()}${path}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

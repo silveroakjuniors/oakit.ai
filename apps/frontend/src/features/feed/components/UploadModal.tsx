@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef } from 'react';
-import { API_BASE, apiPost } from '@/lib/api';
+import { API_BASE, getApiBase, apiPost } from '@/lib/api';
 
 interface UploadModalProps {
   token: string;
@@ -93,7 +93,7 @@ export default function UploadModal({ token, sectionId, onClose, onPosted }: Upl
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 90000); // 90s for video
 
-        const res = await fetch(`${API_BASE}/api/v1/feed/posts`, {
+        const res = await fetch(`${getApiBase()}/api/v1/feed/posts`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: fd,
