@@ -10,7 +10,7 @@ router.use(jwtVerify);
 router.get('/invoice/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
-    const parentId = req.user!.id;
+    const parentId = req.user!.user_id;
     const schoolId = req.user!.school_id;
 
     if (!(await verifyParentOwnsStudent(parentId, studentId, schoolId)))
@@ -79,7 +79,7 @@ router.get('/invoice/:studentId', async (req, res) => {
 router.get('/history/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
-    const parentId = req.user!.id;
+    const parentId = req.user!.user_id;
     const schoolId = req.user!.school_id;
 
     if (!(await verifyParentOwnsStudent(parentId, studentId, schoolId)))
@@ -103,7 +103,7 @@ router.get('/history/:studentId', async (req, res) => {
 router.get('/receipt/:paymentId', async (req, res) => {
   try {
     const { paymentId } = req.params;
-    const parentId = req.user!.id;
+    const parentId = req.user!.user_id;
     const schoolId = req.user!.school_id;
 
     const paymentResult = await pool.query(
@@ -129,7 +129,7 @@ router.get('/receipt/:paymentId', async (req, res) => {
 router.post('/pay/:studentId', async (req, res) => {
   try {
     const { studentId } = req.params;
-    const parentId = req.user!.id;
+    const parentId = req.user!.user_id;
     const schoolId = req.user!.school_id;
     const { amount, fee_head_id, acknowledged_non_refundable } = req.body;
 
@@ -170,7 +170,7 @@ router.post('/pay/:studentId', async (req, res) => {
 // ── GET /siblings — Consolidated outstanding across all children ──────────────
 router.get('/siblings', async (req, res) => {
   try {
-    const parentId = req.user!.id;
+    const parentId = req.user!.user_id;
     const schoolId = req.user!.school_id;
 
     const studentsResult = await pool.query(
@@ -219,7 +219,7 @@ router.get('/siblings', async (req, res) => {
 // Parent provides: student_id, fee_head_id, transaction_id, amount, payment_mode
 router.post('/payment-proof', async (req, res) => {
   try {
-    const parentId = req.user!.id;
+    const parentId = req.user!.user_id;
     const schoolId = req.user!.school_id;
     const { student_id, fee_head_id, transaction_id, amount, payment_mode = 'upi', notes } = req.body;
 
@@ -281,7 +281,7 @@ router.post('/payment-proof', async (req, res) => {
 // ── GET /payment-proofs/:studentId — Parent views their submitted proofs ──────
 router.get('/payment-proofs/:studentId', async (req, res) => {
   try {
-    const parentId = req.user!.id;
+    const parentId = req.user!.user_id;
     const schoolId = req.user!.school_id;
     const { studentId } = req.params;
 

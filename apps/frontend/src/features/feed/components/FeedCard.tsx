@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { apiPost } from '@/lib/api';
+import { apiPost, getApiBase } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import ImageCarousel from './ImageCarousel';
 import type { FeedPost } from '../types';
@@ -82,18 +82,13 @@ export default function FeedCard({ post, onLike, onDelete, schoolName, instagram
     trackEngagement('download');
     const img = post.images?.[0];
     if (!img) return;
-    try {
-      const response = await fetch(img);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Oakit_sojs-${post.id.slice(0, 8)}${img.includes('.mp4') || img.includes('video') ? '.mp4' : '.jpg'}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch { window.open(img, '_blank'); }
+    // Use proxy download URL — works for all stored formats
+    const downloadUrl = img.startsWith('/api/v1/drive-proxy')
+      ? `${getApiBase()}${img}&download=1`
+      : img.startsWith('gdrive:')
+        ? `${getApiBase()}/api/v1/drive-proxy?id=${img.slice(7)}&download=1`
+        : img;
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer');
   }
 
   const roleLabel = post.poster_role === 'teacher' ? '\uD83D\uDC69\u200D\uD83C\uDFEB' : post.poster_role === 'admin' ? '\uD83C\uDFEB' : '\uD83C\uDF93';
@@ -121,7 +116,7 @@ export default function FeedCard({ post, onLike, onDelete, schoolName, instagram
       </div>
 
       {/* Images */}
-      <ImageCarousel images={post.images} />
+      <ImageCarousel images={post.images} mediaTypes={post.media_types} />
 
       {/* Actions */}
       <div className="flex items-center gap-3 px-4 py-3">

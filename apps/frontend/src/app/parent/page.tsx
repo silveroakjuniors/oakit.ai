@@ -133,7 +133,7 @@ interface Announcement { id: string; title: string; body: string; created_at: st
 interface ParentMessage { teacher_id: string; student_id: string; teacher_name: string; student_name: string; last_message: string; last_sent_at: string; last_sender: string; unread_count: number; }
 interface HomeworkRecord { homework_date: string; status: string; teacher_note: string | null; homework_text: string | null; }
 interface ChatMsg { role: 'user' | 'ai'; text: string; ts: number; }
-interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; }
+interface ChildCache { feed: ChildFeed | null; attendance: AttendanceData | null; progress: ProgressData | null; classFeed: any[]; invoice: any | null; driveFolderUrl?: string | null; }
 
 // --- New Feature Types --------------------------------------------------------
 interface EmergencyContact {
@@ -305,10 +305,8 @@ export default function ParentPage() {
  const [chatLoading, setChatLoading] = useState(false);
  const [noteModal, setNoteModal] = useState<NoteItem | null>(null);
  const chatEndRef = useRef<HTMLDivElement>(null);
- const [classFeed, setClassFeed] = useState<any[]>([]);
  const [schoolInstagram, setSchoolInstagram] = useState<string>('');
  const [schoolTranslationEnabled, setSchoolTranslationEnabled] = useState<boolean>(true);
- const [invoice, setInvoice] = useState<any | null>(null);
  const [parentProfile, setParentProfile] = useState<{ name: string; mobile: string; mobile_can_update?: boolean } | null>(null);
  const [profileOpen, setProfileOpen] = useState(false);
  const profileRef = useRef<HTMLDivElement>(null);
@@ -358,6 +356,8 @@ export default function ParentPage() {
 
  const activeChild = children.find(c => c.id === activeChildId) ?? null;
  const activeCache = activeChildId ? cache[activeChildId] : null;
+ const classFeed = activeCache?.classFeed ?? [];
+ const invoice = activeCache?.invoice ?? null;
  const chatMsgs = activeChildId ? (chatMap[activeChildId] ?? defaultChat(activeChild?.name)) : [];
  const unreadMessages = messageThreads.reduce((s, t) => s + Number(t.unread_count), 0);
  const unreadNotifs = notifications.length;
@@ -464,24 +464,31 @@ export default function ParentPage() {
  apiGet<ProgressData[]>('/api/v1/parent/progress', token).catch(() => [] as ProgressData[]),
  ]);
  const prog = Array.isArray(progList) ? (progList.find((p: any) => p.student_id === childId) ?? null) : null;
- setCache(prev => ({ ...prev, [childId]: { feed: (feed ?? prev[childId]?.feed ?? null) as ChildFeed | null, attendance: att, progress: prog } }));
+ setCache(prev => ({ ...prev, [childId]: { ...prev[childId], feed: (feed ?? prev[childId]?.feed ?? null) as ChildFeed | null, attendance: att, progress: prog, classFeed: prev[childId]?.classFeed ?? [], invoice: prev[childId]?.invoice ?? null } }));
  if (feed && (feed as any).instagram_handle) setSchoolInstagram((feed as any).instagram_handle);
  if (feed && typeof (feed as any).translation_enabled === 'boolean') setSchoolTranslationEnabled((feed as any).translation_enabled);
+ // Fetch class feed and invoice — keyed per child in cache
  if (child?.section_id) {
  apiGet<any>(`/api/v1/feed?section_id=${child.section_id}`, token)
- .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setClassFeed(posts.slice(0, 8)); })
+ .then(d => { const posts = Array.isArray(d) ? d : (d?.posts ?? []); setCache(prev => ({ ...prev, [childId]: { ...prev[childId], classFeed: posts.slice(0, 8) } })); })
  .catch(() => {});
+ // Fetch Drive folder link for this child's class
+ apiGet<{ drive_folder_url: string | null; class_folder_name: string | null; google_drive_enabled: boolean }>(
+   `/api/v1/parent/drive-folder?section_id=${child.section_id}`, token
+ ).then(d => {
+   if (d?.drive_folder_url) {
+     setCache(prev => ({ ...prev, [childId]: { ...prev[childId], driveFolderUrl: d.drive_folder_url } }));
+   }
+ }).catch(() => {});
  }
  apiGet<any>(`/api/v1/parent/fees/invoice/${childId}`, token)
- .then(setInvoice)
- .catch((err) => {
- console.error('[parent fees invoice]', err?.message || err);
- setInvoice(null);
- });
+ .then(inv => setCache(prev => ({ ...prev, [childId]: { ...prev[childId], invoice: inv } })))
+ .catch(() => setCache(prev => ({ ...prev, [childId]: { ...prev[childId], invoice: null } })));
  } finally { setChildLoading(false); }
  }, [cache, token, children]);
 
- async function switchChild(childId: string) { setActiveChildId(childId); setClassFeed([]); await fetchChildData(childId); }
+ // switchChild: just set the active ID — all data comes from per-child cache
+ async function switchChild(childId: string) { setActiveChildId(childId); if (!cache[childId]?.feed) await fetchChildData(childId); }
 
  async function sendChat() {
  const text = chatInput.trim();
@@ -816,6 +823,7 @@ export default function ParentPage() {
  parentProfile={parentProfile}
  classFeed={classFeed}
  schoolInstagram={schoolInstagram}
+ driveFolderUrl={activeCache?.driveFolderUrl ?? null}
  />
  )}
  {tab === 'calendar' && <CalendarTab token={token} activeChild={activeChild} />}
@@ -827,20 +835,20 @@ export default function ParentPage() {
  {tab === 'fees' && <FeesTab invoice={invoice} activeChild={activeChild} token={token} />}
  {tab === 'reports' && <ReportsTab attendance={activeCache?.attendance ?? null} progress={activeCache?.progress ?? null} activeChild={activeChild} token={token} />}
  {tab === 'settings' && <SettingsTab token={token} emergencyContacts={emergencyContacts} notificationPrefs={notificationPrefs} calendarEvents={calendarEvents} calendarSyncEnabled={calendarSyncEnabled} assistantReminders={assistantReminders} translationSettings={translationSettings} onEmergencyContactsChange={setEmergencyContacts} onNotificationPrefsChange={setNotificationPrefs} onCalendarSyncChange={saveCalendarSync} onAssistantRemindersChange={saveAssistantReminders} onTranslationSettingsChange={setTranslationSettings} translationEnabled={schoolTranslationEnabled} />}
- {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} />}
+ {tab === 'chat' && <ChatTab msgs={chatMsgs} input={chatInput} loading={chatLoading} onInput={setChatInput} onSend={sendChat} endRef={chatEndRef} childName={activeChild?.name.split(' ')[0] ?? 'your child'} onClose={() => setTab('home')} />}
  {tab === 'insights' && <InsightsTab insights={parentInsights} comparisons={childComparisons} activeChild={activeChild} token={token} />}
  </div>
  )}
  </div>
  </main>
 
- {/* -- CLASS FEED COLUMN (desktop only) -- */}
- <aside className="hidden xl:flex flex-col w-64 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
- <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
+ {/* -- CLASS FEED COLUMN (desktop only, xl+) -- */}
+ <aside className="hidden xl:flex flex-col w-60 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
+ <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} driveFolderUrl={activeCache?.driveFolderUrl} />
  </aside>
 
- {/* -- WEEKLY SCHEDULE COLUMN (desktop only) -- */}
- <aside className="hidden xl:flex flex-col w-56 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
+ {/* -- WEEKLY SCHEDULE COLUMN (desktop, lg+) -- */}
+ <aside className="hidden lg:flex flex-col w-52 flex-shrink-0 border-l border-gray-100 bg-white overflow-y-auto" style={{ minHeight: 'calc(100vh - 57px)' }}>
  <SchedulePanel
  progress={activeCache?.progress ?? null}
  activeChild={activeChild}
@@ -1053,7 +1061,7 @@ function StudentProfileModal({ child, token, onClose }: { child: Child; token: s
 }
 
 // --- Home Tab ----------------------------------------------------------------
-function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed, schoolInstagram }: {
+function HomeTab({ feed, progress, attendance, activeChild, announcements, onNoteClick, onTabChange, token, onChildUpdate, unreadMessages, unreadNotifs, invoice, parentProfile, classFeed, schoolInstagram, driveFolderUrl }: {
  feed: ChildFeed | null; progress: ProgressData | null; attendance: AttendanceData | null; activeChild: Child | null;
  announcements: Announcement[]; onNoteClick: (n: NoteItem) => void; onTabChange: (t: Tab) => void;
  token: string; onChildUpdate: (url: string) => void;
@@ -1061,6 +1069,7 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  parentProfile: { name: string; mobile: string; mobile_can_update?: boolean } | null;
  classFeed: any[];
  schoolInstagram: string;
+ driveFolderUrl?: string | null;
 }) {
  const [aiSummary, setAiSummary] = useState<string | null>(null);
  const [summaryLoading, setSummaryLoading] = useState(false);
@@ -1293,9 +1302,9 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  })}
  {/* Show status pill: Completed or In Progress */}
  {feed.completion ? (
- <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">? Completed</span>
+ <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">Completed</span>
  ) : (
- <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200">? In Progress</span>
+ <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200">In Progress</span>
  )}
  </div>
  </div>
@@ -1424,17 +1433,68 @@ function HomeTab({ feed, progress, attendance, activeChild, announcements, onNot
  <ChevronRight size={16} className="text-emerald-400 flex-shrink-0" />
  </button>
 
- {/* Class Feed  mobile only (desktop shows in right column) */}
+ {/* Class Feed  mobile/tablet only (desktop xl+ shows in right column) */}
  <div className="xl:hidden">
- <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} />
+ <ClassFeedColumn classFeed={classFeed} schoolInstagram={schoolInstagram} token={token} driveFolderUrl={driveFolderUrl} />
  </div>
+
+ {/* Weekly Schedule  mobile/tablet only (desktop lg+ shows in right column) */}
+ {activeChild && (
+ <div className="lg:hidden">
+ <SchedulePanel
+ progress={progress}
+ activeChild={activeChild}
+ invoice={invoice}
+ onFeesClick={() => onTabChange('fees')}
+ token={token}
+ notifications={[]}
+ announcements={announcements}
+ />
+ </div>
+ )}
  </div>
  );
 }
 
 // --- Class Feed Column --------------------------------------------------------
-function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any[]; schoolInstagram?: string; token: string }) {
- const [lightbox, setLightbox] = useState<{ images: string[]; index: number; caption?: string } | null>(null);
+// Resolve proxy media URLs at runtime — localhost for dev, Render for everything else
+function resolveFeedUrl(u: string): string {
+  if (!u) return '';
+  if (u.startsWith('/api/v1/')) {
+    if (typeof window === 'undefined') return `https://oakit-api-gateway.onrender.com${u}`;
+    const host = window.location.hostname;
+    const base = (host === 'localhost' || host === '127.0.0.1')
+      ? 'http://localhost:3001'
+      : 'https://oakit-api-gateway.onrender.com';
+    return `${base}${u}`;
+  }
+  return u;
+}
+
+/** Extract Drive file ID from any stored URL */
+function extractDriveId(u: string): string | null {
+  if (!u) return null;
+  if (u.startsWith('gdrive:')) return u.slice(7);
+  const m = u.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || u.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  return m ? m[1] : null;
+}
+
+/** Direct Google CDN image URL — public, no auth, no proxy needed */
+function toFeedImageUrl(u: string): string {
+  const id = extractDriveId(u);
+  if (id) return `https://lh3.googleusercontent.com/d/${id}`;
+  return resolveFeedUrl(u);
+}
+
+/** Direct Drive download URL for videos */
+function toFeedVideoUrl(u: string): string {
+  const id = extractDriveId(u);
+  if (id) return `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
+  return resolveFeedUrl(u);
+}
+
+function ClassFeedColumn({ classFeed, schoolInstagram, token, driveFolderUrl }: { classFeed: any[]; schoolInstagram?: string; token: string; driveFolderUrl?: string | null }) {
+ const [lightbox, setLightbox] = useState<{ images: string[]; index: number; caption?: string; mediaTypes?: string[] } | null>(null);
  // local like state: postId ? { count, likedByMe }
  const [likes, setLikes] = useState<Record<string, { count: number; likedByMe: boolean }>>(() =>
  Object.fromEntries(classFeed.map(p => [p.id, { count: p.like_count ?? 0, likedByMe: p.liked_by_me ?? false }]))
@@ -1469,8 +1529,8 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  }
  }
 
- function openLightbox(images: string[], index: number, caption?: string) {
- setLightbox({ images, index, caption });
+ function openLightbox(images: string[], index: number, caption?: string, mediaTypes?: string[]) {
+ setLightbox({ images, index, caption, mediaTypes });
  }
  function closeLightbox() { setLightbox(null); }
  function prevPhoto() { setLightbox(lb => lb && lb.index > 0 ? { ...lb, index: lb.index - 1 } : lb); }
@@ -1535,9 +1595,25 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  <p className="text-sm font-bold text-gray-800">Class Feed</p>
  <p className="text-xs text-gray-400">Photos from school</p>
  </div>
- <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
- <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
- </span>
+ <div className="flex items-center gap-2">
+   {driveFolderUrl && (
+     <a
+       href={driveFolderUrl}
+       target="_blank"
+       rel="noopener noreferrer"
+       className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full hover:bg-emerald-100 transition-colors"
+       title="View all class photos on Google Drive"
+     >
+       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+       </svg>
+       All Photos
+     </a>
+   )}
+   <span className="flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-emerald-500 text-white">
+   <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />Live
+   </span>
+ </div>
  </div>
 
  {/* Feed items */}
@@ -1563,22 +1639,72 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  return (
  <div key={post.id} className="p-3">
  {img ? (
- <img src={img} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption)}
- className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity" style={{ height: 150 }} />
+   (() => {
+     const mediaType = post.media_types?.[0];
+     const isVideo = mediaType === 'video';
+     const displaySrc = isVideo ? toFeedVideoUrl(img) : toFeedImageUrl(img);
+     const driveIdMatch = extractDriveId(img);
+     const driveOpenUrl = driveIdMatch
+       ? `https://drive.google.com/file/d/${driveIdMatch}/view`
+       : img;
+
+     return isVideo ? (
+       <div className="relative w-full rounded-xl overflow-hidden mb-2.5 bg-black"
+         style={{ height: 150 }}>
+         <video src={displaySrc} className="w-full h-full object-cover" playsInline preload="metadata" muted
+           onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
+           onError={(e) => {
+             (e.currentTarget as HTMLVideoElement).style.display = 'none';
+             const fb = e.currentTarget.nextElementSibling as HTMLElement;
+             if (fb) fb.style.removeProperty('display');
+           }} />
+         <a href={driveOpenUrl} target="_blank" rel="noopener noreferrer"
+           className="absolute inset-0 hidden flex-col items-center justify-center gap-2 bg-black"
+           onClick={e => e.stopPropagation()}>
+           <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+           <span className="text-white text-xs font-medium">Tap to watch video</span>
+         </a>
+         <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
+           <div className="w-10 h-10 rounded-full bg-black/60 flex items-center justify-center">
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+           </div>
+         </div>
+       </div>
+     ) : (
+       <img src={displaySrc} alt={post.caption ?? ''} onClick={() => openLightbox(post.images, 0, post.caption, post.media_types)}
+         className="w-full rounded-xl object-cover mb-2.5 cursor-zoom-in hover:opacity-95 transition-opacity"
+         style={{ height: 150 }} referrerPolicy="no-referrer" />
+     );
+   })()
  ) : (
- <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2.5" style={{ height: 100 }}>
- <ImageIcon size={28} className="text-emerald-300" />
- </div>
+   <div className="w-full rounded-xl flex items-center justify-center bg-emerald-50 mb-2.5" style={{ height: 100 }}>
+     <ImageIcon size={28} className="text-emerald-300" />
+   </div>
  )}
  {/* Extra images row */}
  {post.images?.length > 1 && (
  <div className="flex gap-1.5 mb-2">
- {post.images.slice(1, 4).map((img2: string, i: number) => (
- <img key={i} src={img2} alt="" onClick={() => openLightbox(post.images, i + 1, post.caption)}
- className="w-14 h-14 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity" />
- ))}
+   {post.images.slice(1, 4).map((img2: string, i: number) => {
+     const mt = post.media_types?.[i + 1];
+     const isVid = mt === 'video';
+     const src2 = isVid ? toFeedVideoUrl(img2) : toFeedImageUrl(img2);
+     return isVid ? (
+       <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer bg-black"
+         onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}>
+         <video src={src2} className="w-full h-full object-cover" playsInline preload="metadata" muted />
+         <div className="absolute inset-0 flex items-center justify-center">
+           <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+             <svg width="10" height="10" viewBox="0 0 24 24" fill="white"><polygon points="8 5 19 12 8 19 8 5"/></svg>
+           </div>
+         </div>
+       </div>
+     ) : (
+       <img key={i} src={src2} alt="" onClick={() => openLightbox(post.images, i + 1, post.caption, post.media_types)}
+         className="w-14 h-14 rounded-lg object-cover flex-shrink-0 cursor-zoom-in hover:opacity-90 transition-opacity" referrerPolicy="no-referrer" />
+     );
+   })}
  {post.images.length > 4 && (
- <div onClick={() => openLightbox(post.images, 4, post.caption)}
+ <div onClick={() => openLightbox(post.images, 4, post.caption, post.media_types)}
  className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0 cursor-pointer hover:bg-gray-200 transition-colors">
  +{post.images.length - 4}
  </div>
@@ -1668,7 +1794,9 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  onClick={closeLightbox}
  className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center text-white text-xl font-bold z-10"
  style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}
- >?</button>
+ >
+ <X size={16} className="text-white" />
+ </button>
 
  {/* Prev */}
  {lightbox.index > 0 && (
@@ -1679,14 +1807,24 @@ function ClassFeedColumn({ classFeed, schoolInstagram, token }: { classFeed: any
  ></button>
  )}
 
- {/* Image */}
+ {/* Image or Video */}
  <div className="flex flex-col items-center gap-3 px-16 max-w-3xl w-full" onClick={e => e.stopPropagation()}>
- <img
- src={lightbox.images[lightbox.index]}
- alt={lightbox.caption ?? ''}
- className="rounded-2xl object-contain shadow-2xl"
- style={{ maxHeight: '75vh', maxWidth: '100%', animation: 'scaleIn 0.2s cubic-bezier(0.16,1,0.3,1)' }}
- />
+   {(() => {
+     const url = lightbox.images[lightbox.index];
+     const mt = lightbox.mediaTypes?.[lightbox.index];
+     const isVid = mt === 'video' || ['.mp4','.mov','.webm','.3gp','export=download'].some(ext => url.toLowerCase().includes(ext));
+     function toDisplayLightbox(u: string, vid: boolean): string {
+       return vid ? toFeedVideoUrl(u) : toFeedImageUrl(u);
+     }
+     const src = toDisplayLightbox(url, isVid);
+     return isVid ? (
+       <video src={src} controls autoPlay playsInline className="rounded-2xl shadow-2xl"
+         style={{ maxHeight: '75vh', maxWidth: '100%' }} onClick={e => e.stopPropagation()} />
+     ) : (
+       <img src={src} alt={lightbox.caption ?? ''} className="rounded-2xl object-contain shadow-2xl"
+         style={{ maxHeight: '75vh', maxWidth: '100%' }} referrerPolicy="no-referrer" />
+     );
+   })()}
  {lightbox.caption && (
  <p className="text-white/80 text-sm text-center leading-relaxed">{lightbox.caption}</p>
  )}
@@ -1886,7 +2024,7 @@ function SchedulePanel({ progress, activeChild, invoice, onFeesClick, token, not
  <CreditCard size={15} className="text-orange-500" />
  <p className="text-sm font-bold text-orange-800">Fees Due</p>
  </div>
- <p className="text-2xl font-black text-orange-700 mb-1">?{invoice.net_payable.toLocaleString('en-IN')}</p>
+ <p className="text-2xl font-black text-orange-700 mb-1">&#8377;{invoice.net_payable.toLocaleString('en-IN')}</p>
  {invoice.accounts?.[0]?.due_date && (
  <p className="text-xs text-orange-600 mb-3">
  Due on {new Date(invoice.accounts[0].due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -1971,7 +2109,7 @@ function DayPlanDrawer({ day, activeChild, token, onClose }: {
  <p className={`text-xs font-bold uppercase tracking-widest ${day.isToday ? 'text-emerald-600' : isCovered ? 'text-blue-600' : 'text-gray-400'}`}>
  {day.isToday ? 'Today' : isCovered ? (day.completed ? 'Completed' : 'Past') : 'Upcoming'}
  </p>
- {day.completed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">? Covered</span>}
+ {day.completed && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Covered</span>}
  {isPast && !day.completed && !day.isToday && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Past</span>}
  </div>
  <p className="text-base font-bold text-gray-900 mt-0.5">{day.label}</p>
@@ -2125,13 +2263,13 @@ function CalendarTab({ token, activeChild }: { token: string; activeChild: Child
 
  function typeConfig(type: string) {
  switch (type) {
- case 'holiday': return { bg: 'bg-red-50', border: 'border-red-100', icon: '', label: 'Holiday', labelCls: 'bg-red-100 text-red-700' };
- case 'settling': return { bg: 'bg-amber-50', border: 'border-amber-100', icon: '??', label: 'Settling Day', labelCls: 'bg-amber-100 text-amber-700' };
- case 'half_day': return { bg: 'bg-yellow-50', border: 'border-yellow-100', icon: '?', label: 'Half Day', labelCls: 'bg-yellow-100 text-yellow-700' };
- case 'exam': return { bg: 'bg-purple-50', border: 'border-purple-100', icon: '??', label: 'Exam', labelCls: 'bg-purple-100 text-purple-700' };
- case 'activity': return { bg: 'bg-blue-50', border: 'border-blue-100', icon: '??', label: 'Activity', labelCls: 'bg-blue-100 text-blue-700' };
- case 'announcement': return { bg: 'bg-emerald-50',border: 'border-emerald-100',icon: '??', label: 'Announcement', labelCls: 'bg-emerald-100 text-emerald-700' };
- default: return { bg: 'bg-gray-50', border: 'border-gray-100', icon: '??', label: 'Event', labelCls: 'bg-gray-100 text-gray-600' };
+ case 'holiday': return { bg: 'bg-red-50', border: 'border-red-100', icon: 'holiday', label: 'Holiday', labelCls: 'bg-red-100 text-red-700' };
+ case 'settling': return { bg: 'bg-amber-50', border: 'border-amber-100', icon: 'settling', label: 'Settling Day', labelCls: 'bg-amber-100 text-amber-700' };
+ case 'half_day': return { bg: 'bg-yellow-50', border: 'border-yellow-100', icon: 'half_day', label: 'Half Day', labelCls: 'bg-yellow-100 text-yellow-700' };
+ case 'exam': return { bg: 'bg-purple-50', border: 'border-purple-100', icon: 'exam', label: 'Exam', labelCls: 'bg-purple-100 text-purple-700' };
+ case 'activity': return { bg: 'bg-blue-50', border: 'border-blue-100', icon: 'activity', label: 'Activity', labelCls: 'bg-blue-100 text-blue-700' };
+ case 'announcement': return { bg: 'bg-emerald-50',border: 'border-emerald-100',icon: 'announcement', label: 'Announcement', labelCls: 'bg-emerald-100 text-emerald-700' };
+ default: return { bg: 'bg-gray-50', border: 'border-gray-100', icon: 'event', label: 'Event', labelCls: 'bg-gray-100 text-gray-600' };
  }
  }
 
@@ -2240,8 +2378,8 @@ function AssignmentsTab({ activeChild, token }: { activeChild: Child | null; tok
  completed: { label: 'Done', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
  partial: { label: 'Half Done', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
  not_submitted: { label: 'Not Done', cls: 'bg-red-50 text-red-600 border-red-100' },
- pending: { label: '', cls: 'bg-white text-gray-700 border-gray-100' },
- }[hw.status] || { label: '', cls: 'bg-white text-gray-700 border-gray-100' };
+ pending: { label: 'Not marked', cls: 'bg-gray-50 text-gray-400 border-gray-100' },
+ }[hw.status] || { label: 'Not marked', cls: 'bg-gray-50 text-gray-400 border-gray-100' };
  return (
  <details key={i} className={`rounded-xl border ${statusConfig.cls} group`}>
  <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer list-none select-none">
@@ -2542,7 +2680,7 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  });
  const data = await res.json();
  if (!res.ok) throw new Error(data.error || 'Failed');
- setTxnMsg('? Payment details submitted. Admin will verify and update your fee status.');
+ setTxnMsg('Payment details submitted. Admin will verify and update your fee status.');
  setTxnId(''); setTxnFile(null);
  } catch (e: any) { setTxnMsg(e.message || 'Failed to submit'); }
  finally { setSubmitting(false); }
@@ -2563,20 +2701,31 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  <div className="space-y-4">
  <h2 className="text-lg font-bold text-gray-800">Fees</h2>
 
+ {/* Notice: payments still on SchoolElement */}
+ <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+ <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+ <div>
+ <p className="text-sm font-bold text-amber-800 mb-0.5">Fee payment is on SchoolElement</p>
+ <p className="text-xs text-amber-700 leading-relaxed">
+ Online fee payment and receipt download are available on the <strong>SchoolElement app</strong>. This screen shows your fee summary only. Full payment integration with Oakit.ai is coming soon.
+ </p>
+ </div>
+ </div>
+
  {/* Summary card */}
  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
  <div className="flex items-center justify-between mb-4">
  <div>
  <p className="text-xs text-gray-500 mb-0.5">Total Due</p>
  <p className={`text-3xl font-black ${invoice.net_payable > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
- ?{(invoice.net_payable ?? 0).toLocaleString('en-IN')}
+ &#8377;{(invoice.net_payable ?? 0).toLocaleString('en-IN')}
  </p>
- {invoice.net_payable === 0 && <p className="text-xs text-emerald-600 font-medium mt-0.5">? All fees paid</p>}
+ {invoice.net_payable === 0 && <p className="text-xs text-emerald-600 font-medium mt-0.5">All fees paid</p>}
  </div>
  {invoice.credit_balance > 0 && (
  <div className="text-right">
  <p className="text-xs text-gray-400">Credit Balance</p>
- <p className="text-lg font-bold text-emerald-600">?{invoice.credit_balance.toLocaleString('en-IN')}</p>
+ <p className="text-lg font-bold text-emerald-600">&#8377;{invoice.credit_balance.toLocaleString('en-IN')}</p>
  </div>
  )}
  </div>
@@ -2592,7 +2741,7 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  {acc.due_date && <p className="text-xs text-gray-400">Due {new Date(acc.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>}
  </div>
  <div className="text-right">
- <p className="text-sm font-bold text-gray-900">?{(acc.outstanding_balance ?? 0).toLocaleString('en-IN')}</p>
+ <p className="text-sm font-bold text-gray-900">&#8377;{(acc.outstanding_balance ?? 0).toLocaleString('en-IN')}</p>
  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${acc.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : acc.status === 'partial' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
  {acc.status}
  </span>
@@ -2640,7 +2789,7 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  </div>
 
  {txnMsg && (
- <p className={`text-xs px-3 py-2 rounded-xl ${txnMsg.startsWith('?') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+ <p className={`text-xs px-3 py-2 rounded-xl ${txnMsg.startsWith('Payment details') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
  {txnMsg}
  </p>
  )}
@@ -2979,7 +3128,7 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
  {termData?.settling_notes && termData.settling_notes.length > 0 && (
  <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
  <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">
- ?? Settling Period  {(termData as any).settling_days ?? termData.settling_notes.length} days
+ Settling Period &middot; {(termData as any).settling_days ?? termData.settling_notes.length} days
  </p>
  <div className="space-y-2">
  {termData.settling_notes.map((n, i) => (
@@ -3027,24 +3176,30 @@ function ProgressTab({ data, activeChild, token }: { data: ProgressData | null; 
 }
 
 // --- Chat Tab -----------------------------------------------------------------
-function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
+function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName, onClose }: {
  msgs: ChatMsg[]; input: string; loading: boolean;
  onInput: (v: string) => void; onSend: () => void;
  endRef: React.RefObject<HTMLDivElement>; childName: string;
+ onClose: () => void;
 }) {
  function handleKey(e: React.KeyboardEvent) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }
  return (
  <div className="flex flex-col h-[calc(100vh-280px)] lg:h-[600px] bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
  <div className="bg-[#0f2417] px-5 py-4 flex items-center gap-3">
- <div className={`w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-xl flex-shrink-0 transition-all ${loading ? 'ring-2 ring-emerald-300 ring-offset-1 ring-offset-[#0f2417]' : ''}`}
- style={{ animation: loading ? 'oakieWobble 0.7s ease-in-out infinite alternate' : 'none' }}>??</div>
+ <div className={`w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 transition-all overflow-hidden ${loading ? 'ring-2 ring-emerald-300 ring-offset-1 ring-offset-[#0f2417]' : ''}`}
+ style={{ animation: loading ? 'oakieWobble 0.7s ease-in-out infinite alternate' : 'none' }}>
+ <img src="/oakie.png" alt="Oakie" className="w-8 h-8 object-contain" />
+ </div>
  <div>
- <p className="text-white font-bold text-sm">Oakie AI</p>
+ <p className="text-white font-bold text-sm">Oakie</p>
  <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-bold uppercase tracking-widest">
  <span className={`w-1.5 h-1.5 rounded-full inline-block ${loading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
  {loading ? 'Thinking' : 'Active'}
  </div>
  </div>
+ <button onClick={onClose} className="ml-auto w-8 h-8 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors" aria-label="Close chat">
+ <X size={16} className="text-white" />
+ </button>
  <style>{`
  @keyframes oakieWobble {
  from { transform: rotate(-8deg) scale(1.05); }
@@ -3056,14 +3211,16 @@ function ChatTab({ msgs, input, loading, onInput, onSend, endRef, childName }: {
  {msgs.map((m, i) => (
  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
  style={{ animation: 'fadeslideup 0.25s ease both' }}>
- {m.role === 'ai' && <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2 mt-0.5">??</div>}
+ {m.role === 'ai' && <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 mr-2 mt-0.5 overflow-hidden"><img src="/oakie.png" alt="Oakie" className="w-6 h-6 object-contain" /></div>}
  <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role === 'user' ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-white text-neutral-800 shadow-sm border border-neutral-100 rounded-bl-sm'}`}>{m.text}</div>
  </div>
  ))}
  {loading && (
  <div className="flex justify-start" style={{ animation: 'fadeslideup 0.2s ease both' }}>
- <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-sm shrink-0 mr-2"
- style={{ animation: 'oakieWobble 0.7s ease-in-out infinite alternate' }}>??</div>
+ <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 mr-2 overflow-hidden"
+ style={{ animation: 'oakieWobble 0.7s ease-in-out infinite alternate' }}>
+ <img src="/oakie.png" alt="Oakie" className="w-6 h-6 object-contain" />
+ </div>
  <div className="bg-white rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm border border-neutral-100">
  <div className="flex gap-1.5 items-center h-4">
  {[0, 150, 300].map(d => <div key={d} className="w-2 h-2 rounded-full bg-emerald-400" style={{ animation: `bouncedot 1.2s ease-in-out ${d}ms infinite` }} />)}
@@ -3200,7 +3357,7 @@ function MessagesTab({ threads, token, onRefresh }: { threads: ParentMessage[]; 
  <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm space-y-3">
  <div className="flex items-center justify-between">
  <p className="text-sm font-semibold text-neutral-800">Message a Teacher</p>
- <button onClick={() => setShowNewMsg(false)} className="text-neutral-400 hover:text-neutral-600">?</button>
+ <button onClick={() => setShowNewMsg(false)} className="text-neutral-400 hover:text-neutral-600"><X size={16} /></button>
  </div>
  <div>
  <label className="text-xs font-medium text-neutral-600 mb-1 block">Select Teacher & Child</label>
@@ -3263,13 +3420,15 @@ function NotificationsTab({ notifications, announcements, onRead, onTabChange }:
  <div className="space-y-5">
  {announcements.length > 0 && (
  <div>
- <h2 className="text-lg font-bold text-neutral-800 mb-3">?? Announcements</h2>
+ <h2 className="text-lg font-bold text-neutral-800 mb-3 flex items-center gap-2">
+ <Megaphone size={18} className="text-primary-600" /> Announcements
+ </h2>
  <div className="space-y-3">
  {announcements.map(a => (
  <div key={a.id} className="bg-white rounded-2xl p-4 border-l-4 border-primary-400 shadow-sm">
  <p className="font-bold text-neutral-800 text-sm">{a.title}</p>
  <p className="text-sm text-neutral-600 mt-1">{a.body}</p>
- <p className="text-xs text-neutral-400 mt-2">By {a.author_name}  {a.created_at.split('T')[0]}</p>
+ <p className="text-xs text-neutral-400 mt-2">By {a.author_name} &middot; {new Date(a.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
  </div>
  ))}
  </div>
@@ -3953,7 +4112,7 @@ function SettingsTab({ token, emergencyContacts, notificationPrefs, calendarEven
  <p className={`text-xs font-semibold ${selected ? 'text-indigo-700' : 'text-neutral-700'}`}>{lang.label}</p>
  {selected && <p className="text-[10px] text-indigo-500">Active</p>}
  </div>
- {selected && <span className="ml-auto text-indigo-500 text-sm">?</span>}
+ {selected && <CheckCircle2 size={15} className="ml-auto text-indigo-500" />}
  </button>
  );
  })}

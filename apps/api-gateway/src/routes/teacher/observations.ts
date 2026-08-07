@@ -1,10 +1,10 @@
-ï»¿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { getTeacherSections } from '../../lib/teacherSection';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 const VALID_CATEGORIES = ['Behavior','Social Skills','Academic Progress','Motor Skills','Language','Other',
   'cognitive','language','social','emotional','gross_motor','fine_motor','creativity','participation','peer','behaviour'];
@@ -51,7 +51,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/teacher/observations?section_id= â€” list all obs for a section (for report readiness map)
+// GET /api/v1/teacher/observations?section_id= — list all obs for a section (for report readiness map)
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
@@ -107,7 +107,7 @@ router.get('/:studentId', async (req: Request, res: Response) => {
   }
 });
 
-// PATCH /api/v1/teacher/observations/:id â€” toggle share_with_parent
+// PATCH /api/v1/teacher/observations/:id — toggle share_with_parent
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
@@ -124,7 +124,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/v1/teacher/observations/:id â€” edit observation text
+// PUT /api/v1/teacher/observations/:id — edit observation text
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
@@ -162,7 +162,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/v1/teacher/observations/:id â€” delete an observation
+// DELETE /api/v1/teacher/observations/:id — delete an observation
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;

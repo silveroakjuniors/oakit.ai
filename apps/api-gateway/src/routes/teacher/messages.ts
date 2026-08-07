@@ -4,7 +4,7 @@ import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middle
 import { auditMessage } from '../../lib/storage';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 // GET /api/v1/teacher/messages — list all threads
 router.get('/', async (req: Request, res: Response) => {

@@ -980,4 +980,46 @@ router.get('/school-overview', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/admin/reports/generate-remark — Oakie generates a teacher remark
+router.post('/generate-remark', async (req: Request, res: Response) => {
+  try {
+    const { student_name, teacher_notes, class_name, attendance_pct, subjects_covered } = req.body;
+    if (!teacher_notes?.trim()) return res.status(400).json({ error: 'teacher_notes required' });
+
+    const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const axios = (await import('axios')).default;
+
+    const prompt = `A teacher wants to write a personalised remark for a student's report card.
+
+STUDENT: ${student_name || 'the student'}
+CLASS: ${class_name || ''}
+ATTENDANCE: ${attendance_pct !== undefined ? `${attendance_pct}%` : 'not provided'}
+SUBJECTS COVERED: ${subjects_covered || 'various subjects'}
+
+TEACHER'S RAW NOTES:
+"${teacher_notes.trim()}"
+
+Write a warm, professional teacher's remark of exactly 2-3 sentences.
+- Use the student's first name naturally (once or twice)
+- Reference specific things from the teacher's notes
+- End with an encouraging, forward-looking sentence
+- Plain text only — no markdown, no asterisks, no bullet points
+- Maximum 50 words total`;
+
+    const aiResp = await axios.post(`${AI_URL}/internal/generate-report`, {
+      prompt,
+      student_name: student_name || 'the student',
+      structured: false,
+    }, { timeout: 30000 });
+
+    let remark = (aiResp.data?.response || '').trim();
+    remark = remark.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').trim();
+    if (!remark) return res.status(500).json({ error: 'Could not generate remark' });
+    return res.json({ remark });
+  } catch (err: any) {
+    console.error('[admin generate-remark]', err);
+    return res.status(500).json({ error: 'Failed to generate remark' });
+  }
+});
+
 export default router;
