@@ -91,7 +91,10 @@ export async function compressVideoClient(
 
   onStatus('Finalising...');
   const data = await ff.readFile(outputName);
-  const blob = new Blob([data], { type: 'video/mp4' });
+  // Copy into a plain ArrayBuffer — FileData may be backed by SharedArrayBuffer
+  // which TypeScript (and some browsers) won't accept directly in new Blob()
+  const plain = new Uint8Array(data as Uint8Array).buffer as ArrayBuffer;
+  const blob = new Blob([plain], { type: 'video/mp4' });
 
   // Cleanup WASM virtual filesystem
   await ff.deleteFile(inputName).catch(() => {});
