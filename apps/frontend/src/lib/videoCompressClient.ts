@@ -26,12 +26,12 @@ async function getFFmpeg(onProgress?: (pct: number) => void): Promise<FFmpeg> {
   loading = true;
   const ff = new FFmpeg();
 
-  // Load from CDN — unpkg hosts the exact wasm/worker files
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd';
+  // Load WASM files from our own domain (served from /public/ffmpeg/)
+  // This avoids CORS/COEP issues with external CDNs
+  const base = '/ffmpeg';
   await ff.load({
-    coreURL:   await toBlobURL(`${baseURL}/ffmpeg-core.js`,   'text/javascript'),
-    wasmURL:   await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-    workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
+    coreURL:  await toBlobURL(`${base}/ffmpeg-core.js`,   'text/javascript'),
+    wasmURL:  await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
   });
 
   if (onProgress) {
