@@ -142,6 +142,7 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: fd,
+          signal: AbortSignal.timeout(120000), // 2 min timeout
         });
 
         if (!res.ok) {
