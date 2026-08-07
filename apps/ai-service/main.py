@@ -1,5 +1,6 @@
 from fastapi import FastAPI, BackgroundTasks, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from datetime import datetime, date
@@ -9,6 +10,21 @@ import io
 load_dotenv()
 
 app = FastAPI(title="Oakit AI Service", version="0.1.0")
+
+# Allow requests from the frontend and API gateway
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://oakit.silveroakjuniors.in",
+        "https://oakit-api-gateway.onrender.com",
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 THOUGHTS_FOR_DAY = [
     "A great teacher doesn't just teach — they inspire curiosity.",
@@ -2299,3 +2315,74 @@ async def export_progress_report_pdf(req: ExportProgressReportPdfRequest):
     buf.seek(0)
     return Response(content=buf.read(), media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="Report_{req.student_name.replace(" ", "_")}.pdf"'})
+
+
+# ─── Face Recognition ──────────────────────────────────────────────────────────
+
+class EnrollFaceRequest(BaseModel):
+    student_id: str
+    school_id: str
+
+@app.post("/internal/face/enroll")
+async def enroll_face(
+    student_id: str = Form(...),
+    school_id: str = Form(...),
+    photo: UploadFile = File(...),
+):
+    """
+    Enroll a student's face from an uploaded photo.
+    Returns the 512-dim embedding vector to be stored in face_embeddings table.
+    """
+    from face_recognition import extract_embedding
+    image_bytes = await photo.read()
+    embedding = extract_embedding(image_bytes)
+    if embedding is None:
+        raise HTTPException(status_code=422, detail="No face detected in the photo. Please upload a clear frontal photo.")
+    return {
+        "student_id": student_id,
+        "school_id": school_id,
+        "embedding": embedding,
+        "dim": len(embedding),
+    }
+
+
+class KnownFace(BaseModel):
+    student_id: str
+    embedding: list[float]
+
+class RecognizeRequest(BaseModel):
+    school_id: str
+    section_id: str
+    known_faces: list[KnownFace]
+    threshold: float = 0.45
+
+@app.post("/internal/face/recognize")
+async def recognize_attendance(
+    school_id: str = Form(...),
+    section_id: str = Form(...),
+    known_faces_json: str = Form(...),   # JSON string of KnownFace list
+    threshold: float = Form(0.45),
+    photo: UploadFile = File(...),
+):
+    """
+    Detect all faces in a classroom photo and match against enrolled students.
+    Returns a list of matched students with confidence scores.
+    """
+    import json
+    from face_recognition import recognize_faces
+
+    image_bytes = await photo.read()
+
+    try:
+        known = json.loads(known_faces_json)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid known_faces_json")
+
+    matches = recognize_faces(image_bytes, known, threshold=threshold)
+
+    return {
+        "section_id": section_id,
+        "matched": matches,
+        "total_detected": len(matches),
+        "unmatched": max(0, len(matches)),  # all detected faces, minus matched
+    }
