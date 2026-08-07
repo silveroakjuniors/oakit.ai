@@ -81,20 +81,23 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
       [user_id, school_id]
     );
 
-    // Build folder path: ClassName - Section Label / YYYY-MM-DD [/ EventName]
-    let classFolderName = config.rows[0].google_drive_class_folder || 'Classes';
+    // Build folder: Oaklets_ClassName_SectionLabel / date-or-event / Photos|Videos
+    let classSlugBase = 'Oaklets';
     if (sectionRow.rows.length > 0) {
       const { class_name, section_label } = sectionRow.rows[0];
-      // e.g. "Nursery - Section A" or "Play Group" (if only one section)
-      classFolderName = section_label
-        ? `${class_name} - ${section_label}`
-        : class_name;
+      const slug = section_label
+        ? `${class_name}_${section_label}`.replace(/[^a-zA-Z0-9]/g, '_')
+        : class_name.replace(/[^a-zA-Z0-9]/g, '_');
+      classSlugBase = `Oaklets_${slug}`;
     }
 
-    let driveFolderName = `${classFolderName}/${today}`;
-    if (event_name && typeof event_name === 'string' && event_name.trim()) {
-      driveFolderName += `/${event_name.trim()}`;
-    }
+    const isVideoForFolder = file.mimetype.startsWith('video/');
+    const dateOrEvent = (event_name && typeof event_name === 'string' && event_name.trim())
+      ? event_name.trim()
+      : today;
+    const mediaSubfolder = isVideoForFolder ? 'Videos' : 'Photos';
+    const driveFolderName = `${classSlugBase}/${dateOrEvent}/${mediaSubfolder}`;
+    const classFolderName = classSlugBase; // used for DB tracking
 
     console.log('[media upload] school=%s folder_id=%s path=%s', school_id, folderId, driveFolderName);
 
@@ -105,36 +108,41 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
     const isVideo = file.mimetype.startsWith('video/');
 
     if (isVideo) {
-      try {
-        const ffAvailable = await isFfmpegAvailable();
-        if (ffAvailable) {
-          const compressed = await compressVideo(file.path);
-          localPath = compressed.outputPath;
-          originalSize = compressed.inputSize;
-          finalSize = compressed.outputSize;
-          const savings = Math.round((1 - finalSize / originalSize) * 100);
-          console.log(`[media upload] compressed video: ${formatBytes(originalSize)} → ${formatBytes(finalSize)} (${savings}% smaller)`);
+      // Only run server compression for non-MP4 formats (MOV, WebM, etc.)
+      // MP4 files are already compressed client-side — skip to avoid Render timeout
+      const isAlreadyMp4 = file.mimetype === 'video/mp4';
+      if (!isAlreadyMp4) {
+        try {
+          const ffAvailable = await isFfmpegAvailable();
+          if (ffAvailable) {
+            const compressed = await compressVideo(file.path);
+            localPath = compressed.outputPath;
+            originalSize = compressed.inputSize;
+            finalSize = compressed.outputSize;
+            const savings = Math.round((1 - finalSize / originalSize) * 100);
+            console.log(`[media upload] server compressed: ${formatBytes(originalSize)} → ${formatBytes(finalSize)} (${savings}% smaller)`);
+          }
+        } catch (compressErr: any) {
+          console.log('[media upload] server compression skipped:', compressErr.message);
+          localPath = file.path;
         }
-      } catch (compressErr: any) {
-        console.error('[media upload] video compression failed, uploading original:', compressErr.message);
-        localPath = file.path; // fall back to original
+      } else {
+        console.log('[media upload] skipping server compression - already MP4 from client');
       }
     }
 
-    // ── Build sequential filename: YYYY-MM-DD_ClassName_N.ext ────────────────
-    // Count existing files in this folder for the sequence number
+    // ── Build sequential filename: Oaklets_ClassName_N.ext ──────────────────
     const ext = isVideo ? '.mp4' : path.extname(file.originalname) || '.jpg';
-    const classSlug = classFolderName.replace(/[^a-zA-Z0-9]/g, '_');
     const countResult = await pool.query(
       `SELECT COUNT(*) FROM audit_logs
        WHERE school_id = $1 AND action = 'upload_photo'
          AND entity_type = 'google_drive_media'
          AND created_at::date = CURRENT_DATE
          AND metadata->>'folder_path' LIKE $2`,
-      [school_id, `${classFolderName}%`]
+      [school_id, `${classSlugBase}%`]
     ).catch(() => ({ rows: [{ count: '0' }] }));
     const seq = parseInt(countResult.rows[0]?.count || '0') + 1;
-    const friendlyName = `${today}_${classSlug}_${seq}${ext}`;
+    const friendlyName = `${classSlugBase}_${seq}${ext}`;
 
     // Upload to Google Drive
     const result = await uploadToGoogleDrive({

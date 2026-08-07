@@ -138,12 +138,20 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
         fd.append('media', uploadFile, file.name);
         if (eventName.trim()) fd.append('event_name', eventName.trim());
 
-        const res = await fetch(`${getApiBase()}/api/v1/teacher/media/upload`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
-          signal: AbortSignal.timeout(120000), // 2 min timeout
-        });
+        // Use AbortController for cross-browser timeout support
+        const uploadController = new AbortController();
+        const uploadTimeout = setTimeout(() => uploadController.abort(), 300000); // 5 min
+        let res: Response;
+        try {
+          res = await fetch(`${getApiBase()}/api/v1/teacher/media/upload`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: fd,
+            signal: uploadController.signal,
+          });
+        } finally {
+          clearTimeout(uploadTimeout);
+        }
 
         if (!res.ok) {
           const errData = await res.json();

@@ -108,19 +108,26 @@ router.post('/upload', (req: Request, res: Response, next: any) => {
     const isVideo = file.mimetype.startsWith('video/');
 
     if (isVideo) {
-      try {
-        const ffAvailable = await isFfmpegAvailable();
-        if (ffAvailable) {
-          const compressed = await compressVideo(file.path);
-          localPath = compressed.outputPath;
-          originalSize = compressed.inputSize;
-          finalSize = compressed.outputSize;
-          const savings = Math.round((1 - finalSize / originalSize) * 100);
-          console.log(`[media upload] compressed video: ${formatBytes(originalSize)} → ${formatBytes(finalSize)} (${savings}% smaller)`);
+      // Only run server compression for non-MP4 formats (MOV, WebM, etc.)
+      // MP4 files are already compressed client-side — skip to avoid Render timeout
+      const isAlreadyMp4 = file.mimetype === 'video/mp4';
+      if (!isAlreadyMp4) {
+        try {
+          const ffAvailable = await isFfmpegAvailable();
+          if (ffAvailable) {
+            const compressed = await compressVideo(file.path);
+            localPath = compressed.outputPath;
+            originalSize = compressed.inputSize;
+            finalSize = compressed.outputSize;
+            const savings = Math.round((1 - finalSize / originalSize) * 100);
+            console.log(`[media upload] server compressed: ${formatBytes(originalSize)} → ${formatBytes(finalSize)} (${savings}% smaller)`);
+          }
+        } catch (compressErr: any) {
+          console.log('[media upload] server compression skipped:', compressErr.message);
+          localPath = file.path;
         }
-      } catch (compressErr: any) {
-        console.error('[media upload] video compression failed, uploading original:', compressErr.message);
-        localPath = file.path; // fall back to original
+      } else {
+        console.log('[media upload] skipping server compression - already MP4 from client');
       }
     }
 

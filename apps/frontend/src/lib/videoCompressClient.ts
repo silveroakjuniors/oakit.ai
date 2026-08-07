@@ -79,12 +79,12 @@ export async function compressVideoClient(
   await ff.exec([
     '-i',        inputName,
     '-vcodec',   'libx264',
-    '-crf',      '28',           // Good quality, ~40-60% smaller
+    '-crf',      '32',           // More aggressive: ~60-70% smaller, still watchable
     '-preset',   'fast',
-    '-vf',       'scale=min(1280\\,iw):-2',  // Max 720p wide
+    '-vf',       'scale=min(854\\,iw):-2',   // Max 480p wide (smaller = faster upload)
     '-acodec',   'aac',
-    '-b:a',      '128k',
-    '-movflags', '+faststart',   // Mobile streaming
+    '-b:a',      '96k',          // Slightly lower audio bitrate
+    '-movflags', '+faststart',
     '-f',        'mp4',
     outputName,
   ]);

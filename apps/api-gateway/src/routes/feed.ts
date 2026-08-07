@@ -199,14 +199,17 @@ async function uploadFeedImage(
   const today = new Date().toISOString().split('T')[0];
   const originalSize = fs.statSync(localPath).size;
 
-  // ── Compress video using FFmpeg (with 20s timeout to stay under Render's 30s limit) ──
+  // Skip server-side compression if already an MP4 (compressed client-side)
+  // This avoids Render's 30s response timeout for video processing
   let finalPath = localPath;
   let compressed = false;
-  if (isVideo && !skipCompression) {
+  const isAlreadyMp4 = mimeType === 'video/mp4' || filename.toLowerCase().endsWith('.mp4');
+
+  if (isVideo && !skipCompression && !isAlreadyMp4) {
+    // Only compress non-MP4 formats (MOV, WebM, 3GP) that weren't compressed client-side
     try {
       const ffAvailable = await isFfmpegAvailable();
       if (ffAvailable) {
-        // Race compression against a 20s timeout — if too slow, use original
         const compressionPromise = compressVideo(localPath);
         const timeoutPromise = new Promise<null>((_, reject) =>
           setTimeout(() => reject(new Error('compression timeout')), 20000)
@@ -215,16 +218,15 @@ async function uploadFeedImage(
         if (result) {
           finalPath = result.outputPath;
           compressed = true;
-          const savings = Math.round((1 - result.outputSize / result.inputSize) * 100);
-          console.log(`[feed-upload] compressed: ${formatBytes(result.inputSize)} → ${formatBytes(result.outputSize)} (${savings}% smaller)`);
+          console.log(`[feed-upload] server compressed: ${formatBytes(result.inputSize)} → ${formatBytes(result.outputSize)}`);
         }
-      } else {
-        console.log('[feed-upload] FFmpeg not available — uploading original');
       }
     } catch (compressErr: any) {
-      console.log(`[feed-upload] compression skipped (${compressErr.message}) — uploading original`);
+      console.log(`[feed-upload] server compression skipped (${compressErr.message})`);
       finalPath = localPath;
     }
+  } else if (isVideo) {
+    console.log(`[feed-upload] skipping server compression - already MP4 (compressed client-side)`);
   }
 
   // ── Build Oaklets_ filename: Oaklets_ClassName_SectionLabel_N.ext ─────────
