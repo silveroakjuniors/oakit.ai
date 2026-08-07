@@ -169,6 +169,7 @@ export default function UploadModal({ token, sectionId, onClose, onPosted }: Upl
 
   const hasVideo = files.some(f => VIDEO_TYPES.includes(f.type));
   const busy = phase === 'compressing' || phase === 'uploading';
+  const isMediaRecorderAvailable = typeof MediaRecorder !== 'undefined';
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4"
@@ -252,7 +253,9 @@ export default function UploadModal({ token, sectionId, onClose, onPosted }: Upl
               <p className="text-[10px] text-emerald-800 leading-relaxed">
                 {isFFmpegSupported()
                   ? 'Video will be compressed on your device before uploading — faster upload, smaller file.'
-                  : 'Video will be uploaded directly (browser compression not supported).'}
+                  : isMediaRecorderAvailable
+                    ? 'Video will be re-encoded on your device before uploading (Safari mode).'
+                    : 'Video will be uploaded directly (compression not supported on this browser).'}
                 <span className="text-emerald-600 block mt-0.5">Max size: {MAX_VIDEO_MB}MB - Kept for 5 days</span>
               </p>
             </div>
