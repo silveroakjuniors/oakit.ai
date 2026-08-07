@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Upload, FolderOpen, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { API_BASE, getApiBase } from '@/lib/api';
+import { compressVideoClient, formatBytes as fmtBytes, isFFmpegSupported } from '@/lib/videoCompressClient';
 
 interface DriveConfig {
   google_drive_enabled: boolean;
@@ -27,6 +28,9 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
   const [eventName, setEventName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [compressStatus, setCompressStatus] = useState('');
+  const [compressProgress, setCompressProgress] = useState(0);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [successCount, setSuccessCount] = useState(0);
   const [folderPath, setFolderPath] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -106,8 +110,29 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
 
     for (const file of files) {
       try {
+        let uploadFile = file;
+
+        // Compress video on-device before uploading
+        if (ALLOWED_VIDEO.includes(file.type) && isFFmpegSupported()) {
+          setIsCompressing(true);
+          setCompressProgress(0);
+          setCompressStatus('Loading compressor...');
+          try {
+            const result = await compressVideoClient(
+              file,
+              (s) => setCompressStatus(s),
+              (p) => setCompressProgress(p),
+            );
+            uploadFile = result.file;
+            console.log(`[DriveUpload] compressed: ${fmtBytes(result.originalSize)} → ${fmtBytes(result.compressedSize)} (${result.savingsPct}% smaller)`);
+          } catch (compErr: any) {
+            console.warn('[DriveUpload] compression failed, using original:', compErr.message);
+          }
+          setIsCompressing(false);
+        }
+
         const fd = new FormData();
-        fd.append('media', file);
+        fd.append('media', uploadFile, file.name);
         if (eventName.trim()) fd.append('event_name', eventName.trim());
 
         const res = await fetch(`${getApiBase()}/api/v1/teacher/media/upload`, {
@@ -309,7 +334,22 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
           </div>
         )}
 
-        {/* Progress */}
+        {/* Compression progress */}
+        {isCompressing && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-neutral-600 font-medium">Compressing video on device...</span>
+              <span className="text-amber-600 font-bold">{compressProgress}%</span>
+            </div>
+            <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-400 rounded-full transition-all duration-300"
+                style={{ width: `${compressProgress}%` }} />
+            </div>
+            {compressStatus && <p className="text-[11px] text-neutral-500 text-center">{compressStatus}</p>}
+          </div>
+        )}
+
+        {/* Upload progress */}
         {uploading && uploadProgress && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">

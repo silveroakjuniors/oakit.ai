@@ -110,16 +110,23 @@ parentAnnouncementsRouter.get('/', async (req: Request, res: Response) => {
       `SELECT DISTINCT s.class_id FROM parent_student_links psl JOIN students s ON s.id = psl.student_id WHERE psl.parent_id = $1`,
       [user_id]
     );
-    const ids = classIds.rows.map((r: any) => r.class_id);
+    const ids: string[] = classIds.rows.map((r: any) => r.class_id);
+
+    // Build query — avoid empty uuid[] cast issue when parent has no children linked
     const result = await pool.query(
-      `SELECT a.*, COALESCE(u.name, 'School') as author_name FROM announcements a LEFT JOIN users u ON u.id = a.author_id
+      `SELECT a.*, COALESCE(u.name, 'School') as author_name
+       FROM announcements a LEFT JOIN users u ON u.id = a.author_id
        WHERE a.school_id = $1 AND ${ACTIVE_FILTER}
-         AND (a.target_audience IN ('all','parents') OR (a.target_audience = 'class' AND a.target_class_id = ANY($2::uuid[])))
+         AND (
+           a.target_audience IN ('all','parents')
+           OR (a.target_audience = 'class' AND ${ids.length > 0 ? 'a.target_class_id = ANY($2::uuid[])' : 'false'})
+         )
        ORDER BY a.created_at DESC LIMIT 20`,
-      [school_id, ids]
+      ids.length > 0 ? [school_id, ids] : [school_id]
     );
     return res.json(result.rows);
   } catch (err) {
+    console.error('[parent/announcements]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
