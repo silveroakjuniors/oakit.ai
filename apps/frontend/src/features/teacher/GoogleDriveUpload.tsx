@@ -105,6 +105,9 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
     setFolderPath('');
     setUploadProgress({ done: 0, total: files.length });
 
+    const ffmpegOk = isFFmpegSupported();
+    console.log('[DriveUpload] FFmpeg WASM supported:', ffmpegOk, '| SharedArrayBuffer:', typeof SharedArrayBuffer !== 'undefined');
+
     let done = 0;
     let lastFolderPath = '';
 
@@ -113,7 +116,7 @@ export default function GoogleDriveUpload({ token, onUploadSuccess, className = 
         let uploadFile = file;
 
         // Compress video on-device before uploading
-        if (ALLOWED_VIDEO.includes(file.type) && isFFmpegSupported()) {
+        if (ALLOWED_VIDEO.includes(file.type) && ffmpegOk) {
           setIsCompressing(true);
           setCompressProgress(0);
           setCompressStatus('Loading compressor...');
