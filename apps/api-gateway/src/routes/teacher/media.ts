@@ -241,21 +241,30 @@ router.get('/config', async (req: Request, res: Response) => {
     };
 
     let class_folder_name = row.google_drive_class_folder || 'Classes';
+    // Build the Oaklets_ slug — must match what upload stores in drive_class_folders
+    let oaklets_slug = class_folder_name;
     if (sectionRow.rows.length > 0) {
       const { class_name, section_label } = sectionRow.rows[0];
+      // Human-readable name for display
       class_folder_name = section_label ? `${class_name} - ${section_label}` : class_name;
+      // Slug used as key in drive_class_folders (matches upload logic)
+      const slug = section_label
+        ? `${class_name}_${section_label}`.replace(/[^a-zA-Z0-9]/g, '_')
+        : class_name.replace(/[^a-zA-Z0-9]/g, '_');
+      oaklets_slug = `Oaklets_${slug}`;
     }
 
     // Build a shareable Drive folder URL — prefer class subfolder if known, else root folder
     let drive_folder_url: string | null = null;
     if (row.google_drive_folder_id) {
-      // Try to get class-specific subfolder (graceful fallback if table doesn't exist yet)
       let classFolderId: string | null = null;
       try {
+        // Look up by Oaklets_ slug first (new format), fallback to display name (old format)
         const classFolderRow = await pool.query(
           `SELECT drive_folder_id FROM drive_class_folders
-           WHERE school_id = $1 AND class_name = $2 LIMIT 1`,
-          [school_id, class_folder_name]
+           WHERE school_id = $1 AND (class_name = $2 OR class_name = $3)
+           ORDER BY updated_at DESC LIMIT 1`,
+          [school_id, oaklets_slug, class_folder_name]
         );
         if (classFolderRow.rows.length > 0) {
           classFolderId = classFolderRow.rows[0].drive_folder_id;

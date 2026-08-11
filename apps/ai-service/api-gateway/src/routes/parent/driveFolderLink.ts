@@ -62,29 +62,34 @@ router.get('/', async (req: Request, res: Response) => {
 
       if (sectionRow.rows.length > 0) {
         const { class_name, section_label } = sectionRow.rows[0];
-        const folderName = section_label ? `${class_name} - ${section_label}` : class_name;
+        const displayName  = section_label ? `${class_name} - ${section_label}` : class_name;
+        // Also try the Oaklets_ slug format (new folder naming)
+        const slug        = section_label
+          ? `${class_name}_${section_label}`.replace(/[^a-zA-Z0-9]/g, '_')
+          : class_name.replace(/[^a-zA-Z0-9]/g, '_');
+        const oakletsSlug = `Oaklets_${slug}`;
 
         try {
           const byName = await pool.query(
             `SELECT drive_folder_id, drive_folder_url FROM drive_class_folders
-             WHERE school_id = $1 AND class_name = $2 LIMIT 1`,
-            [school_id, folderName]
+             WHERE school_id = $1 AND (class_name = $2 OR class_name = $3)
+             ORDER BY updated_at DESC LIMIT 1`,
+            [school_id, oakletsSlug, displayName]
           );
           if (byName.rows.length > 0) {
             return res.json({
               google_drive_enabled: true,
               drive_folder_url: byName.rows[0].drive_folder_url ||
                 `https://drive.google.com/drive/folders/${byName.rows[0].drive_folder_id}`,
-              class_name: folderName,
+              class_name: displayName,
             });
           }
         } catch { /* table may not exist yet */ }
 
-        // Folder not yet created — return root folder
         return res.json({
           google_drive_enabled: true,
           drive_folder_url: `https://drive.google.com/drive/folders/${rootFolderId}`,
-          class_name: folderName,
+          class_name: displayName,
         });
       }
     }
