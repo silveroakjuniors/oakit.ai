@@ -15,6 +15,7 @@ import { API_BASE, apiGet, apiPost, apiDelete, apiPut } from '@/lib/api';
 import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
 import OakitLogo from '@/components/OakitLogo';
 import ReportCardGenerator from '@/components/ReportCardGenerator';
+import FlashMessagePopup from '@/components/FlashMessagePopup';
 import { useSessionManager } from '@/hooks/useSessionManager';
 
 // --- Translation Settings type (needed by TranslationContext) -----------------
@@ -554,6 +555,7 @@ export default function ParentPage() {
  return (
  <TranslationContext.Provider value={translationContextValue}>
  {noteModal && <NoteModal note={noteModal} token={token} onClose={() => setNoteModal(null)} />}
+ <FlashMessagePopup token={token} />
 
  {/* -- Full-page wrapper -- */}
  <div className="min-h-screen bg-[#F8FAFC] flex flex-col" style={{ fontFamily: "'Inter',-apple-system,sans-serif" }}>

@@ -124,6 +124,7 @@ import socialMediaRouter from './routes/admin/socialMedia';
 import sharedTodayContextRouter from './routes/shared/todayContext';
 import pushSubscriptionRouter from './routes/shared/pushSubscription';
 import driveProxyRouter from './routes/shared/driveProxy';
+import { flashMessagesRouter, adminFlashMessagesRouter } from './routes/shared/flashMessages';
 import staffHrRouter from './routes/staff/hr';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
@@ -259,6 +260,8 @@ app.use('/api/v1/public/uniform', publicUniformRouter);
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
 app.use('/api/v1/push', pushSubscriptionRouter);
 app.use('/api/v1/drive-proxy', driveProxyRouter);
+app.use('/api/v1/flash-messages', flashMessagesRouter);
+app.use('/api/v1/admin/flash-messages', adminFlashMessagesRouter);
 
 // Staff HR (leave, offer letters, payslips)
 app.use('/api/v1/staff/hr', staffHrRouter);
