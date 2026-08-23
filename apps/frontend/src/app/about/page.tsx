@@ -1,439 +1,474 @@
 'use client';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState } from 'react';
 
+/* ── Revenue projections ─────────────────────────────────────────────────── */
+const REVENUE = [
+  { year: 'FY 2026–27', schools: 25,  students: 5000,   arr: '₹12.5L',  model: 'School SaaS ₹500/mo' },
+  { year: 'FY 2027–28', schools: 100, students: 25000,  arr: '₹60L',    model: '+ Franchise licence' },
+  { year: 'FY 2028–29', schools: 300, students: 75000,  arr: '₹2.1Cr',  model: '+ Parent premium ₹299/mo' },
+  { year: 'FY 2029–30', schools: 800, students: 200000, arr: '₹8.4Cr',  model: '+ Expert marketplace 15%' },
+  { year: 'FY 2030–31', schools: 2000,students: 500000, arr: '₹28Cr',   model: '+ Learning marketplace' },
+];
+
+/* ── 6-phase roadmap ─────────────────────────────────────────────────────── */
 const PHASES = [
-  {
-    years: '2026–2028',
-    label: 'Phase 1',
-    title: 'Foundation',
-    subtitle: 'The School Operating System',
-    color: '#1B4332',
-    light: '#f0fdf4',
-    target: '25 schools · 5,000+ children',
-    story: 'Solving operational chaos in early childhood education — one school at a time.',
-    items: ['AI Lesson Planner', 'Attendance & Coverage', 'Parent Communication', 'Child Portfolio', 'Reports & Analytics'],
+  { n:'1', years:'2026–28', color:'#1B4332', bg:'#f0fdf4',
+    title:'School OS', sub:'Foundation',
+    target:'25 schools · 5K children',
+    story:'Solving operational chaos in early childhood education.',
+    items:['AI Lesson Planner','Attendance Tracking','Parent Feed','Coverage Analytics','Fee Module'],
   },
-  {
-    years: '2028–2030',
-    label: 'Phase 2',
-    title: 'School Intelligence',
-    subtitle: 'Expand into K-12',
-    color: '#1e40af',
-    light: '#eff6ff',
-    target: '250 schools · 100,000+ students',
-    story: 'Becoming the education operating system that powers schools of every size.',
-    items: ['Assessments & Exams', 'Homework Management', 'Student Analytics', 'Report Cards', 'AI Teacher Assistant'],
+  { n:'2', years:'2028–30', color:'#1e40af', bg:'#eff6ff',
+    title:'School Intelligence', sub:'K-12 expansion',
+    target:'250 schools · 100K students',
+    story:'The education operating system that powers schools of every size.',
+    items:['Assessments & Exams','Homework Management','Student Analytics','Report Cards','AI Teacher Assistant'],
   },
-  {
-    years: '2030–2032',
-    label: 'Phase 3',
-    title: 'Parent Ecosystem',
-    subtitle: 'Parenting in the AI Era',
-    color: '#7c3aed',
-    light: '#f5f3ff',
-    target: '100,000+ parents',
-    story: 'Extending beyond school management into family wellbeing and development.',
-    items: ['Parenting Community', 'Child Development Resources', 'AI Parenting Assistant', 'Webinars & Events', 'Parenting Courses'],
+  { n:'3', years:'2030–32', color:'#7c3aed', bg:'#f5f3ff',
+    title:'Parent Ecosystem', sub:'Parenting in the AI Era',
+    target:'100,000+ parents',
+    story:'Extending beyond school management into family wellbeing.',
+    items:['Parenting Community','Child Dev Resources','AI Parenting Assistant','Webinars & Events','Parenting Courses'],
   },
-  {
-    years: '2032–2034',
-    label: 'Phase 4',
-    title: 'Expert Marketplace',
-    subtitle: 'Connect Need with Expertise',
-    color: '#b45309',
-    light: '#fffbeb',
-    target: '10,000+ experts',
-    story: 'Building the trusted marketplace connecting families with child development experts.',
-    items: ['Expert Profiles', 'Courses & Workshops', '1:1 Consultations', 'Live Sessions', 'Content Library'],
+  { n:'4', years:'2032–34', color:'#b45309', bg:'#fffbeb',
+    title:'Expert Marketplace', sub:'Connect Need with Expertise',
+    target:'10,000+ experts',
+    story:'Trusted marketplace connecting families with child development experts.',
+    items:['Expert Profiles','Courses & Workshops','1:1 Consultations','Live Sessions','Content Library'],
   },
-  {
-    years: '2034–2036',
-    label: 'Phase 5',
-    title: 'Learning Marketplace',
-    subtitle: 'Personalized Learning for Every Child',
-    color: '#0f766e',
-    light: '#f0fdfa',
-    target: '500,000+ families',
-    story: 'Supporting the complete child learning journey with AI-personalized paths.',
-    items: ['Tutor Marketplace', 'Subject Tutoring', 'Personalized Learning Paths', 'AI Recommendations', 'Progress Tracking'],
+  { n:'5', years:'2034–36', color:'#0f766e', bg:'#f0fdfa',
+    title:'Learning Marketplace', sub:'Personalized Learning',
+    target:'500K+ families',
+    story:'AI-personalized learning paths for every child.',
+    items:['Tutor Marketplace','Subject Tutoring','Personalized Paths','AI Recommendations','Progress Tracking'],
   },
-  {
-    years: '2036+',
-    label: 'Phase 6',
-    title: 'Child Development OS',
-    subtitle: 'One Platform. Every Stakeholder.',
-    color: '#9f1239',
-    light: '#fff1f2',
-    target: '1 Million+ lives impacted',
-    story: 'OKiT.ai is the operating system for childhood and parenting — globally.',
-    items: ['Integrated Ecosystem', 'Corporate Partnerships', 'Analytics for Impact', 'Lifelong Learning Journey', 'Global Reach'],
+  { n:'6', years:'2036+', color:'#9f1239', bg:'#fff1f2',
+    title:'Child Development OS', sub:'One Platform. Every Stakeholder.',
+    target:'1M+ lives impacted',
+    story:'OKiT.ai — the operating system for childhood, globally.',
+    items:['Integrated Ecosystem','Corporate Partnerships','Analytics for Impact','Lifelong Learning','Global Reach'],
   },
 ];
 
-const PROBLEMS = [
-  {
-    icon: '📋',
-    title: 'Operational Chaos in Schools',
-    body: 'Preschools and primary schools run on WhatsApp groups, paper registers, and disconnected tools. Teachers spend more time on admin than teaching.',
-  },
-  {
-    icon: '👨‍👩‍👧',
-    title: 'Disconnected Parents',
-    body: 'Parents receive almost no real-time insight into what their child learns daily. The gap between home and school creates anxiety and missed opportunities.',
-  },
-  {
-    icon: '🧠',
-    title: 'Mental Health Crisis Coming',
-    body: 'Screen addiction, information overload, and competitive parenting are creating a generation of anxious children and stressed families. Schools are underprepared.',
-  },
-  {
-    icon: '📊',
-    title: 'Data Rich, Insight Poor',
-    body: 'Thousands of data points per child exist but are never connected. No school today can tell you a child\'s holistic development story.',
-  },
+/* ── Live product features ───────────────────────────────────────────────── */
+const FEATURES = [
+  { icon:'📅', title:'AI Lesson Planner', desc:'Curriculum PDF → daily plans in seconds. Tracks coverage, flags gaps, carries forward missed topics.' },
+  { icon:'📸', title:'Class Memory Feed', desc:'Teachers upload photos/videos. Parents see class moments in real time. Compressed, organized by date/event.' },
+  { icon:'🤖', title:'Oakie — AI Assistant', desc:'"What did my child learn today?" Oakie answers using real curriculum data. Not ChatGPT — contextualized.' },
+  { icon:'🏆', title:'Teacher Streaks', desc:'Gamified consistency. Teachers earn streaks for daily plan completion. 40+ day streaks already in production.' },
+  { icon:'📊', title:'Principal Dashboard', desc:'Coverage %, attendance, teacher activity — school health at one glance in real time.' },
+  { icon:'💰', title:'Full Financial Module', desc:'Fee collection, receipts, salary, expenses, reports. Replaces 3 separate tools.' },
+  { icon:'🎓', title:'Student Portal', desc:'Homework, quizzes, milestones, attendance — every child has their own space.' },
+  { icon:'📱', title:'PWA — Works Offline', desc:'Installed on phone like a native app. Works on 2G. No App Store approval needed.' },
 ];
 
-const WHAT_WE_BUILT = [
-  { icon: '📅', label: 'AI Lesson Planner', desc: 'Auto-generates daily plans from curriculum PDF. Tracks coverage, flags gaps.' },
-  { icon: '📸', label: 'Class Memory Feed', desc: 'Teachers upload photos/videos. Parents see class moments in real time.' },
-  { icon: '🏆', label: 'Teacher Streaks', desc: 'Gamified consistency tracking. Teachers build streaks for daily plan completion.' },
-  { icon: '🤖', label: 'Oakie — AI Assistant', desc: 'Parents ask "What did my child learn today?" Oakie answers with curriculum data.' },
-  { icon: '📱', label: 'PWA — Works Offline', desc: 'Installed on phone like a native app. Works on 2G. No App Store needed.' },
-  { icon: '📊', label: 'Principal Dashboard', desc: 'Coverage %, attendance, teacher activity — all visible at one glance.' },
-  { icon: '💰', label: 'Fee Management', desc: 'Fee collection, receipts, salary, expense tracking — full financial module.' },
-  { icon: '🎓', label: 'Student Portal', desc: 'Homework, quizzes, milestones, attendance — child has their own space.' },
-];
-
-const MARKET = [
-  { label: 'Pre-K to K-12 schools in India', value: '1.5M+' },
-  { label: 'Students enrolled annually', value: '260M+' },
-  { label: 'EdTech market size 2025 (India)', value: '$7.5B' },
-  { label: 'Projected EdTech market 2030', value: '$30B+' },
-  { label: 'Early childhood segment (underserved)', value: '$2.5B' },
-  { label: 'Parents willing to pay for child insights', value: '73%' },
+/* ── Why we win ─────────────────────────────────────────────────────────── */
+const MOATS = [
+  { icon:'🔄', title:'Daily Habit',       desc:'Used every single school day. 40+ day teacher streaks. Daily usage = data density competitors cannot replicate.' },
+  { icon:'🏗️', title:'Bottom-up Trust',   desc:'Earned from teachers → parents → experts. Trust is the hardest asset to acquire. We build it daily.' },
+  { icon:'🧠', title:'Contextual AI',     desc:'Oakie is trained on real curriculum data. Every answer is specific to the child\'s actual class, not generic.' },
+  { icon:'🏢', title:'Franchise-ready',   desc:'Multi-tenant from day one. A franchise manages 50 schools with one login. Built for scale, not retrofitted.' },
+  { icon:'🇮🇳', title:'India-first',       desc:'Works on 2G, regional language ready, ₹500/school pricing. Designed for India — not Silicon Valley.' },
+  { icon:'❤️', title:'Emotional + Academic', desc:'First platform bridging academic progress with milestones, observations, and emotional development tracking.' },
 ];
 
 export default function AboutPage() {
   const [activePhase, setActivePhase] = useState(0);
-  const phase = PHASES[activePhase];
+  const ph = PHASES[activePhase];
 
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: "'Inter', -apple-system, sans-serif" }}>
+    <div className="min-h-screen bg-white" style={{ fontFamily:"'Inter',-apple-system,sans-serif" }}>
 
-      {/* ── NAV ── */}
-      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-neutral-100 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-black text-xl text-neutral-900">OKiT</span>
-          <span className="font-black text-xl text-amber-500">.ai</span>
+      {/* ── NAV ─────────────────────────────────────────────────────────── */}
+      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-neutral-100 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <Image src="/oakie.png" alt="OKiT.ai" width={32} height={32} className="rounded-lg" />
+          <span className="font-black text-lg text-neutral-900">OKiT<span style={{color:'#E8960C'}}>.ai</span></span>
         </div>
-        <div className="hidden md:flex items-center gap-6 text-sm text-neutral-500">
-          <a href="#problem" className="hover:text-neutral-900 transition-colors">The Problem</a>
-          <a href="#solution" className="hover:text-neutral-900 transition-colors">Our Solution</a>
-          <a href="#roadmap" className="hover:text-neutral-900 transition-colors">Roadmap</a>
-          <a href="#market" className="hover:text-neutral-900 transition-colors">Market</a>
-          <a href="#contact" className="hover:text-neutral-900 transition-colors">Connect</a>
+        <div className="hidden md:flex items-center gap-5 text-sm text-neutral-500 font-medium">
+          {[['#problem','Problem'],['#built','Product'],['#roadmap','Roadmap'],['#revenue','Revenue'],['#contact','Connect']].map(([h,l])=>(
+            <a key={h} href={h} className="hover:text-neutral-900 transition-colors">{l}</a>
+          ))}
         </div>
-        <Link href="/login"
-          className="px-4 py-2 bg-neutral-900 text-white text-sm font-semibold rounded-xl hover:bg-neutral-700 transition-colors">
-          See Live Demo
+        <Link href="/login" className="px-4 py-2 text-white text-sm font-bold rounded-xl transition-all hover:opacity-90"
+          style={{background:'linear-gradient(135deg,#1B4332,#2d6a4f)'}}>
+          Live Demo
         </Link>
       </nav>
 
-      {/* ── HERO ── */}
-      <section className="relative overflow-hidden px-6 pt-20 pb-24 text-center"
-        style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #fff 50%, #fffbeb 100%)' }}>
-        <div className="max-w-4xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-6">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            Live at Silver Oak Juniors, Bengaluru — Aug 2026
+      {/* ── HERO ─────────────────────────────────────────────────────────── */}
+      <section className="relative px-6 pt-16 pb-20 overflow-hidden"
+        style={{background:'linear-gradient(160deg,#f0fdf4 0%,#fff 45%,#fffbeb 100%)'}}>
+        <div className="max-w-5xl mx-auto text-center">
+          {/* Logo */}
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <Image src="/oakie.png" alt="OKiT.ai" width={64} height={64} className="rounded-2xl shadow-lg" />
           </div>
-          <h1 className="text-4xl md:text-6xl font-black text-neutral-900 leading-tight mb-6">
+          <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Live at Silver Oak Juniors · Bengaluru · August 2026
+          </div>
+          <h1 className="text-5xl md:text-7xl font-black text-neutral-900 leading-[1.05] mb-5">
             One Platform.<br />
-            <span style={{ color: '#1B4332' }}>Every Stakeholder.</span><br />
-            Every Stage of a Child's Growth.
+            <span style={{color:'#1B4332'}}>Every Stakeholder.</span><br />
+            <span style={{color:'#E8960C'}}>Every Stage.</span>
           </h1>
-          <p className="text-lg md:text-xl text-neutral-600 max-w-2xl mx-auto leading-relaxed mb-8">
-            OKiT.ai is building the operating system for childhood development —
-            connecting schools, parents, teachers, and experts through AI.
+          <p className="text-lg md:text-xl text-neutral-600 max-w-xl mx-auto leading-relaxed mb-8">
+            OKiT.ai is building the <strong>operating system for childhood development</strong> — connecting schools, parents, teachers, and experts through AI.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <Link href="/login"
-              className="px-8 py-4 text-white font-bold rounded-2xl text-base transition-all hover:scale-105 active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #1B4332, #2d6a4f)' }}>
-              See the Live Product
+          <div className="flex flex-wrap justify-center gap-4">
+            <Link href="/login" className="px-8 py-4 text-white font-bold rounded-2xl text-base hover:opacity-90 transition-all shadow-lg shadow-emerald-900/20"
+              style={{background:'linear-gradient(135deg,#1B4332,#2d6a4f)'}}>
+              See Live Product →
             </Link>
-            <a href="#roadmap"
-              className="px-8 py-4 bg-white border border-neutral-200 text-neutral-800 font-bold rounded-2xl text-base hover:border-neutral-400 transition-colors">
-              View Roadmap
+            <a href="#revenue" className="px-8 py-4 bg-white border-2 border-amber-300 text-amber-800 font-bold rounded-2xl text-base hover:border-amber-500 transition-colors">
+              Revenue Model
             </a>
           </div>
         </div>
-      </section>
 
-      {/* ── MISSION ── */}
-      <section className="px-6 py-10 text-center" style={{ background: '#1B4332' }}>
-        <p className="text-lg md:text-2xl font-semibold text-white/90 max-w-3xl mx-auto leading-relaxed">
-          Our Mission: To help every child become future-ready<br className="hidden md:block" />
-          while staying rooted in values and humanity.
-        </p>
-      </section>
-
-      {/* ── PROBLEM ── */}
-      <section id="problem" className="px-6 py-20 max-w-6xl mx-auto">
-        <div className="text-center mb-12">
-          <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3">The Problem</p>
-          <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
-            The world is changing faster than education systems can keep up.
-          </h2>
-          <p className="text-neutral-500 max-w-2xl mx-auto text-base leading-relaxed">
-            By 2030, 85% of jobs that today's preschoolers will hold don't exist yet.
-            Yet schools still use paper registers. Parents are more anxious than ever.
-            Children are more distracted. Something has to change.
+        {/* Mission banner */}
+        <div className="max-w-3xl mx-auto mt-14 rounded-2xl p-5 text-center" style={{background:'#1B4332'}}>
+          <p className="text-white/90 font-semibold text-base leading-relaxed">
+            Mission: To help every child become future-ready while staying rooted in values and humanity.
           </p>
         </div>
-        <div className="grid md:grid-cols-2 gap-6">
-          {PROBLEMS.map((p, i) => (
-            <div key={i} className="bg-neutral-50 border border-neutral-100 rounded-2xl p-6 hover:shadow-md transition-shadow">
-              <div className="text-3xl mb-3">{p.icon}</div>
-              <h3 className="text-base font-bold text-neutral-900 mb-2">{p.title}</h3>
-              <p className="text-sm text-neutral-600 leading-relaxed">{p.body}</p>
+      </section>
+
+      {/* ── THE PROBLEM ──────────────────────────────────────────────────── */}
+      <section id="problem" className="px-6 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold uppercase tracking-widest text-red-500 mb-3">The Problem We're Solving</p>
+          <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
+            The world changes faster than<br />education systems can adapt.
+          </h2>
+        </div>
+
+        {/* 4 visual problem cards */}
+        <div className="grid md:grid-cols-2 gap-5 mb-10">
+          {[
+            { icon:'📋', color:'#fef2f2', border:'#fecaca', n:'1.5M+', label:'Schools in India still run on paper registers & WhatsApp groups', sub:'No digitization. No data. No insight.' },
+            { icon:'👨‍👩‍👧', color:'#fff7ed', border:'#fed7aa', n:'73%', label:'Parents want real-time insight into what their child learns', sub:'They get zero. A weekly note at best.' },
+            { icon:'📱', color:'#f0f9ff', border:'#bae6fd', n:'7 hrs', label:'Average daily screen time for a child in 2025', sub:'Schools unprepared. Parents anxious. No AI solution.' },
+            { icon:'🔗', color:'#fdf4ff', border:'#e9d5ff', n:'0', label:'Platforms that connect school + parent + expert + student', sub:'Every stakeholder is siloed. No one sees the full picture.' },
+          ].map((p,i)=>(
+            <div key={i} className="rounded-2xl border-2 p-6 flex gap-4" style={{background:p.color,borderColor:p.border}}>
+              <div className="text-4xl shrink-0">{p.icon}</div>
+              <div>
+                <p className="text-3xl font-black text-neutral-900 leading-none mb-1">{p.n}</p>
+                <p className="text-sm font-semibold text-neutral-800 mb-1">{p.label}</p>
+                <p className="text-xs text-neutral-500">{p.sub}</p>
+              </div>
             </div>
           ))}
         </div>
-        <div className="mt-10 bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
-          <p className="text-sm text-amber-800 font-medium leading-relaxed">
-            <strong>The next decade will see:</strong> More working parents with less time,
-            more data about their children with no way to understand it,
-            more anxiety about screen time, career readiness, and social-emotional wellbeing.
-            The family that has a trusted AI partner for their child's development will have
-            a fundamental advantage.
-          </p>
+
+        {/* Future problem */}
+        <div className="bg-neutral-900 rounded-2xl p-8 text-center">
+          <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">The Next 10 Years</p>
+          <h3 className="text-white text-xl font-bold mb-4">The coming crisis we are positioned to solve</h3>
+          <div className="grid md:grid-cols-3 gap-4">
+            {[
+              {icon:'😰', title:'Anxious Families', desc:'More dual-income households, less time with children, rising anxiety about screen addiction and career readiness.'},
+              {icon:'📊', title:'Data Overload', desc:'Thousands of data points per child — test scores, attendance, behavior — but no platform to turn data into insight.'},
+              {icon:'🤯', title:'Mental Health Crisis', desc:'1 in 4 children will face mental health challenges by 2030. Schools and parents have no early warning system.'},
+            ].map((f,i)=>(
+              <div key={i} className="bg-white/10 rounded-xl p-5 text-left">
+                <div className="text-2xl mb-2">{f.icon}</div>
+                <p className="text-white font-bold text-sm mb-1">{f.title}</p>
+                <p className="text-white/60 text-xs leading-relaxed">{f.desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* ── WHAT WE'VE BUILT ── */}
-      <section id="solution" className="px-6 py-20" style={{ background: '#f8fafc' }}>
+      {/* ── PRODUCT — WHAT WE'VE BUILT ───────────────────────────────────── */}
+      <section id="built" className="px-6 py-20" style={{background:'#f8fafc'}}>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
-            <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-3">Already Built & Live</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-3">Live Product · Not a Prototype</p>
             <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
-              Not a pitch deck. A working product.
+              Already working.<br />Real teachers. Real parents. Real data.
             </h2>
-            <p className="text-neutral-500 max-w-2xl mx-auto text-base">
-              OKiT.ai is live at Silver Oak Juniors, Bengaluru with real teachers, parents, and students using it daily since June 2026.
+            <p className="text-neutral-500 max-w-2xl mx-auto">
+              OKiT.ai has been live at Silver Oak Juniors since June 2026. Every feature below is in daily production use.
             </p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {WHAT_WE_BUILT.map((item, i) => (
-              <div key={i} className="bg-white border border-neutral-100 rounded-2xl p-5 hover:shadow-md transition-all hover:-translate-y-0.5">
-                <div className="text-2xl mb-3">{item.icon}</div>
-                <p className="text-sm font-bold text-neutral-900 mb-1">{item.label}</p>
-                <p className="text-xs text-neutral-500 leading-relaxed">{item.desc}</p>
+
+          {/* Feature grid */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+            {FEATURES.map((f,i)=>(
+              <div key={i} className="bg-white rounded-2xl p-5 border border-neutral-100 hover:shadow-lg hover:-translate-y-0.5 transition-all">
+                <div className="text-3xl mb-3">{f.icon}</div>
+                <p className="text-sm font-bold text-neutral-900 mb-1.5">{f.title}</p>
+                <p className="text-xs text-neutral-500 leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
-          <div className="mt-10 grid md:grid-cols-3 gap-5">
+
+          {/* Live traction numbers */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             {[
-              { n: '5+', label: 'Classes running live' },
-              { n: '40+', label: 'Teacher completion streaks' },
-              { n: '100+', label: 'Parents connected' },
-              { n: '1000+', label: 'Daily plans generated by AI' },
-              { n: '500+', label: 'Photos & videos shared' },
-              { n: '0', label: 'Missed curriculum days (tracked)' },
-            ].map((s, i) => (
-              <div key={i} className="bg-white border border-neutral-100 rounded-2xl p-5 text-center">
-                <p className="text-3xl font-black" style={{ color: '#1B4332' }}>{s.n}</p>
-                <p className="text-xs text-neutral-500 mt-1">{s.label}</p>
+              {n:'5+',  l:'Classes live'},
+              {n:'40+', l:'Day teacher streaks'},
+              {n:'100+',l:'Parents connected'},
+              {n:'1K+', l:'AI plans generated'},
+              {n:'500+',l:'Photos shared'},
+              {n:'0',   l:'Curriculum days missed'},
+            ].map((s,i)=>(
+              <div key={i} className="bg-white border border-neutral-100 rounded-2xl p-4 text-center">
+                <p className="text-2xl font-black" style={{color:'#1B4332'}}>{s.n}</p>
+                <p className="text-[10px] text-neutral-500 mt-0.5 leading-tight">{s.l}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── ROADMAP ── */}
+      {/* ── CONNECTED ECOSYSTEM VISUAL ───────────────────────────────────── */}
+      <section className="px-6 py-20" style={{background:'#1B4332'}}>
+        <div className="max-w-5xl mx-auto text-center">
+          <p className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-3">The Ecosystem</p>
+          <h2 className="text-3xl md:text-4xl font-black text-white mb-3">
+            Every stakeholder. One platform. One data layer.
+          </h2>
+          <p className="text-emerald-100/70 text-base mb-12 max-w-2xl mx-auto">
+            OKiT.ai sits at the centre of every party that influences a child's development. Data flows between them. AI makes sense of it.
+          </p>
+
+          {/* Hub and spoke visual */}
+          <div className="relative flex items-center justify-center mb-10">
+            {/* Center hub */}
+            <div className="relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center shadow-2xl"
+              style={{background:'linear-gradient(135deg,#E8960C,#f59e0b)'}}>
+              <Image src="/oakie.png" alt="OKiT.ai" width={36} height={36} className="rounded-lg" />
+              <p className="text-white text-[9px] font-black mt-1">OKiT.ai</p>
+            </div>
+            {/* Surrounding stakeholders */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              {[
+                {role:'Schools',    icon:'🏫', angle:-90,  dist:160},
+                {role:'Parents',   icon:'👨‍👩‍👧', angle:-30,  dist:160},
+                {role:'Teachers',  icon:'👩‍🏫', angle:30,   dist:160},
+                {role:'Students',  icon:'🎓', angle:90,   dist:160},
+                {role:'Experts',   icon:'🧑‍💼', angle:150,  dist:160},
+                {role:'Corporates',icon:'🏢', angle:210,  dist:160},
+              ].map((s,i)=>{
+                const rad = (s.angle * Math.PI) / 180;
+                const x = Math.round(Math.cos(rad) * s.dist);
+                const y = Math.round(Math.sin(rad) * s.dist);
+                return (
+                  <div key={i} className="absolute flex flex-col items-center gap-1"
+                    style={{transform:`translate(${x}px,${y}px)`}}>
+                    <div className="w-12 h-12 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-xl">
+                      {s.icon}
+                    </div>
+                    <p className="text-white/80 text-[9px] font-semibold whitespace-nowrap">{s.role}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Impact pillars */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-16">
+            {[
+              {icon:'🌱',title:'Future-ready children',desc:'Curriculum + emotional growth tracked from day 1'},
+              {icon:'💪',title:'Stronger families',desc:'Parents stay informed, connected, and empowered'},
+              {icon:'👩‍🏫',title:'Empowered educators',desc:'Less admin, more teaching, recognised work'},
+              {icon:'🏛️',title:'Better society',desc:'Data + AI driving early childhood policy insights'},
+            ].map((imp,i)=>(
+              <div key={i} className="bg-white/10 border border-white/20 rounded-2xl p-5">
+                <div className="text-2xl mb-2">{imp.icon}</div>
+                <p className="text-white font-bold text-xs mb-1">{imp.title}</p>
+                <p className="text-white/50 text-[10px] leading-relaxed">{imp.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── ROADMAP ──────────────────────────────────────────────────────── */}
       <section id="roadmap" className="px-6 py-20 max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <p className="text-xs font-bold uppercase tracking-widest text-purple-600 mb-3">6-Phase Roadmap</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-purple-600 mb-3">6-Phase Roadmap · 2026 → 2036+</p>
           <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
-            From School OS to Child Development Ecosystem
+            From School OS → Child Development Ecosystem
           </h2>
-          <p className="text-neutral-500 max-w-2xl mx-auto text-base">
-            Each phase is a natural extension of the previous — building trust, data, and network effects at every step.
+          <p className="text-neutral-500 max-w-2xl mx-auto">
+            Each phase builds on the previous. Trust, data, and network effects compound at every step.
           </p>
         </div>
 
-        {/* Phase tabs */}
-        <div className="flex flex-wrap gap-2 justify-center mb-8">
-          {PHASES.map((p, i) => (
-            <button key={i} onClick={() => setActivePhase(i)}
-              className="px-4 py-2 rounded-xl text-xs font-bold transition-all"
+        {/* Phase timeline bar */}
+        <div className="flex overflow-x-auto gap-0 mb-0 pb-0">
+          {PHASES.map((p,i)=>(
+            <button key={i} onClick={()=>setActivePhase(i)}
+              className="flex-1 min-w-[110px] py-3 px-2 text-center transition-all border-b-4 text-xs font-bold"
               style={{
-                background: activePhase === i ? p.color : '#f8fafc',
-                color: activePhase === i ? 'white' : '#6b7280',
-                border: `2px solid ${activePhase === i ? p.color : '#e5e7eb'}`,
+                borderColor: activePhase===i ? p.color : '#e5e7eb',
+                color: activePhase===i ? p.color : '#9ca3af',
+                background: activePhase===i ? p.bg : 'white',
               }}>
-              {p.label}: {p.years}
+              <div className="text-base mb-0.5">{['🏗️','🧠','👨‍👩‍👧','🏪','📚','🌍'][i]}</div>
+              <div>{p.title}</div>
+              <div className="font-normal opacity-70 text-[9px] mt-0.5">{p.years}</div>
             </button>
           ))}
         </div>
 
         {/* Active phase detail */}
-        <div className="rounded-2xl p-8 border transition-all" style={{ background: phase.light, borderColor: phase.color + '33' }}>
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div className="rounded-b-2xl rounded-tr-2xl border-2 p-8 transition-all"
+          style={{background:ph.bg, borderColor:ph.color+'44'}}>
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: phase.color }}>{phase.label} · {phase.years}</p>
-              <h3 className="text-2xl font-black text-neutral-900">{phase.title}</h3>
-              <p className="text-base text-neutral-600 mt-1">{phase.subtitle}</p>
+              <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold text-white mb-2"
+                style={{background:ph.color}}>Phase {ph.n} · {ph.years}</div>
+              <h3 className="text-2xl font-black text-neutral-900">{ph.title}</h3>
+              <p className="text-neutral-600 mt-1">{ph.sub}</p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-neutral-500 mb-1">Target</p>
-              <p className="text-sm font-bold text-neutral-800">{phase.target}</p>
+            <div className="text-right bg-white rounded-xl px-4 py-3 border border-neutral-100">
+              <p className="text-[10px] text-neutral-400 uppercase tracking-wide">Target</p>
+              <p className="text-sm font-bold text-neutral-800">{ph.target}</p>
             </div>
           </div>
-          <div className="bg-white/70 rounded-xl p-4 mb-5">
-            <p className="text-sm font-semibold text-neutral-700 italic">"{phase.story}"</p>
+          <div className="bg-white/80 rounded-xl p-4 mb-5 border border-neutral-100">
+            <p className="text-sm font-semibold text-neutral-700 italic">"{ph.story}"</p>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-            {phase.items.map((item, i) => (
-              <div key={i} className="bg-white rounded-xl px-3 py-2 text-xs font-medium text-neutral-700 text-center border border-neutral-100">
+          <div className="flex flex-wrap gap-2">
+            {ph.items.map((item,i)=>(
+              <span key={i} className="bg-white border border-neutral-200 rounded-xl px-3 py-1.5 text-xs font-medium text-neutral-700">
                 {item}
-              </div>
+              </span>
             ))}
           </div>
         </div>
-      </section>
 
-      {/* ── CONNECTED ECOSYSTEM ── */}
-      <section className="px-6 py-20" style={{ background: '#1B4332' }}>
-        <div className="max-w-5xl mx-auto text-center">
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-3">The Ecosystem</p>
-          <h2 className="text-3xl md:text-4xl font-black text-white mb-4">
-            Every stakeholder in a child's journey.<br />One intelligent platform.
-          </h2>
-          <p className="text-emerald-100/80 max-w-2xl mx-auto text-base mb-10">
-            OKiT.ai is the connective tissue between every party that influences a child's development.
-            Data + AI + Trust = Impact.
-          </p>
-          <div className="flex flex-wrap justify-center gap-4">
-            {[
-              { role: 'Schools', action: 'Manage. Educate. Grow.' },
-              { role: 'Parents', action: 'Guided. Supported. Empowered.' },
-              { role: 'Teachers', action: 'Enabled. Equipped. Inspired.' },
-              { role: 'Experts', action: 'Share Knowledge. Create Impact.' },
-              { role: 'Students', action: 'Learn. Grow. Thrive.' },
-              { role: 'Corporates', action: 'Partner. Empower. Give Back.' },
-            ].map((s, i) => (
-              <div key={i} className="bg-white/10 border border-white/20 rounded-2xl px-6 py-4 text-center min-w-[140px]">
-                <p className="text-white font-bold text-sm">{s.role}</p>
-                <p className="text-emerald-200/70 text-xs mt-1">{s.action}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-12 grid md:grid-cols-4 gap-4">
-            {[
-              { icon: '🌱', label: 'Future-ready children' },
-              { icon: '💪', label: 'Stronger families' },
-              { icon: '👩‍🏫', label: 'Empowered educators' },
-              { icon: '🏛️', label: 'Better society' },
-            ].map((imp, i) => (
-              <div key={i} className="bg-white/10 rounded-2xl p-4 text-center">
-                <div className="text-2xl mb-2">{imp.icon}</div>
-                <p className="text-white text-xs font-medium">{imp.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── MARKET ── */}
-      <section id="market" className="px-6 py-20 max-w-6xl mx-auto">
-        <div className="text-center mb-12">
-          <p className="text-xs font-bold uppercase tracking-widest text-blue-600 mb-3">Market Opportunity</p>
-          <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
-            A massive, underserved market.
-          </h2>
-          <p className="text-neutral-500 max-w-2xl mx-auto text-base">
-            India's K-12 EdTech market is the second largest in the world. The early childhood segment — our entry point — is the least digitized and most underserved.
-          </p>
-        </div>
-        <div className="grid md:grid-cols-3 gap-5">
-          {MARKET.map((m, i) => (
-            <div key={i} className="bg-neutral-50 border border-neutral-100 rounded-2xl p-6">
-              <p className="text-2xl font-black text-blue-700 mb-1">{m.value}</p>
-              <p className="text-sm text-neutral-600">{m.label}</p>
+        {/* Timeline connector dots */}
+        <div className="flex items-center justify-between mt-4 px-4">
+          {PHASES.map((_,i)=>(
+            <div key={i} className="flex flex-col items-center gap-1 cursor-pointer" onClick={()=>setActivePhase(i)}>
+              <div className="w-3 h-3 rounded-full transition-all"
+                style={{background: i <= activePhase ? '#1B4332' : '#e5e7eb', transform: i === activePhase ? 'scale(1.4)' : 'scale(1)'}} />
             </div>
           ))}
         </div>
-        <div className="mt-8 bg-blue-50 border border-blue-100 rounded-2xl p-6">
-          <p className="text-sm text-blue-900 leading-relaxed">
-            <strong>Why now:</strong> Post-pandemic, schools are actively looking for tech solutions. 
-            Parents are demanding more transparency. AI is making personalized education economically feasible for the first time. 
-            The network effects of connecting school + parent + expert create a defensible moat that grows stronger with every user.
-          </p>
-        </div>
       </section>
 
-      {/* ── UNIQUE ADVANTAGE ── */}
-      <section className="px-6 py-20" style={{ background: '#fafafa' }}>
-        <div className="max-w-5xl mx-auto">
+      {/* ── REVENUE MODEL ────────────────────────────────────────────────── */}
+      <section id="revenue" className="px-6 py-20" style={{background:'#f8fafc'}}>
+        <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
-            <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3">Why OKiT Wins</p>
-            <h2 className="text-3xl md:text-4xl font-black text-neutral-900">What makes us different.</h2>
+            <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-3">Revenue Projections</p>
+            <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
+              Multiple revenue streams.<br />Compounding growth.
+            </h2>
           </div>
-          <div className="grid md:grid-cols-2 gap-6">
+
+          {/* Revenue table */}
+          <div className="overflow-x-auto mb-10">
+            <table className="w-full bg-white rounded-2xl overflow-hidden shadow-sm border border-neutral-100">
+              <thead>
+                <tr style={{background:'#1B4332'}}>
+                  {['Year','Schools','Students','Annual Recurring Revenue','Revenue Model'].map(h=>(
+                    <th key={h} className="text-left px-5 py-4 text-xs font-bold text-white/80 uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {REVENUE.map((r,i)=>(
+                  <tr key={i} className={i%2===0 ? 'bg-white' : 'bg-neutral-50'}>
+                    <td className="px-5 py-4 text-sm font-bold text-neutral-800">{r.year}</td>
+                    <td className="px-5 py-4 text-sm text-neutral-600">{r.schools.toLocaleString()}</td>
+                    <td className="px-5 py-4 text-sm text-neutral-600">{r.students.toLocaleString()}</td>
+                    <td className="px-5 py-4 text-base font-black" style={{color:'#1B4332'}}>{r.arr}</td>
+                    <td className="px-5 py-4 text-xs text-neutral-500">{r.model}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Revenue streams visual */}
+          <div className="grid md:grid-cols-4 gap-4">
             {[
-              {
-                title: 'Bottom-up trust',
-                body: 'We enter through schools, earn daily usage from teachers, and build trust before expanding to families. Trust is the hardest asset to replicate.',
-              },
-              {
-                title: 'Daily habit product',
-                body: 'Teachers use OKiT every single school day — not quarterly. 40+ day streaks already. Daily usage creates data density that no competitor can catch up to.',
-              },
-              {
-                title: 'AI on real school data',
-                body: 'Our AI (Oakie) is trained on actual curriculum, attendance, and completion data from real classrooms. Not generic chatGPT responses — contextualized insight.',
-              },
-              {
-                title: 'Franchise-ready architecture',
-                body: 'Multi-tenant from day one. A franchise chain can manage 50 schools with one login. Built for scale, not retrofitted for it.',
-              },
-              {
-                title: 'Emotional + Academic',
-                body: 'We track not just what a child learns but milestones, observations, and behavioral patterns. The first platform that bridges academic and emotional development.',
-              },
-              {
-                title: 'Built for India\'s reality',
-                body: 'Works on 2G, installable as PWA, regional language ready. Not a Silicon Valley product retrofitted for India — designed for India from scratch.',
-              },
-            ].map((adv, i) => (
-              <div key={i} className="bg-white border border-neutral-100 rounded-2xl p-6 hover:shadow-md transition-shadow">
-                <div className="w-8 h-8 rounded-xl mb-3 flex items-center justify-center text-white font-bold text-sm"
-                  style={{ background: '#1B4332' }}>{i + 1}</div>
-                <h3 className="text-base font-bold text-neutral-900 mb-2">{adv.title}</h3>
-                <p className="text-sm text-neutral-600 leading-relaxed">{adv.body}</p>
+              {stream:'School SaaS', price:'₹500–₹2,000/mo', who:'Schools', color:'#1B4332', when:'Now'},
+              {stream:'Parent Premium', price:'₹299/mo', who:'Parents', color:'#7c3aed', when:'Phase 3'},
+              {stream:'Expert Marketplace', price:'15% commission', who:'Experts', color:'#b45309', when:'Phase 4'},
+              {stream:'Corporate Partnerships', price:'₹10L–₹1Cr deals', who:'Companies', color:'#0f766e', when:'Phase 5+'},
+            ].map((s,i)=>(
+              <div key={i} className="bg-white rounded-2xl p-5 border border-neutral-100">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{color:s.color}}>{s.stream}</p>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full text-white" style={{background:s.color}}>{s.when}</span>
+                </div>
+                <p className="text-xl font-black text-neutral-900 mb-1">{s.price}</p>
+                <p className="text-xs text-neutral-500">Target: {s.who}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── CONTACT ── */}
-      <section id="contact" className="px-6 py-20 text-center" style={{ background: '#1B4332' }}>
+      {/* ── WHY WE WIN ───────────────────────────────────────────────────── */}
+      <section className="px-6 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3">Competitive Moats</p>
+          <h2 className="text-3xl md:text-4xl font-black text-neutral-900">What makes OKiT.ai defensible.</h2>
+        </div>
+        <div className="grid md:grid-cols-3 gap-5">
+          {MOATS.map((m,i)=>(
+            <div key={i} className="bg-neutral-50 border border-neutral-100 rounded-2xl p-6 hover:shadow-md transition-all">
+              <div className="text-3xl mb-3">{m.icon}</div>
+              <p className="text-sm font-bold text-neutral-900 mb-2">{m.title}</p>
+              <p className="text-xs text-neutral-600 leading-relaxed">{m.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── MARKET SIZE ──────────────────────────────────────────────────── */}
+      <section className="px-6 py-16" style={{background:'#f8fafc'}}>
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
+            <p className="text-xs font-bold uppercase tracking-widest text-blue-600 mb-3">Market Size</p>
+            <h2 className="text-3xl font-black text-neutral-900">A massive, underserved market.</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {[
+              {v:'1.5M+', l:'K-12 schools in India'},
+              {v:'260M+', l:'Students enrolled annually'},
+              {v:'$7.5B', l:'EdTech market size 2025'},
+              {v:'$30B+', l:'Projected EdTech market 2030'},
+              {v:'$2.5B', l:'Early childhood segment (underserved)'},
+              {v:'73%',   l:'Parents willing to pay for child insights'},
+            ].map((m,i)=>(
+              <div key={i} className="bg-white border border-neutral-100 rounded-2xl p-5 text-center">
+                <p className="text-2xl font-black text-blue-700 mb-1">{m.v}</p>
+                <p className="text-xs text-neutral-500">{m.l}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ──────────────────────────────────────────────────────────── */}
+      <section id="contact" className="px-6 py-24 text-center" style={{background:'linear-gradient(135deg,#1B4332,#0f2b1f)'}}>
         <div className="max-w-2xl mx-auto">
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-4">Get Involved</p>
+          <Image src="/oakie.png" alt="OKiT.ai" width={56} height={56} className="rounded-2xl mx-auto mb-5 shadow-lg" />
+          <p className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-4">Let's Build Together</p>
           <h2 className="text-3xl md:text-4xl font-black text-white mb-4">
-            Let's build the future of childhood together.
+            Looking for mentors, advisors<br />and early believers.
           </h2>
-          <p className="text-emerald-100/80 text-base leading-relaxed mb-8">
-            We're looking for mentors, advisors, and early investors who believe that 
-            investing in a child's first years is the highest-leverage investment in society's future.
-            If that resonates with you — let's talk.
+          <p className="text-emerald-100/70 text-base leading-relaxed mb-8 max-w-lg mx-auto">
+            If you believe that investing in a child's first years is the highest-leverage investment in society's future — let's talk.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
             <a href="mailto:info@silveroakjuniors.in"
-              className="px-8 py-4 bg-white text-neutral-900 font-bold rounded-2xl text-sm hover:bg-neutral-100 transition-colors">
+              className="px-8 py-4 bg-amber-400 text-neutral-900 font-black rounded-2xl text-sm hover:bg-amber-300 transition-colors">
               Get in Touch
             </a>
             <Link href="/login"
@@ -441,8 +476,8 @@ export default function AboutPage() {
               See Live Demo
             </Link>
           </div>
-          <p className="text-emerald-200/50 text-xs mt-8">
-            OKiT.ai · Building at Silver Oak Juniors, Bengaluru · 2026
+          <p className="text-emerald-200/40 text-xs">
+            OKiT.ai · Silver Oak Juniors · Bengaluru · 2026 · oakit.silveroakjuniors.in
           </p>
         </div>
       </section>
