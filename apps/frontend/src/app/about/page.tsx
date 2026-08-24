@@ -87,7 +87,7 @@ const MOATS = [
   { icon:'🏗️', title:'Bottom-up Trust',   desc:'Earned from teachers → parents → experts. Trust is the hardest asset to acquire. We build it daily.' },
   { icon:'🧠', title:'Contextual AI',     desc:'Oakie is trained on real curriculum data. Every answer is specific to the child\'s actual class, not generic.' },
   { icon:'🏢', title:'Franchise-ready',   desc:'Multi-tenant from day one. A franchise manages 50 schools with one login. Built for scale, not retrofitted.' },
-  { icon:'🇮🇳', title:'India-first',       desc:'Works on 2G, regional language ready, ₹500/school pricing. Designed for India — not Silicon Valley.' },
+  { icon:'�', title:'Built for the World',     desc:'Started in India where the problem is densest — but school operational chaos, disconnected parents, and untapped child development data are global problems. Multi-language, currency-agnostic, scales to any country.' },
   { icon:'❤️', title:'Emotional + Academic', desc:'First platform bridging academic progress with milestones, observations, and emotional development tracking.' },
 ];
 
@@ -235,6 +235,66 @@ export default function AboutPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── STAKEHOLDER BENEFITS ─────────────────────────────────────────── */}
+      <section className="px-6 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-3">Who Benefits & How</p>
+          <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
+            Every stakeholder wins.<br />That's why it works.
+          </h2>
+          <p className="text-neutral-500 max-w-2xl mx-auto">
+            oakit.ai isn't just a school software — it's a value platform for every person in a child's life.
+          </p>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {[
+            {
+              role:'Schools & Admins', icon:'🏫', color:'#1B4332', bg:'#f0fdf4',
+              gets:['Eliminate paper registers & WhatsApp chaos','Auto-generate lesson plans from curriculum PDFs','Real-time attendance, coverage & fee tracking','Full financial module — fees, salary, expenses','Multi-class, multi-teacher, multi-franchise support'],
+            },
+            {
+              role:'Teachers', icon:'👩‍🏫', color:'#1e40af', bg:'#eff6ff',
+              gets:['Daily AI-generated lesson plan — zero prep time','Gamified streaks for daily plan completion','Easy photo/video upload to class feed','WhatsApp-integrated parent communication','Professional recognition through data'],
+            },
+            {
+              role:'Parents', icon:'👨‍👩‍👧', color:'#7c3aed', bg:'#f5f3ff',
+              gets:['Know exactly what child learned today — every day','See class photos and videos in real time','Ask Oakie (AI) questions about their child\'s progress','Get homework, attendance, milestone updates instantly','Feel connected to school without being in school'],
+            },
+            {
+              role:'Students', icon:'🎓', color:'#b45309', bg:'#fffbeb',
+              gets:['Their own space for homework & quizzes','Track their own milestones and progress','Celebrate achievements with teachers & parents','Age-appropriate learning content','Feel seen and celebrated — not just graded'],
+            },
+            {
+              role:'Experts & Tutors', icon:'🧑‍💼', color:'#0f766e', bg:'#f0fdfa',
+              gets:['Marketplace to reach 100,000s of families','Trusted platform — school-validated audience','Offer courses, consultations, live sessions','Data-backed recommendations from school context','Build reputation through verified reviews'],
+            },
+            {
+              role:'Corporates', icon:'🏢', color:'#9f1239', bg:'#fff1f2',
+              gets:['CSR investment with measurable child impact','Analytics on learning outcomes at scale','Brand visibility to 1M+ engaged families','Contribute to future workforce development','Partner with the childhood development OS'],
+            },
+          ].map((s,i)=>(
+            <div key={i} className="rounded-2xl border-2 p-6 hover:shadow-lg transition-all"
+              style={{background:s.bg, borderColor:s.color+'33'}}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                  style={{background:s.color}}>
+                  <span>{s.icon}</span>
+                </div>
+                <p className="font-black text-neutral-900 text-base">{s.role}</p>
+              </div>
+              <ul className="space-y-2">
+                {s.gets.map((g,j)=>(
+                  <li key={j} className="flex items-start gap-2 text-xs text-neutral-700">
+                    <span className="mt-0.5 shrink-0 font-bold" style={{color:s.color}}>✓</span>
+                    {g}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -496,17 +556,21 @@ export default function AboutPage() {
       <section className="px-6 py-16" style={{background:'#f8fafc'}}>
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
-            <p className="text-xs font-bold uppercase tracking-widest text-blue-600 mb-3">Market Size</p>
-            <h2 className="text-3xl font-black text-neutral-900">A massive, underserved market.</h2>
+            <p className="text-xs font-bold uppercase tracking-widest text-blue-600 mb-3">Global Market Opportunity</p>
+            <h2 className="text-3xl font-black text-neutral-900 mb-3">India is the beachhead. The world is the market.</h2>
+            <p className="text-neutral-500 max-w-2xl mx-auto text-sm">
+              The problem — disconnected schools, uninformed parents, undertapped child development data — is universal.
+              We start in India where the density is highest and the need is most acute, then scale globally.
+            </p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {[
-              {v:'1.5M+', l:'K-12 schools in India'},
-              {v:'260M+', l:'Students enrolled annually'},
-              {v:'$7.5B', l:'EdTech market size 2025'},
-              {v:'$30B+', l:'Projected EdTech market 2030'},
-              {v:'$2.5B', l:'Early childhood segment (underserved)'},
-              {v:'73%',   l:'Parents willing to pay for child insights'},
+              {v:'1.5M+', l:'K-12 schools in India alone'},
+              {v:'260M+', l:'Students enrolled in India annually'},
+              {v:'2.5B+', l:'Students globally in K-12 education'},
+              {v:'$7.5B', l:'India EdTech market 2025'},
+              {v:'$400B+',l:'Global EdTech market 2030 (projected)'},
+              {v:'73%',   l:'Parents worldwide willing to pay for child development insights'},
             ].map((m,i)=>(
               <div key={i} className="bg-white border border-neutral-100 rounded-2xl p-5 text-center">
                 <p className="text-2xl font-black text-blue-700 mb-1">{m.v}</p>
