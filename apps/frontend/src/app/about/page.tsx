@@ -3,12 +3,16 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 /* ── Revenue projections ─────────────────────────────────────────────────── */
+// IMPORTANT: These are BARE MINIMUM conservative projections for School Management SaaS only.
+// Multiple go-to-market strategies (parent premium, expert marketplace, franchise licensing,
+// corporate partnerships, learning marketplace) are not included — actual revenue potential
+// is significantly higher. Numbers are indicative, not audited.
 const REVENUE = [
-  { year: 'FY 2026–27', schools: 25,  students: 5000,   arr: '₹12.5L',  model: 'School SaaS ₹500/mo' },
-  { year: 'FY 2027–28', schools: 100, students: 25000,  arr: '₹60L',    model: '+ Franchise licence' },
-  { year: 'FY 2028–29', schools: 300, students: 75000,  arr: '₹2.1Cr',  model: '+ Parent premium ₹299/mo' },
-  { year: 'FY 2029–30', schools: 800, students: 200000, arr: '₹8.4Cr',  model: '+ Expert marketplace 15%' },
-  { year: 'FY 2030–31', schools: 2000,students: 500000, arr: '₹28Cr',   model: '+ Learning marketplace' },
+  { year:'FY 2026–27', schools:10,  studentsK:'~1K',  arr:'₹6L',    mrr:'₹50K',  basis:'10 schools × ₹5,000/mo', note:'Pilot & proof-of-concept' },
+  { year:'FY 2027–28', schools:50,  studentsK:'~5K',  arr:'₹42L',   mrr:'₹3.5L', basis:'50 schools × ₹7,000/mo', note:'Word-of-mouth + 1 franchise' },
+  { year:'FY 2028–29', schools:150, studentsK:'~20K', arr:'₹1.8Cr', mrr:'₹15L',  basis:'150 schools × ₹10,000/mo', note:'Franchise expansion, Karnataka' },
+  { year:'FY 2029–30', schools:400, studentsK:'~60K', arr:'₹6.4Cr', mrr:'₹53L',  basis:'400 schools × ₹13,000/mo', note:'Multi-state, K-12 begins' },
+  { year:'FY 2030–31', schools:1000,studentsK:'~1.5L',arr:'₹18Cr',  mrr:'₹1.5Cr',basis:'1,000 schools × ₹15,000/mo', note:'Pan-India, network effects' },
 ];
 
 /* ── 6-phase roadmap ─────────────────────────────────────────────────────── */
@@ -72,8 +76,8 @@ const STATS = [
   {n:'9+',   l:'Classes live'},
   {n:'35+',  l:'Day teacher streaks'},
   {n:'450+',  l:'Parents connected'},
-  {n:'500+', l:'Daily plans generated'},
-  {n:'500+', l:'Photos & videos shared'},
+  {n:'18+', l:'Teachers OnBoarded'},
+  {n:'5000+', l:'Photos & videos shared'},
   {n:'100%', l:'Curriculum tracked daily'},
 ];
 
@@ -380,54 +384,93 @@ export default function AboutPage() {
       {/* ── REVENUE MODEL ────────────────────────────────────────────────── */}
       <section id="revenue" className="px-6 py-20" style={{background:'#f8fafc'}}>
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
+          <div className="text-center mb-8">
             <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-3">Revenue Projections</p>
             <h2 className="text-3xl md:text-4xl font-black text-neutral-900 mb-4">
-              Multiple revenue streams.<br />Compounding growth.
+              Conservative. Calculated. Compelling.
             </h2>
           </div>
 
+          {/* Disclaimer box */}
+          <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5 mb-8 flex gap-3">
+            <div className="text-2xl shrink-0 mt-0.5">⚠️</div>
+            <div>
+              <p className="text-sm font-bold text-amber-900 mb-1">Important Note on Revenue Projections</p>
+              <p className="text-xs text-amber-800 leading-relaxed">
+                These numbers represent the <strong>absolute bare minimum</strong> — modelling only School Management SaaS subscriptions.
+                Revenue has <strong>not yet been formally calculated or audited</strong>.
+                We have multiple go-to-market strategies including parent premium subscriptions, expert marketplace commissions,
+                franchise licensing fees, corporate CSR partnerships, and a learning marketplace — <strong>none of which are included here</strong>.
+                Actual revenue potential is significantly higher than what is shown.
+              </p>
+            </div>
+          </div>
+
           {/* Revenue table */}
-          <div className="overflow-x-auto mb-10">
+          <div className="overflow-x-auto mb-8">
             <table className="w-full bg-white rounded-2xl overflow-hidden shadow-sm border border-neutral-100">
               <thead>
                 <tr style={{background:'#1B4332'}}>
-                  {['Year','Schools','Students','Annual Recurring Revenue','Revenue Model'].map(h=>(
-                    <th key={h} className="text-left px-5 py-4 text-xs font-bold text-white/80 uppercase tracking-wide">{h}</th>
+                  {['Year','Schools','Students','Monthly Recurring','Annual Revenue','Pricing Basis','Phase'].map(h=>(
+                    <th key={h} className="text-left px-4 py-3 text-xs font-bold text-white/80 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {REVENUE.map((r,i)=>(
                   <tr key={i} className={i%2===0 ? 'bg-white' : 'bg-neutral-50'}>
-                    <td className="px-5 py-4 text-sm font-bold text-neutral-800">{r.year}</td>
-                    <td className="px-5 py-4 text-sm text-neutral-600">{r.schools.toLocaleString()}</td>
-                    <td className="px-5 py-4 text-sm text-neutral-600">{r.students.toLocaleString()}</td>
-                    <td className="px-5 py-4 text-base font-black" style={{color:'#1B4332'}}>{r.arr}</td>
-                    <td className="px-5 py-4 text-xs text-neutral-500">{r.model}</td>
+                    <td className="px-4 py-3 text-sm font-bold text-neutral-800 whitespace-nowrap">{r.year}</td>
+                    <td className="px-4 py-3 text-sm text-neutral-600">{r.schools.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-sm text-neutral-600">{r.studentsK}</td>
+                    <td className="px-4 py-3 text-sm font-bold text-neutral-700">{r.mrr}</td>
+                    <td className="px-4 py-3 text-base font-black whitespace-nowrap" style={{color:'#1B4332'}}>{r.arr}</td>
+                    <td className="px-4 py-3 text-xs text-neutral-500">{r.basis}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 whitespace-nowrap">{r.note}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          {/* Revenue streams visual */}
-          <div className="grid md:grid-cols-4 gap-4">
-            {[
-              {stream:'School SaaS', price:'₹500–₹2,000/mo', who:'Schools', color:'#1B4332', when:'Now'},
-              {stream:'Parent Premium', price:'₹299/mo', who:'Parents', color:'#7c3aed', when:'Phase 3'},
-              {stream:'Expert Marketplace', price:'15% commission', who:'Experts', color:'#b45309', when:'Phase 4'},
-              {stream:'Corporate Partnerships', price:'₹10L–₹1Cr deals', who:'Companies', color:'#0f766e', when:'Phase 5+'},
-            ].map((s,i)=>(
-              <div key={i} className="bg-white rounded-2xl p-5 border border-neutral-100">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-bold uppercase tracking-wide" style={{color:s.color}}>{s.stream}</p>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full text-white" style={{background:s.color}}>{s.when}</span>
+          {/* Growth visual */}
+          <div className="bg-white rounded-2xl border border-neutral-100 p-6 mb-8">
+            <p className="text-xs font-bold text-neutral-500 uppercase tracking-wide mb-4">ARR Growth (School SaaS only — bare minimum)</p>
+            <div className="flex items-end gap-3 h-32">
+              {REVENUE.map((r,i)=>{
+                const heights = [8, 18, 36, 64, 100];
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <p className="text-[9px] font-bold text-neutral-600">{r.arr}</p>
+                    <div className="w-full rounded-t-lg transition-all" style={{height:`${heights[i]}%`, background:`linear-gradient(to top, #1B4332, #2d6a4f)`}} />
+                    <p className="text-[8px] text-neutral-400 text-center leading-tight">{r.year.replace('FY ','')}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Revenue streams — future potential */}
+          <div>
+            <p className="text-xs font-bold text-neutral-500 uppercase tracking-wide mb-4 text-center">Future Revenue Streams (Not in projections above)</p>
+            <div className="grid md:grid-cols-4 gap-4">
+              {[
+                {stream:'Parent Premium',       price:'₹299–₹499/mo',   who:'Parents',   color:'#7c3aed', when:'Phase 3 · 2030+'},
+                {stream:'Expert Marketplace',   price:'15–20% commission',who:'Experts', color:'#b45309', when:'Phase 4 · 2032+'},
+                {stream:'Franchise Licensing',  price:'₹2–5L/school',    who:'Franchise chains', color:'#0f766e', when:'Phase 2 · 2028+'},
+                {stream:'Corporate / CSR',      price:'₹10L–₹1Cr/deal',  who:'Corporates', color:'#9f1239', when:'Phase 5+ · 2034+'},
+              ].map((s,i)=>(
+                <div key={i} className="bg-white rounded-2xl p-5 border-2" style={{borderColor:s.color+'33'}}>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold" style={{color:s.color}}>{s.stream}</p>
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full text-white" style={{background:s.color}}>{s.when.split('·')[0]}</span>
+                  </div>
+                  <p className="text-base font-black text-neutral-900 mb-1">{s.price}</p>
+                  <p className="text-[10px] text-neutral-500">{s.who} · {s.when.split('·')[1]}</p>
                 </div>
-                <p className="text-xl font-black text-neutral-900 mb-1">{s.price}</p>
-                <p className="text-xs text-neutral-500">Target: {s.who}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </section>
