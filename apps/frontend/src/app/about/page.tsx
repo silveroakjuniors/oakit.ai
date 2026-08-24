@@ -1,6 +1,5 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useState } from 'react';
 
 /* ── Revenue projections ─────────────────────────────────────────────────── */
@@ -54,14 +53,28 @@ const PHASES = [
 
 /* ── Live product features ───────────────────────────────────────────────── */
 const FEATURES = [
-  { icon:'📅', title:'AI Lesson Planner', desc:'Curriculum PDF → daily plans in seconds. Tracks coverage, flags gaps, carries forward missed topics.' },
-  { icon:'📸', title:'Class Memory Feed', desc:'Teachers upload photos/videos. Parents see class moments in real time. Compressed, organized by date/event.' },
-  { icon:'🤖', title:'Oakie — AI Assistant', desc:'"What did my child learn today?" Oakie answers using real curriculum data. Not ChatGPT — contextualized.' },
-  { icon:'🏆', title:'Teacher Streaks', desc:'Gamified consistency. Teachers earn streaks for daily plan completion. 40+ day streaks already in production.' },
-  { icon:'📊', title:'Principal Dashboard', desc:'Coverage %, attendance, teacher activity — school health at one glance in real time.' },
-  { icon:'💰', title:'Full Financial Module', desc:'Fee collection, receipts, salary, expenses, reports. Replaces 3 separate tools.' },
-  { icon:'🎓', title:'Student Portal', desc:'Homework, quizzes, milestones, attendance — every child has their own space.' },
-  { icon:'📱', title:'PWA — Works Offline', desc:'Installed on phone like a native app. Works on 2G. No App Store approval needed.' },
+  { icon:'📅', title:'AI Lesson Planner',          desc:'Curriculum PDF → daily plans auto-generated. Tracks coverage, flags gaps, carries forward missed topics.' },
+  { icon:'📸', title:'Class Memory Feed',           desc:'Teachers post photos & videos. Parents see class moments. Organised by date/event with likes & comments.' },
+  { icon:'🎬', title:'Google Drive Integration',    desc:'All media saved to Drive in smart folders: ClassName/Date/Photos & Videos. Client-side compression before upload.' },
+  { icon:'💬', title:'WhatsApp Integration',        desc:'Automated notifications to parents on WhatsApp — homework, attendance alerts, important announcements.' },
+  { icon:'🤖', title:'Oakie — AI Assistant',        desc:'"What did my child learn today?" Oakie answers from real curriculum data — specific to the child\'s class.' },
+  { icon:'🏆', title:'Teacher Streaks',             desc:'Gamified daily consistency. Teachers earn streaks for plan completion. 35+ day streaks live in production.' },
+  { icon:'📊', title:'Principal Dashboard',         desc:'Coverage %, attendance, teacher activity, streaks — live school health at one glance. No manual reports.' },
+  { icon:'💰', title:'Full Financial Module',       desc:'Fee collection, receipts, salary, expense tracking, financial reports. Replaces 3 separate paid tools.' },
+  { icon:'🎓', title:'Student Portal',              desc:'Homework, quizzes, milestones, attendance — every child has their own dedicated space.' },
+  { icon:'📱', title:'PWA — No App Store',          desc:'Installable on any phone like a native app. Works on 2G. No Google Play or App Store approval needed.' },
+  { icon:'👨‍👩‍👧', title:'Parent Communication',      desc:'Daily feed, attendance alerts, teacher messages, homework, milestone updates — all in one parent view.' },
+  { icon:'🏫', title:'Multi-tenant Franchise',      desc:'A franchise chain manages multiple schools from one admin login. Built for scale from day one.' },
+];
+
+/* ── Traction stats ──────────────────────────────────────────────────────── */
+const STATS = [
+  {n:'9+',   l:'Classes live'},
+  {n:'35+',  l:'Day teacher streaks'},
+  {n:'45+',  l:'Parents connected'},
+  {n:'500+', l:'Daily plans generated'},
+  {n:'500+', l:'Photos & videos shared'},
+  {n:'100%', l:'Curriculum tracked daily'},
 ];
 
 /* ── Why we win ─────────────────────────────────────────────────────────── */
@@ -84,7 +97,7 @@ export default function AboutPage() {
       {/* ── NAV ─────────────────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-neutral-100 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <Image src="/oakie.png" alt="OKiT.ai" width={32} height={32} className="rounded-lg" />
+          <img src="/app-icon.svg" alt="OKiT.ai" width={32} height={32} style={{borderRadius:8}} />
           <span className="font-black text-lg text-neutral-900">OKiT<span style={{color:'#E8960C'}}>.ai</span></span>
         </div>
         <div className="hidden md:flex items-center gap-5 text-sm text-neutral-500 font-medium">
@@ -104,7 +117,7 @@ export default function AboutPage() {
         <div className="max-w-5xl mx-auto text-center">
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-6">
-            <Image src="/oakie.png" alt="OKiT.ai" width={64} height={64} className="rounded-2xl shadow-lg" />
+            <img src="/app-icon.svg" alt="OKiT.ai" width={72} height={72} style={{borderRadius:18, boxShadow:'0 8px 32px rgba(27,67,50,0.3)'}} />
           </div>
           <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -198,8 +211,8 @@ export default function AboutPage() {
             </p>
           </div>
 
-          {/* Feature grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+          {/* Feature grid — 12 features */}
+          <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4 mb-12">
             {FEATURES.map((f,i)=>(
               <div key={i} className="bg-white rounded-2xl p-5 border border-neutral-100 hover:shadow-lg hover:-translate-y-0.5 transition-all">
                 <div className="text-3xl mb-3">{f.icon}</div>
@@ -211,14 +224,7 @@ export default function AboutPage() {
 
           {/* Live traction numbers */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            {[
-              {n:'5+',  l:'Classes live'},
-              {n:'40+', l:'Day teacher streaks'},
-              {n:'100+',l:'Parents connected'},
-              {n:'1K+', l:'AI plans generated'},
-              {n:'500+',l:'Photos shared'},
-              {n:'0',   l:'Curriculum days missed'},
-            ].map((s,i)=>(
+            {STATS.map((s,i)=>(
               <div key={i} className="bg-white border border-neutral-100 rounded-2xl p-4 text-center">
                 <p className="text-2xl font-black" style={{color:'#1B4332'}}>{s.n}</p>
                 <p className="text-[10px] text-neutral-500 mt-0.5 leading-tight">{s.l}</p>
@@ -244,8 +250,8 @@ export default function AboutPage() {
             {/* Center hub */}
             <div className="relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center shadow-2xl"
               style={{background:'linear-gradient(135deg,#E8960C,#f59e0b)'}}>
-              <Image src="/oakie.png" alt="OKiT.ai" width={36} height={36} className="rounded-lg" />
-              <p className="text-white text-[9px] font-black mt-1">OKiT.ai</p>
+              <img src="/app-icon.svg" alt="OKiT.ai" width={40} height={40} style={{borderRadius:10, marginBottom:4}} />
+              <p className="text-white text-[9px] font-black">OKiT.ai</p>
             </div>
             {/* Surrounding stakeholders */}
             <div className="absolute inset-0 flex items-center justify-center">
@@ -458,7 +464,7 @@ export default function AboutPage() {
       {/* ── CTA ──────────────────────────────────────────────────────────── */}
       <section id="contact" className="px-6 py-24 text-center" style={{background:'linear-gradient(135deg,#1B4332,#0f2b1f)'}}>
         <div className="max-w-2xl mx-auto">
-          <Image src="/oakie.png" alt="OKiT.ai" width={56} height={56} className="rounded-2xl mx-auto mb-5 shadow-lg" />
+          <img src="/app-icon.svg" alt="OKiT.ai" width={56} height={56} style={{borderRadius:14, margin:'0 auto 20px', display:'block', boxShadow:'0 8px 24px rgba(0,0,0,0.3)'}} />
           <p className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-4">Let's Build Together</p>
           <h2 className="text-3xl md:text-4xl font-black text-white mb-4">
             Looking for mentors, advisors<br />and early believers.
