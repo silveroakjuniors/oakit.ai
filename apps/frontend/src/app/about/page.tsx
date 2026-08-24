@@ -46,7 +46,7 @@ const PHASES = [
   { n:'6', years:'2036+', color:'#9f1239', bg:'#fff1f2',
     title:'Child Development OS', sub:'One Platform. Every Stakeholder.',
     target:'1M+ lives impacted',
-    story:'OKiT.ai — the operating system for childhood, globally.',
+    story:'oakit.ai — the operating system for childhood, globally.',
     items:['Integrated Ecosystem','Corporate Partnerships','Analytics for Impact','Lifelong Learning','Global Reach'],
   },
 ];
@@ -71,7 +71,7 @@ const FEATURES = [
 const STATS = [
   {n:'9+',   l:'Classes live'},
   {n:'35+',  l:'Day teacher streaks'},
-  {n:'45+',  l:'Parents connected'},
+  {n:'450+',  l:'Parents connected'},
   {n:'500+', l:'Daily plans generated'},
   {n:'500+', l:'Photos & videos shared'},
   {n:'100%', l:'Curriculum tracked daily'},
@@ -97,8 +97,8 @@ export default function AboutPage() {
       {/* ── NAV ─────────────────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-neutral-100 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <img src="/app-icon.svg" alt="OKiT.ai" width={32} height={32} style={{borderRadius:8}} />
-          <span className="font-black text-lg text-neutral-900">OKiT<span style={{color:'#E8960C'}}>.ai</span></span>
+          <img src="/app-icon.svg" alt="oakit.ai" width={32} height={32} style={{borderRadius:8}} />
+          <span className="font-black text-lg text-neutral-900">oakit<span style={{color:'#E8960C'}}>.ai</span></span>
         </div>
         <div className="hidden md:flex items-center gap-5 text-sm text-neutral-500 font-medium">
           {[['#problem','Problem'],['#built','Product'],['#roadmap','Roadmap'],['#revenue','Revenue'],['#contact','Connect']].map(([h,l])=>(
@@ -117,7 +117,7 @@ export default function AboutPage() {
         <div className="max-w-5xl mx-auto text-center">
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-6">
-            <img src="/app-icon.svg" alt="OKiT.ai" width={72} height={72} style={{borderRadius:18, boxShadow:'0 8px 32px rgba(27,67,50,0.3)'}} />
+            <img src="/app-icon.svg" alt="oakit.ai" width={72} height={72} style={{borderRadius:18, boxShadow:'0 8px 32px rgba(27,67,50,0.3)'}} />
           </div>
           <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-xs font-semibold text-emerald-700 mb-5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -129,7 +129,7 @@ export default function AboutPage() {
             <span style={{color:'#E8960C'}}>Every Stage.</span>
           </h1>
           <p className="text-lg md:text-xl text-neutral-600 max-w-xl mx-auto leading-relaxed mb-8">
-            OKiT.ai is building the <strong>operating system for childhood development</strong> — connecting schools, parents, teachers, and experts through AI.
+            oakit.ai is building the <strong>operating system for childhood development</strong> — connecting schools, parents, teachers, and experts through AI.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link href="/login" className="px-8 py-4 text-white font-bold rounded-2xl text-base hover:opacity-90 transition-all shadow-lg shadow-emerald-900/20"
@@ -207,7 +207,7 @@ export default function AboutPage() {
               Already working.<br />Real teachers. Real parents. Real data.
             </h2>
             <p className="text-neutral-500 max-w-2xl mx-auto">
-              OKiT.ai has been live at Silver Oak Juniors since June 2026. Every feature below is in daily production use.
+              oakit.ai has been live at Silver Oak Juniors since June 2026. Every feature below is in daily production use.
             </p>
           </div>
 
@@ -242,40 +242,53 @@ export default function AboutPage() {
             Every stakeholder. One platform. One data layer.
           </h2>
           <p className="text-emerald-100/70 text-base mb-12 max-w-2xl mx-auto">
-            OKiT.ai sits at the centre of every party that influences a child's development. Data flows between them. AI makes sense of it.
+            oakit.ai sits at the centre of every party that influences a child's development. Data flows between them. AI makes sense of it.
           </p>
 
-          {/* Hub and spoke visual */}
-          <div className="relative flex items-center justify-center mb-10">
-            {/* Center hub */}
-            <div className="relative z-10 w-24 h-24 rounded-full flex flex-col items-center justify-center shadow-2xl"
-              style={{background:'linear-gradient(135deg,#E8960C,#f59e0b)'}}>
-              <img src="/app-icon.svg" alt="OKiT.ai" width={40} height={40} style={{borderRadius:10, marginBottom:4}} />
-              <p className="text-white text-[9px] font-black">OKiT.ai</p>
+          {/* Hub and spoke — grid layout, no overflow */}
+          <div className="flex flex-col items-center gap-6 mb-10">
+            {/* Top row */}
+            <div className="flex justify-center gap-16">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-14 h-14 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-2xl">🏫</div>
+                <p className="text-white/80 text-xs font-semibold">Schools</p>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-14 h-14 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-2xl">👨‍👩‍👧</div>
+                <p className="text-white/80 text-xs font-semibold">Parents</p>
+              </div>
             </div>
-            {/* Surrounding stakeholders */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              {[
-                {role:'Schools',    icon:'🏫', angle:-90,  dist:160},
-                {role:'Parents',   icon:'👨‍👩‍👧', angle:-30,  dist:160},
-                {role:'Teachers',  icon:'👩‍🏫', angle:30,   dist:160},
-                {role:'Students',  icon:'🎓', angle:90,   dist:160},
-                {role:'Experts',   icon:'🧑‍💼', angle:150,  dist:160},
-                {role:'Corporates',icon:'🏢', angle:210,  dist:160},
-              ].map((s,i)=>{
-                const rad = (s.angle * Math.PI) / 180;
-                const x = Math.round(Math.cos(rad) * s.dist);
-                const y = Math.round(Math.sin(rad) * s.dist);
-                return (
-                  <div key={i} className="absolute flex flex-col items-center gap-1"
-                    style={{transform:`translate(${x}px,${y}px)`}}>
-                    <div className="w-12 h-12 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-xl">
-                      {s.icon}
-                    </div>
-                    <p className="text-white/80 text-[9px] font-semibold whitespace-nowrap">{s.role}</p>
-                  </div>
-                );
-              })}
+
+            {/* Middle row: Expert | HUB | Teachers */}
+            <div className="flex items-center justify-center gap-10">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-14 h-14 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-2xl">🧑‍💼</div>
+                <p className="text-white/80 text-xs font-semibold">Experts</p>
+              </div>
+
+              {/* Center hub */}
+              <div className="w-28 h-28 rounded-full flex flex-col items-center justify-center shadow-2xl shrink-0"
+                style={{background:'linear-gradient(135deg,#E8960C,#f59e0b)'}}>
+                <img src="/app-icon.svg" alt="oakit.ai" width={44} height={44} style={{borderRadius:10, marginBottom:4}} />
+                <p className="text-white text-[10px] font-black">oakit.ai</p>
+              </div>
+
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-14 h-14 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-2xl">👩‍🏫</div>
+                <p className="text-white/80 text-xs font-semibold">Teachers</p>
+              </div>
+            </div>
+
+            {/* Bottom row */}
+            <div className="flex justify-center gap-16">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-14 h-14 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-2xl">🎓</div>
+                <p className="text-white/80 text-xs font-semibold">Students</p>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-14 h-14 rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-2xl">🏢</div>
+                <p className="text-white/80 text-xs font-semibold">Corporates</p>
+              </div>
             </div>
           </div>
 
@@ -423,7 +436,7 @@ export default function AboutPage() {
       <section className="px-6 py-20 max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3">Competitive Moats</p>
-          <h2 className="text-3xl md:text-4xl font-black text-neutral-900">What makes OKiT.ai defensible.</h2>
+          <h2 className="text-3xl md:text-4xl font-black text-neutral-900">What makes oakit.ai defensible.</h2>
         </div>
         <div className="grid md:grid-cols-3 gap-5">
           {MOATS.map((m,i)=>(
@@ -464,7 +477,7 @@ export default function AboutPage() {
       {/* ── CTA ──────────────────────────────────────────────────────────── */}
       <section id="contact" className="px-6 py-24 text-center" style={{background:'linear-gradient(135deg,#1B4332,#0f2b1f)'}}>
         <div className="max-w-2xl mx-auto">
-          <img src="/app-icon.svg" alt="OKiT.ai" width={56} height={56} style={{borderRadius:14, margin:'0 auto 20px', display:'block', boxShadow:'0 8px 24px rgba(0,0,0,0.3)'}} />
+          <img src="/app-icon.svg" alt="oakit.ai" width={56} height={56} style={{borderRadius:14, margin:'0 auto 20px', display:'block', boxShadow:'0 8px 24px rgba(0,0,0,0.3)'}} />
           <p className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-4">Let's Build Together</p>
           <h2 className="text-3xl md:text-4xl font-black text-white mb-4">
             Looking for mentors, advisors<br />and early believers.
@@ -483,10 +496,11 @@ export default function AboutPage() {
             </Link>
           </div>
           <p className="text-emerald-200/40 text-xs">
-            OKiT.ai · Silver Oak Juniors · Bengaluru · 2026 · oakit.silveroakjuniors.in
+            oakit.ai · Silver Oak Juniors · Bengaluru · 2026 · oakit.silveroakjuniors.in
           </p>
         </div>
       </section>
     </div>
   );
 }
+
