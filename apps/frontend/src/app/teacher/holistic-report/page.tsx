@@ -418,14 +418,18 @@ export default function HolisticReportPage() {
         } as StudentStats)),
       ]);
       setDomains(td.domains || []);
-      // For Jr.KG / Sr.KG: rename "Regional Language" → "Kannada", add Kannada if missing
+      // For Jr.KG / Sr.KG: always use standard subject list, rename Regional Language → Kannada
       let fetchedSubjects = sd.subjects || [];
       if (isJrOrSrKg(student.class_name)) {
-        fetchedSubjects = fetchedSubjects.map(s =>
-          s.toLowerCase().includes('regional') || s.toLowerCase().includes('regional language')
-            ? 'Kannada'
-            : s,
-        );
+        // Hard-coded standard subjects for KG classes — ensures all subjects always show
+        const KG_SUBJECTS = ['English Speaking', 'English', 'Math', 'GK', 'Writing', 'Kannada'];
+        // If DB returned subjects, use them but rename Regional Language → Kannada
+        const dbSubjects = fetchedSubjects
+          .map(s => s.toLowerCase().includes('regional') ? 'Kannada' : s)
+          .filter((s, i, arr) => arr.indexOf(s) === i);
+        // Merge: use DB subjects if they have more than just Kannada, otherwise use hardcoded list
+        fetchedSubjects = dbSubjects.length > 1 ? dbSubjects : KG_SUBJECTS;
+        // Ensure Kannada is always present
         if (!fetchedSubjects.includes('Kannada')) fetchedSubjects = [...fetchedSubjects, 'Kannada'];
       }
       setSubjects(fetchedSubjects);
