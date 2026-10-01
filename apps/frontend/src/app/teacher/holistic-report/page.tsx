@@ -907,20 +907,20 @@ export default function HolisticReportPage() {
                             <>
                               <div className="px-4 py-1 bg-neutral-100"><p className="text-xs font-semibold text-neutral-500">Gross Motor</p></div>
                               {grossItems.map((item, idx) => (
-                                <RatingRow key={item.id} label={item.label} idx={idx} pgMode={pgMode}
+                                <RatingRow key={item.id} label={item.label} idx={idx} className={selStudent?.class_name || ''}
                                   value={(devRatings[domain.id]?.[item.id] as Rating) || ''}
                                   onChange={v => setDevRatings(p => ({ ...p, [domain.id]: { ...(p[domain.id] || {}), [item.id]: v } }))} />
                               ))}
                               <div className="px-4 py-1 bg-neutral-100"><p className="text-xs font-semibold text-neutral-500">Fine Motor</p></div>
                               {fineItems.map((item, idx) => (
-                                <RatingRow key={item.id} label={item.label} idx={idx} pgMode={pgMode}
+                                <RatingRow key={item.id} label={item.label} idx={idx} className={selStudent?.class_name || ''}
                                   value={(devRatings[domain.id]?.[item.id] as Rating) || ''}
                                   onChange={v => setDevRatings(p => ({ ...p, [domain.id]: { ...(p[domain.id] || {}), [item.id]: v } }))} />
                               ))}
                             </>
                           )}
                           {regItems.map((item, idx) => (
-                            <RatingRow key={item.id} label={item.label} idx={idx} pgMode={pgMode}
+                            <RatingRow key={item.id} label={item.label} idx={idx} className={selStudent?.class_name || ''}
                               value={(devRatings[domain.id]?.[item.id] as Rating) || ''}
                               onChange={v => setDevRatings(p => ({ ...p, [domain.id]: { ...(p[domain.id] || {}), [item.id]: v } }))} />
                           ))}
@@ -1150,3 +1150,4 @@ export default function HolisticReportPage() {
     </div>
   );
 }
+
