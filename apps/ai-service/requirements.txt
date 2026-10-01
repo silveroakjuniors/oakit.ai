@@ -14,3 +14,8 @@ sentence-transformers==3.0.1
 numpy==1.26.4
 
 tzdata
+
+# Face recognition
+insightface==0.7.3
+opencv-python-headless==4.10.0.84
+onnxruntime==1.18.1
