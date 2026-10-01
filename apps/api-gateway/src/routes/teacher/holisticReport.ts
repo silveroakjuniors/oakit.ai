@@ -323,27 +323,6 @@ router.get('/stats/:student_id', async (req: Request, res: Response) => {
     const effectiveFrom = (req.query.from as string) ||
       (calRow.rows[0]?.start_date ? new Date(calRow.rows[0].start_date).toISOString().split('T')[0] : '2026-06-01');
 
-    // Count working days in the range (same logic as reportHelper)
-    const wdRow = await pool.query(
-      `SELECT working_days FROM school_calendar WHERE school_id=$1 ORDER BY start_date DESC LIMIT 1`,
-      [school_id],
-    );
-    const workingDayNums: number[] = wdRow.rows[0]?.working_days || [1,2,3,4,5];
-    const holidayRows = await pool.query(
-      `SELECT holiday_date FROM holidays WHERE school_id=$1 AND holiday_date BETWEEN $2::date AND $3::date`,
-      [school_id, effectiveFrom, to],
-    );
-    const holidaySet = new Set(holidayRows.rows.map((r: any) => new Date(r.holiday_date).toISOString().split('T')[0]));
-    let workingDays = 0;
-    const start = new Date(effectiveFrom + 'T12:00:00');
-    const end   = new Date(to + 'T12:00:00');
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dow = d.getDay() === 0 ? 7 : d.getDay(); // isoweekday
-      const ds  = d.toISOString().split('T')[0];
-      if (workingDayNums.includes(dow) && !holidaySet.has(ds)) workingDays++;
-    }
-    workingDays = Math.max(workingDays, 1);
-
     const attRow = await pool.query(
       `SELECT
          COUNT(*) FILTER (WHERE status = 'present')::int AS present_days,
@@ -367,13 +346,14 @@ router.get('/stats/:student_id', async (req: Request, res: Response) => {
     );
     const hw = hwRow.rows[0] || { completed: 0, partial: 0, not_submitted: 0, total_recorded: 0 };
 
-    // Use working days as denominator — same logic as reportHelper.
-    // Days with no submission record count as not submitted.
-    const hwDenominator = Math.max(workingDays, hw.total_recorded, 1);
+    // Homework: use only recorded homework days as denominator.
+    // "Missed" = explicitly marked not_submitted, not days without any record.
+    // This gives "homework given vs completion" not "working days vs completion".
+    const hwDenominator = Math.max(hw.total_recorded, 1);
     const hwPct = hw.total_recorded > 0
       ? Math.round((hw.completed / hwDenominator) * 100)
       : null;
-    const hwNotSubmitted = Math.max(0, workingDays - hw.total_recorded) + hw.not_submitted;
+    const hwNotSubmitted = hw.not_submitted;
 
     return res.json({
       from: effectiveFrom, to,
