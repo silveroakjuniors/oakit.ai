@@ -365,6 +365,8 @@ export default function HolisticReportPage() {
     setView('detail');
     setLoadingDetail(true);
     const year = academicYearRef.current || academicYear;
+    // Set pgMode from the saved item's class_name (reliable, always present)
+    const isPN = isPgNursery(item.class_name);
     try {
       const student = students.find(s => s.id === item.student_id);
       const classId = student?.class_id || '';
@@ -386,6 +388,8 @@ export default function HolisticReportPage() {
   async function openEdit(item: SavedItem) {
     const student = students.find(s => s.id === item.student_id);
     if (!student) return;
+    // Use class_name from the saved item (always available) to set pgMode immediately
+    setPgMode(isPgNursery(item.class_name));
     setSelStudent(student);
     setSelTerm(item.term as Term);
     setView('form');
@@ -396,6 +400,7 @@ export default function HolisticReportPage() {
   const loadForm = useCallback(async (student: Student, term: Term, year?: string) => {
     const activeYear = year || academicYearRef.current || academicYear;
     setLoadingForm(true); setMsg('');
+    // pgMode is based solely on class name — PG/Nursery get narrative fields, all others don't
     const isPN = isPgNursery(student.class_name);
     setPgMode(isPN);
     try {
