@@ -153,10 +153,11 @@ specialDaysRouter.post('/', async (req: Request, res: Response) => {
       created: inserted.length,
       skipped_non_working: skipped,
       plans_affected: impacted,
+      regenerate_required: impacted > 0,
       message: skipped.length > 0
-        ? `${inserted.length} day(s) added (${skipped.length} non-working day(s) skipped). ${impacted > 0 ? `${impacted} section plan(s) carried forward.` : ''}`
+        ? `${inserted.length} day(s) added (${skipped.length} non-working day(s) skipped).${impacted > 0 ? ` ${impacted} section(s) had existing plans on these dates — please regenerate the affected months so the curriculum continues correctly.` : ''}`
         : impacted > 0
-          ? `${inserted.length} day(s) added. ${impacted} section plan(s) carried forward.`
+          ? `${inserted.length} day(s) added. ${impacted} section(s) had existing plans on these dates — please regenerate the affected months so the curriculum continues correctly.`
           : `${inserted.length} day(s) added.`,
     });
   } catch (err) {

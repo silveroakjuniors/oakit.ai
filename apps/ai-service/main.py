@@ -236,6 +236,78 @@ async def generate_plans(req: PlanRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BulkRegenRequest(BaseModel):
+    school_id: str
+    academic_year: str
+    month: int
+    plan_year: int
+
+@app.post("/internal/bulk-regenerate-plans")
+async def bulk_regenerate_plans(req: BulkRegenRequest, background_tasks: BackgroundTasks):
+    """
+    Regenerate plans for ALL sections in a school for a given month.
+    Deletes existing non-completed plans for the month first, then regenerates.
+    Runs in the background — returns immediately with section count.
+    """
+    import traceback
+    from db import get_pool
+    from uuid import UUID
+
+    pool = await get_pool()
+
+    # Fetch all sections with their class_id
+    rows = await pool.fetch(
+        """SELECT s.id AS section_id, s.class_id
+           FROM sections s
+           WHERE s.school_id = $1""",
+        UUID(req.school_id)
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="No sections found for school")
+
+    async def _run_bulk():
+        from planner_service import generate_plans as _generate_plans
+        from calendar import monthrange
+        month_start = date(req.plan_year, req.month, 1)
+        month_end = date(req.plan_year, req.month, monthrange(req.plan_year, req.month)[1])
+
+        # Delete non-completed plans for this month across all sections in school
+        await pool.execute(
+            """DELETE FROM day_plans
+               WHERE school_id = $1
+                 AND plan_date >= $2
+                 AND plan_date <= $3
+                 AND status NOT IN ('completed', 'holiday')""",
+            UUID(req.school_id), month_start, month_end
+        )
+        print(f"[bulk-regen] Cleared non-completed plans for {req.month}/{req.plan_year} school={req.school_id}")
+
+        results = []
+        for row in rows:
+            section_id = str(row["section_id"])
+            class_id   = str(row["class_id"])
+            try:
+                count = await _generate_plans(
+                    class_id, section_id, req.school_id, req.academic_year,
+                    month=req.month, plan_year=req.plan_year
+                )
+                results.append({"section_id": section_id, "plans_created": count})
+                print(f"[bulk-regen] section={section_id} -> {count} plans")
+            except Exception as e:
+                print(f"[bulk-regen] ERROR section={section_id}: {e}\n{traceback.format_exc()}")
+                results.append({"section_id": section_id, "error": str(e)})
+
+        print(f"[bulk-regen] Done. {len(results)} sections processed.")
+
+    background_tasks.add_task(_run_bulk)
+    return {
+        "message": f"Bulk regeneration started for {len(rows)} sections",
+        "sections": len(rows),
+        "month": req.month,
+        "year": req.plan_year,
+    }
+
+
 # --- Coverage analysis ---
 
 class CoverageRequest(BaseModel):

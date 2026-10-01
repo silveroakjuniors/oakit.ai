@@ -688,6 +688,9 @@ export default function SettingsPage() {
 
           {/* Student Credentials */}
           <StudentCredentialsSection token={token} />
+
+          {/* Flash Messages */}
+          <FlashMessagesSection token={token} />
         </div>
       )}
 

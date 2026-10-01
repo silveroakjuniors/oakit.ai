@@ -5,38 +5,31 @@
 import { pool } from '../../../lib/db';
 
 /**
- * When a holiday or special day is added for a date that already has day plans,
- * carry the chunks from that date forward to the next available working day.
+ * When a full-day special day is added for a date that already has a scheduled plan,
+ * mark that plan as the special day type (clear its chunks) and do NOT carry chunks
+ * forward — carrying forward causes pile-up on the next teaching day.
+ * Instead, the admin is warned to regenerate the affected months.
  * Returns the number of sections affected.
  */
 export async function carryForwardDate(school_id: string, date: string): Promise<number> {
   const plans = await pool.query(
-    `SELECT dp.id, dp.section_id, dp.chunk_ids
+    `SELECT dp.id, dp.section_id, dp.chunk_ids, dp.status
      FROM day_plans dp
      JOIN sections s ON s.id = dp.section_id
-     WHERE s.school_id = $1 AND dp.plan_date = $2 AND dp.chunk_ids != '{}'`,
+     WHERE s.school_id = $1 AND dp.plan_date = $2
+       AND dp.status = 'scheduled'
+       AND dp.chunk_ids != '{}'`,
     [school_id, date],
   );
 
   if (plans.rows.length === 0) return 0;
 
+  // Mark each affected plan as needing regeneration — clear chunks, set status to 'stale'
+  // so the teacher sees "plan needs update" rather than wrong content.
+  // Do NOT merge chunks onto the next day — that causes pile-up.
   for (const plan of plans.rows) {
-    const next = await pool.query(
-      `SELECT id, chunk_ids FROM day_plans
-       WHERE section_id = $1 AND plan_date > $2 AND status = 'scheduled'
-       ORDER BY plan_date LIMIT 1`,
-      [plan.section_id, date],
-    );
-
-    if (next.rows.length > 0) {
-      const existing: string[] = next.rows[0].chunk_ids || [];
-      const displaced: string[] = plan.chunk_ids || [];
-      const merged = [...displaced, ...existing.filter((c: string) => !displaced.includes(c))];
-      await pool.query('UPDATE day_plans SET chunk_ids = $1 WHERE id = $2', [merged, next.rows[0].id]);
-    }
-
     await pool.query(
-      `UPDATE day_plans SET chunk_ids = '{}', status = 'holiday' WHERE id = $1`,
+      `UPDATE day_plans SET chunk_ids = '{}', status = 'stale' WHERE id = $1`,
       [plan.id],
     );
   }

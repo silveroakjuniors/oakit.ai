@@ -573,7 +573,11 @@ export default function CalendarPage() {
       setNewSpecialDay({ from_date: '', to_date: '', day_type: 'settling', custom_day_type: '', label: '', activity_note: '', start_time: '', end_time: '', duration_type: 'full_day', revision_topics: [] });
       setRevisionTopicInput('');
       await loadSpecialDays();
-      if (res.message) setMsg(res.message);
+      if (res.regenerate_required) {
+        setMsg(`Warning - ${res.plans_affected} section(s) had existing plans on these dates. Please go to Plans and regenerate the affected months so the curriculum continues correctly.`);
+      } else if (res.message) {
+        setMsg(res.message);
+      }
     } catch (err: unknown) { alert(err instanceof Error ? err.message : 'Failed'); }
   }
 

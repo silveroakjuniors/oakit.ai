@@ -2810,6 +2810,53 @@ function FeesTab({ invoice, activeChild, token }: { invoice: any; activeChild: C
  );
 }
 
+// --- Holistic Report Section (inside parent Reports tab) ----------------------
+function HolisticReportSection({ token }: { token: string }) {
+ const router = useRouter();
+ const [reports, setReports] = React.useState<any[]>([]);
+ const [loading, setLoading] = React.useState(true);
+
+ React.useEffect(() => {
+  apiGet<any[]>('/api/v1/parent/holistic-report', token)
+   .then(data => setReports(data || []))
+   .catch(() => {})
+   .finally(() => setLoading(false));
+ }, [token]);
+
+ return (
+  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mt-2">
+   <div className="flex items-center justify-between mb-1">
+    <p className="text-sm font-bold text-gray-800">Progress Reports (Mid/Final Term)</p>
+    <button
+     onClick={() => router.push('/parent/holistic-report')}
+     className="text-xs text-emerald-700 font-semibold hover:underline">
+     View All
+    </button>
+   </div>
+   <p className="text-xs text-gray-500 mb-3">Holistic developmental assessment reports shared by the class teacher.</p>
+   {loading ? (
+    <p className="text-xs text-gray-400 py-2">Loading reports...</p>
+   ) : reports.length === 0 ? (
+    <p className="text-xs text-gray-400 py-2">No holistic reports shared yet. Reports will appear here once the teacher shares them.</p>
+   ) : (
+    <div className="flex flex-col gap-2">
+     {reports.slice(0, 3).map(r => (
+      <button key={r.id}
+       onClick={() => router.push('/parent/holistic-report')}
+       className="flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors text-left w-full">
+       <div>
+        <p className="text-sm font-semibold text-gray-800">{r.student_name}</p>
+        <p className="text-xs text-gray-400">{r.class_name} — {r.term === 'mid_term' ? 'Mid-Term' : 'Final Term'} {r.academic_year}</p>
+       </div>
+       <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-medium shrink-0">View</span>
+      </button>
+     ))}
+    </div>
+   )}
+  </div>
+ );
+}
+
 // --- Reports Tab --------------------------------------------------------------
 function ReportsTab({ attendance, progress, activeChild, token }: { attendance: AttendanceData | null; progress: ProgressData | null; activeChild: Child | null; token: string }) {
  const attPct = attendance?.attendance_pct ?? 0;
@@ -2838,6 +2885,7 @@ function ReportsTab({ attendance, progress, activeChild, token }: { attendance: 
  <ReportCardGenerator token={token} role="parent" fixedStudentId={activeChild.id} fixedStudentName={activeChild.name} />
  </div>
  )}
+ {activeChild && <HolisticReportSection token={token} />}
  </div>
  );
 }
