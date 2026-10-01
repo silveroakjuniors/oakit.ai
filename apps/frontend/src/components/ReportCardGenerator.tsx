@@ -36,7 +36,47 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
   const today = new Date().toISOString().split('T')[0];
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
 
-  const [from, setFrom] = useState(monthAgo);
+  // ── Report period presets ──────────────────────────────────────────────────
+  type PeriodPreset = 'custom' | 'this_month' | 'last_month' | 'term1' | 'term2' | 'term3' | 'annual';
+
+  function getPresetDates(preset: PeriodPreset): { from: string; to: string; label: string } {
+    const now = new Date();
+    const y = now.getFullYear();
+    // Academic year: June 1 to May 31 next year
+    const academicStart = now.getMonth() >= 5 ? y : y - 1; // June=5
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dt = (yr: number, mo: number, day: number) => `${yr}-${pad(mo)}-${pad(day)}`;
+
+    switch (preset) {
+      case 'this_month': {
+        const f = dt(y, now.getMonth() + 1, 1);
+        return { from: f, to: today, label: now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) };
+      }
+      case 'last_month': {
+        const lm = new Date(y, now.getMonth() - 1, 1);
+        const lme = new Date(y, now.getMonth(), 0);
+        return {
+          from: dt(lm.getFullYear(), lm.getMonth() + 1, 1),
+          to: dt(lme.getFullYear(), lme.getMonth() + 1, lme.getDate()),
+          label: lm.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+        };
+      }
+      case 'term1': // Jun–Sep
+        return { from: dt(academicStart, 6, 1), to: dt(academicStart, 9, 30), label: 'Term 1 (Jun–Sep)' };
+      case 'term2': // Oct–Jan
+        return { from: dt(academicStart, 10, 1), to: dt(academicStart + 1, 1, 31), label: 'Term 2 (Oct–Jan)' };
+      case 'term3': // Feb–May
+        return { from: dt(academicStart + 1, 2, 1), to: dt(academicStart + 1, 5, 31), label: 'Term 3 (Feb–May)' };
+      case 'annual':
+        return { from: dt(academicStart, 6, 1), to: dt(academicStart + 1, 5, 31), label: `Annual ${academicStart}–${academicStart + 1}` };
+      default:
+        return { from: monthAgo, to: today, label: 'Custom' };
+    }
+  }
+
+  const [preset, setPreset] = useState<PeriodPreset>('this_month');
+  const [from, setFrom] = useState(() => getPresetDates('this_month').from);
   const [to, setTo] = useState(today);
 
   // Selection state (teacher/admin/principal)
@@ -90,14 +130,16 @@ export default function ReportCardGenerator({ token, role, fixedStudentId, fixed
     const sid = fixedStudentId || selectedStudent;
     if (!sid) return;
     setGenerating(true); setError(''); setReport(null);
+    // Map preset to report_type for the API
+    const reportType = preset === 'annual' ? 'annual' : (preset === 'term1' || preset === 'term2' || preset === 'term3') ? 'term' : 'progress';
     try {
       let url = '';
       if (role === 'parent') {
         url = `/api/v1/parent/child/${sid}/report-card?from=${from}&to=${to}`;
       } else if (role === 'teacher') {
-        url = `/api/v1/teacher/report-card/generate?student_id=${sid}&from=${from}&to=${to}`;
+        url = `/api/v1/teacher/report-card/generate?student_id=${sid}&from=${from}&to=${to}&report_type=${reportType}`;
       } else {
-        url = `/api/v1/admin/reports/progress-report?student_id=${sid}&from=${from}&to=${to}`;
+        url = `/api/v1/admin/reports/progress-report?student_id=${sid}&from=${from}&to=${to}&report_type=${reportType}`;
       }
       const data = await apiGet<any>(url, token);
       setReport(data.ai_report || '');
@@ -212,25 +254,68 @@ ${el.innerHTML}
         </div>
       )}
 
-      {/* Date range */}
-      <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">From</label>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30" />
+      {/* Report Period Selector */}
+      <div>
+        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Report Period</label>
+        <div className="grid grid-cols-3 gap-1.5 mb-3">
+          {([
+            { key: 'this_month', label: 'This Month' },
+            { key: 'last_month', label: 'Last Month' },
+            { key: 'term1', label: 'Term 1' },
+            { key: 'term2', label: 'Term 2' },
+            { key: 'term3', label: 'Term 3' },
+            { key: 'annual', label: 'Annual' },
+            { key: 'custom', label: 'Custom' },
+          ] as { key: PeriodPreset; label: string }[]).map(({ key, label }) => (
+            <button key={key} type="button"
+              onClick={() => {
+                setPreset(key);
+                if (key !== 'custom') {
+                  const d = getPresetDates(key);
+                  setFrom(d.from);
+                  setTo(d.to);
+                }
+              }}
+              className={`py-2 px-2 rounded-xl text-xs font-semibold transition-colors ${
+                preset === key
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+              }`}>
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="flex-1">
-          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">To</label>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30" />
-        </div>
+
+        {/* Show selected range summary */}
+        {preset !== 'custom' && (
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 mb-3 flex items-center justify-between">
+            <p className="text-xs font-semibold text-emerald-700">{getPresetDates(preset).label}</p>
+            <p className="text-xs text-emerald-600">{from} → {to}</p>
+          </div>
+        )}
+
+        {/* Custom date picker — shown when Custom is selected */}
+        {preset === 'custom' && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">From</label>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30" />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">To</label>
+              <input type="date" value={to} onChange={e => setTo(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30" />
+            </div>
+          </div>
+        )}
       </div>
 
       <button onClick={generate} disabled={generating || !canGenerate}
         className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-colors disabled:opacity-50">
         {generating
           ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Generating report card…</>
-          : <><BookOpen size={15} /> Generate Report Card</>}
+          : <><BookOpen size={15} /> Generate {preset === 'annual' ? 'Annual' : (preset === 'term1' || preset === 'term2' || preset === 'term3') ? 'Term' : 'Progress'} Report</>}
       </button>
 
       {error && <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}

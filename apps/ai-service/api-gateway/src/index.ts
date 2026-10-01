@@ -90,6 +90,9 @@ import adminEnquiriesRouter from './routes/admin/enquiries';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
 import teacherQuizRouter from './routes/teacher/quiz';
 import teacherReportCardRouter from './routes/teacher/reportCard';
+import teacherHolisticReportRouter from './routes/teacher/holisticReport';
+import adminHolisticTemplateRouter from './routes/admin/holisticReportTemplate';
+import parentHolisticReportRouter from './routes/parent/holisticReport';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
@@ -124,6 +127,7 @@ import socialMediaRouter from './routes/admin/socialMedia';
 import sharedTodayContextRouter from './routes/shared/todayContext';
 import pushSubscriptionRouter from './routes/shared/pushSubscription';
 import driveProxyRouter from './routes/shared/driveProxy';
+import { flashMessagesRouter, adminFlashMessagesRouter } from './routes/shared/flashMessages';
 import staffHrRouter from './routes/staff/hr';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
@@ -259,6 +263,8 @@ app.use('/api/v1/public/uniform', publicUniformRouter);
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
 app.use('/api/v1/push', pushSubscriptionRouter);
 app.use('/api/v1/drive-proxy', driveProxyRouter);
+app.use('/api/v1/flash-messages', flashMessagesRouter);
+app.use('/api/v1/admin/flash-messages', adminFlashMessagesRouter);
 
 // Staff HR (leave, offer letters, payslips)
 app.use('/api/v1/staff/hr', staffHrRouter);
@@ -398,6 +404,9 @@ app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
 app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
+app.use('/api/v1/teacher/holistic-report', teacherHolisticReportRouter);
+app.use('/api/v1/admin/holistic-template', adminHolisticTemplateRouter);
+app.use('/api/v1/parent/holistic-report', parentHolisticReportRouter);
 app.use('/api/v1/teacher/face-attendance', teacherFaceAttendanceRouter);
 
 // Student Portal
