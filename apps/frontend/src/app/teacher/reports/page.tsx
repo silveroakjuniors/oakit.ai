@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, BookOpen, Trash2, Eye, Pencil, Check, X, Sparkles, RefreshCw, Printer, Users, FileText, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, BookOpen, Trash2, Eye, Pencil, Check, X, Sparkles, RefreshCw, Printer, Users, FileText, Loader2, CheckCircle2, AlertCircle, CheckSquare, Square } from 'lucide-react';
 import { getToken } from '@/lib/auth';
 import { apiGet, apiPost, apiDelete, apiPatch } from '@/lib/api';
 import ReportCardV2 from '@/components/ReportCardV2';
@@ -267,9 +267,13 @@ export default function TeacherReportsPage() {
   const [saved, setSaved] = useState<SavedReport[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selecting, setSelecting] = useState(false);
 
   function loadSaved() {
     setSavedLoading(true);
+    setSelectedIds(new Set());
+    setSelecting(false);
     apiGet<SavedReport[]>('/api/v1/teacher/report-card/saved', token)
       .then(setSaved).catch(() => {}).finally(() => setSavedLoading(false));
   }
@@ -281,6 +285,42 @@ export default function TeacherReportsPage() {
   function handleDelete(id: string) {
     setSaved(prev => prev.filter(r => r.id !== id));
     setViewing(null);
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (prev.size === saved.length && prev.size > 0) {
+        return new Set();
+      }
+      saved.forEach(r => next.add(r.id));
+      return next;
+    });
+  }
+
+  async function handleDeleteSelected() {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} report(s)? This cannot be undone.`)) return;
+
+    const ids = Array.from(selectedIds);
+    setSelectedIds(new Set());
+    setSaved(prev => prev.filter(r => !ids.includes(r.id)));
+    setViewing(null);
+
+    for (const id of ids) {
+      try {
+        await apiDelete(`/api/v1/teacher/report-card/saved/${id}`, token);
+      } catch { /* ignore individual failures */ }
+    }
   }
 
   return (
@@ -309,6 +349,13 @@ export default function TeacherReportsPage() {
               <Icon size={13} /> {label}
             </button>
           ))}
+          {/* Holistic / Term report card tab */}
+          <button
+            onClick={() => router.push('/teacher/holistic-report')}
+            className="flex items-center gap-1.5 px-4 py-3 text-xs font-bold border-b-2 border-transparent text-neutral-400 hover:text-neutral-600 transition-colors"
+          >
+            <FileText size={13} /> Mid / Final Term
+          </button>
         </div>
       </div>
 
@@ -321,9 +368,33 @@ export default function TeacherReportsPage() {
             : (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-neutral-800">{saved.length} saved report{saved.length !== 1 ? 's' : ''}</p>
-                  <button onClick={loadSaved} className="text-xs text-neutral-400 hover:text-neutral-600 font-semibold">Refresh</button>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-neutral-800">{saved.length} saved report{saved.length !== 1 ? 's' : ''}</p>
+                    {selectedIds.size > 0 && (
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                        {selectedIds.size} selected
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {saved.length > 0 && (
+                      <button onClick={toggleSelectAll} className="text-xs text-neutral-400 hover:text-neutral-600 font-semibold flex items-center gap-1"
+                        title={selectedIds.size === saved.length ? 'Deselect all' : 'Select all'}>
+                        {selectedIds.size === saved.length && selectedIds.size > 0 ? <Square size={14} /> : <CheckSquare size={14} />}
+                        {selectedIds.size === saved.length && selectedIds.size > 0 ? 'Deselect' : 'Select'}
+                      </button>
+                    )}
+                    <button onClick={loadSaved} className="text-xs text-neutral-400 hover:text-neutral-600 font-semibold">Refresh</button>
+                  </div>
                 </div>
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center justify-between bg-red-50 border border-red-100 rounded-xl px-4 py-2">
+                    <p className="text-xs font-semibold text-red-700">{selectedIds.size} selected</p>
+                    <button onClick={handleDeleteSelected} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-colors">
+                      <Trash2 size={12} /> Delete Selected
+                    </button>
+                  </div>
+                )}
                 {savedLoading && <div className="flex justify-center py-12"><Loader2 className="animate-spin text-neutral-300" size={22} /></div>}
                 {!savedLoading && saved.length === 0 && (
                   <div className="bg-white rounded-2xl border border-neutral-100 p-8 text-center">
@@ -333,7 +404,9 @@ export default function TeacherReportsPage() {
                   </div>
                 )}
                 {!savedLoading && saved.map(r => (
-                  <div key={r.id} className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-4 flex items-start gap-3">
+                  <div key={r.id} className={`bg-white rounded-2xl border ${selectedIds.has(r.id) ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-neutral-100 shadow-sm'} p-4 flex items-start gap-3`}>
+                    <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)}
+                      className="mt-1 w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500" />
                     <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
                       <FileText size={14} className="text-emerald-600" />
                     </div>

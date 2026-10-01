@@ -90,6 +90,9 @@ import adminEnquiriesRouter from './routes/admin/enquiries';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
 import teacherQuizRouter from './routes/teacher/quiz';
 import teacherReportCardRouter from './routes/teacher/reportCard';
+import teacherHolisticReportRouter from './routes/teacher/holisticReport';
+import adminHolisticTemplateRouter from './routes/admin/holisticReportTemplate';
+import parentHolisticReportRouter from './routes/parent/holisticReport';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
@@ -401,6 +404,9 @@ app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
 app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
+app.use('/api/v1/teacher/holistic-report', teacherHolisticReportRouter);
+app.use('/api/v1/admin/holistic-template', adminHolisticTemplateRouter);
+app.use('/api/v1/parent/holistic-report', parentHolisticReportRouter);
 app.use('/api/v1/teacher/face-attendance', teacherFaceAttendanceRouter);
 
 // Student Portal
