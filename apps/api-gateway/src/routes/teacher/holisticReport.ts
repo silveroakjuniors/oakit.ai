@@ -287,7 +287,13 @@ router.get('/subjects/:class_id', async (req: Request, res: Response) => {
     // Add Kannada if not present for KG classes
     if (isKgClass && !finalSubjects.includes('Kannada')) finalSubjects.push('Kannada');
 
-    return res.json({ subjects: isKgClass ? finalSubjects : subjects });
+    // Fallback: if KG class has no curriculum resources, use standard subject list
+    const KG_DEFAULT_SUBJECTS = ['English Speaking', 'English', 'Math', 'GK', 'Writing', 'Kannada'];
+    const resultSubjects = isKgClass && finalSubjects.length <= 1
+      ? KG_DEFAULT_SUBJECTS
+      : (isKgClass ? finalSubjects : subjects);
+
+    return res.json({ subjects: resultSubjects });
   } catch (err) {
     console.error('[holistic-report subjects]', err);
     return res.status(500).json({ error: 'Internal server error' });
