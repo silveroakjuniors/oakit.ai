@@ -29,11 +29,14 @@ const TERM_LABELS: Record<string, string> = { mid_term: 'Mid-Term', final_term: 
 const G = '#1B4332';
 const A = '#E8960C';
 
-// Growth Statements (PG/Nursery)
+// Growth Statements (PG/Nursery) — codes E, G, B, I
 const GROWTH: Record<string, { label: string; color: string }> = {
   E: { label: 'Exploring',          color: '#6B9E7A' },
+  G: { label: 'Growing',            color: '#4A8C6A' },
+  B: { label: 'Becoming Confident', color: '#2D7A5A' },
+  I: { label: 'Independent',        color: '#1B4332' },
+  // Legacy codes from before the rename — still display correctly
   V: { label: 'Growing',            color: '#4A8C6A' },
-  G: { label: 'Becoming Confident', color: '#2D7A5A' },
   S: { label: 'Independent',        color: '#1B4332' },
 };
 // Standard scale (Jr/Sr KG)

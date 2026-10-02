@@ -25,7 +25,7 @@ import {
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'principal', 'admin'));
 
-const VALID_RATINGS = new Set(['E', 'V', 'G', 'S', 'P', '']);
+const VALID_RATINGS = new Set(['E', 'V', 'G', 'S', 'P', 'B', 'I', '']);
 
 // â”€â”€ Which class names use the PG/Nursery format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PG_NURSERY_CLASS_NAMES = new Set(['playgroup', 'play group', 'nursery', 'pg']);
@@ -676,22 +676,38 @@ router.post('/:id/share', async (req: Request, res: Response) => {
       [user_id, id],
     );
     const parents = await pool.query(
-      `SELECT DISTINCT psl.parent_id FROM parent_student_links psl WHERE psl.student_id=$1`,
-      [report.student_id],
+      `SELECT DISTINCT psl.parent_id
+       FROM parent_student_links psl
+       JOIN users u ON u.id = psl.parent_id
+       WHERE psl.student_id=$1 AND u.school_id=$2 AND u.is_active=true`,
+      [report.student_id, school_id],
     );
+    console.log(`[holistic-report share] student=${report.student_id} found ${parents.rows.length} linked parents`);
     const tl = report.term === 'mid_term' ? 'Mid-Term' : 'Final Term';
     const body = `${tl} Holistic Progress Report for ${report.student_name} (${report.class_name}) is now available.`;
     let notified = 0;
     for (const p of parents.rows) {
       try {
+        // Insert notification message — use only base columns to avoid schema version issues
         await pool.query(
           `INSERT INTO messages (school_id, teacher_id, parent_id, student_id, sender_role, body, topic, extension)
-           VALUES ($1,$2,$3,$4,'teacher',$5,'holistic_report','')`,
+           VALUES ($1,$2,$3,$4,'teacher',$5,'holistic_report','')
+           ON CONFLICT DO NOTHING`,
           [school_id, user_id, p.parent_id, report.student_id, body],
         );
         notified++;
-      } catch (msgErr) {
-        console.error('[holistic-report share] message insert failed', p.parent_id, msgErr);
+      } catch (msgErr: any) {
+        // topic/extension columns may not exist in older schema — retry without them
+        try {
+          await pool.query(
+            `INSERT INTO messages (school_id, teacher_id, parent_id, student_id, sender_role, body)
+             VALUES ($1,$2,$3,$4,'teacher',$5)`,
+            [school_id, user_id, p.parent_id, report.student_id, body],
+          );
+          notified++;
+        } catch (msgErr2) {
+          console.error('[holistic-report share] message insert failed for parent', p.parent_id, msgErr2);
+        }
       }
     }
     return res.json({ message: 'Report shared with parent', parents_notified: notified });
@@ -939,11 +955,15 @@ router.get('/list', async (req: Request, res: Response) => {
 const BRAND_GREEN = '#1B4332';
 const BRAND_AMBER = '#E8960C';
 
-// Growth Statements scale mapping (pg_nursery)
+// Growth Statements scale mapping (pg_nursery) — current codes: E, G, B, I
+// Legacy codes V (Growing) and S (Independent) kept for reports saved before rename
 const GROWTH_MAP: Record<string, { label: string; statement: string; color: string }> = {
   E: { label: 'Exploring',          statement: 'I am beginning to discover this.',               color: '#6B9E7A' },
+  G: { label: 'Growing',            statement: 'I am developing this with encouragement.',       color: '#4A8C6A' },
+  B: { label: 'Becoming Confident', statement: 'I am using this skill more consistently.',       color: '#2D7A5A' },
+  I: { label: 'Independent',        statement: 'I can use this skill confidently on my own.',    color: '#1B4332' },
+  // Legacy — reports saved before the code rename
   V: { label: 'Growing',            statement: 'I am developing this with encouragement.',       color: '#4A8C6A' },
-  G: { label: 'Becoming Confident', statement: 'I am using this skill more consistently.',       color: '#2D7A5A' },
   S: { label: 'Independent',        statement: 'I can use this skill confidently on my own.',    color: '#1B4332' },
 };
 
@@ -1081,9 +1101,9 @@ async function generateHolisticReportPDF(report: any, domains: any[], stats: any
   const scaleItems = isPgMode
     ? [
         { code: 'E', label: 'Exploring',          color: '#6B9E7A', stmt: 'I am beginning to discover this.' },
-        { code: 'V', label: 'Growing',            color: '#4A8C6A', stmt: 'I am developing this with encouragement.' },
-        { code: 'G', label: 'Becoming Confident', color: '#2D7A5A', stmt: 'I am using this skill more consistently.' },
-        { code: 'S', label: 'Independent',        color: '#1B4332', stmt: 'I can use this skill confidently on my own.' },
+        { code: 'G', label: 'Growing',            color: '#4A8C6A', stmt: 'I am developing this with encouragement.' },
+        { code: 'B', label: 'Becoming Confident', color: '#2D7A5A', stmt: 'I am using this skill more consistently.' },
+        { code: 'I', label: 'Independent',        color: '#1B4332', stmt: 'I can use this skill confidently on my own.' },
       ]
     : [
         { code: 'E', label: 'Excellent',    color: '#1B4332', stmt: '' },

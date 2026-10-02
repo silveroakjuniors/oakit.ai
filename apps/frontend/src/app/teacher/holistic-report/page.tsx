@@ -45,18 +45,17 @@ interface SavedItem {
 }
 
 type Term   = 'mid_term' | 'final_term';
-type Rating = 'E' | 'V' | 'G' | 'S' | 'P' | '';
+type Rating = 'E' | 'V' | 'G' | 'S' | 'P' | 'B' | 'I' | '';
 type View   = 'list' | 'pick' | 'form' | 'detail';
 
-// ── Scale definitions (Option B — DB stores E/V/G/S, display changes per class) ──
-// -- Scale definitions (Option B - DB stores E/V/G/S/P) -----------------------
+// ── Scale definitions ─────────────────────────────────────────────────────────
 
-// PG/Nursery: Growth Statements (E/V/G/S only)
+// PG/Nursery: Growth Statements — codes E, G, B, I (first letter of each label)
 const GROWTH_STATEMENTS: { value: Rating; label: string; statement: string; color: string }[] = [
   { value: 'E', label: 'Exploring',          statement: 'I am beginning to discover this.',             color: '#6B9E7A' },
-  { value: 'V', label: 'Growing',            statement: 'I am developing this with encouragement.',     color: '#4A8C6A' },
-  { value: 'G', label: 'Becoming Confident', statement: 'I am using this skill more consistently.',     color: '#2D7A5A' },
-  { value: 'S', label: 'Independent',        statement: 'I can use this skill confidently on my own.', color: '#1B4332' },
+  { value: 'G', label: 'Growing',            statement: 'I am developing this with encouragement.',     color: '#4A8C6A' },
+  { value: 'B', label: 'Becoming Confident', statement: 'I am using this skill more consistently.',     color: '#2D7A5A' },
+  { value: 'I', label: 'Independent',        statement: 'I can use this skill confidently on my own.', color: '#1B4332' },
 ];
 
 // Jr.KG / Sr.KG / All other classes: E/V/G/S/P (unchanged)
