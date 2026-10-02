@@ -40,7 +40,8 @@ interface StudentStats {
 interface SavedItem {
   id: string; student_id: string; student_name: string;
   class_name: string; section_label: string;
-  term: string; status: 'draft' | 'shared'; updated_at: string;
+  term: string; status: 'draft' | 'shared';
+  academic_year: string; updated_at: string;
 }
 
 type Term   = 'mid_term' | 'final_term';
@@ -367,23 +368,27 @@ export default function HolisticReportPage() {
     setViewingId(item.id);
     setView('detail');
     setLoadingDetail(true);
-    const year = academicYearRef.current || academicYear;
-    // Set pgMode from the saved item's class_name (reliable, always present)
-    const isPN = isPgNursery(item.class_name);
+    // Use the year from the saved item — this is the authoritative source
+    const year = (item as any).academic_year || academicYearRef.current || academicYear;
     try {
       const student = students.find(s => s.id === item.student_id);
       const classId = student?.class_id || '';
+      const yearParam = year ? `?year=${year}` : '';
       const [rd, td, statsData] = await Promise.all([
-        apiGet<ReportData>(`/api/v1/teacher/holistic-report/${item.student_id}/${item.term}?year=${year}`, token),
+        apiGet<ReportData>(`/api/v1/teacher/holistic-report/${item.student_id}/${item.term}${yearParam}`, token)
+          .catch(() => null),
         classId
-          ? apiGet<{ domains: Domain[] }>(`/api/v1/teacher/holistic-report/template/${classId}?year=${year}`, token).catch(() => ({ domains: [] }))
-          : Promise.resolve({ domains: [] }),
+          ? apiGet<{ domains: Domain[] }>(`/api/v1/teacher/holistic-report/template/${classId}${yearParam}`, token).catch(() => ({ domains: [] as Domain[] }))
+          : Promise.resolve({ domains: [] as Domain[] }),
         apiGet<StudentStats>(`/api/v1/teacher/holistic-report/stats/${item.student_id}?to=${new Date().toISOString().split('T')[0]}`, token).catch(() => null),
       ]);
       setDetailReport(rd);
       setDetailDomains(td.domains || []);
       setStudentStats(statsData);
-    } catch { setDetailReport(null); }
+    } catch (e) {
+      console.error('[openDetail]', e);
+      setDetailReport(null);
+    }
     finally { setLoadingDetail(false); }
   }
 
@@ -396,7 +401,9 @@ export default function HolisticReportPage() {
     setSelStudent(student);
     setSelTerm(item.term as Term);
     setView('form');
-    await loadForm(student, item.term as Term, academicYearRef.current || academicYear);
+    // Always use the report's own academic_year — not the calendar year — to avoid mismatch
+    const reportYear = item.academic_year || academicYearRef.current || academicYear;
+    await loadForm(student, item.term as Term, reportYear);
   }
 
   // ── load form ──────────────────────────────────────────────────────────────
@@ -409,8 +416,10 @@ export default function HolisticReportPage() {
     try {
       const yearParam = activeYear ? `?year=${activeYear}` : '';
       const [td, sd, rd, stats] = await Promise.all([
-        apiGet<{ domains: Domain[] }>(`/api/v1/teacher/holistic-report/template/${student.class_id}${yearParam}`, token),
-        apiGet<{ subjects: string[] }>(`/api/v1/teacher/holistic-report/subjects/${student.class_id}`, token),
+        apiGet<{ domains: Domain[] }>(`/api/v1/teacher/holistic-report/template/${student.class_id}${yearParam}`, token)
+          .catch(() => ({ domains: [] as Domain[] })),
+        apiGet<{ subjects: string[] }>(`/api/v1/teacher/holistic-report/subjects/${student.class_id}`, token)
+          .catch(() => ({ subjects: [] as string[] })),
         activeYear
           ? apiGet<ReportData>(`/api/v1/teacher/holistic-report/${student.id}/${term}${yearParam}`, token).catch(() => null)
           : Promise.resolve(null),
@@ -529,26 +538,26 @@ export default function HolisticReportPage() {
   }
 
   async function handleShare(reportId: string) {
-    if (!confirm('Share this report with parent?')) return;
+    if (!confirm('Send this report to the parent? They will receive a notification.')) return;
     setSharing(true); setMsg('');
     try {
       const res = await apiPost<any>(`/api/v1/teacher/holistic-report/${reportId}/share`, {}, token);
       setReport(p => p ? { ...p, status: 'shared' } : p);
       setSaved(p => p.map(r => r.id === reportId ? { ...r, status: 'shared' as const } : r));
-      setMsg(`Report shared - ${res.parents_notified} parent(s) notified`);
-      loadSaved(academicYearRef.current || academicYear);
+      const n = res.parents_notified ?? 0;
+      setMsg(n > 0 ? `Sent - ${n} parent(s) notified` : 'Report sent (no linked parents found — check parent accounts)');
     } catch (e: unknown) { setMsg(e instanceof Error ? e.message : 'Failed to share'); }
     finally { setSharing(false); }
   }
 
   async function handleRecall(reportId: string) {
-    if (!confirm('Recall this report? The parent will no longer be able to see it.')) return;
+    if (!confirm('Recall this report? The parent will no longer be able to see it. You can resend it after making changes.')) return;
     setSharing(true); setMsg('');
     try {
       await apiPost<any>(`/api/v1/teacher/holistic-report/${reportId}/recall`, {}, token);
       setReport(p => p ? { ...p, status: 'draft' } : p);
       setSaved(p => p.map(r => r.id === reportId ? { ...r, status: 'draft' as const } : r));
-      setMsg('Report recalled - parent can no longer see it');
+      setMsg('Recalled - parent can no longer see this report');
     } catch (e: unknown) { setMsg(e instanceof Error ? e.message : 'Failed to recall'); }
     finally { setSharing(false); }
   }
@@ -1118,6 +1127,12 @@ export default function HolisticReportPage() {
   }
 
   // ── LIST VIEW ──────────────────────────────────────────────────────────────
+  // Sort: shared first, then by updated_at desc
+  const sortedSaved = [...saved].sort((a, b) => {
+    if (a.status === b.status) return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    return a.status === 'shared' ? -1 : 1;
+  });
+
   return (
     <div className="min-h-screen bg-neutral-50 pb-24">
       <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
@@ -1134,6 +1149,7 @@ export default function HolisticReportPage() {
       </header>
 
       <div className="p-4 max-w-2xl mx-auto flex flex-col gap-4">
+        {/* Term filter */}
         <div className="flex gap-2">
           {([['', 'All'], ['mid_term', 'Mid-Term'], ['final_term', 'Final']] as [Term | '', string][]).map(([k, label]) => (
             <button key={k} onClick={() => setFilterTerm(k)}
@@ -1145,7 +1161,7 @@ export default function HolisticReportPage() {
 
         {loadingSaved ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-        ) : saved.length === 0 ? (
+        ) : sortedSaved.length === 0 ? (
           <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
             <FileText className="w-8 h-8 text-neutral-200 mx-auto mb-3" />
             <p className="text-sm font-medium text-neutral-500">No reports yet</p>
@@ -1156,31 +1172,86 @@ export default function HolisticReportPage() {
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {saved.map(r => (
-              <div key={r.id} className="bg-white border border-neutral-200 rounded-2xl p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">{r.student_name.charAt(0)}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-neutral-800 truncate">{r.student_name}</p>
-                  <p className="text-xs text-neutral-400">{r.class_name} - {r.section_label}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-0.5 rounded-lg">{TERM_LABELS[r.term as Term] || r.term}</span>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${r.status === 'shared' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {r.status === 'shared' ? 'Shared' : 'Draft'}
-                    </span>
-                    {isPgNursery(r.class_name) && <span className="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-medium">Growth Statements</span>}
-                    <span className="text-xs text-neutral-300">{fmtDate(r.updated_at)}</span>
+          <div className="flex flex-col gap-3">
+            {sortedSaved.map(r => {
+              const isShared = r.status === 'shared';
+              return (
+                <div key={r.id}
+                  className={`bg-white rounded-2xl overflow-hidden border transition-colors ${isShared ? 'border-emerald-200' : 'border-neutral-200'}`}
+                  style={isShared ? { borderLeftWidth: 4, borderLeftColor: '#10b981' } : { borderLeftWidth: 4, borderLeftColor: '#e5e7eb' }}>
+
+                  {/* Top row — student info + view/edit/delete icons */}
+                  <div className="px-4 pt-3.5 pb-2 flex items-start gap-3">
+                    {/* Avatar */}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${isShared ? 'bg-emerald-100 text-emerald-800' : 'bg-primary/10 text-primary'}`}>
+                      {r.student_name.charAt(0)}
+                    </div>
+
+                    {/* Name + meta */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-neutral-800 truncate">{r.student_name}</p>
+                      <p className="text-xs text-neutral-400">{r.class_name} - {r.section_label}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-0.5 rounded-lg">{TERM_LABELS[r.term as Term] || r.term}</span>
+                        {isShared ? (
+                          <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />Sent to Parents
+                          </span>
+                        ) : (
+                          <span className="text-xs font-medium bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                            Draft
+                          </span>
+                        )}
+                        <span className="text-xs text-neutral-300">{fmtDate(r.updated_at)}</span>
+                      </div>
+                    </div>
+
+                    {/* Icon actions */}
+                    <div className="flex gap-0.5 shrink-0 mt-0.5">
+                      <button onClick={() => openDetail(r)} title="View" className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-primary transition-colors"><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => openEdit(r)} title="Edit" className="p-1.5 rounded-lg hover:bg-neutral-100 text-neutral-400 hover:text-primary transition-colors"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => handleDelete(r.id, r.student_name)} title="Delete" className="p-1.5 rounded-lg hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+
+                  {/* Bottom action bar */}
+                  <div className={`px-4 pb-3 flex items-center gap-2 ${isShared ? 'border-t border-emerald-100 pt-2 bg-emerald-50/40' : 'border-t border-neutral-50 pt-2'}`}>
+                    {isShared ? (
+                      <>
+                        {/* Shared: show Resend + Recall */}
+                        <button
+                          onClick={() => handleShare(r.id)}
+                          disabled={sharing}
+                          className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50">
+                          <Send className="w-3.5 h-3.5" />Resend
+                        </button>
+                        <button
+                          onClick={() => handleRecall(r.id)}
+                          disabled={sharing}
+                          className="flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50">
+                          <span className="w-3 h-3 inline-block border-2 border-amber-600 rounded-sm" />Recall
+                        </button>
+                        <span className="text-[10px] text-neutral-400 ml-1">Recall hides report from parent</span>
+                      </>
+                    ) : (
+                      <>
+                        {/* Draft: show Send to Parents */}
+                        <button
+                          onClick={() => handleShare(r.id)}
+                          disabled={sharing}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary/90 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50">
+                          <Send className="w-3.5 h-3.5" />Send to Parents
+                        </button>
+                        <span className="text-[10px] text-neutral-400">Parent will be notified</span>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={() => openDetail(r)} title="View" className="p-2 rounded-xl hover:bg-neutral-100 text-neutral-400 hover:text-primary transition-colors"><Eye className="w-4 h-4" /></button>
-                  <button onClick={() => openEdit(r)} title="Edit" className="p-2 rounded-xl hover:bg-neutral-100 text-neutral-400 hover:text-primary transition-colors"><Pencil className="w-4 h-4" /></button>
-                  <button onClick={() => handleDelete(r.id, r.student_name)} title="Delete" className="p-2 rounded-xl hover:bg-red-50 text-neutral-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
+        {msg && <p className={`text-sm font-medium text-center ${msg.includes('notified') || msg.includes('shared') ? 'text-emerald-600' : msg.includes('recalled') ? 'text-amber-600' : 'text-red-500'}`}>{msg}</p>}
       </div>
     </div>
   );

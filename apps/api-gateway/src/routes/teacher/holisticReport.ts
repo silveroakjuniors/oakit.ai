@@ -404,8 +404,35 @@ router.get('/:student_id/:term', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
     const { student_id, term } = req.params;
-    const year = (req.query.year as string) || '';
-    if (!year) return res.status(400).json({ error: 'year is required' });
+
+    // Guard: skip reserved path segments that belong to other routes
+    const RESERVED = new Set(['list', 'save', 'reformat-comment', 'students', 'template', 'subjects', 'stats']);
+    if (RESERVED.has(student_id) || term === 'pdf') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    let year = (req.query.year as string) || '';
+
+    // Auto-detect year if not provided — use the report's own year or calendar
+    if (!year) {
+      // First try to find an existing report for this student+term
+      const existingReport = await pool.query(
+        `SELECT academic_year FROM holistic_reports WHERE student_id=$1 AND term=$2 AND school_id=$3 ORDER BY updated_at DESC LIMIT 1`,
+        [student_id, term, school_id],
+      );
+      if (existingReport.rows.length > 0) {
+        year = existingReport.rows[0].academic_year;
+      } else {
+        // Fall back to calendar
+        const calRow = await pool.query(
+          `SELECT academic_year FROM school_calendar WHERE school_id=$1 ORDER BY start_date DESC LIMIT 1`,
+          [school_id],
+        );
+        year = calRow.rows[0]?.academic_year || '';
+      }
+      if (!year) return res.status(400).json({ error: 'year is required' });
+    }
+
     if (!['mid_term', 'final_term'].includes(term)) {
       return res.status(400).json({ error: 'term must be mid_term or final_term' });
     }
@@ -431,8 +458,14 @@ router.get('/:student_id/:term', async (req: Request, res: Response) => {
        JOIN students  s   ON s.id   = hr.student_id
        JOIN classes   c   ON c.id   = hr.class_id
        JOIN sections  sec ON sec.id = hr.section_id
-       WHERE hr.student_id=$1 AND hr.academic_year=$2 AND hr.term=$3 AND hr.school_id=$4`,
-      [student_id, year, term, school_id],
+       WHERE hr.student_id=$1 AND (hr.academic_year=$2 OR hr.academic_year=$3) AND hr.term=$4 AND hr.school_id=$5`,
+      [
+        student_id,
+        year,
+        /^\d{4}-\d{2}$/.test(year) ? year.replace(/^(\d{4})-(\d{2})$/, '$1-20$2') : year.replace(/^(\d{4})-20(\d{2})$/, '$1-$2'),
+        term,
+        school_id,
+      ],
     );
 
     if (report.rows.length > 0) {
@@ -674,7 +707,7 @@ router.post('/:id/recall', async (req: Request, res: Response) => {
     const { user_id, school_id } = req.user!;
     const role = (req.user as any).role;
     const existing = await pool.query(
-      'SELECT id, teacher_id, status FROM holistic_reports WHERE id=\ AND school_id=\',
+      `SELECT id, teacher_id, status FROM holistic_reports WHERE id=$1 AND school_id=$2`,
       [req.params.id, school_id],
     );
     if (!existing.rows.length) return res.status(404).json({ error: 'Report not found' });
@@ -683,8 +716,8 @@ router.post('/:id/recall', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Not authorised' });
     }
     await pool.query(
-      'UPDATE holistic_reports SET status=\, shared_at=NULL, shared_by=NULL, updated_at=now() WHERE id=\',
-      ['draft', req.params.id],
+      `UPDATE holistic_reports SET status='draft', shared_at=NULL, shared_by=NULL, updated_at=now() WHERE id=$1`,
+      [req.params.id],
     );
     return res.json({ message: 'Report recalled - parent can no longer see it' });
   } catch (err) {
@@ -865,12 +898,24 @@ router.get('/list', async (req: Request, res: Response) => {
 
     if (!sectionIds.length) return res.json([]);
 
-    const conditions: string[] = ['hr.school_id=$1', 'hr.section_id=ANY($2::uuid[])', 'hr.academic_year=$3'];
-    const params: any[] = [school_id, sectionIds, year];
+    // Build year alternatives to handle both 2026-27 and 2026-2027 formats
+    function yearAlt(y: string): string {
+      if (/^\d{4}-\d{2}$/.test(y)) return y.replace(/^(\d{4})-(\d{2})$/, '$1-20$2'); // 2026-27 → 2026-2027
+      if (/^\d{4}-\d{4}$/.test(y)) return y.replace(/^(\d{4})-20(\d{2})$/, '$1-$2'); // 2026-2027 → 2026-27
+      return y;
+    }
+    const yearAltVal = yearAlt(year);
+
+    const conditions: string[] = [
+      'hr.school_id=$1',
+      'hr.section_id=ANY($2::uuid[])',
+      `(hr.academic_year=$3 OR hr.academic_year=$4)`,
+    ];
+    const params: any[] = [school_id, sectionIds, year, yearAltVal];
     if (term) { conditions.push(`hr.term=$${params.length + 1}`); params.push(term); }
 
     const result = await pool.query(
-      `SELECT hr.id, hr.student_id, hr.term, hr.status, hr.updated_at,
+      `SELECT hr.id, hr.student_id, hr.term, hr.status, hr.updated_at, hr.academic_year,
               s.name AS student_name,
               c.name AS class_name, sec.label AS section_label
        FROM holistic_reports hr
