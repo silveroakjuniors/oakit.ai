@@ -793,8 +793,27 @@ router.delete('/:id', async (req: Request, res: Response) => {
 router.get('/list', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
-    const { year, term, section_id } = req.query as Record<string, string>;
-    if (!year) return res.status(400).json({ error: 'year is required' });
+    const { term, section_id } = req.query as Record<string, string>;
+    let year = (req.query.year as string) || '';
+
+    // Auto-detect academic year if not provided
+    if (!year) {
+      const calRow = await pool.query(
+        `SELECT academic_year FROM school_calendar
+         WHERE school_id=$1 AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE
+         ORDER BY start_date DESC LIMIT 1`,
+        [school_id],
+      );
+      year = calRow.rows[0]?.academic_year || '';
+      if (!year) {
+        const latestCal = await pool.query(
+          'SELECT academic_year FROM school_calendar WHERE school_id=$1 ORDER BY start_date DESC LIMIT 1',
+          [school_id],
+        );
+        year = latestCal.rows[0]?.academic_year || '';
+      }
+      if (!year) return res.status(400).json({ error: 'year is required and no active school calendar found' });
+    }
 
     const role = (req.user as any).role;
     let sectionIds: string[];
