@@ -232,7 +232,75 @@ router.get('/:id', async (req: Request, res: Response) => {
     const domains = templateRow.rows[0]?.domains
       ?? (isPgNurseryClass(r.class_name) ? PG_NURSERY_DOMAINS_PARENT : STANDARD_DOMAINS_PARENT);
 
-    return res.json({ ...r, domains });
+    // Compute attendance + homework stats using calendar working days as denominator
+    // Include special days (settling period, events, etc.) — exclude only Sat/Sun + holidays
+    let attendanceStats = null;
+    let homeworkStats = null;
+    try {
+      const calRow = await pool.query(
+        `SELECT start_date, working_days FROM school_calendar WHERE school_id=$1 ORDER BY start_date DESC LIMIT 1`,
+        [school_id],
+      );
+      const today = new Date().toISOString().split('T')[0];
+      const startDate = calRow.rows[0]?.start_date
+        ? new Date(calRow.rows[0].start_date).toISOString().split('T')[0]
+        : '2026-06-01';
+      const workingDayNums: number[] = calRow.rows[0]?.working_days || [1, 2, 3, 4, 5];
+
+      // Fetch only declared school holidays (NOT special days — special days are school events)
+      const holidayRows = await pool.query(
+        `SELECT holiday_date FROM holidays
+         WHERE school_id=$1 AND holiday_date BETWEEN $2::date AND $3::date`,
+        [school_id, startDate, today],
+      );
+      const holidaySet = new Set(
+        holidayRows.rows.map((h: any) => new Date(h.holiday_date).toISOString().split('T')[0]),
+      );
+
+      // Count calendar working days (includes special days like settling period, sports day, etc.)
+      let calWorkingDays = 0;
+      const s = new Date(startDate + 'T12:00:00');
+      const e = new Date(today + 'T12:00:00');
+      for (const d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+        const dow = d.getDay() === 0 ? 7 : d.getDay(); // 1=Mon ... 7=Sun
+        const ds  = d.toISOString().split('T')[0];
+        if (workingDayNums.includes(dow) && !holidaySet.has(ds)) calWorkingDays++;
+      }
+      calWorkingDays = Math.max(calWorkingDays, 1);
+
+      const attRow = await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status='present')::int AS present,
+           COUNT(*) FILTER (WHERE status='absent')::int  AS absent
+         FROM attendance_records
+         WHERE student_id=$1 AND attend_date BETWEEN $2::date AND $3::date`,
+        [r.student_id, startDate, today],
+      );
+      const att = attRow.rows[0] || { present: 0, absent: 0 };
+      attendanceStats = {
+        present: att.present,
+        total: calWorkingDays,
+        pct: Math.round((att.present / calWorkingDays) * 100),
+      };
+
+      const hwRow = await pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status='completed')::int     AS completed,
+           COUNT(*) FILTER (WHERE status='not_submitted')::int AS not_submitted,
+           COUNT(*)::int                                        AS total_recorded
+         FROM homework_submissions
+         WHERE student_id=$1 AND homework_date BETWEEN $2::date AND $3::date`,
+        [r.student_id, startDate, today],
+      );
+      const hw = hwRow.rows[0] || { completed: 0, not_submitted: 0, total_recorded: 0 };
+      homeworkStats = {
+        completed: hw.completed,
+        total: hw.total_recorded,
+        pct: hw.total_recorded > 0 ? Math.round((hw.completed / hw.total_recorded) * 100) : null,
+      };
+    } catch { /* stats are optional — don't fail the whole request */ }
+
+    return res.json({ ...r, domains, attendanceStats, homeworkStats });
   } catch (err) {
     console.error('[parent holistic-report get]', err);
     return res.status(500).json({ error: 'Internal server error' });

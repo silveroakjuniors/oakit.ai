@@ -89,16 +89,13 @@ function ParentHolisticReportInner() {
     try {
       const data = await apiGet<ReportDetail>(`/api/v1/parent/holistic-report/${id}`, token);
       setSelected(data);
-      // Fetch attendance + homework stats for this student
-      apiGet<any>(`/api/v1/parent/child/${data.student_id}/attendance`, token)
-        .then(att => {
-          if (att?.stats) {
-            setStats(prev => ({
-              attendance: { present: att.stats.present, total: att.stats.total, pct: att.attendance_pct ?? null },
-              homework: prev?.homework ?? { completed: 0, total: 0, pct: null },
-            }));
-          }
-        }).catch(() => {});
+      // Stats are embedded in the report response — use them directly
+      if ((data as any).attendanceStats || (data as any).homeworkStats) {
+        setStats({
+          attendance: (data as any).attendanceStats ?? { present: 0, total: 0, pct: null },
+          homework:   (data as any).homeworkStats   ?? { completed: 0, total: 0, pct: null },
+        });
+      }
     } catch (e: any) {
       setDetailError(e?.message || 'Could not load report');
     }
