@@ -347,19 +347,19 @@ export default function HolisticReportPage() {
   // ── load saved ─────────────────────────────────────────────────────────────
   const loadSaved = useCallback(async (year: string) => {
     const activeYear = year || academicYearRef.current;
-    if (!activeYear) { setLoadingSaved(false); return; }
     setLoadingSaved(true);
     try {
-      let url = `/api/v1/teacher/holistic-report/list?year=${activeYear}`;
-      if (filterTerm) url += `&term=${filterTerm}`;
+      // Backend auto-detects year if not provided — always call even if year is empty
+      const yearParam = activeYear ? `?year=${activeYear}` : '';
+      const termParam = filterTerm ? `${yearParam ? '&' : '?'}term=${filterTerm}` : '';
+      const url = `/api/v1/teacher/holistic-report/list${yearParam}${termParam}`;
       setSaved(await apiGet<SavedItem[]>(url, token) || []);
     } catch { setSaved([]); }
     finally { setLoadingSaved(false); }
   }, [filterTerm, token]);
 
   useEffect(() => {
-    const year = academicYear || academicYearRef.current;
-    if (year && view === 'list') loadSaved(year);
+    if (view === 'list') loadSaved(academicYear || academicYearRef.current || '');
   }, [academicYear, view, filterTerm]);
 
   // ── open detail ────────────────────────────────────────────────────────────
@@ -534,9 +534,22 @@ export default function HolisticReportPage() {
     try {
       const res = await apiPost<any>(`/api/v1/teacher/holistic-report/${reportId}/share`, {}, token);
       setReport(p => p ? { ...p, status: 'shared' } : p);
+      setSaved(p => p.map(r => r.id === reportId ? { ...r, status: 'shared' as const } : r));
       setMsg(`Report shared - ${res.parents_notified} parent(s) notified`);
-      loadSaved(academicYear);
+      loadSaved(academicYearRef.current || academicYear);
     } catch (e: unknown) { setMsg(e instanceof Error ? e.message : 'Failed to share'); }
+    finally { setSharing(false); }
+  }
+
+  async function handleRecall(reportId: string) {
+    if (!confirm('Recall this report? The parent will no longer be able to see it.')) return;
+    setSharing(true); setMsg('');
+    try {
+      await apiPost<any>(`/api/v1/teacher/holistic-report/${reportId}/recall`, {}, token);
+      setReport(p => p ? { ...p, status: 'draft' } : p);
+      setSaved(p => p.map(r => r.id === reportId ? { ...r, status: 'draft' as const } : r));
+      setMsg('Report recalled - parent can no longer see it');
+    } catch (e: unknown) { setMsg(e instanceof Error ? e.message : 'Failed to recall'); }
     finally { setSharing(false); }
   }
 
@@ -631,6 +644,16 @@ export default function HolisticReportPage() {
                   <Button size="sm" variant="secondary" onClick={() => r.id && handleShare(r.id)} loading={sharing}>
                     <Send className="w-3.5 h-3.5 mr-1" />Share to Parent
                   </Button>
+                )}
+                {r.status === 'shared' && r.id && (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={() => r.id && handleShare(r.id)} loading={sharing}>
+                      <Send className="w-3.5 h-3.5 mr-1" />Resend
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => r.id && handleRecall(r.id)} loading={sharing}>
+                      <span className="text-amber-600">Recall</span>
+                    </Button>
+                  </>
                 )}
                 {r.id && (
                   <Button size="sm" variant="secondary" onClick={() => r.id && handleDelete(r.id, r.student_name)} loading={deleting}>

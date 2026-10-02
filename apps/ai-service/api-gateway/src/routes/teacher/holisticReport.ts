@@ -668,6 +668,32 @@ router.post('/:id/share', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/v1/teacher/holistic-report/:id/recall
+router.post('/:id/recall', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const role = (req.user as any).role;
+    const existing = await pool.query(
+      'SELECT id, teacher_id, status FROM holistic_reports WHERE id=\ AND school_id=\',
+      [req.params.id, school_id],
+    );
+    if (!existing.rows.length) return res.status(404).json({ error: 'Report not found' });
+    const r = existing.rows[0];
+    if (!['principal', 'admin'].includes(role) && r.teacher_id !== user_id) {
+      return res.status(403).json({ error: 'Not authorised' });
+    }
+    await pool.query(
+      'UPDATE holistic_reports SET status=\, shared_at=NULL, shared_by=NULL, updated_at=now() WHERE id=\',
+      ['draft', req.params.id],
+    );
+    return res.json({ message: 'Report recalled - parent can no longer see it' });
+  } catch (err) {
+    console.error('[holistic-report recall]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 router.get('/:id/pdf', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
