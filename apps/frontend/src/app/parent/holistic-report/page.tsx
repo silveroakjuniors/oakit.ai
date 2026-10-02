@@ -65,6 +65,7 @@ function ParentHolisticReportInner() {
   const [loading,       setLoading]       = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError,   setDetailError]   = useState('');
+  const [stats,         setStats]         = useState<{ attendance: { present: number; total: number; pct: number | null }; homework: { completed: number; total: number; pct: number | null } } | null>(null);
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
@@ -84,9 +85,20 @@ function ParentHolisticReportInner() {
   async function openReport(id: string) {
     setLoadingDetail(true);
     setDetailError('');
+    setStats(null);
     try {
       const data = await apiGet<ReportDetail>(`/api/v1/parent/holistic-report/${id}`, token);
       setSelected(data);
+      // Fetch attendance + homework stats for this student
+      apiGet<any>(`/api/v1/parent/child/${data.student_id}/attendance`, token)
+        .then(att => {
+          if (att?.stats) {
+            setStats(prev => ({
+              attendance: { present: att.stats.present, total: att.stats.total, pct: att.attendance_pct ?? null },
+              homework: prev?.homework ?? { completed: 0, total: 0, pct: null },
+            }));
+          }
+        }).catch(() => {});
     } catch (e: any) {
       setDetailError(e?.message || 'Could not load report');
     }
@@ -150,14 +162,36 @@ function ParentHolisticReportInner() {
           {/* Scale key — horizontal chips */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex flex-wrap gap-x-3 gap-y-1.5 items-center">
             <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wide mr-1">Scale:</span>
-            {Object.entries(scaleKey).filter(([code]) => !['V','S'].includes(code)).map(([code, info]) => (
-              <div key={code} className="flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
-                  style={{ backgroundColor: info.color }}>{code}</span>
-                <span className="text-xs text-neutral-600">{info.label}</span>
-              </div>
-            ))}
+            {Object.entries(scaleKey)
+              .filter(([code]) => isPN ? !['V','S'].includes(code) : true)
+              .map(([code, info]) => (
+                <div key={code} className="flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                    style={{ backgroundColor: info.color }}>{code}</span>
+                  <span className="text-xs text-neutral-600">{info.label}</span>
+                </div>
+              ))}
           </div>
+
+          {/* Attendance + Homework stats */}
+          {stats && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white border border-emerald-200 rounded-2xl p-4">
+                <p className="text-xs font-semibold text-emerald-700 mb-1">Attendance</p>
+                <p className="text-2xl font-bold text-emerald-800">
+                  {stats.attendance.pct !== null ? `${stats.attendance.pct}%` : '-'}
+                </p>
+                <p className="text-xs text-emerald-600 mt-0.5">{stats.attendance.present}/{stats.attendance.total} days</p>
+              </div>
+              <div className="bg-white border border-amber-200 rounded-2xl p-4">
+                <p className="text-xs font-semibold text-amber-700 mb-1">Homework</p>
+                <p className="text-2xl font-bold text-amber-800">
+                  {stats.homework.pct !== null ? `${stats.homework.pct}%` : '-'}
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5">{stats.homework.completed}/{stats.homework.total} done</p>
+              </div>
+            </div>
+          )}
 
           {/* Developmental domains */}
           {(r.domains || []).filter(d => d.sub_items?.length > 0).map(domain => {
