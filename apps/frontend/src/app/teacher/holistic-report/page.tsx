@@ -101,13 +101,45 @@ function RatingRow({ label, value, className, onChange, idx }: {
   const ratings = getScale(className);
   const isPN = isPgNursery(className);
   const cleanLabel = label.replace(/^\[(Gross|Fine) Motor\] /, '');
+
+  if (isPN) {
+    // PG/Nursery: full-width pill buttons showing label text — no single-letter codes
+    return (
+      <div className={`px-4 py-3 ${idx % 2 === 1 ? 'bg-neutral-50/40' : ''}`}>
+        <p className="text-xs text-neutral-700 mb-2 font-medium">{cleanLabel}</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {(ratings as typeof GROWTH_STATEMENTS).map(r => {
+            const selected = value === r.value;
+            return (
+              <button key={r.value}
+                onClick={() => onChange(value === r.value ? '' : r.value)}
+                title={r.statement}
+                className={`flex items-center gap-2 px-2.5 py-2 rounded-xl text-left transition-all border ${
+                  selected
+                    ? 'border-transparent text-white shadow-sm'
+                    : 'bg-white border-neutral-200 text-neutral-500 hover:border-neutral-300'
+                }`}
+                style={selected ? { backgroundColor: r.color, borderColor: r.color } : {}}>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${selected ? 'bg-white/25 text-white' : 'bg-neutral-100 text-neutral-500'}`}>
+                  {r.value}
+                </span>
+                <span className="text-xs font-semibold leading-tight">{r.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Standard (Jr.KG / Sr.KG / others): letter-square buttons in a row
   return (
     <div className={`flex items-center px-4 py-2.5 ${idx % 2 === 1 ? 'bg-neutral-50/40' : ''}`}>
       <p className="flex-1 text-xs text-neutral-700 pr-2">{cleanLabel}</p>
-      {ratings.map(r => (
+      {(ratings as typeof STANDARD_RATINGS).map(r => (
         <button key={r.value}
           onClick={() => onChange(value === r.value ? '' : r.value)}
-          title={isPN ? (r as any).statement : r.label}
+          title={r.label}
           className={`w-10 h-7 flex items-center justify-center rounded-lg mx-0.5 text-xs font-bold transition-all ${
             value === r.value ? 'text-white shadow-sm scale-105' : 'bg-neutral-100 text-neutral-400 hover:bg-neutral-200'
           }`}
@@ -939,14 +971,17 @@ export default function HolisticReportPage() {
                       </button>
                       {isExp && (
                         <div className="divide-y divide-neutral-50">
-                          <div className="flex items-center px-4 py-1.5 bg-neutral-50/50">
-                            <p className="flex-1 text-xs text-neutral-400">Development Area</p>
-                            {scaleForForm.map(r => (
-                              <div key={r.value} className="w-10 text-center">
-                                <span className="text-[10px] font-bold" style={{ color: r.color }}>{r.value}</span>
-                              </div>
-                            ))}
-                          </div>
+                          {/* Column headers — only for standard (letter-square) format */}
+                          {!pgMode && (
+                            <div className="flex items-center px-4 py-1.5 bg-neutral-50/50">
+                              <p className="flex-1 text-xs text-neutral-400">Development Area</p>
+                              {scaleForForm.map(r => (
+                                <div key={r.value} className="w-10 text-center">
+                                  <span className="text-[10px] font-bold" style={{ color: r.color }}>{r.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                           {isPhysical && grossItems.length > 0 && (
                             <>
                               <div className="px-4 py-1 bg-neutral-100"><p className="text-xs font-semibold text-neutral-500">Gross Motor</p></div>
