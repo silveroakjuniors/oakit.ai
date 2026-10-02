@@ -225,7 +225,7 @@ function ParentHolisticReportInner() {
           {Object.keys(r.subject_grades || {}).length > 0 && (
             <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
               <div className="px-4 py-2" style={{ background: '#EBF5EE' }}>
-                <p className="text-sm font-semibold" style={{ color: G }}>Academic Assessment</p>
+                <p className="text-sm font-semibold" style={{ color: G }}>Academic Development</p>
               </div>
               <div className="divide-y divide-neutral-100">
                 {Object.entries(r.subject_grades).filter(([, v]) => v).map(([subject, grade], idx) => {

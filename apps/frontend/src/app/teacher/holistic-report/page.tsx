@@ -235,7 +235,7 @@ function HolisticReportPrint({ report, domains, stats, id }: {
       {!isPN && Object.keys(report.subject_grades || {}).length > 0 && (
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, overflow: 'hidden', marginBottom: 12 }}>
           <div style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb', padding: '8px 14px' }}>
-            <p style={{ fontSize: 11, fontWeight: 800, color: G, textTransform: 'uppercase' as const, margin: 0, letterSpacing: 0.6 }}>Result of Assessment Activities</p>
+            <p style={{ fontSize: 11, fontWeight: 800, color: G, textTransform: 'uppercase' as const, margin: 0, letterSpacing: 0.6 }}>Academic Development</p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, padding: 12 }}>
             {Object.entries(report.subject_grades).filter(([, v]) => v).map(([subject, grade]) => {
@@ -748,7 +748,7 @@ export default function HolisticReportPage() {
               {/* Subject grades — standard only */}
               {!isPN && Object.keys(r.subject_grades || {}).length > 0 && (
                 <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                  <div className="px-4 py-2.5 bg-primary/5"><p className="text-sm font-semibold text-primary">Result of Assessment Activities</p></div>
+                  <div className="px-4 py-2.5 bg-primary/5"><p className="text-sm font-semibold text-primary">Academic Development</p></div>
                   <div className="divide-y divide-neutral-50">
                     {Object.entries(r.subject_grades).filter(([, v]) => v).map(([subject, grade], idx) => (
                       <div key={subject} className={`flex items-center justify-between px-4 py-2.5 ${idx % 2 === 1 ? 'bg-neutral-50/40' : ''}`}>
@@ -1009,7 +1009,7 @@ export default function HolisticReportPage() {
               {!pgMode && subjects.length > 0 && (
                 <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 bg-primary"><p className="text-sm font-semibold text-white">
-                    {isJrOrSrKg(selStudent?.class_name || '') ? 'Academic Assessment' : 'Section B - Result of Assessment Activities'}
+                    {isJrOrSrKg(selStudent?.class_name || '') ? 'Academic Development' : 'Section B - Academic Development'}
                   </p></div>
                   <div className="flex items-center px-4 py-1.5 bg-neutral-50">
                     <p className="flex-1 text-xs text-neutral-400">Subject</p>

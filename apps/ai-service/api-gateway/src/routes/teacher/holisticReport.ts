@@ -1231,7 +1231,7 @@ async function generateHolisticReportPDF(report: any, domains: any[], stats: any
       const secY = doc.y;
       doc.roundedRect(MARGIN, secY, W, 16).fill(BG);
       doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff')
-        .text('RESULT OF ASSESSMENT ACTIVITIES', MARGIN + 6, secY + 4, { width: W - 12 });
+        .text('ACADEMIC DEVELOPMENT', MARGIN + 6, secY + 4, { width: W - 12 });
       doc.y = secY + 20;
 
       const colW = (W - 8) / 3;
