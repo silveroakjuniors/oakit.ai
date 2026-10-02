@@ -6,12 +6,36 @@ import Link from 'next/link';
 import type { FeedPost, FeedResponse } from '@/features/feed/types';
 
 // ── Mini image carousel ───────────────────────────────────────────────────────
-function MiniCarousel({ images }: { images: string[] }) {
+function extractDriveId(url: string): string | null {
+  if (!url) return null;
+  if (url.startsWith('gdrive:')) return url.slice(7);
+  const m = url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  return m ? m[1] : null;
+}
+
+function toDisplaySrc(url: string, isVideo = false): string {
+  if (!url) return '';
+  const id = extractDriveId(url);
+  if (id) return isVideo
+    ? `https://drive.google.com/uc?export=download&id=${id}&confirm=t`
+    : `https://lh3.googleusercontent.com/d/${id}`;
+  if (url.startsWith('https://') || url.startsWith('http://')) return url;
+  return url;
+}
+
+function MiniCarousel({ images, mediaTypes }: { images: string[]; mediaTypes?: string[] }) {
   const [idx, setIdx] = useState(0);
   if (!images.length) return null;
+  const isVid = mediaTypes?.[idx] === 'video';
+  const src = toDisplaySrc(images[idx], isVid);
   return (
     <div className="relative bg-neutral-100 rounded-xl overflow-hidden" style={{ aspectRatio: '16/9' }}>
-      <img src={images[idx]} alt="" className="w-full h-full object-cover" loading="lazy" />
+      {isVid ? (
+        <video src={src} className="w-full h-full object-cover" muted playsInline preload="metadata"
+          onError={e => (e.currentTarget.style.display = 'none')} />
+      ) : (
+        <img src={src} alt="" className="w-full h-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
+      )}
       {images.length > 1 && (
         <>
           {idx > 0 && (
@@ -158,7 +182,7 @@ function FeedItem({ post, token, onDelete }: { post: FeedPost; token: string; on
           Delete
         </button>
       </div>
-      <MiniCarousel images={post.images} />
+      <MiniCarousel images={post.images} mediaTypes={post.media_types} />
       <div className="flex items-center gap-3 px-3 py-2">
         <button onClick={handleLike}
           className={`flex items-center gap-1 text-xs transition-all ${liked ? 'text-red-500' : 'text-neutral-400 hover:text-red-400'}`}>

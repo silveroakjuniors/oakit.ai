@@ -18,12 +18,13 @@ import SessionRecorder from '@/components/SessionRecorder';
 import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
+import GoogleDriveUpload from '@/features/teacher/GoogleDriveUpload';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
   ChevronDown, ChevronUp, Send, Paperclip, BookOpen, Sparkles,
   LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X, ClipboardList,
-  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet
+  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet, Megaphone
 } from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
@@ -225,6 +226,13 @@ export default function TeacherPlanner() {
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
   const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
+  // Google Drive config for class photos link
+  const [config, setConfig] = useState<{
+    google_drive_enabled: boolean;
+    drive_folder_url: string | null;
+    class_folder_name: string | null;
+  } | null>(null);
+
   // Per-chunk homework state (Req 1.1–1.3, 6.5)
   interface HomeworkState { status: 'none' | 'saved'; record?: { id: string; chunk_id: string; topic_label?: string; raw_text: string; formatted_text: string; teacher_comments?: string } }
   const [homeworkByChunk, setHomeworkByChunk] = useState<Record<string, HomeworkState>>({});
@@ -240,6 +248,8 @@ export default function TeacherPlanner() {
   const [streak, setStreak] = useState<{ current_streak: number; best_streak: number; badge: string | null } | null>(null);
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
   const [showStreakInfo, setShowStreakInfo] = useState(false);
+  const [announcements, setAnnouncements] = useState<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>([]);
+  const [activeAnnouncement, setActiveAnnouncement] = useState<{ id: string; title: string; body: string; created_at: string; author_name: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const initialLoadDone = useRef(false);
   const todayCompletedRef = useRef(false);
@@ -264,7 +274,21 @@ export default function TeacherPlanner() {
   async function loadAll() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
-    if (!todayCompletedRef.current) await autoShowDailyPlan(effectiveToday);
+    // Load Drive config for the class photos button (non-critical)
+    fetch(`${API_BASE}/api/v1/teacher/media/config`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }).then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.google_drive_enabled) setConfig(data); })
+      .catch(() => {});
+    // Run AI plan and announcements in parallel — don't let AI block announcements
+    if (!todayCompletedRef.current) autoShowDailyPlan(effectiveToday);
+    // Load announcements (non-critical)
+    apiGet<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>(
+      '/api/v1/teacher/announcements', token
+    ).then(data => {
+      setAnnouncements(data);
+    }).catch(() => {});
   }
 
   async function loadStreak() {
@@ -779,6 +803,9 @@ export default function TeacherPlanner() {
           />
         )}
 
+        {/* Google Drive Upload */}
+        <GoogleDriveUpload token={token} />
+
         {/* Today completed */}
         {todayCompleted ? (
           <>
@@ -828,7 +855,7 @@ export default function TeacherPlanner() {
                    tomorrowPlan.status === 'revision'  ? tomorrowPlan.special_label || 'Revision Day' :
                    tomorrowPlan.status === 'exam'      ? tomorrowPlan.special_label || 'Exam Day' :
                    tomorrowPlan.status === 'event'     ? tomorrowPlan.special_label || 'Special Event' :
-                   tomorrowPlan.chunks?.length > 0     ? `${tomorrowPlan.chunks.length} topic${tomorrowPlan.chunks.length > 1 ? 's' : ''} planned` :
+                   tomorrowPlan.chunks?.length > 0     ? tomorrowPlan.chunks.map((c: any) => c.topic_label || 'Activity').join(', ') :
                    tomorrowPlan.special_label          ? tomorrowPlan.special_label :
                    'Regular school day'}
                 </p>
@@ -919,9 +946,31 @@ export default function TeacherPlanner() {
               );
             })()}
 
-            {/* Photo Suggestions */}
-            {!todayCompleted && plan?.chunks?.length > 0 && (
-              <PhotoSuggestions token={token} sectionId={sectionId} planDate={today} />
+            {/* Google Drive Photos Button */}
+            {config?.google_drive_enabled && config?.drive_folder_url && (
+              <a
+                href={config.drive_folder_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-4 py-3 bg-white rounded-2xl border border-neutral-100 shadow-sm hover:shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-800">View Class Photos</p>
+                    <p className="text-[10px] text-neutral-400 mt-0.5">{config.class_folder_name || 'Google Drive'}</p>
+                  </div>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-emerald-600 transition-colors">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </a>
             )}
 
             {/* Quick help chips */}
@@ -986,6 +1035,7 @@ export default function TeacherPlanner() {
             { label: 'My HR', sub: 'Salary · Leave · Offer letter', icon: Wallet, gradient: 'from-teal-500 to-cyan-600', hover: 'hover:border-teal-200 hover:bg-teal-50/40', path: '/teacher/hr' },
             { label: 'Calendar', sub: 'Holidays & special days', icon: CalendarDays, gradient: 'from-cyan-500 to-sky-600', hover: 'hover:border-cyan-200 hover:bg-cyan-50/40', path: '/teacher/calendar' },
             { label: 'Class Performance', sub: 'Stats & insights', icon: TrendingUp, gradient: 'from-indigo-500 to-blue-600', hover: 'hover:border-indigo-200 hover:bg-indigo-50/40', path: '/teacher/class-performance' },
+            { label: 'Attendance Trends', sub: 'Historical stats', icon: CalendarDays, gradient: 'from-emerald-500 to-teal-600', hover: 'hover:border-emerald-200 hover:bg-emerald-50/40', path: '/teacher/attendance-trends' },
           ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
             <button key={path} onClick={() => router.push(path)}
               className={`flex items-center gap-3 p-3.5 bg-white border border-neutral-100 rounded-2xl transition-all shadow-sm group ${hover}`}>
@@ -1020,6 +1070,66 @@ export default function TeacherPlanner() {
               </div>
             )}
           </Card>
+        )}
+
+        {/* School Announcements */}
+        {announcements.length > 0 && (
+          <Card padding="sm" className="mt-1 border-primary-100 bg-primary-50/30">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-7 h-7 rounded-xl bg-primary-100 flex items-center justify-center">
+                <Megaphone className="w-3.5 h-3.5 text-primary-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-neutral-800">School Announcements</h2>
+              <span className="ml-auto text-[10px] font-semibold text-primary-600 bg-primary-100 px-2 py-0.5 rounded-full">{announcements.length}</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {announcements.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => setActiveAnnouncement(a)}
+                  className="text-left border-l-4 border-primary-400 pl-3 py-1.5 hover:bg-primary-50 rounded-r-xl transition-colors w-full"
+                >
+                  <p className="text-sm font-semibold text-neutral-800 line-clamp-1">{a.title}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{a.body}</p>
+                  <p className="text-[10px] text-neutral-400 mt-1">{new Date(a.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Announcement detail modal */}
+        {activeAnnouncement && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-4 pb-4 sm:pb-0"
+            onClick={() => setActiveAnnouncement(null)}>
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-primary-100 flex items-center justify-center shrink-0">
+                    <Megaphone className="w-4 h-4 text-primary-600" />
+                  </div>
+                  <p className="text-sm font-bold text-neutral-900 leading-snug">{activeAnnouncement.title}</p>
+                </div>
+                <button onClick={() => setActiveAnnouncement(null)}
+                  className="ml-3 w-7 h-7 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center shrink-0 transition-colors">
+                  <X className="w-3.5 h-3.5 text-neutral-500" />
+                </button>
+              </div>
+              <div className="px-5 py-4">
+                <p className="text-sm text-neutral-700 leading-relaxed whitespace-pre-wrap">{activeAnnouncement.body}</p>
+              </div>
+              <div className="px-5 pb-4 flex items-center justify-between">
+                <p className="text-xs text-neutral-400">
+                  By {activeAnnouncement.author_name} &middot; {new Date(activeAnnouncement.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+                <button onClick={() => setActiveAnnouncement(null)}
+                  className="text-xs font-semibold text-primary-600 px-3 py-1.5 bg-primary-50 hover:bg-primary-100 rounded-xl transition-colors">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
   );

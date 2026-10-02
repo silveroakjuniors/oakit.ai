@@ -64,8 +64,9 @@ interface InsightsData {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(n: number) {
-  if (n >= 10_00_000) return `₹${(n / 10_00_000).toFixed(1)}L`;
-  if (n >= 1_000)     return `₹${(n / 1_000).toFixed(0)}K`;
+  if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)}Cr`;
+  if (n >= 10_00_000)   return `₹${(n / 10_00_000).toFixed(1)}L`;
+  if (n >= 1_000)       return `₹${(n / 1_000).toFixed(0)}K`;
   return `₹${n.toFixed(0)}`;
 }
 
@@ -128,11 +129,11 @@ function DrillList({
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-neutral-800 truncate">{person.name}</p>
               {type === 'parent' && person.children_names && (
-                <p className="text-[9px] text-neutral-400 truncate">👶 {person.children_names}</p>
+                <p className="text-[9px] text-neutral-400 truncate">{person.children_names}</p>
               )}
               {type === 'teacher' && (
                 <p className="text-[9px] text-neutral-400">
-                  {person.plans_30d ?? 0} plans · {person.attendance_30d ?? 0} att · 🔥{person.streak ?? 0}
+                  {person.plans_30d ?? 0} plans · {person.attendance_30d ?? 0} att · streak {person.streak ?? 0}
                 </p>
               )}
               {type === 'parent' && (
@@ -185,7 +186,7 @@ export default function InsightsPanel({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiGet<InsightsData>('/api/v1/principal/insights', token)
+    apiGet<InsightsData>('/api/v1/principal/context/insights', token)
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -376,9 +377,9 @@ export default function InsightsPanel({ token }: { token: string }) {
           <Link href="/principal/finance/fee-structures"
             className="mt-3 flex items-center justify-between px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors">
             <p className="text-xs font-semibold text-amber-800">
-              ⚠ {fa.students_without_fee} students have no fee assigned
+              {fa.students_without_fee} students have no fee assigned
             </p>
-            <span className="text-xs text-amber-600 font-bold">Fix →</span>
+            <span className="text-xs text-amber-600 font-bold">Fix &rarr;</span>
           </Link>
         )}
       </Section>

@@ -4,7 +4,7 @@ import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middle
 import { redis } from '../../lib/redis';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 const YT_SEARCH = 'https://www.googleapis.com/youtube/v3/search';
 const YT_VIDEOS = 'https://www.googleapis.com/youtube/v3/videos';

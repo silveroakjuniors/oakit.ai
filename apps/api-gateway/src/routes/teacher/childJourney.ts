@@ -1,4 +1,4 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard } from '../../middleware/auth';
@@ -10,7 +10,7 @@ router.use(jwtVerify, schoolScope);
 const AI_SERVICE_URL = () => process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
 // --- POST /teacher/child-journey - create/update entry -----------------------
-router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
+router.post('/', roleGuard('teacher', 'class teacher', 'supporting teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
     const { student_id, entry_date, entry_type = 'daily', raw_text, send_to_parent = false } = req.body;
@@ -48,7 +48,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
 
     const date = entry_date || today;
 
-    // Upsert — one entry per student per date per type
+    // Upsert � one entry per student per date per type
     let r;
     try {
       r = await pool.query(
@@ -65,7 +65,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
       );
     } catch (upsertErr: any) {
       if (upsertErr.code === '23505') {
-        // Unique constraint mismatch — fallback to manual update
+        // Unique constraint mismatch � fallback to manual update
         r = await pool.query(
           `UPDATE child_journey_entries
            SET raw_text = $1, beautified_text = $2, is_sent_to_parent = $3, sent_at = $4, updated_at = now()
@@ -87,7 +87,7 @@ router.post('/', roleGuard('teacher'), async (req: Request, res: Response) => {
 });
 
 // --- GET /teacher/child-journey?section_id=&date= - list entries for section -
-router.get('/', roleGuard('teacher'), async (req: Request, res: Response) => {
+router.get('/', roleGuard('teacher', 'class teacher', 'supporting teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
     const { section_id, date, student_id } = req.query as Record<string, string>;
@@ -114,8 +114,8 @@ router.get('/', roleGuard('teacher'), async (req: Request, res: Response) => {
   }
 });
 
-// ─── PUT /teacher/child-journey/:id — edit an existing entry ───────────────
-router.put('/:id', roleGuard('teacher'), async (req: Request, res: Response) => {
+// --- PUT /teacher/child-journey/:id � edit an existing entry ---------------
+router.put('/:id', roleGuard('teacher', 'class teacher', 'supporting teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
     const { raw_text, send_to_parent } = req.body;
@@ -171,8 +171,8 @@ router.put('/:id', roleGuard('teacher'), async (req: Request, res: Response) => 
   }
 });
 
-// ─── DELETE /teacher/child-journey/:id — delete an entry ───────────────────
-router.delete('/:id', roleGuard('teacher'), async (req: Request, res: Response) => {
+// --- DELETE /teacher/child-journey/:id � delete an entry -------------------
+router.delete('/:id', roleGuard('teacher', 'class teacher', 'supporting teacher'), async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
     const r = await pool.query(
@@ -191,7 +191,7 @@ router.delete('/:id', roleGuard('teacher'), async (req: Request, res: Response) 
   }
 });
 
-// ─── GET /parent/child-journey/:studentId/snapshot — daily AI snapshot ───────────────────────
+// --- GET /parent/child-journey/:studentId/snapshot � daily AI snapshot -----------------------
 // Generates a warm 3-sentence child snapshot based on age + recent journey entries.
 // Cached per student per day - regenerates next day automatically.
 router.get('/parent/:studentId/snapshot', async (req: Request, res: Response) => {
