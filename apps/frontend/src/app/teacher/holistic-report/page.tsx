@@ -637,7 +637,7 @@ export default function HolisticReportPage() {
 
     return (
       <div className="min-h-screen bg-neutral-50 pb-24">
-        <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
+        <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 flex items-center gap-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: 12 }}>
           <button onClick={() => setView('list')} className="p-1 rounded-lg hover:bg-neutral-100">
             <ChevronLeft className="w-5 h-5 text-neutral-600" />
           </button>
@@ -794,7 +794,7 @@ export default function HolisticReportPage() {
   if (view === 'pick') {
     return (
       <div className="min-h-screen bg-neutral-50 pb-24">
-        <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
+        <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 flex items-center gap-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: 12 }}>
           <button onClick={() => setView('list')} className="p-1 rounded-lg hover:bg-neutral-100">
             <ChevronLeft className="w-5 h-5 text-neutral-600" />
           </button>
@@ -851,7 +851,7 @@ export default function HolisticReportPage() {
 
     return (
       <div className="min-h-screen bg-neutral-50 pb-24">
-        <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
+        <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 flex items-center gap-3" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: 12 }}>
           <button onClick={() => { setView('list'); setSelStudent(null); setMsg(''); }} className="p-1 rounded-lg hover:bg-neutral-100">
             <ChevronLeft className="w-5 h-5 text-neutral-600" />
           </button>
@@ -1162,7 +1162,8 @@ export default function HolisticReportPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50 pb-24">
-      <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 py-3 flex items-center gap-3">
+      <header className="sticky top-0 z-10 bg-white border-b border-neutral-100 px-4 flex items-center gap-3"
+        style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: 12 }}>
         <button onClick={() => router.back()} className="p-1 rounded-lg hover:bg-neutral-100">
           <ChevronLeft className="w-5 h-5 text-neutral-600" />
         </button>
