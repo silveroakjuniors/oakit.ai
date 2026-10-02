@@ -678,11 +678,10 @@ router.post('/:id/share', async (req: Request, res: Response) => {
     const parents = await pool.query(
       `SELECT DISTINCT psl.parent_id
        FROM parent_student_links psl
-       JOIN users u ON u.id = psl.parent_id
-       WHERE psl.student_id=$1 AND u.school_id=$2 AND u.is_active=true`,
-      [report.student_id, school_id],
+       WHERE psl.student_id=$1`,
+      [report.student_id],
     );
-    console.log(`[holistic-report share] student=${report.student_id} found ${parents.rows.length} linked parents`);
+    console.log(`[holistic-report share] student=${report.student_id} school=${school_id} found ${parents.rows.length} linked parents`);
     const tl = report.term === 'mid_term' ? 'Mid-Term' : 'Final Term';
     const body = `${tl} Holistic Progress Report for ${report.student_name} (${report.class_name}) is now available.`;
     let notified = 0;
