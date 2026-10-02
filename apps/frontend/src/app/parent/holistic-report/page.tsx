@@ -147,19 +147,16 @@ function ParentHolisticReportInner() {
             </p>
           </div>
 
-          {/* Scale key */}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-            <p className="text-xs font-semibold text-amber-800 mb-1.5">Growth Scale</p>
-            <div className="flex flex-col gap-1">
-              {Object.entries(scaleKey).map(([code, info]) => (
-                <div key={code} className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
-                    style={{ backgroundColor: info.color }}>{code}</span>
-                  <span className="text-xs text-neutral-700 font-medium">{info.label}</span>
-                  {isPN && (r as any)[`growth_${code}`] && <span className="text-xs text-neutral-400">— {(r as any)[`growth_${code}`]}</span>}
-                </div>
-              ))}
-            </div>
+          {/* Scale key — horizontal chips */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex flex-wrap gap-x-3 gap-y-1.5 items-center">
+            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wide mr-1">Scale:</span>
+            {Object.entries(scaleKey).filter(([code]) => !['V','S'].includes(code)).map(([code, info]) => (
+              <div key={code} className="flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0"
+                  style={{ backgroundColor: info.color }}>{code}</span>
+                <span className="text-xs text-neutral-600">{info.label}</span>
+              </div>
+            ))}
           </div>
 
           {/* Developmental domains */}
@@ -168,26 +165,23 @@ function ParentHolisticReportInner() {
             if (!domain.sub_items.some(i => dr[i.id])) return null;
             return (
               <div key={domain.id} className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-                <div className="px-4 py-2.5" style={{ background: '#EBF5EE' }}>
+                <div className="px-4 py-2" style={{ background: '#EBF5EE' }}>
                   <p className="text-sm font-semibold" style={{ color: G }}>{domain.label}</p>
                 </div>
-                <div className="divide-y divide-neutral-50">
+                <div className="divide-y divide-neutral-100">
                   {domain.sub_items.map((item, idx) => {
                     const code = (dr[item.id] || '').toUpperCase();
                     const info = getRatingInfo(code, isPN);
+                    if (!info) return null; // skip unrated items
                     const label = item.label.replace(/^\[(Gross|Fine) Motor\] /, '');
                     return (
-                      <div key={item.id} className={`flex items-center justify-between px-4 py-3 ${idx % 2 === 1 ? 'bg-neutral-50/40' : ''}`}>
+                      <div key={item.id} className={`flex items-center justify-between px-4 py-2 ${idx % 2 === 1 ? 'bg-neutral-50/50' : ''}`}>
                         <p className="text-sm text-neutral-700 flex-1 pr-3 leading-snug">{label}</p>
-                        {info ? (
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                              style={{ backgroundColor: info.color }}>{code}</span>
-                            <span className="text-xs text-neutral-500 hidden sm:block">{info.label}</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-neutral-300">—</span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
+                            style={{ backgroundColor: info.color }}>{code}</span>
+                          <span className="text-xs text-neutral-500 w-20 text-right">{info.label}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -199,23 +193,23 @@ function ParentHolisticReportInner() {
           {/* Subject grades */}
           {Object.keys(r.subject_grades || {}).length > 0 && (
             <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-              <div className="px-4 py-2.5" style={{ background: '#EBF5EE' }}>
+              <div className="px-4 py-2" style={{ background: '#EBF5EE' }}>
                 <p className="text-sm font-semibold" style={{ color: G }}>Academic Assessment</p>
               </div>
-              <div className="divide-y divide-neutral-50">
+              <div className="divide-y divide-neutral-100">
                 {Object.entries(r.subject_grades).filter(([, v]) => v).map(([subject, grade], idx) => {
                   const info = getRatingInfo(grade, isPN);
                   return (
-                    <div key={subject} className={`flex items-center justify-between px-4 py-3 ${idx % 2 === 1 ? 'bg-neutral-50/40' : ''}`}>
+                    <div key={subject} className={`flex items-center justify-between px-4 py-2 ${idx % 2 === 1 ? 'bg-neutral-50/50' : ''}`}>
                       <div className="flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 text-neutral-400" />
+                        <BookOpen className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                         <p className="text-sm text-neutral-700">{subject}</p>
                       </div>
                       {info ? (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
                             style={{ backgroundColor: info.color }}>{grade}</span>
-                          <span className="text-xs text-neutral-500 hidden sm:block">{info.label}</span>
+                          <span className="text-xs text-neutral-500 w-20 text-right">{info.label}</span>
                         </div>
                       ) : <span className="text-xs text-neutral-300">—</span>}
                     </div>
