@@ -336,6 +336,8 @@ export default function HolisticReportPage() {
         setAcademicYear(year);
         academicYearRef.current = year;
         setStudents(studs || []);
+        // Load saved list immediately once year is known
+        if (year) loadSaved(year);
       } catch {
         setLoadingSaved(false);
       }
@@ -356,7 +358,8 @@ export default function HolisticReportPage() {
   }, [filterTerm, token]);
 
   useEffect(() => {
-    if (academicYear && view === 'list') loadSaved(academicYear);
+    const year = academicYear || academicYearRef.current;
+    if (year && view === 'list') loadSaved(year);
   }, [academicYear, view, filterTerm]);
 
   // ── open detail ────────────────────────────────────────────────────────────
