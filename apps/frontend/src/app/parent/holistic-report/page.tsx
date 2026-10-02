@@ -64,6 +64,7 @@ function ParentHolisticReportInner() {
   const [selected,      setSelected]      = useState<ReportDetail | null>(null);
   const [loading,       setLoading]       = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError,   setDetailError]   = useState('');
 
   useEffect(() => {
     if (!token) { router.push('/login'); return; }
@@ -82,23 +83,38 @@ function ParentHolisticReportInner() {
 
   async function openReport(id: string) {
     setLoadingDetail(true);
+    setDetailError('');
     try {
       const data = await apiGet<ReportDetail>(`/api/v1/parent/holistic-report/${id}`, token);
       setSelected(data);
-    } catch { /* ignore */ }
+    } catch (e: any) {
+      setDetailError(e?.message || 'Could not load report');
+    }
     finally { setLoadingDetail(false); }
   }
 
   // ── Detail view ─────────────────────────────────────────────────────────────
-  if (selected || loadingDetail) {
-    if (loadingDetail) {
-      return (
-        <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      );
-    }
-    const r = selected!;
+  if (loadingDetail) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (detailError) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center gap-4 p-6">
+        <FileText className="w-12 h-12 text-neutral-300" />
+        <p className="text-sm font-medium text-neutral-600 text-center">{detailError}</p>
+        <button onClick={() => setDetailError('')}
+          className="px-4 py-2 rounded-xl text-sm font-medium text-white"
+          style={{ background: G }}>Go Back</button>
+      </div>
+    );
+  }
+
+  if (selected) {
     const termLabel = TERM_LABELS[r.term] || r.term;
     const comment   = r.teacher_comment || r.teacher_comment_raw;
     const isPN      = isPgNursery(r.class_name);

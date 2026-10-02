@@ -120,21 +120,52 @@ const STANDARD_DOMAINS_PARENT = [
   ]},
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/v1/parent/holistic-report
-// List all shared holistic reports for the parent's linked children
+// ── Helper: resolve student IDs this parent can access ───────────────────────
+// Primary: parent_student_links. Fallback: match parent_users.mobile against
+// students.parent_contact / mother_contact (handles unlinked parents).
+async function resolveParentStudentIds(parentId: string, schoolId: string): Promise<string[]> {
+  const links = await pool.query(
+    `SELECT student_id FROM parent_student_links WHERE parent_id=$1`,
+    [parentId],
+  );
+  if (links.rows.length > 0) {
+    return links.rows.map((r: any) => r.student_id);
+  }
+
+  // Fallback: look up by mobile number
+  const puRow = await pool.query(
+    `SELECT mobile FROM parent_users WHERE id=$1 AND school_id=$2`,
+    [parentId, schoolId],
+  );
+  if (!puRow.rows.length) return [];
+  const mobile = puRow.rows[0].mobile;
+
+  const students = await pool.query(
+    `SELECT id FROM students
+     WHERE school_id=$1 AND is_active=true
+       AND (parent_contact=$2 OR mother_contact=$2)`,
+    [schoolId, mobile],
+  );
+  const studentIds = students.rows.map((r: any) => r.id);
+
+  // Auto-create missing links
+  for (const sid of studentIds) {
+    await pool.query(
+      `INSERT INTO parent_student_links (parent_id, student_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+      [parentId, sid],
+    ).catch(() => {});
+  }
+
+  return studentIds;
+}
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
 
-    // Get all children linked to this parent
-    const children = await pool.query(
-      `SELECT student_id FROM parent_student_links WHERE parent_id=$1`,
-      [user_id],
-    );
-    if (!children.rows.length) return res.json([]);
-    const studentIds = children.rows.map((r: any) => r.student_id);
+    // Get all children linked to this parent — with contact-number fallback
+    const studentIds = await resolveParentStudentIds(user_id, school_id);
+    if (!studentIds.length) return res.json([]);
 
     const result = await pool.query(
       `SELECT hr.id, hr.student_id, hr.term, hr.academic_year,
@@ -166,16 +197,12 @@ router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
 
-    // Verify this report belongs to one of the parent's children
-    const children = await pool.query(
-      `SELECT student_id FROM parent_student_links WHERE parent_id=$1`,
-      [user_id],
-    );
-    const studentIds = children.rows.map((r: any) => r.student_id);
+    // Resolve student IDs this parent can access — with contact fallback
+    const studentIds = await resolveParentStudentIds(user_id, school_id);
 
     const report = await pool.query(
       `SELECT hr.*,
-              s.name AS student_name, s.photo_url,
+              s.name AS student_name,
               c.name AS class_name, c.id AS class_id,
               sec.label AS section_label,
               sch.name AS school_name
@@ -187,20 +214,23 @@ router.get('/:id', async (req: Request, res: Response) => {
        WHERE hr.id=$1
          AND hr.school_id=$2
          AND hr.status='shared'
-         AND hr.student_id=ANY($3::uuid[])`,
-      [req.params.id, school_id, studentIds],
+         ${studentIds.length > 0 ? 'AND hr.student_id=ANY($3::uuid[])' : ''}`,
+      studentIds.length > 0
+        ? [req.params.id, school_id, studentIds]
+        : [req.params.id, school_id],
     );
 
     if (!report.rows.length) return res.status(404).json({ error: 'Report not found' });
     const r = report.rows[0];
 
-    // Also load the template domains so the parent view can show labels
+    // Load domains from template — fall back to built-in defaults if no template
     const templateRow = await pool.query(
       `SELECT domains FROM holistic_report_templates
        WHERE school_id=$1 AND class_id=$2 AND academic_year=$3`,
       [school_id, r.class_id, r.academic_year],
     );
-    const domains = templateRow.rows[0]?.domains ?? [];
+    const domains = templateRow.rows[0]?.domains
+      ?? (isPgNurseryClass(r.class_name) ? PG_NURSERY_DOMAINS_PARENT : STANDARD_DOMAINS_PARENT);
 
     return res.json({ ...r, domains });
   } catch (err) {
