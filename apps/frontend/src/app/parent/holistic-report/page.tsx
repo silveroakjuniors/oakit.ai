@@ -115,6 +115,7 @@ function ParentHolisticReportInner() {
   }
 
   if (selected) {
+    const r = selected;
     const termLabel = TERM_LABELS[r.term] || r.term;
     const comment   = r.teacher_comment || r.teacher_comment_raw;
     const isPN      = isPgNursery(r.class_name);
