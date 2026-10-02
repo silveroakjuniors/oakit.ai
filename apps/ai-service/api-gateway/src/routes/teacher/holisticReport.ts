@@ -681,31 +681,60 @@ router.post('/:id/share', async (req: Request, res: Response) => {
        WHERE psl.student_id=$1`,
       [report.student_id],
     );
-    console.log(`[holistic-report share] student=${report.student_id} school=${school_id} found ${parents.rows.length} linked parents`);
+
+    // Fallback: if no links found, try looking up parents by student's contact number
+    // (handles case where bulk-activate was not yet run but parent_users exists)
+    let parentIds: string[] = parents.rows.map((p: any) => p.parent_id);
+    if (parentIds.length === 0) {
+      const studentContacts = await pool.query(
+        `SELECT parent_contact, mother_contact FROM students WHERE id=$1`,
+        [report.student_id],
+      );
+      const contacts: string[] = [];
+      if (studentContacts.rows[0]?.parent_contact) contacts.push(studentContacts.rows[0].parent_contact);
+      if (studentContacts.rows[0]?.mother_contact) contacts.push(studentContacts.rows[0].mother_contact);
+
+      if (contacts.length > 0) {
+        const puRows = await pool.query(
+          `SELECT id FROM parent_users WHERE mobile = ANY($1::text[]) AND school_id=$2 AND is_active=true`,
+          [contacts, school_id],
+        );
+        parentIds = puRows.rows.map((p: any) => p.id);
+
+        // Auto-create the missing links so future sends work correctly
+        for (const pid of parentIds) {
+          await pool.query(
+            `INSERT INTO parent_student_links (parent_id, student_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+            [pid, report.student_id],
+          );
+        }
+      }
+    }
+
+    console.log(`[holistic-report share] student=${report.student_id} found ${parentIds.length} parent(s) (${parents.rows.length} via links, ${parentIds.length - parents.rows.length} via contact fallback)`);
     const tl = report.term === 'mid_term' ? 'Mid-Term' : 'Final Term';
     const body = `${tl} Holistic Progress Report for ${report.student_name} (${report.class_name}) is now available.`;
     let notified = 0;
-    for (const p of parents.rows) {
+    for (const pid of parentIds) {
       try {
-        // Insert notification message — use only base columns to avoid schema version issues
         await pool.query(
           `INSERT INTO messages (school_id, teacher_id, parent_id, student_id, sender_role, body, topic, extension)
            VALUES ($1,$2,$3,$4,'teacher',$5,'holistic_report','')
            ON CONFLICT DO NOTHING`,
-          [school_id, user_id, p.parent_id, report.student_id, body],
+          [school_id, user_id, pid, report.student_id, body],
         );
         notified++;
       } catch (msgErr: any) {
-        // topic/extension columns may not exist in older schema — retry without them
+        // Fallback without topic/extension for older schema versions
         try {
           await pool.query(
             `INSERT INTO messages (school_id, teacher_id, parent_id, student_id, sender_role, body)
              VALUES ($1,$2,$3,$4,'teacher',$5)`,
-            [school_id, user_id, p.parent_id, report.student_id, body],
+            [school_id, user_id, pid, report.student_id, body],
           );
           notified++;
         } catch (msgErr2) {
-          console.error('[holistic-report share] message insert failed for parent', p.parent_id, msgErr2);
+          console.error('[holistic-report share] message insert failed for parent', pid, msgErr2);
         }
       }
     }
