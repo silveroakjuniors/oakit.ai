@@ -208,9 +208,10 @@ const TABS: { id: Tab; Icon: React.ElementType; label: string }[] = [
  { id: 'home', Icon: Home, label: 'Home' },
  { id: 'calendar', Icon: Calendar, label: 'Calendar' },
  { id: 'progress', Icon: TrendingUp, label: 'Progress' },
+ { id: 'reports', Icon: FileBarChart, label: 'Reports' },
+ { id: 'assignments', Icon: ClipboardList, label: 'Homework' },
  { id: 'milestones', Icon: Target, label: 'Milestones' },
  { id: 'insights', Icon: BarChart3, label: 'Insights' },
- { id: 'assignments', Icon: ClipboardList, label: 'Homework' },
  { id: 'messages', Icon: MessageSquare, label: 'Messages' },
  { id: 'notifications', Icon: Bell, label: 'Updates' },
  { id: 'fees', Icon: CreditCard, label: 'Fees' },
@@ -2864,6 +2865,24 @@ function ReportsTab({ attendance, progress, activeChild, token }: { attendance: 
  return (
  <div className="space-y-4">
  <h2 className="text-lg font-bold text-gray-800">Reports</h2>
+
+ {/* Holistic Progress Reports — shown first and prominently */}
+ {activeChild && (
+ <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+   <div className="px-4 py-3 flex items-center justify-between" style={{ background: '#1B4332' }}>
+     <div>
+       <p className="text-white font-semibold text-sm">Progress Reports</p>
+       <p className="text-white/60 text-xs">Mid-Term &amp; Final Term</p>
+     </div>
+     <FileBarChart className="w-5 h-5 text-white/60" />
+   </div>
+   <div className="p-1">
+     <HolisticReportSection token={token} />
+   </div>
+ </div>
+ )}
+
+ {/* Quick stats */}
  <div className="grid grid-cols-2 gap-3">
  <div className={`${attPct >= 75 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'} border rounded-2xl p-4`}>
  <p className="text-xs text-gray-500 mb-1">Attendance</p>
@@ -2885,7 +2904,6 @@ function ReportsTab({ attendance, progress, activeChild, token }: { attendance: 
  <ReportCardGenerator token={token} role="parent" fixedStudentId={activeChild.id} fixedStudentName={activeChild.name} />
  </div>
  )}
- {activeChild && <HolisticReportSection token={token} />}
  </div>
  );
 }
