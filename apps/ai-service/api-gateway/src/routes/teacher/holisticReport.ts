@@ -323,26 +323,21 @@ router.get('/stats/:student_id', async (req: Request, res: Response) => {
     const effectiveFrom = (req.query.from as string) ||
       (calRow.rows[0]?.start_date ? new Date(calRow.rows[0].start_date).toISOString().split('T')[0] : '2026-06-01');
 
-    // Count actual working days in the range (calendar-based, same as attendance tracker)
+    // Count actual working days in the range — exclude ONLY Sat/Sun and declared holidays
+    // Special days (settling period, sports day, events etc.) ARE working days for attendance purposes
     const workingDayNums: number[] = calRow.rows[0]?.working_days || [1,2,3,4,5];
     const holidayRows = await pool.query(
       `SELECT holiday_date FROM holidays WHERE school_id=$1 AND holiday_date BETWEEN $2::date AND $3::date`,
       [school_id, effectiveFrom, to],
     );
     const holidaySet = new Set(holidayRows.rows.map((r: any) => new Date(r.holiday_date).toISOString().split('T')[0]));
-    // Also exclude full-day special days
-    const specialRows = await pool.query(
-      `SELECT day_date FROM special_days WHERE school_id=$1 AND duration_type='full_day' AND day_date BETWEEN $2::date AND $3::date`,
-      [school_id, effectiveFrom, to],
-    );
-    const specialSet = new Set(specialRows.rows.map((r: any) => new Date(r.day_date).toISOString().split('T')[0]));
     let calWorkingDays = 0;
     const startD = new Date(effectiveFrom + 'T12:00:00');
     const endD   = new Date(to + 'T12:00:00');
     for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
       const dow = d.getDay() === 0 ? 7 : d.getDay();
       const ds  = d.toISOString().split('T')[0];
-      if (workingDayNums.includes(dow) && !holidaySet.has(ds) && !specialSet.has(ds)) calWorkingDays++;
+      if (workingDayNums.includes(dow) && !holidaySet.has(ds)) calWorkingDays++;
     }
     calWorkingDays = Math.max(calWorkingDays, 1);
 

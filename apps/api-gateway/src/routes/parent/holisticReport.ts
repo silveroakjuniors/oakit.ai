@@ -257,7 +257,8 @@ router.get('/:id', async (req: Request, res: Response) => {
         holidayRows.rows.map((h: any) => new Date(h.holiday_date).toISOString().split('T')[0]),
       );
 
-      // Count calendar working days (includes special days like settling period, sports day, etc.)
+      // Count calendar working days (includes special days like settling period, sports day, events)
+      // Only exclude Sat/Sun + declared school holidays
       let calWorkingDays = 0;
       const s = new Date(startDate + 'T12:00:00');
       const e = new Date(today + 'T12:00:00');
