@@ -2842,7 +2842,7 @@ function HolisticReportSection({ token }: { token: string }) {
     <div className="flex flex-col gap-2">
      {reports.slice(0, 3).map(r => (
       <button key={r.id}
-       onClick={() => router.push('/parent/holistic-report')}
+       onClick={() => router.push(`/parent/holistic-report?id=${r.id}`)}
        className="flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors text-left w-full">
        <div>
         <p className="text-sm font-semibold text-gray-800">{r.student_name}</p>
