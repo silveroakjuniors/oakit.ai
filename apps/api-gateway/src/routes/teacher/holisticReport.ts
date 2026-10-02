@@ -317,11 +317,34 @@ router.get('/stats/:student_id', async (req: Request, res: Response) => {
     if (!studentRow.rows.length) return res.status(404).json({ error: 'Student not found' });
 
     const calRow = await pool.query(
-      `SELECT start_date FROM school_calendar WHERE school_id=$1 ORDER BY start_date DESC LIMIT 1`,
+      `SELECT start_date, working_days FROM school_calendar WHERE school_id=$1 ORDER BY start_date DESC LIMIT 1`,
       [school_id],
     );
     const effectiveFrom = (req.query.from as string) ||
       (calRow.rows[0]?.start_date ? new Date(calRow.rows[0].start_date).toISOString().split('T')[0] : '2026-06-01');
+
+    // Count actual working days in the range (calendar-based, same as attendance tracker)
+    const workingDayNums: number[] = calRow.rows[0]?.working_days || [1,2,3,4,5];
+    const holidayRows = await pool.query(
+      `SELECT holiday_date FROM holidays WHERE school_id=$1 AND holiday_date BETWEEN $2::date AND $3::date`,
+      [school_id, effectiveFrom, to],
+    );
+    const holidaySet = new Set(holidayRows.rows.map((r: any) => new Date(r.holiday_date).toISOString().split('T')[0]));
+    // Also exclude full-day special days
+    const specialRows = await pool.query(
+      `SELECT day_date FROM special_days WHERE school_id=$1 AND duration_type='full_day' AND day_date BETWEEN $2::date AND $3::date`,
+      [school_id, effectiveFrom, to],
+    );
+    const specialSet = new Set(specialRows.rows.map((r: any) => new Date(r.day_date).toISOString().split('T')[0]));
+    let calWorkingDays = 0;
+    const startD = new Date(effectiveFrom + 'T12:00:00');
+    const endD   = new Date(to + 'T12:00:00');
+    for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+      const dow = d.getDay() === 0 ? 7 : d.getDay();
+      const ds  = d.toISOString().split('T')[0];
+      if (workingDayNums.includes(dow) && !holidaySet.has(ds) && !specialSet.has(ds)) calWorkingDays++;
+    }
+    calWorkingDays = Math.max(calWorkingDays, 1);
 
     const attRow = await pool.query(
       `SELECT
@@ -358,9 +381,11 @@ router.get('/stats/:student_id', async (req: Request, res: Response) => {
     return res.json({
       from: effectiveFrom, to,
       attendance: {
-        present: att.present_days, absent: att.absent_days, total: att.total_days,
-        pct: att.total_days > 0 ? Math.round((att.present_days / att.total_days) * 100) : null,
-        label: `${att.present_days}/${att.total_days} days`,
+        present: att.present_days, absent: att.absent_days,
+        // Use calendar working days as total — consistent with attendance tracker
+        total: calWorkingDays,
+        pct: calWorkingDays > 0 ? Math.round((att.present_days / calWorkingDays) * 100) : null,
+        label: `${att.present_days}/${calWorkingDays} days`,
       },
       homework: {
         completed: hw.completed, partial: hw.partial,
