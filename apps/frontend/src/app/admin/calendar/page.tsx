@@ -458,6 +458,7 @@ export default function CalendarPage() {
   const [exportingHolidays, setExportingHolidays] = useState(false);
   const [refreshingPlanner, setRefreshingPlanner] = useState(false);
   const [msg, setMsg] = useState('');
+  const [plansAffectedWarning, setPlansAffectedWarning] = useState<{ count: number; dates: string } | null>(null);
   const [classes, setClasses] = useState<any[]>([]);
   const [planForm, setPlanForm] = useState({ class_id: '', mode: 'month' as 'month'|'year', month: new Date().getMonth() + 1, plan_year: new Date().getFullYear() });
   const [planLoading, setPlanLoading] = useState(false);
@@ -520,7 +521,16 @@ export default function CalendarPage() {
 
   async function addHoliday() {
     if (!newHoliday.holiday_date || !newHoliday.event_name) return;
-    try { await apiPost<any>(`/api/v1/admin/calendar/${academicYear}/holidays`, newHoliday, token); setNewHoliday({ holiday_date: '', event_name: '' }); await loadHolidays(); }
+    try {
+      const res = await apiPost<any>(`/api/v1/admin/calendar/${academicYear}/holidays`, newHoliday, token);
+      setNewHoliday({ holiday_date: '', event_name: '' });
+      await loadHolidays();
+      if (res.plans_affected > 0) {
+        setPlansAffectedWarning({ count: res.plans_affected, dates: newHoliday.holiday_date });
+      } else {
+        setMsg('Holiday added.');
+      }
+    }
     catch (err: unknown) { alert(err instanceof Error ? err.message : 'Failed'); }
   }
 
@@ -573,8 +583,11 @@ export default function CalendarPage() {
       setNewSpecialDay({ from_date: '', to_date: '', day_type: 'settling', custom_day_type: '', label: '', activity_note: '', start_time: '', end_time: '', duration_type: 'full_day', revision_topics: [] });
       setRevisionTopicInput('');
       await loadSpecialDays();
-      if (res.regenerate_required) {
-        setMsg(`Warning - ${res.plans_affected} section(s) had existing plans on these dates. Please go to Plans and regenerate the affected months so the curriculum continues correctly.`);
+      if (res.plans_affected > 0) {
+        const dateRange = body.from_date
+          ? `${body.from_date} to ${body.to_date}`
+          : body.day_date;
+        setPlansAffectedWarning({ count: res.plans_affected, dates: dateRange });
       } else if (res.message) {
         setMsg(res.message);
       }
@@ -660,6 +673,33 @@ export default function CalendarPage() {
   return (
     <div className="p-6 max-w-2xl">
       <h1 className="text-2xl font-semibold text-primary mb-6">Calendar &amp; Day Plans</h1>
+
+      {/* Plans affected warning banner — shown when a holiday/event lands on existing plans */}
+      {plansAffectedWarning && (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 flex items-start gap-3">
+          <div className="shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-bold text-sm">!</div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">Plans need to be regenerated</p>
+            <p className="text-xs text-amber-700 mt-1">
+              {plansAffectedWarning.count} section plan(s) on <strong>{plansAffectedWarning.dates}</strong> were cleared because they fall on the new holiday/event. Those chunks will carry forward once you regenerate the affected months below.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => {
+                  setPlansAffectedWarning(null);
+                  // Scroll to Plans section
+                  document.getElementById('plans-section')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition-colors">
+                Go to Plans - Regenerate Now
+              </button>
+              <button onClick={() => setPlansAffectedWarning(null)} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 text-xs hover:bg-amber-100 transition-colors">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Academic Year Summary / Edit */}
       <Card className="mb-6">
@@ -934,7 +974,7 @@ export default function CalendarPage() {
       </Card>
 
       {/* Link to Daily Planner */}
-      <Card className="mb-6">
+      <Card className="mb-6" id="plans-section">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-medium text-gray-700">Ready to generate plans?</h2>
