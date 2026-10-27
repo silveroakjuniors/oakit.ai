@@ -245,7 +245,35 @@ router.patch('/:id/timings', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/admin/classes/sections/:id/align-curriculum
+// DELETE /api/v1/admin/classes/:id — delete a class (only if it has no sections)
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const classId = req.params.id;
+
+    const cls = await pool.query(
+      'SELECT id, name FROM classes WHERE id=$1 AND school_id=$2',
+      [classId, school_id],
+    );
+    if (!cls.rows.length) return res.status(404).json({ error: 'Class not found' });
+
+    const sections = await pool.query(
+      'SELECT COUNT(*)::int AS cnt FROM sections WHERE class_id=$1',
+      [classId],
+    );
+    if (sections.rows[0].cnt > 0) {
+      return res.status(409).json({ error: `Cannot delete "${cls.rows[0].name}" — it has ${sections.rows[0].cnt} section(s). Delete all sections first.` });
+    }
+
+    await pool.query('DELETE FROM classes WHERE id=$1 AND school_id=$2', [classId, school_id]);
+    return res.json({ message: `Class "${cls.rows[0].name}" deleted` });
+  } catch (err: any) {
+    console.error('[delete-class]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+export default router;
 // Aligns a new/empty section's curriculum with the most advanced sibling section.
 // Copies all daily_completions from the sibling (marking prior chunks as covered)
 // and copies all day_plans so the section starts from the same point as siblings.

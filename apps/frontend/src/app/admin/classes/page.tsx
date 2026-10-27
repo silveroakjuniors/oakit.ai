@@ -159,6 +159,28 @@ export default function ClassesPage() {
               <span className="font-semibold text-gray-800">{cls.name}</span>
               <div className="flex items-center gap-2">
                 <Badge label={`${cls.sections.length} sections`} variant="neutral" />
+                {cls.sections.length === 0 && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm(`Delete class "${cls.name}"? This cannot be undone.`)) return;
+                      try {
+                        const res = await fetch(`${API_BASE}/api/v1/admin/classes/${cls.id}`, {
+                          method: 'DELETE',
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error);
+                        await load();
+                      } catch (err: unknown) {
+                        alert(err instanceof Error ? err.message : 'Failed to delete class');
+                      }
+                    }}
+                    className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-0.5 rounded-lg border border-red-200 transition-colors"
+                  >
+                    Delete
+                  </button>
+                )}
                 <span className="text-gray-400 text-sm">{expanded === cls.id ? '▲' : '▼'}</span>
               </div>
             </button>
