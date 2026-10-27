@@ -83,6 +83,7 @@ const navItems: NavItem[] = [
   { href: '/admin/finance/salary',         label: 'Salary',           icon: Briefcase,     group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
   { href: '/admin/finance/reports',        label: 'Reports',          icon: TrendingUp,    group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
   { href: '/admin/reports',          label: 'Reports',          icon: BarChart3,       group: 'insights' },
+  { href: '/admin/attendance',       label: 'Attendance',       icon: ClipboardList,   group: 'insights' },
   { href: '/admin/announcements',    label: 'Announcements',    icon: Megaphone,       group: 'insights' },
   { href: '/admin/audit',            label: 'Audit Log',        icon: Search,          group: 'insights' },
   { href: '/admin/smart-alerts',     label: 'Smart Alerts',     icon: AlertTriangle,   group: 'insights' },

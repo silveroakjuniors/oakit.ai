@@ -430,7 +430,7 @@ router.post('/birthday-wish', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/admin/dashboard/birthday-send — send wish to parents
+// POST /api/v1/admin/dashboard/birthday-send — send wish ONLY to parents of the birthday student
 router.post('/birthday-send', async (req: Request, res: Response) => {
   try {
     const { school_id, user_id } = req.user!;
@@ -438,7 +438,10 @@ router.post('/birthday-send', async (req: Request, res: Response) => {
     if (!Array.isArray(student_ids) || !message?.trim()) {
       return res.status(400).json({ error: 'student_ids and message required' });
     }
+
+    const { sendPushToParent } = await import('../../lib/pushNotification');
     const results = [];
+
     for (const student_id of student_ids) {
       const studentRow = await pool.query(
         `SELECT s.name, s.class_id FROM students s WHERE s.id = $1 AND s.school_id = $2`,
@@ -446,14 +449,39 @@ router.post('/birthday-send', async (req: Request, res: Response) => {
       );
       if (studentRow.rows.length === 0) continue;
       const student = studentRow.rows[0];
+
+      // Find all parents linked to this specific student
+      const parentRows = await pool.query(
+        `SELECT psl.parent_id FROM parent_student_links psl WHERE psl.student_id = $1`,
+        [student_id]
+      );
+
+      if (parentRows.rows.length === 0) {
+        results.push({ name: student.name, sent: false, reason: 'No parents linked' });
+        continue;
+      }
+
+      // Insert announcement targeted at 'parent' audience — will show to parents of this class
+      // AND send push to each linked parent directly
       await pool.query(
         `INSERT INTO announcements (school_id, author_id, title, body, target_audience, target_class_id, expires_at)
-         VALUES ($1, $2, $3, $4, 'class', $5, now() + INTERVAL '3 days')`,
-        [school_id, user_id, `🎂 Happy Birthday ${student.name}!`, message.trim(), student.class_id]
+         VALUES ($1, $2, $3, $4, 'parent', $5, now() + INTERVAL '1 day')`,
+        [school_id, user_id, `Happy Birthday ${student.name}!`, message.trim(), student.class_id]
       );
-      results.push(student.name);
+
+      // Send push directly to each linked parent
+      for (const p of parentRows.rows) {
+        await sendPushToParent(p.parent_id, {
+          title: `Happy Birthday ${student.name}!`,
+          body: message.trim().slice(0, 120),
+          icon: '/oakie.png',
+          tag: `birthday-${student_id}`,
+        }).catch(() => { /* non-critical */ });
+      }
+
+      results.push({ name: student.name, sent: true, parent_count: parentRows.rows.length });
     }
-    return res.json({ sent_to: results, count: results.length });
+    return res.json({ results, count: results.filter((r: any) => r.sent).length });
   } catch (err) {
     console.error('[birthday-send]', err);
     return res.status(500).json({ error: 'Internal server error' });

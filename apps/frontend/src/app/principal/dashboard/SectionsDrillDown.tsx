@@ -40,7 +40,7 @@ export default function SectionsDrillDown({ byClass, totalStudents }: Props) {
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${allAttDone ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {allAttDone ? '✓ Att' : '⏳ Att'}
+                    {allAttDone ? 'Att done' : 'Att pending'}
                   </span>
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${classCovPct >= 75 ? 'bg-emerald-100 text-emerald-700' : classCovPct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-neutral-500'}`}>
                     {classCovPct}% cov
@@ -69,13 +69,13 @@ export default function SectionsDrillDown({ byClass, totalStudents }: Props) {
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.attendance_submitted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {sec.attendance_submitted ? '✓ Att' : '– Att'}
+                            {sec.attendance_submitted ? 'Att' : 'No att'}
                           </span>
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.plan_completed ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                            {sec.plan_completed ? '✓ Plan' : '– Plan'}
+                            {sec.plan_completed ? 'Plan done' : 'Plan pending'}
                           </span>
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${sec.homework_sent ? 'bg-blue-100 text-blue-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                            {sec.homework_sent ? '✓ HW' : '– HW'}
+                            {sec.homework_sent ? 'HW sent' : 'No HW'}
                           </span>
                         </div>
                       </summary>

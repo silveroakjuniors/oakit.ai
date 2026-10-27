@@ -2,9 +2,47 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { jwtVerify, forceResetGuard, schoolScope } from '../middleware/auth';
 import { pool } from '../lib/db';
+import { uploadToGoogleDrive } from '../lib/storage';
+import { compressVideo, isFfmpegAvailable, formatBytes } from '../lib/videoCompress';
+
+/**
+ * Normalize any stored media URL to a signed proxy URL.
+ * Handles: old thumbnail URLs, old download URLs, old proxy URLs, gdrive: scheme, new proxy paths.
+ * Returns a relative path like /api/v1/drive-proxy?id=X&school=Y&sig=Z
+ */
+function normalizeToProxyUrl(url: string, schoolId: string): string {
+  if (!url) return url;
+
+  const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
+
+  function sign(fileId: string): string {
+    const sig = crypto.createHmac('sha256', PROXY_SECRET)
+      .update(`${fileId}:${schoolId}`)
+      .digest('hex').slice(0, 16);
+    return `/api/v1/drive-proxy?id=${fileId}&school=${schoolId}&sig=${sig}`;
+  }
+
+  // Already a correctly-signed proxy path — use as-is
+  if (url.startsWith('/api/v1/drive-proxy')) return url;
+
+  // gdrive: scheme
+  if (url.startsWith('gdrive:')) return sign(url.slice(7));
+
+  // Extract Drive file ID from any URL format
+  const idMatch =
+    url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+
+  if (idMatch) return sign(idMatch[1]);
+
+  // Non-Drive URL (Supabase, local) — return as-is
+  return url;
+}
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
@@ -136,39 +174,95 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } | null 
 async function uploadFeedImage(
   localPath: string, schoolId: string, postId: string, scope: string,
   sectionId: string | null, filename: string, mimeType: string,
-  skipCompression: boolean = false
-): Promise<{ storagePath: string; cdnUrl: string }> {
-  const supabase = getSupabase();
-  const ext = path.extname(filename) || '.jpg';
-  const safeName = `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-  const storagePath = scope === 'school'
-    ? `${schoolId}/memory-feed/school/${postId}/${safeName}`
-    : `${schoolId}/memory-feed/sections/${sectionId}/${postId}/${safeName}`;
+  skipCompression: boolean = false,
+  actorId?: string, actorName?: string, actorRole?: string,
+  sectionLabel?: string, className?: string,
+  seqNum?: number,
+): Promise<{ storagePath: string; cdnUrl: string; originalSize: number; finalSize: number; compressed: boolean }> {
 
-  // Videos: upload raw (no compression). Images: compress to 300KB
-  const buf = skipCompression
-    ? fs.readFileSync(localPath)
-    : await compressImage(localPath, mimeType);
+  // ── Google Drive only — no Supabase storage ───────────────────────────────
+  const driveConfig = await pool.query(
+    `SELECT google_drive_enabled, google_drive_folder_id
+     FROM school_settings WHERE school_id = $1`,
+    [schoolId]
+  );
+  const cfg = driveConfig.rows[0];
 
-  if (!supabase) {
-    const dir = path.resolve('./uploads/feed', postId);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const dest = path.join(dir, safeName);
-    fs.writeFileSync(dest, buf);
-    console.log(`[feed-upload] local fallback: ${dest} (${buf.length} bytes)`);
-    return { storagePath: dest, cdnUrl: `/uploads/feed/${postId}/${safeName}` };
+  if (!cfg?.google_drive_enabled || !cfg?.google_drive_folder_id) {
+    fs.unlink(localPath, () => {});
+    throw new Error(
+      'Google Drive is not configured. Please ask your admin to set it up in Settings → Google Drive.'
+    );
   }
 
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, buf, { contentType: mimeType, upsert: false });
-  if (error) {
-    console.error(`[feed-upload] Supabase storage failed for ${storagePath}:`, error.message);
-    throw new Error(`Storage upload failed: ${error.message}`);
+  const isVideo = mimeType.startsWith('video/');
+  const today = new Date().toISOString().split('T')[0];
+  const originalSize = fs.statSync(localPath).size;
+
+  // Skip server-side compression if already an MP4 (compressed client-side)
+  // This avoids Render's 30s response timeout for video processing
+  let finalPath = localPath;
+  let compressed = false;
+  const isAlreadyMp4 = mimeType === 'video/mp4' || filename.toLowerCase().endsWith('.mp4');
+
+  if (isVideo && !skipCompression && !isAlreadyMp4) {
+    // Only compress non-MP4 formats (MOV, WebM, 3GP) that weren't compressed client-side
+    try {
+      const ffAvailable = await isFfmpegAvailable();
+      if (ffAvailable) {
+        const compressionPromise = compressVideo(localPath);
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('compression timeout')), 20000)
+        );
+        const result = await Promise.race([compressionPromise, timeoutPromise]);
+        if (result) {
+          finalPath = result.outputPath;
+          compressed = true;
+          console.log(`[feed-upload] server compressed: ${formatBytes(result.inputSize)} → ${formatBytes(result.outputSize)}`);
+        }
+      }
+    } catch (compressErr: any) {
+      console.log(`[feed-upload] server compression skipped (${compressErr.message})`);
+      finalPath = localPath;
+    }
+  } else if (isVideo) {
+    console.log(`[feed-upload] skipping server compression - already MP4 (compressed client-side)`);
   }
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-  console.log(`[feed-upload] success: ${storagePath} → ${data.publicUrl} (${buf.length} bytes)`);
-  return { storagePath, cdnUrl: data.publicUrl };
+
+  // ── Build Oaklets_ filename: Oaklets_ClassName_SectionLabel_N.ext ─────────
+  const classSlug = className
+    ? (sectionLabel ? `${className}_${sectionLabel}` : className).replace(/[^a-zA-Z0-9]/g, '_')
+    : 'Class';
+  const classSlugBase = `Oaklets_${classSlug}`;
+  const ext = isVideo ? '.mp4' : (path.extname(filename) || '.jpg');
+  const seq = seqNum || 1;
+  const smartFilename = `${classSlugBase}_${seq}${ext}`;
+
+  // ── Upload to Drive: Oaklets_ClassName_SectionLabel / YYYY-MM-DD / Photos|Videos
+  const mediaSubfolder = isVideo ? 'Videos' : 'Photos';
+  const driveFolderName = `${classSlugBase}/${today}/${mediaSubfolder}`;
+
+  const result = await uploadToGoogleDrive({
+    schoolId,
+    localPath: finalPath,
+    originalName: smartFilename,
+    mimeType: isVideo ? 'video/mp4' : mimeType,
+    actorId,
+    actorName,
+    actorRole,
+    folderId: cfg.google_drive_folder_id,
+    driveFolderName,
+  });
+
+  console.log(`[feed-upload] Google Drive: ${smartFilename} → ${result.directUrl}`);
+  const finalSize = (() => { try { return fs.statSync(finalPath).size; } catch { return originalSize; } })();
+  return {
+    storagePath: result.storagePath,
+    cdnUrl: result.directUrl || result.driveUrl,
+    originalSize,
+    finalSize,
+    compressed,
+  };
 }
 
 // ── GET /api/v1/feed ──────────────────────────────────────────────────────────
@@ -223,7 +317,9 @@ router.get('/', async (req: Request, res: Response) => {
              COALESCE(fb.cnt, 0) AS facebook_shares,
              COALESCE(dl.cnt, 0) AS downloads,
              ARRAY_AGG(fpi.cdn_url ORDER BY fpi.display_order)
-               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images
+               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images,
+             ARRAY_AGG(fpi.media_type ORDER BY fpi.display_order)
+               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS media_types
       FROM feed_posts fp
       LEFT JOIN sections s ON s.id = fp.section_id
       LEFT JOIN (
@@ -258,7 +354,9 @@ router.get('/', async (req: Request, res: Response) => {
       section_label: r.section_label || null,
       poster_name: r.poster_name,
       poster_role: r.poster_role,
-      images: r.images || [],
+      // Normalize all stored URLs to signed proxy paths — handles old & new records
+      images: (r.images || []).map((u: string) => normalizeToProxyUrl(u, user.school_id!)),
+      media_types: r.media_types || [],
       like_count: Number(r.like_count),
       liked_by_me: Boolean(r.liked_by_me),
       instagram_shares: Number(r.instagram_shares || 0),
@@ -368,6 +466,22 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
     const retentionDays = hasVideo ? VIDEO_RETENTION_DAYS : settings.retention_days;
     const expiresAt = new Date(Date.now() + retentionDays * 86400000);
 
+    // Resolve class + section names for Drive folder structure
+    let sectionLabelForDrive = '';
+    let classNameForDrive = '';
+    if (sectionId) {
+      const nameRow = await pool.query(
+        `SELECT s.label, c.name AS class_name
+         FROM sections s JOIN classes c ON c.id = s.class_id
+         WHERE s.id = $1`,
+        [sectionId]
+      );
+      if (nameRow.rows.length > 0) {
+        sectionLabelForDrive = nameRow.rows[0].label || '';
+        classNameForDrive = nameRow.rows[0].class_name || '';
+      }
+    }
+
     const postResult = await pool.query(
       `INSERT INTO feed_posts
          (school_id, section_id, class_id, posted_by, poster_name, poster_role, post_scope, caption, expires_at)
@@ -378,16 +492,25 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
     const postId = postResult.rows[0].id;
 
     const imageRows: { storagePath: string; cdnUrl: string; order: number; mediaType: string }[] = [];
+    let totalOriginalBytes = 0;
+    let totalFinalBytes = 0;
+    let anyCompressed = false;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const isVideo = VIDEO_MIMETYPES.includes(file.mimetype);
-      const { storagePath, cdnUrl } = await uploadFeedImage(
+      const result = await uploadFeedImage(
         file.path, user.school_id, postId, postScope, sectionId,
         file.originalname || `media${i}${isVideo ? '.mp4' : '.jpg'}`, file.mimetype,
-        isVideo // skip compression for videos
+        isVideo,
+        user.user_id, posterName, user.role,
+        sectionLabelForDrive, classNameForDrive,
+        i + 1
       );
-      uploadedPaths.push(storagePath);
-      imageRows.push({ storagePath, cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });
+      uploadedPaths.push(result.storagePath);
+      imageRows.push({ storagePath: result.storagePath, cdnUrl: result.cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });
+      totalOriginalBytes += result.originalSize;
+      totalFinalBytes += result.finalSize;
+      if (result.compressed) anyCompressed = true;
       fs.unlink(file.path, () => {});
     }
 
@@ -406,6 +529,11 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
       post_scope: postScope,
       poster_name: posterName,
       created_at: new Date().toISOString(),
+      // Size info for debugging
+      original_size: formatBytes(totalOriginalBytes),
+      final_size: formatBytes(totalFinalBytes),
+      compressed: anyCompressed,
+      savings_pct: totalOriginalBytes > 0 ? Math.round((1 - totalFinalBytes / totalOriginalBytes) * 100) : 0,
     });
   } catch (err: any) {
     const supabase = getSupabase();

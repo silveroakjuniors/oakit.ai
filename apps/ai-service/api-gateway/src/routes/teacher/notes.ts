@@ -9,7 +9,7 @@ import { getToday } from '../../lib/today';
 import { uploadFile, deleteFile } from '../../lib/storage';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 const upload = multer({
   dest: '/tmp/oakit-uploads/',

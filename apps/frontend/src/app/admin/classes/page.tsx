@@ -99,7 +99,23 @@ export default function ClassesPage() {
     classes.flatMap(c => c.sections.map(s => s.class_teacher_id).filter(Boolean))
   );
 
-  async function saveTimings(classId: string) {
+  const [aligningSection, setAligningSection] = useState<string | null>(null);
+  const [alignMsg, setAlignMsg] = useState<Record<string, string>>({});
+
+  async function alignCurriculum(sectionId: string, sectionLabel: string, className: string) {
+    if (!confirm(`Align Section ${sectionLabel} curriculum with the most advanced section in ${className}?\n\nThis will copy all completion history and plans so this section starts from the same point as other sections.`)) return;
+    setAligningSection(sectionId);
+    setAlignMsg(prev => ({ ...prev, [sectionId]: '' }));
+    try {
+      const res = await apiPost<any>(`/api/v1/admin/classes/sections/${sectionId}/align-curriculum`, {}, token);
+      setAlignMsg(prev => ({ ...prev, [sectionId]: `Aligned - ${res.completions_copied} records copied` }));
+      await load();
+    } catch (err: unknown) {
+      setAlignMsg(prev => ({ ...prev, [sectionId]: err instanceof Error ? err.message : 'Failed to align' }));
+    } finally {
+      setAligningSection(null);
+    }
+  }
     const t = timings[classId];
     if (!t) return;
     try {
@@ -143,6 +159,28 @@ export default function ClassesPage() {
               <span className="font-semibold text-gray-800">{cls.name}</span>
               <div className="flex items-center gap-2">
                 <Badge label={`${cls.sections.length} sections`} variant="neutral" />
+                {cls.sections.length === 0 && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm(`Delete class "${cls.name}"? This cannot be undone.`)) return;
+                      try {
+                        const res = await fetch(`${API_BASE}/api/v1/admin/classes/${cls.id}`, {
+                          method: 'DELETE',
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error);
+                        await load();
+                      } catch (err: unknown) {
+                        alert(err instanceof Error ? err.message : 'Failed to delete class');
+                      }
+                    }}
+                    className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-0.5 rounded-lg border border-red-200 transition-colors"
+                  >
+                    Delete
+                  </button>
+                )}
                 <span className="text-gray-400 text-sm">{expanded === cls.id ? '▲' : '▼'}</span>
               </div>
             </button>
@@ -172,9 +210,21 @@ export default function ClassesPage() {
                   <div key={sec.id} className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-sm text-gray-700">Section {sec.label}</span>
-                      <button
-                        onClick={async () => {
-                          if (!confirm(`Delete Section ${sec.label}? This will also delete all day plans for this section. Active students must be moved first.`)) return;
+                      <div className="flex items-center gap-2">
+                        {/* Align Curriculum button — only shown when section exists in class that has other sections */}
+                        {cls.sections.length > 1 && (
+                          <button
+                            onClick={() => alignCurriculum(sec.id, sec.label, cls.name)}
+                            disabled={aligningSection === sec.id}
+                            className="text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors border border-blue-200 disabled:opacity-50"
+                            title="Align this section's curriculum with other sections of the same class"
+                          >
+                            {aligningSection === sec.id ? 'Aligning...' : 'Align Curriculum'}
+                          </button>
+                        )}
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete Section ${sec.label}? This will also delete all day plans for this section. Active students must be moved first.`)) return;
                           try {
                             const res = await fetch(`${API_BASE}/api/v1/admin/classes/sections/${sec.id}`, {
                               method: 'DELETE',
@@ -192,7 +242,13 @@ export default function ClassesPage() {
                       >
                         🗑 Delete
                       </button>
+                      </div>
                     </div>
+                    {alignMsg[sec.id] && (
+                      <p className={`text-xs mb-2 font-medium ${alignMsg[sec.id].startsWith('Aligned') ? 'text-blue-600' : 'text-red-500'}`}>
+                        {alignMsg[sec.id]}
+                      </p>
+                    )}
 
                     {/* Class teacher */}
                     <div className="mb-2">

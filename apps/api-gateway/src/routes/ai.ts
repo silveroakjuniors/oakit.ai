@@ -693,11 +693,14 @@ router.post('/parent-query', async (req: Request, res: Response) => {
 
         // Recent homework
         const hwRow = await pool.query(
-          `SELECT formatted_text FROM teacher_homework WHERE section_id = $1 ORDER BY homework_date DESC LIMIT 1`,
+          `SELECT formatted_text, homework_date::text FROM teacher_homework WHERE section_id = $1 ORDER BY homework_date DESC LIMIT 1`,
           [st.section_id]
         ).catch(() => ({ rows: [] }));
         if (hwRow.rows.length > 0) {
-          context += `Latest homework: ${hwRow.rows[0].formatted_text?.slice(0, 200)}\n`;
+          const hw = hwRow.rows[0];
+          const hwDate = new Date(hw.homework_date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+          const isToday = hw.homework_date === today;
+          context += `Homework given on ${hwDate}${isToday ? ' (today)' : ' (given previously, due to be completed)'}: ${hw.formatted_text?.slice(0, 200)}\n`;
         }
 
         // Missed homework (not_submitted or partial in last 30 days)

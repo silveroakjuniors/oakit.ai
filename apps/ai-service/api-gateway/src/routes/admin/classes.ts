@@ -245,4 +245,116 @@ router.patch('/:id/timings', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/v1/admin/classes/:id — delete a class (only if it has no sections)
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const classId = req.params.id;
+
+    const cls = await pool.query(
+      'SELECT id, name FROM classes WHERE id=$1 AND school_id=$2',
+      [classId, school_id],
+    );
+    if (!cls.rows.length) return res.status(404).json({ error: 'Class not found' });
+
+    const sections = await pool.query(
+      'SELECT COUNT(*)::int AS cnt FROM sections WHERE class_id=$1',
+      [classId],
+    );
+    if (sections.rows[0].cnt > 0) {
+      return res.status(409).json({ error: `Cannot delete "${cls.rows[0].name}" — it has ${sections.rows[0].cnt} section(s). Delete all sections first.` });
+    }
+
+    await pool.query('DELETE FROM classes WHERE id=$1 AND school_id=$2', [classId, school_id]);
+    return res.json({ message: `Class "${cls.rows[0].name}" deleted` });
+  } catch (err: any) {
+    console.error('[delete-class]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+export default router;
+// Aligns a new/empty section's curriculum with the most advanced sibling section.
+// Copies all daily_completions from the sibling (marking prior chunks as covered)
+// and copies all day_plans so the section starts from the same point as siblings.
+router.post('/sections/:id/align-curriculum', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const sectionId = req.params.id;
+
+    // Verify section exists and get its class_id
+    const secRow = await pool.query(
+      `SELECT sec.id, sec.label, sec.class_id, c.name AS class_name
+       FROM sections sec JOIN classes c ON c.id = sec.class_id
+       WHERE sec.id = $1 AND sec.school_id = $2`,
+      [sectionId, school_id],
+    );
+    if (!secRow.rows.length) return res.status(404).json({ error: 'Section not found' });
+    const { class_id, class_name, label } = secRow.rows[0];
+
+    // Find the sibling section with the most completions (most advanced)
+    const siblingRow = await pool.query(
+      `SELECT dc.section_id, COUNT(*) AS completion_count,
+              MAX(dc.completion_date) AS last_completion
+       FROM daily_completions dc
+       JOIN sections s ON s.id = dc.section_id
+       WHERE s.class_id = $1 AND s.school_id = $2 AND dc.section_id != $3
+       GROUP BY dc.section_id
+       ORDER BY completion_count DESC
+       LIMIT 1`,
+      [class_id, school_id, sectionId],
+    );
+    if (!siblingRow.rows.length) {
+      return res.status(404).json({ error: 'No sibling sections with completion history found' });
+    }
+    const sourceSectionId = siblingRow.rows[0].section_id;
+
+    // Copy all daily_completions from source section to new section
+    // Use yesterday as the date offset to keep them in the past
+    const completions = await pool.query(
+      `SELECT completion_date, covered_chunk_ids FROM daily_completions
+       WHERE section_id = $1 ORDER BY completion_date`,
+      [sourceSectionId],
+    );
+
+    let completionsCopied = 0;
+    for (const c of completions.rows) {
+      await pool.query(
+        `INSERT INTO daily_completions (school_id, section_id, teacher_id, completion_date, covered_chunk_ids)
+         VALUES ($1, $2, NULL, $3, $4)
+         ON CONFLICT (section_id, completion_date) DO NOTHING`,
+        [school_id, sectionId, c.completion_date, c.covered_chunk_ids],
+      );
+      completionsCopied++;
+    }
+
+    // Copy all day_plans from source section
+    const plans = await pool.query(
+      `SELECT plan_date, chunk_ids, status FROM day_plans
+       WHERE section_id = $1 ORDER BY plan_date`,
+      [sourceSectionId],
+    );
+
+    let plansCopied = 0;
+    for (const p of plans.rows) {
+      await pool.query(
+        `INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
+         VALUES ($1, $2, NULL, $3, $4::uuid[], $5)
+         ON CONFLICT (section_id, plan_date) DO NOTHING`,
+        [school_id, sectionId, p.plan_date, p.chunk_ids, p.status],
+      );
+      plansCopied++;
+    }
+
+    return res.json({
+      message: `Section ${label} aligned with ${class_name} siblings. ${completionsCopied} completion record(s) and ${plansCopied} plan(s) copied.`,
+      completions_copied: completionsCopied,
+      plans_copied: plansCopied,
+    });
+  } catch (err: any) {
+    console.error('[align-curriculum]', err);
+    return res.status(500).json({ error: 'Internal server error', detail: err?.message });
+  }
+});
+
 export default router;
