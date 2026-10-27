@@ -974,7 +974,8 @@ export default function CalendarPage() {
       </Card>
 
       {/* Link to Daily Planner */}
-      <Card className="mb-6" id="plans-section">
+      <div id="plans-section">
+      <Card className="mb-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-medium text-gray-700">Ready to generate plans?</h2>
@@ -986,6 +987,7 @@ export default function CalendarPage() {
           </a>
         </div>
       </Card>
+      </div>
 
       {/* Plan conflict confirmation dialog */}
       {planConflict && (
