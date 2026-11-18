@@ -88,12 +88,21 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
       platforms.map(async (platform) => {
         const config = configs[platform];
         if (!config?.access_token) {
+          console.error(`[publisher] Post ${postId} platform=${platform}: No valid credential found`);
           return { platform, success: false, error: 'No valid credential found' };
         }
         try {
-          return await publishToPlatform(platform, config, post, mediaUrls, fullCaption);
+          const result = await publishToPlatform(platform, config, post, mediaUrls, fullCaption);
+          if (!result.success) {
+            console.error(`[publisher] Post ${postId} platform=${platform} failed:`, result.error);
+          }
+          return result;
         } catch (err: any) {
-          return { platform, success: false, error: err?.message || 'Unknown error' };
+          const errMsg = err?.response?.data
+            ? JSON.stringify(err.response.data)
+            : err?.message || 'Unknown error';
+          console.error(`[publisher] Post ${postId} platform=${platform} threw:`, errMsg);
+          return { platform, success: false, error: errMsg };
         }
       }),
     );

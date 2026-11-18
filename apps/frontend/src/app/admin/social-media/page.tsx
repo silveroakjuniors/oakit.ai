@@ -423,8 +423,13 @@ function ApprovalQueue({ token }: { token: string }) {
 
   async function approveOne(id: string) {
     setActionMsg('');
-    try { await doApprove(id); setActionMsg('Approved — publishing started'); load(); }
-    catch (e: any) { setActionMsg(e?.message || 'Approve failed'); }
+    try {
+      await doApprove(id);
+      setActionMsg('Approved — publishing in progress...');
+      load();
+      // Refresh again after 5s to pick up final publish status in history
+      setTimeout(() => load(), 5000);
+    } catch (e: any) { setActionMsg(e?.message || 'Approve failed'); }
   }
   async function rejectOne(id: string) {
     const reason = prompt('Rejection reason (required):');
@@ -642,10 +647,15 @@ function PostHistory({ token }: { token: string }) {
           <p className="text-sm text-neutral-600 line-clamp-2">{post.final_caption || post.ai_caption || post.raw_caption}</p>
           <div className="flex gap-1 mt-2">
             {post.platforms?.map((p: any) => (
-              <span key={p.platform} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
-                ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                {p.platform} {p.status === 'posted' ? '' : p.status === 'failed' ? '(failed)' : ''}
-              </span>
+              <div key={p.platform}>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
+                  ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-neutral-100 text-neutral-500'}`}>
+                  {p.platform} {p.status === 'posted' ? '' : p.status === 'failed' ? '(failed)' : ''}
+                </span>
+                {p.status === 'failed' && p.error && (
+                  <p className="text-[10px] text-red-500 mt-0.5 max-w-xs truncate" title={p.error}>{p.error}</p>
+                )}
+              </div>
             ))}
           </div>
         </div>
