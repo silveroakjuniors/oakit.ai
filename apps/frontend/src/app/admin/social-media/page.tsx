@@ -160,6 +160,22 @@ function PlatformConfigCard({
   const [testResult, setTestResult]   = useState<TestResult | null>(null);
   const [msg, setMsg]                 = useState('');
 
+  // Pre-populate non-sensitive fields when opening edit mode
+  function toggleExpanded() {
+    if (!expanded && config.connected) {
+      // Seed form with saved non-sensitive values so user sees what's already stored.
+      // access_token is intentionally NOT returned by the API (security) — user only
+      // needs to re-enter it if they want to change it.
+      setFields({
+        page_id:    config.page_id    || '',
+        account_id: config.account_id || '',
+        handle:     config.handle     || '',
+      });
+    }
+    if (!expanded) setMsg('');
+    setExpanded(v => !v);
+  }
+
   // Connection status
   const isExpired = config.token_expires_at && new Date(config.token_expires_at) < new Date();
   const expiresSoon = config.token_expires_at && !isExpired
@@ -168,7 +184,12 @@ function PlatformConfigCard({
   async function save() {
     setSaving(true); setMsg('');
     try {
-      const payload: Record<string, any> = { ...fields, enabled: true };
+      // Only include access_token in payload if the user actually typed a new one
+      const payload: Record<string, any> = { enabled: true };
+      for (const [k, v] of Object.entries(fields)) {
+        if (k === 'access_token' && !v.trim()) continue; // keep existing token
+        if (v.trim()) payload[k] = v.trim();
+      }
       await apiPut(`/api/v1/admin/social-media/config/${config.platform}`, payload, token);
       setMsg('Saved');
       onSaved();
@@ -263,7 +284,7 @@ function PlatformConfigCard({
           )}
           {/* Expand/Setup */}
           <button
-            onClick={() => setExpanded(v => !v)}
+            onClick={toggleExpanded}
             className="text-xs font-medium px-3 py-1.5 rounded-xl bg-white border border-neutral-300 hover:bg-neutral-50 transition-colors"
           >
             {expanded ? 'Close' : config.connected ? 'Edit' : 'Set up'}
@@ -314,11 +335,18 @@ function PlatformConfigCard({
                 <label className="text-xs font-semibold text-neutral-600 mb-1 block">{f.label}</label>
                 <input
                   type={f.type || 'text'}
-                  placeholder={f.placeholder}
+                  placeholder={
+                    f.key === 'access_token' && config.connected
+                      ? 'Leave blank to keep existing token'
+                      : f.placeholder
+                  }
                   value={fields[f.key] || ''}
                   onChange={e => setFields(p => ({ ...p, [f.key]: e.target.value }))}
                   className="w-full px-3 py-2 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
                 />
+                {f.key === 'access_token' && config.connected && !fields[f.key] && (
+                  <p className="text-[11px] text-neutral-400 mt-1">Token already saved — enter a new one only if you want to replace it</p>
+                )}
               </div>
             ))}
           </div>
