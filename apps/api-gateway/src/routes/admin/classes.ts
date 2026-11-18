@@ -34,7 +34,6 @@ async function _copyPlansToSection(school_id: string, class_id: string, new_sect
   }
   return copied;
 }
-router.use(jwtVerify, schoolScope, roleGuard('admin'));
 
 // GET /api/v1/admin/classes
 router.get('/', async (req: Request, res: Response) => {
@@ -273,7 +272,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-export default router;
+// POST /api/v1/admin/classes/sections/:id/align-curriculum
 // Aligns a new/empty section's curriculum with the most advanced sibling section.
 // Copies all daily_completions from the sibling (marking prior chunks as covered)
 // and copies all day_plans so the section starts from the same point as siblings.

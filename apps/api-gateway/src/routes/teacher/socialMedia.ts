@@ -90,16 +90,16 @@ router.post('/upload', upload.array('media', 5), async (req: Request, res: Respo
     if (!files?.length) return res.status(400).json({ error: 'No files uploaded' });
 
     const paths: string[] = [];
-    const postId = `draft_${Date.now()}_${school_id}`;
 
     for (const file of files) {
-      const ext = path.extname(file.originalname).toLowerCase();
-      const storagePath = `social-media-uploads/${school_id}/${postId}/${Date.now()}${ext}`;
-      const buffer = fs.readFileSync(file.path);
-      const mimeType = file.mimetype;
-      await uploadFile(buffer, storagePath, mimeType);
-      paths.push(storagePath);
-      fs.unlink(file.path, () => {});
+      const result = await uploadFile({
+        schoolId: school_id,
+        folder: 'notes',
+        localPath: file.path,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+      });
+      paths.push(result.storagePath);
     }
 
     return res.json({ paths, count: paths.length });

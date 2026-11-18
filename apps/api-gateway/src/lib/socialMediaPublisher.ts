@@ -6,7 +6,7 @@
 import axios from 'axios';
 import { pool } from './db';
 import { decryptCredential } from './credentialEncryption';
-import { getSignedUrl, deleteFile } from './storage';
+import { uploadFile, deleteFile, getPublicUrl } from './storage';
 
 type Platform = 'instagram' | 'facebook' | 'youtube' | 'twitter' | 'linkedin';
 
@@ -54,11 +54,11 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
       };
     }
 
-    // Get signed URLs for all media files
+    // Get public URLs for all media files
     const mediaUrls: string[] = [];
-    for (const path of post.media_paths || []) {
+    for (const mediaPath of post.media_paths || []) {
       try {
-        const url = await getSignedUrl(path, 3600); // 1 hour signed URL
+        const url = getPublicUrl(mediaPath);
         if (url) mediaUrls.push(url);
       } catch { /* skip failed */ }
     }
