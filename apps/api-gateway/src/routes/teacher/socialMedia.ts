@@ -1,22 +1,25 @@
 /**
  * routes/teacher/socialMedia.ts
  * Teacher routes for Social Media Publisher module.
+ * Storage: Google Drive (always). Files are set public on upload so the
+ * Instagram/Facebook Graph API can fetch them directly by URL.
  */
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { socialMediaModuleGuard } from '../../middleware/socialMediaModuleGuard';
-import { uploadFile } from '../../lib/storage';
+import { uploadToGoogleDrive } from '../../lib/storage';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'principal', 'admin'), socialMediaModuleGuard);
 
 const upload = multer({
   dest: '/tmp/oakit-sm-uploads/',
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB (after client-side compression)
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     const allowed = ['.mp4', '.mov', '.jpg', '.jpeg', '.png', '.webp'];
@@ -26,19 +29,29 @@ const upload = multer({
 });
 try { fs.mkdirSync('/tmp/oakit-sm-uploads/', { recursive: true }); } catch { /* exists */ }
 
+/** Build a drive-proxy preview URL for a Drive file ID */
+function driveProxyUrl(fileId: string, schoolId: string): string {
+  const sig = crypto
+    .createHmac('sha256', process.env.JWT_SECRET || 'change_me')
+    .update(`${fileId}:${schoolId}`)
+    .digest('hex')
+    .slice(0, 16);
+  return `/api/v1/drive-proxy?id=${fileId}&school=${schoolId}&sig=${sig}`;
+}
+
+/** Build the public direct-download URL Instagram/Meta can fetch */
+function drivePublicUrl(fileId: string): string {
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/teacher/social-media/quota
-// Today's remaining quota for the teacher
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/quota', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
-
-    // Get school timezone
-    const tzRow = await pool.query(
-      `SELECT timezone FROM schools WHERE id=$1`,
-      [school_id],
-    ).catch(() => ({ rows: [{ timezone: 'Asia/Kolkata' }] }));
+    const tzRow = await pool.query(`SELECT timezone FROM schools WHERE id=$1`, [school_id])
+      .catch(() => ({ rows: [{ timezone: 'Asia/Kolkata' }] }));
     const tz = tzRow.rows[0]?.timezone || 'Asia/Kolkata';
 
     const counts = await pool.query(
@@ -47,7 +60,7 @@ router.get('/quota', async (req: Request, res: Response) => {
          COUNT(*) FILTER (WHERE media_type='image_carousel')::int  AS image_used
        FROM social_media_posts
        WHERE teacher_id=$1 AND school_id=$2
-         AND status != 'rejected'
+         AND status NOT IN ('rejected','recalled')
          AND submitted_at::timestamptz AT TIME ZONE $3 >= (CURRENT_DATE AT TIME ZONE $3)`,
       [user_id, school_id, tz],
     );
@@ -63,7 +76,6 @@ router.get('/quota', async (req: Request, res: Response) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/teacher/social-media/platforms
-// Enabled platforms for this school
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/platforms', async (req: Request, res: Response) => {
   try {
@@ -81,37 +93,44 @@ router.get('/platforms', async (req: Request, res: Response) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/teacher/social-media/upload
-// Upload media files to Supabase storage
+// Upload to Google Drive under "Social Media Posts/YYYY-MM-DD" folder.
+// Files are set public on upload so Meta API can fetch them directly.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/upload', upload.array('media', 5), async (req: Request, res: Response) => {
   try {
-    const { school_id } = req.user!;
+    const { school_id, user_id } = req.user!;
     const files = req.files as Express.Multer.File[];
     if (!files?.length) return res.status(400).json({ error: 'No files uploaded' });
 
-    const paths: string[] = [];
+    const paths: string[] = [];        // google_drive:FILE_ID  — stored in DB
+    const preview_urls: string[] = []; // drive-proxy URLs      — for in-app preview
+
+    const today = new Date().toISOString().split('T')[0];
 
     for (const file of files) {
-      const result = await uploadFile({
+      const result = await uploadToGoogleDrive({
         schoolId: school_id,
-        folder: 'notes',
         localPath: file.path,
         originalName: file.originalname,
         mimeType: file.mimetype,
+        actorId: user_id,
+        driveFolderName: `Social Media Posts/${today}`,
       });
+      // storagePath is "google_drive:FILE_ID"
       paths.push(result.storagePath);
+      const fileId = result.storagePath.replace('google_drive:', '');
+      preview_urls.push(driveProxyUrl(fileId, school_id));
     }
 
-    return res.json({ paths, count: paths.length });
+    return res.json({ paths, preview_urls, count: paths.length });
   } catch (err: any) {
     console.error('[sm upload]', err);
-    return res.status(500).json({ error: err?.message || 'Upload failed' });
+    return res.status(500).json({ error: err?.message || 'Upload failed. Check Google Drive is configured for this school.' });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/teacher/social-media/posts/generate-caption
-// AI generates polished caption + hashtags
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/posts/generate-caption', async (req: Request, res: Response) => {
   try {
@@ -119,11 +138,10 @@ router.post('/posts/generate-caption', async (req: Request, res: Response) => {
     const { raw_caption, media_type, platforms = [] } = req.body;
     if (!raw_caption?.trim()) return res.status(400).json({ error: 'raw_caption is required' });
 
-    // Get school name
     const schoolRow = await pool.query('SELECT name FROM schools WHERE id=$1', [school_id]);
     const schoolName = schoolRow.rows[0]?.name || 'Silver Oak Juniors';
 
-    const platformNote = platforms.includes('twitter')
+    const platformNote = (platforms as string[]).includes('twitter')
       ? 'Note: Twitter/X requires the total caption + hashtags to be under 280 characters.'
       : '';
 
@@ -154,7 +172,6 @@ Respond ONLY with valid JSON in this exact format:
     const aiData = await aiRes.json() as any;
     const rawText = (aiData?.response || '').trim();
 
-    // Parse JSON from AI response
     let caption = '';
     let hashtags: string[] = [];
     try {
@@ -169,7 +186,6 @@ Respond ONLY with valid JSON in this exact format:
     }
 
     if (!caption) return res.status(500).json({ error: 'AI could not generate caption. Please write one manually.' });
-
     return res.json({ caption, hashtags });
   } catch (err: any) {
     console.error('[sm generate-caption]', err);
@@ -178,60 +194,54 @@ Respond ONLY with valid JSON in this exact format:
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/v1/teacher/social-media/posts
-// Submit a post for approval
+// POST /api/v1/teacher/social-media/posts  — submit for approval
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/posts', async (req: Request, res: Response) => {
   try {
     const { user_id, school_id } = req.user!;
     const { media_type, media_paths, raw_caption, ai_caption, hashtags, platforms } = req.body;
 
-    if (!media_type || !['video', 'image_carousel'].includes(media_type)) {
+    if (!media_type || !['video', 'image_carousel'].includes(media_type))
       return res.status(400).json({ error: 'media_type must be video or image_carousel' });
-    }
     if (!media_paths?.length) return res.status(400).json({ error: 'media_paths required' });
     if (!raw_caption?.trim()) return res.status(400).json({ error: 'caption required' });
     if (!platforms?.length) return res.status(400).json({ error: 'Select at least one platform' });
-
-    if (media_type === 'image_carousel' && media_paths.length > 5) {
+    if (media_type === 'image_carousel' && media_paths.length > 5)
       return res.status(400).json({ error: 'Maximum 5 images per carousel' });
-    }
 
-    // Get school timezone for quota check
+    // Validate all paths are Drive paths
+    const invalidPaths = (media_paths as string[]).filter(p => !p.startsWith('google_drive:'));
+    if (invalidPaths.length)
+      return res.status(400).json({ error: 'All media must be uploaded to Google Drive first.' });
+
     const tzRow = await pool.query(`SELECT timezone FROM schools WHERE id=$1`, [school_id])
       .catch(() => ({ rows: [{ timezone: 'Asia/Kolkata' }] }));
     const tz = tzRow.rows[0]?.timezone || 'Asia/Kolkata';
 
-    // Check quota
     const quota = await pool.query(
       `SELECT
          COUNT(*) FILTER (WHERE media_type='video')::int          AS video_used,
          COUNT(*) FILTER (WHERE media_type='image_carousel')::int AS image_used
        FROM social_media_posts
-       WHERE teacher_id=$1 AND school_id=$2 AND status!='rejected'
+       WHERE teacher_id=$1 AND school_id=$2 AND status NOT IN ('rejected','recalled')
          AND submitted_at::timestamptz AT TIME ZONE $3 >= (CURRENT_DATE AT TIME ZONE $3)`,
       [user_id, school_id, tz],
     );
     const { video_used, image_used } = quota.rows[0];
-    if (media_type === 'video' && video_used >= 1) {
+    if (media_type === 'video' && video_used >= 1)
       return res.status(429).json({ error: 'Daily video limit reached (1 per day). Try again tomorrow.' });
-    }
-    if (media_type === 'image_carousel' && image_used >= 2) {
+    if (media_type === 'image_carousel' && image_used >= 2)
       return res.status(429).json({ error: 'Daily image post limit reached (2 per day). Try again tomorrow.' });
-    }
 
-    // Verify platforms are enabled for this school
     const enabledRows = await pool.query(
       `SELECT platform FROM social_media_configs WHERE school_id=$1 AND enabled=true AND access_token IS NOT NULL`,
       [school_id],
     );
     const enabledPlatforms = new Set(enabledRows.rows.map((r: any) => r.platform));
     const invalidPlatforms = (platforms as string[]).filter(p => !enabledPlatforms.has(p));
-    if (invalidPlatforms.length) {
+    if (invalidPlatforms.length)
       return res.status(400).json({ error: `Platforms not configured: ${invalidPlatforms.join(', ')}` });
-    }
 
-    // Insert post
     const postResult = await pool.query(
       `INSERT INTO social_media_posts
          (school_id, teacher_id, media_type, media_paths, raw_caption, ai_caption, hashtags, status)
@@ -241,7 +251,6 @@ router.post('/posts', async (req: Request, res: Response) => {
     );
     const postId = postResult.rows[0].id;
 
-    // Insert per-platform records
     for (const platform of platforms as string[]) {
       await pool.query(
         `INSERT INTO social_media_post_platforms (post_id, school_id, platform) VALUES ($1,$2,$3)`,
@@ -258,7 +267,6 @@ router.post('/posts', async (req: Request, res: Response) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/teacher/social-media/posts
-// Teacher's own post history
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/posts', async (req: Request, res: Response) => {
   try {
@@ -279,7 +287,154 @@ router.get('/posts', async (req: Request, res: Response) => {
        LIMIT 50`,
       [user_id, school_id],
     );
-    return res.json(result.rows);
+    return res.json(result.rows.map((row: any) => ({
+      ...row,
+      media_urls: (row.media_paths || []).map((p: string) => {
+        if (p.startsWith('google_drive:')) {
+          return driveProxyUrl(p.replace('google_drive:', ''), school_id);
+        }
+        return null;
+      }).filter(Boolean),
+    })));
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/teacher/social-media/posts/:id/recall
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/posts/:id/recall', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const row = await pool.query(
+      'SELECT id, status FROM social_media_posts WHERE id=$1 AND teacher_id=$2 AND school_id=$3',
+      [req.params.id, user_id, school_id],
+    );
+    if (!row.rows.length) return res.status(404).json({ error: 'Post not found' });
+    if (!['pending_approval', 'rejected', 'failed'].includes(row.rows[0].status)) {
+      return res.status(409).json({ error: `Cannot recall a post with status "${row.rows[0].status}"` });
+    }
+    await pool.query(`UPDATE social_media_posts SET status='recalled', updated_at=now() WHERE id=$1`, [req.params.id]);
+    return res.json({ message: 'Post recalled' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/v1/teacher/social-media/posts/:id  — edit caption/hashtags
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/posts/:id', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { raw_caption, ai_caption, hashtags, platforms } = req.body;
+    const row = await pool.query(
+      'SELECT id, status FROM social_media_posts WHERE id=$1 AND teacher_id=$2 AND school_id=$3',
+      [req.params.id, user_id, school_id],
+    );
+    if (!row.rows.length) return res.status(404).json({ error: 'Post not found' });
+    if (!['recalled', 'rejected', 'failed'].includes(row.rows[0].status)) {
+      return res.status(409).json({ error: `Cannot edit a post with status "${row.rows[0].status}". Recall it first.` });
+    }
+    await pool.query(
+      `UPDATE social_media_posts
+       SET raw_caption=COALESCE($1,raw_caption), ai_caption=COALESCE($2,ai_caption),
+           hashtags=COALESCE($3::text[],hashtags), updated_at=now()
+       WHERE id=$4`,
+      [raw_caption || null, ai_caption || null, hashtags || null, req.params.id],
+    );
+    if (Array.isArray(platforms) && platforms.length) {
+      const enabled = new Set((await pool.query(
+        `SELECT platform FROM social_media_configs WHERE school_id=$1 AND enabled=true AND access_token IS NOT NULL`,
+        [school_id],
+      )).rows.map((r: any) => r.platform));
+      const invalid = platforms.filter(p => !enabled.has(p));
+      if (invalid.length) return res.status(400).json({ error: `Platforms not configured: ${invalid.join(', ')}` });
+      await pool.query('DELETE FROM social_media_post_platforms WHERE post_id=$1', [req.params.id]);
+      for (const p of platforms) {
+        await pool.query(`INSERT INTO social_media_post_platforms (post_id, school_id, platform) VALUES ($1,$2,$3)`, [req.params.id, school_id, p]);
+      }
+    }
+    return res.json({ message: 'Post updated' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/v1/teacher/social-media/posts/:id
+// Deletes from DB and removes from Google Drive
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/posts/:id', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const row = await pool.query(
+      'SELECT id, status, media_paths, media_deleted FROM social_media_posts WHERE id=$1 AND teacher_id=$2 AND school_id=$3',
+      [req.params.id, user_id, school_id],
+    );
+    if (!row.rows.length) return res.status(404).json({ error: 'Post not found' });
+    if (!['recalled', 'rejected', 'failed'].includes(row.rows[0].status)) {
+      return res.status(409).json({ error: `Cannot delete a post with status "${row.rows[0].status}". Recall it first.` });
+    }
+    // Delete from Drive
+    if (!row.rows[0].media_deleted) {
+      const { deleteDriveFile } = await import('../../lib/driveDelete');
+      for (const p of row.rows[0].media_paths || []) {
+        if (p.startsWith('google_drive:')) {
+          await deleteDriveFile(p.replace('google_drive:', ''), school_id).catch(() => {});
+        }
+      }
+    }
+    await pool.query('DELETE FROM social_media_post_platforms WHERE post_id=$1', [req.params.id]);
+    await pool.query('DELETE FROM social_media_posts WHERE id=$1', [req.params.id]);
+    return res.json({ message: 'Post deleted' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/teacher/social-media/posts/:id/resubmit
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/posts/:id/resubmit', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const row = await pool.query(
+      'SELECT id, status, media_type FROM social_media_posts WHERE id=$1 AND teacher_id=$2 AND school_id=$3',
+      [req.params.id, user_id, school_id],
+    );
+    if (!row.rows.length) return res.status(404).json({ error: 'Post not found' });
+    if (!['recalled', 'rejected', 'failed'].includes(row.rows[0].status)) {
+      return res.status(409).json({ error: `Cannot resubmit a post with status "${row.rows[0].status}"` });
+    }
+    const tzRow = await pool.query(`SELECT timezone FROM schools WHERE id=$1`, [school_id])
+      .catch(() => ({ rows: [{ timezone: 'Asia/Kolkata' }] }));
+    const tz = tzRow.rows[0]?.timezone || 'Asia/Kolkata';
+    const quota = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE media_type='video')::int AS video_used,
+              COUNT(*) FILTER (WHERE media_type='image_carousel')::int AS image_used
+       FROM social_media_posts
+       WHERE teacher_id=$1 AND school_id=$2 AND status NOT IN ('rejected','recalled','failed')
+         AND submitted_at::timestamptz AT TIME ZONE $3 >= (CURRENT_DATE AT TIME ZONE $3)
+         AND id != $4`,
+      [user_id, school_id, tz, req.params.id],
+    );
+    const { video_used, image_used } = quota.rows[0];
+    if (row.rows[0].media_type === 'video' && video_used >= 1)
+      return res.status(429).json({ error: 'Daily video limit reached. Try again tomorrow.' });
+    if (row.rows[0].media_type === 'image_carousel' && image_used >= 2)
+      return res.status(429).json({ error: 'Daily image post limit reached. Try again tomorrow.' });
+
+    await pool.query(
+      `UPDATE social_media_posts SET status='pending_approval', rejection_reason=NULL, submitted_at=now(), updated_at=now() WHERE id=$1`,
+      [req.params.id],
+    );
+    await pool.query(
+      `UPDATE social_media_post_platforms SET status='pending', error_message=NULL, attempted_at=NULL, posted_at=NULL WHERE post_id=$1`,
+      [req.params.id],
+    );
+    return res.json({ message: 'Post resubmitted for approval' });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }

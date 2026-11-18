@@ -9,8 +9,10 @@ import axios from 'axios';
 import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { socialMediaModuleGuard } from '../../middleware/socialMediaModuleGuard';
-import { encryptCredential, decryptCredential, maskCredential } from '../../lib/credentialEncryption';
+import { encryptCredential, decryptCredential } from '../../lib/credentialEncryption';
 import { publishPost } from '../../lib/socialMediaPublisher';
+import { deleteDriveFile } from '../../lib/driveDelete';
+import crypto from 'crypto';
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin', 'principal'), socialMediaModuleGuard);
@@ -243,7 +245,16 @@ router.get('/posts', async (req: Request, res: Response) => {
        ORDER BY smp.submitted_at DESC`,
       params,
     );
-    return res.json(result.rows);
+    return res.json(result.rows.map((row: any) => ({
+      ...row,
+      media_urls: (row.media_paths || []).map((p: string) => {
+        if (!p.startsWith('google_drive:')) return null;
+        const fileId = p.replace('google_drive:', '');
+        const sig = crypto.createHmac('sha256', process.env.JWT_SECRET || 'change_me')
+          .update(`${fileId}:${row.school_id}`).digest('hex').slice(0, 16);
+        return `/api/v1/drive-proxy?id=${fileId}&school=${row.school_id}&sig=${sig}`;
+      }).filter(Boolean),
+    })));
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }

@@ -454,6 +454,31 @@ app.listen(PORT, () => {
       for (const school of schools.rows) {
         await cleanupExpiredFiles(school.id);
       }
+
+      // Social media: delete media from Supabase for posts that have been
+      // pending_approval for >7 days (admin never reviewed) or already published/deleted
+      const stalePosts = await pool.query(
+        `SELECT id, media_paths FROM social_media_posts
+         WHERE media_deleted = false
+           AND media_paths IS NOT NULL AND array_length(media_paths, 1) > 0
+           AND (
+             (status = 'pending_approval' AND submitted_at < now() - interval '7 days')
+             OR status IN ('published', 'partially_published', 'failed', 'recalled')
+           )`
+      );
+      if (stalePosts.rows.length > 0) {
+        const { deleteFile } = await import('./lib/storage');
+        for (const row of stalePosts.rows) {
+          for (const path of row.media_paths || []) {
+            try { await deleteFile(path); } catch { /* non-fatal */ }
+          }
+          await pool.query(
+            `UPDATE social_media_posts SET media_deleted = true WHERE id = $1`,
+            [row.id]
+          );
+        }
+        console.log(`[social-media cleanup] Freed media for ${stalePosts.rows.length} post(s)`);
+      }
     } catch (e) {
       console.error('[cleanup scheduler]', e);
     }
