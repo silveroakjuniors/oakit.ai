@@ -91,7 +91,10 @@ async function compressVideo(
   await ff.deleteFile(inputName).catch(() => {});
   await ff.deleteFile(outputName).catch(() => {});
 
-  const blob = new Blob([data as Uint8Array], { type: 'video/mp4' });
+  // Copy into a plain ArrayBuffer so TypeScript accepts it as BlobPart
+  const uint8 = data as Uint8Array;
+  const arrayBuffer = uint8.buffer.slice(uint8.byteOffset, uint8.byteOffset + uint8.byteLength) as ArrayBuffer;
+  const blob = new Blob([arrayBuffer], { type: 'video/mp4' });
   const baseName = file.name.replace(/\.[^.]+$/, '');
   const compressed = new File([blob], `${baseName}_reel.mp4`, { type: 'video/mp4' });
   onProgress(100, 'Done');
