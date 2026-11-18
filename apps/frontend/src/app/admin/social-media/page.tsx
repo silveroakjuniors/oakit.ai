@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
+import { apiGet, apiPost, apiPut, apiDelete, getApiBase } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 
@@ -387,40 +387,125 @@ function ApprovalQueue({ token }: { token: string }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+
+  /** Prefix relative drive-proxy paths with the API origin */
+  function mUrl(url: string): string {
+    return url.startsWith('/') ? `${getApiBase()}${url}` : url;
+  }
 
   async function load() {
     setLoading(true);
     try {
       const data = await apiGet<any[]>('/api/v1/admin/social-media/posts?status=pending_approval', token);
       setPosts(data || []);
+      setSelected(new Set());
     } catch { setPosts([]); }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
 
-  async function approve(id: string) {
-    try {
-      await apiPost(`/api/v1/admin/social-media/posts/${id}/approve`, {}, token);
-      setActionMsg('Approved — publishing started');
-      load();
-    } catch (e: any) { setActionMsg(e?.message || 'Failed'); }
+  function toggleSelect(id: string) {
+    setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  }
+  function toggleAll() {
+    setSelected(prev => prev.size === posts.length ? new Set() : new Set(posts.map(p => p.id)));
   }
 
-  async function reject(id: string) {
+  async function doApprove(id: string) {
+    await apiPost(`/api/v1/admin/social-media/posts/${id}/approve`, {}, token);
+  }
+  async function doReject(id: string, reason: string) {
+    await apiPost(`/api/v1/admin/social-media/posts/${id}/reject`, { reason }, token);
+  }
+
+  async function approveOne(id: string) {
+    setActionMsg('');
+    try { await doApprove(id); setActionMsg('Approved — publishing started'); load(); }
+    catch (e: any) { setActionMsg(e?.message || 'Approve failed'); }
+  }
+  async function rejectOne(id: string) {
     const reason = prompt('Rejection reason (required):');
     if (!reason?.trim()) return;
-    try {
-      await apiPost(`/api/v1/admin/social-media/posts/${id}/reject`, { reason }, token);
-      setActionMsg('Post rejected');
-      load();
-    } catch (e: any) { setActionMsg(e?.message || 'Failed'); }
+    setActionMsg('');
+    try { await doReject(id, reason); setActionMsg('Post rejected'); load(); }
+    catch (e: any) { setActionMsg(e?.message || 'Reject failed'); }
+  }
+
+  async function bulkApprove(ids: string[]) {
+    setBulkProcessing(true); setActionMsg('');
+    let ok = 0; let fail = 0;
+    for (const id of ids) { try { await doApprove(id); ok++; } catch { fail++; } }
+    setActionMsg(`Approved ${ok}${fail ? `, ${fail} failed` : ''} — publishing started`);
+    setBulkProcessing(false); load();
+  }
+  async function bulkReject(ids: string[]) {
+    const reason = prompt(`Rejection reason for all ${ids.length} post(s):`);
+    if (!reason?.trim()) return;
+    setBulkProcessing(true); setActionMsg('');
+    let ok = 0; let fail = 0;
+    for (const id of ids) { try { await doReject(id, reason); ok++; } catch { fail++; } }
+    setActionMsg(`Rejected ${ok}${fail ? `, ${fail} failed` : ''}`);
+    setBulkProcessing(false); load();
   }
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
 
+  const selectedIds = Array.from(selected);
+  const allSelected = posts.length > 0 && selected.size === posts.length;
+
   return (
     <div className="flex flex-col gap-4">
-      {actionMsg && <p className="text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2">{actionMsg}</p>}
+      {/* Bulk toolbar */}
+      {posts.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-2.5">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={allSelected} onChange={toggleAll}
+              className="w-4 h-4 rounded border-neutral-300 text-primary focus:ring-primary" />
+            <span className="text-xs font-semibold text-neutral-600">
+              {allSelected ? 'Deselect all' : 'Select all'}
+            </span>
+          </label>
+          {selected.size > 0 && <span className="text-xs text-neutral-400">{selected.size} selected</span>}
+          <div className="flex gap-2 ml-auto">
+            {selected.size > 0 ? (
+              <>
+                <button onClick={() => bulkApprove(selectedIds)} disabled={bulkProcessing}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                  {bulkProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Approve selected ({selected.size})
+                </button>
+                <button onClick={() => bulkReject(selectedIds)} disabled={bulkProcessing}
+                  className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 disabled:opacity-50 transition-colors">
+                  Reject selected ({selected.size})
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => bulkApprove(posts.map(p => p.id))} disabled={bulkProcessing}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                  {bulkProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Approve all ({posts.length})
+                </button>
+                <button onClick={() => bulkReject(posts.map(p => p.id))} disabled={bulkProcessing}
+                  className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 disabled:opacity-50 transition-colors">
+                  Reject all ({posts.length})
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {actionMsg && (
+        <p className={`text-sm font-medium rounded-xl px-4 py-2 border ${
+          actionMsg.includes('failed') || actionMsg.startsWith('Reject')
+            ? 'bg-red-50 border-red-200 text-red-700'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+        }`}>{actionMsg}</p>
+      )}
+
       {posts.length === 0 ? (
         <div className="text-center py-16 text-neutral-400">
           <CheckCircle2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
@@ -428,32 +513,59 @@ function ApprovalQueue({ token }: { token: string }) {
         </div>
       ) : (
         posts.map(post => (
-          <div key={post.id} className="bg-white border border-neutral-200 rounded-2xl p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <p className="text-sm font-bold text-neutral-800">{post.teacher_name}</p>
-                <p className="text-xs text-neutral-400">{new Date(post.submitted_at).toLocaleString('en-IN')}</p>
+          <div key={post.id} className={`bg-white border rounded-2xl p-5 transition-all ${selected.has(post.id) ? 'border-primary ring-1 ring-primary/20' : 'border-neutral-200'}`}>
+            <div className="flex items-start gap-3 mb-3">
+              <input type="checkbox" checked={selected.has(post.id)} onChange={() => toggleSelect(post.id)}
+                className="w-4 h-4 mt-1 rounded border-neutral-300 text-primary focus:ring-primary shrink-0 cursor-pointer" />
+              <div className="flex-1 flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-bold text-neutral-800">{post.teacher_name}</p>
+                  <p className="text-xs text-neutral-400">{new Date(post.submitted_at).toLocaleString('en-IN')}</p>
+                </div>
+                <span className="text-xs bg-amber-100 text-amber-700 font-semibold px-2 py-1 rounded-full capitalize">
+                  {post.media_type?.replace('_', ' ')}
+                </span>
               </div>
-              <span className="text-xs bg-amber-100 text-amber-700 font-semibold px-2 py-1 rounded-full capitalize">
-                {post.media_type?.replace('_', ' ')}
-              </span>
             </div>
-            <p className="text-sm text-neutral-700 mb-2 leading-relaxed">{post.ai_caption || post.raw_caption}</p>
-            {post.hashtags?.length > 0 && (
-              <p className="text-xs text-primary mb-3">{post.hashtags.slice(0, 10).join(' ')}</p>
+
+            {/* Media preview */}
+            {post.media_urls?.length > 0 && (
+              <div className="mb-3 rounded-xl overflow-hidden bg-neutral-100 ml-7">
+                {post.media_type === 'video' ? (
+                  <video src={mUrl(post.media_urls[0])} controls preload="metadata"
+                    className="w-full max-h-72 object-contain bg-black rounded-xl" />
+                ) : (
+                  <div className={`grid gap-1 ${post.media_urls.length === 1 ? 'grid-cols-1' : post.media_urls.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                    {post.media_urls.map((url: string, i: number) => (
+                      <img key={i} src={mUrl(url)} alt={`Image ${i + 1}`}
+                        className="w-full aspect-square object-cover rounded-lg"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
-            <div className="flex gap-1 mb-4">
-              {post.platforms?.map((p: any) => (
-                <span key={p.platform} className="text-[10px] font-semibold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full capitalize">{p.platform}</span>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => approve(post.id)} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors">
-                Approve & Publish
-              </button>
-              <button onClick={() => reject(post.id)} className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 transition-colors">
-                Reject
-              </button>
+
+            <div className="ml-7">
+              <p className="text-sm text-neutral-700 mb-2 leading-relaxed">{post.ai_caption || post.raw_caption}</p>
+              {post.hashtags?.length > 0 && (
+                <p className="text-xs text-primary mb-3">{post.hashtags.slice(0, 10).join(' ')}</p>
+              )}
+              <div className="flex gap-1 mb-4">
+                {post.platforms?.map((p: any) => (
+                  <span key={p.platform} className="text-[10px] font-semibold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full capitalize">{p.platform}</span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => approveOne(post.id)}
+                  className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors">
+                  Approve & Publish
+                </button>
+                <button onClick={() => rejectOne(post.id)}
+                  className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 transition-colors">
+                  Reject
+                </button>
+              </div>
             </div>
           </div>
         ))
@@ -492,6 +604,35 @@ function PostHistory({ token }: { token: string }) {
             </span>
           </div>
           <p className="text-xs text-neutral-500 mb-2">{new Date(post.submitted_at).toLocaleDateString('en-IN')}</p>
+          {/* Thumbnail preview in history */}
+          {post.media_urls?.length > 0 && !post.media_deleted && (
+            <div className="mb-2 rounded-xl overflow-hidden">
+              {post.media_type === 'video' ? (
+                <video
+                  src={post.media_urls[0].startsWith('/') ? `${getApiBase()}${post.media_urls[0]}` : post.media_urls[0]}
+                  className="w-full max-h-40 object-cover rounded-xl bg-black"
+                  preload="metadata"
+                />
+              ) : (
+                <div className="flex gap-1">
+                  {post.media_urls.slice(0, 3).map((url: string, i: number) => (
+                    <img
+                      key={i}
+                      src={url.startsWith('/') ? `${getApiBase()}${url}` : url}
+                      alt=""
+                      className="w-16 h-16 object-cover rounded-lg"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  ))}
+                  {post.media_urls.length > 3 && (
+                    <div className="w-16 h-16 rounded-lg bg-neutral-100 flex items-center justify-center text-xs text-neutral-500 font-semibold">
+                      +{post.media_urls.length - 3}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <p className="text-sm text-neutral-600 line-clamp-2">{post.final_caption || post.ai_caption || post.raw_caption}</p>
           <div className="flex gap-1 mt-2">
             {post.platforms?.map((p: any) => (

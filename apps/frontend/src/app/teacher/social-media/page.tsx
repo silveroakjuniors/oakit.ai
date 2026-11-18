@@ -125,6 +125,10 @@ export default function TeacherSocialMediaPage() {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [quota, setQuota] = useState<Quota | null>(null);
   const [posts, setPosts] = useState<any[]>([]);
+  const [postAction, setPostAction] = useState<{ id: string; action: 'edit' | null }>({ id: '', action: null });
+  const [editCaption, setEditCaption] = useState('');
+  const [editGenerating, setEditGenerating] = useState(false);
+  const [actionMsg, setActionMsg] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -237,6 +241,73 @@ export default function TeacherSocialMediaPage() {
     } finally {
       setUploading(false);
     }
+  }
+
+  // ── Post actions ──────────────────────────────────────────────────────────
+  async function recallPost(id: string) {
+    setActionMsg('');
+    try {
+      await apiPost(`/api/v1/teacher/social-media/posts/${id}/recall`, {}, token);
+      setActionMsg('Post recalled — you can now edit or delete it');
+      loadHistory();
+    } catch (e: any) { setActionMsg(e?.message || 'Recall failed'); }
+  }
+
+  async function deletePost(id: string) {
+    if (!confirm('Delete this post permanently?')) return;
+    setActionMsg('');
+    try {
+      const res = await fetch(`${getApiBase()}/api/v1/teacher/social-media/posts/${id}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setActionMsg('Post deleted');
+      loadHistory();
+    } catch (e: any) { setActionMsg(e?.message || 'Delete failed'); }
+  }
+
+  async function saveEdit(id: string) {
+    setActionMsg('');
+    try {
+      const res = await fetch(`${getApiBase()}/api/v1/teacher/social-media/posts/${id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_caption: editCaption }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPostAction({ id: '', action: null });
+      setActionMsg('Caption updated');
+      loadHistory();
+    } catch (e: any) { setActionMsg(e?.message || 'Save failed'); }
+  }
+
+  async function resubmitPost(id: string) {
+    setActionMsg('');
+    try {
+      await apiPost(`/api/v1/teacher/social-media/posts/${id}/resubmit`, {}, token);
+      setActionMsg('Resubmitted for admin approval');
+      loadHistory();
+    } catch (e: any) { setActionMsg(e?.message || 'Resubmit failed'); }
+  }
+
+  async function generateEditCaption(post: any) {
+    if (!editCaption.trim()) { setActionMsg('Write some notes first, then generate'); return; }
+    setEditGenerating(true);
+    try {
+      const res = await apiPost<{ caption: string; hashtags: string[] }>(
+        '/api/v1/teacher/social-media/posts/generate-caption',
+        {
+          raw_caption: editCaption,
+          media_type: post.media_type,
+          platforms: (post.platforms || []).map((p: any) => p.platform),
+        },
+        token,
+      );
+      setEditCaption(res.caption);
+    } catch (e: any) { setActionMsg(e?.message || 'Caption generation failed'); }
+    finally { setEditGenerating(false); }
   }
 
   // ── Generate caption ──────────────────────────────────────────────────────
@@ -516,30 +587,147 @@ export default function TeacherSocialMediaPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
+            {actionMsg && (
+              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
+                ${actionMsg.includes('deleted') || actionMsg.includes('failed') ? 'bg-red-50 border border-red-200 text-red-600' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+                {actionMsg.includes('failed') ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                {actionMsg}
+              </div>
+            )}
             {posts.length === 0 ? (
               <p className="text-sm text-neutral-400 text-center py-10">No posts yet</p>
-            ) : posts.map(post => (
-              <div key={post.id} className="bg-white border border-neutral-200 rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-neutral-400">{new Date(post.submitted_at).toLocaleDateString('en-IN')}</span>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor(post.status)}`}>
-                    {post.status?.replace(/_/g, ' ')}
-                  </span>
-                </div>
-                <p className="text-sm text-neutral-700 line-clamp-2">{post.final_caption || post.ai_caption || post.raw_caption}</p>
-                {post.rejection_reason && (
-                  <p className="text-xs text-red-600 mt-1 bg-red-50 px-3 py-1.5 rounded-lg">Rejected: {post.rejection_reason}</p>
-                )}
-                <div className="flex gap-1 mt-2">
-                  {post.platforms?.map((p: any) => (
-                    <span key={p.platform} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
-                      ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-600' : 'bg-neutral-100 text-neutral-500'}`}>
-                      {PLATFORM_ICONS[p.platform]} {p.platform}
+            ) : posts.map(post => {
+              const canRecall = ['pending_approval', 'rejected', 'failed'].includes(post.status);
+              const canEdit   = ['recalled', 'rejected', 'failed'].includes(post.status);
+              const canDelete = ['recalled', 'rejected', 'failed'].includes(post.status);
+              const canResend = ['recalled', 'rejected', 'failed'].includes(post.status);
+              const isLocked  = ['approved', 'published', 'partially_published'].includes(post.status);
+              const isEditing = postAction.id === post.id && postAction.action === 'edit';
+
+              return (
+                <div key={post.id} className="bg-white border border-neutral-200 rounded-2xl p-4">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-neutral-400">{new Date(post.submitted_at).toLocaleDateString('en-IN')}</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor(post.status)}`}>
+                      {post.status?.replace(/_/g, ' ')}
                     </span>
-                  ))}
+                  </div>
+
+                  {/* Media preview */}
+                  {post.media_urls?.length > 0 && !post.media_deleted && (
+                    <div className="mb-2 rounded-xl overflow-hidden bg-neutral-100">
+                      {post.media_type === 'video' ? (
+                        <video
+                          src={post.media_urls[0].startsWith('/') ? `${getApiBase()}${post.media_urls[0]}` : post.media_urls[0]}
+                          controls preload="metadata"
+                          className="w-full max-h-48 object-contain bg-black rounded-xl"
+                        />
+                      ) : (
+                        <div className="flex gap-1">
+                          {post.media_urls.slice(0, 4).map((url: string, i: number) => (
+                            <img key={i}
+                              src={url.startsWith('/') ? `${getApiBase()}${url}` : url}
+                              alt="" className="w-16 h-16 object-cover rounded-lg"
+                              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Caption / edit mode */}
+                  {isEditing ? (
+                    <div className="mb-3">
+                      <label className="text-xs font-semibold text-neutral-500 mb-1 block">Edit caption</label>
+                      <textarea
+                        value={editCaption}
+                        onChange={e => setEditCaption(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                      />
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <button
+                          onClick={() => generateEditCaption(post)}
+                          disabled={editGenerating || !editCaption.trim()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors disabled:opacity-50"
+                        >
+                          {editGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                          {editGenerating ? 'Generating...' : 'Generate with Oakie'}
+                        </button>
+                        <button onClick={() => saveEdit(post.id)}
+                          className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors">
+                          Save
+                        </button>
+                        <button onClick={() => setPostAction({ id: '', action: null })}
+                          className="px-3 py-1.5 rounded-lg border border-neutral-200 text-neutral-600 text-xs font-semibold hover:bg-neutral-50 transition-colors">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-neutral-700 line-clamp-2 mb-2">
+                      {post.final_caption || post.ai_caption || post.raw_caption}
+                    </p>
+                  )}
+
+                  {/* Rejection reason */}
+                  {post.rejection_reason && (
+                    <p className="text-xs text-red-600 mb-2 bg-red-50 px-3 py-1.5 rounded-lg">
+                      Rejected: {post.rejection_reason}
+                    </p>
+                  )}
+
+                  {/* Platforms */}
+                  <div className="flex gap-1 mb-3">
+                    {post.platforms?.map((p: any) => (
+                      <span key={p.platform} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
+                        ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-600' : 'bg-neutral-100 text-neutral-500'}`}>
+                        {PLATFORM_ICONS[p.platform]} {p.platform}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Action buttons — not shown for approved/published */}
+                  {!isLocked && !isEditing && (
+                    <div className="flex flex-wrap gap-2 pt-2 border-t border-neutral-100">
+                      {canRecall && (
+                        <button onClick={() => recallPost(post.id)}
+                          className="px-3 py-1.5 rounded-lg border border-neutral-200 text-neutral-700 text-xs font-semibold hover:bg-neutral-50 transition-colors">
+                          Recall
+                        </button>
+                      )}
+                      {canEdit && (
+                        <button onClick={() => { setEditCaption(post.raw_caption || ''); setPostAction({ id: post.id, action: 'edit' }); }}
+                          className="px-3 py-1.5 rounded-lg border border-primary/30 text-primary text-xs font-semibold hover:bg-primary/5 transition-colors">
+                          Edit Caption
+                        </button>
+                      )}
+                      {canResend && (
+                        <button onClick={() => resubmitPost(post.id)}
+                          className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors">
+                          Resubmit
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => deletePost(post.id)}
+                          className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 transition-colors">
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Locked notice */}
+                  {isLocked && (
+                    <p className="text-[11px] text-neutral-400 pt-2 border-t border-neutral-100">
+                      {post.status === 'approved' ? 'Approved by admin — publishing in progress' : 'Published — no changes allowed'}
+                    </p>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
