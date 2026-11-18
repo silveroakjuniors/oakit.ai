@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { apiGet, apiPost, API_BASE } from '@/lib/api';
+import { apiGet, apiPost, getApiBase } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Wand2, Loader2, Upload, X, CheckCircle2, AlertCircle, Video, Image as ImageIcon } from 'lucide-react';
 
@@ -70,7 +70,7 @@ export default function TeacherSocialMediaPage() {
     try {
       const fd = new FormData();
       selected.forEach(f => fd.append('media', f));
-      const res = await fetch(`${API_BASE}/api/v1/teacher/social-media/upload`, {
+      const res = await fetch(`${getApiBase()}/api/v1/teacher/social-media/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: fd,

@@ -1036,6 +1036,7 @@ export default function TeacherPlanner() {
             { label: 'Calendar', sub: 'Holidays & special days', icon: CalendarDays, gradient: 'from-cyan-500 to-sky-600', hover: 'hover:border-cyan-200 hover:bg-cyan-50/40', path: '/teacher/calendar' },
             { label: 'Class Performance', sub: 'Stats & insights', icon: TrendingUp, gradient: 'from-indigo-500 to-blue-600', hover: 'hover:border-indigo-200 hover:bg-indigo-50/40', path: '/teacher/class-performance' },
             { label: 'Attendance Trends', sub: 'Historical stats', icon: CalendarDays, gradient: 'from-emerald-500 to-teal-600', hover: 'hover:border-emerald-200 hover:bg-emerald-50/40', path: '/teacher/attendance-trends' },
+            { label: 'Social Media', sub: 'Post school moments', icon: Share2, gradient: 'from-pink-500 to-rose-500', hover: 'hover:border-pink-200 hover:bg-pink-50/40', path: '/teacher/social-media' },
           ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
             <button key={path} onClick={() => router.push(path)}
               className={`flex items-center gap-3 p-3.5 bg-white border border-neutral-100 rounded-2xl transition-all shadow-sm group ${hover}`}>
