@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiGet, apiPost, apiPut, apiDelete, getApiBase } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { DriveMedia } from '@/components/ui/DriveMedia';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PlatformConfig {
@@ -532,14 +533,20 @@ function ApprovalQueue({ token }: { token: string }) {
             {post.media_urls?.length > 0 && (
               <div className="mb-3 rounded-xl overflow-hidden bg-neutral-100 ml-7">
                 {post.media_type === 'video' ? (
-                  <video src={mUrl(post.media_urls[0])} controls preload="metadata"
-                    className="w-full max-h-72 object-contain bg-black rounded-xl" />
+                  <DriveMedia
+                    src={post.media_urls[0]}
+                    mediaType="video"
+                    className="w-full max-h-72 object-contain bg-black rounded-xl"
+                  />
                 ) : (
                   <div className={`grid gap-1 ${post.media_urls.length === 1 ? 'grid-cols-1' : post.media_urls.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                     {post.media_urls.map((url: string, i: number) => (
-                      <img key={i} src={mUrl(url)} alt={`Image ${i + 1}`}
+                      <DriveMedia
+                        key={i}
+                        src={url}
+                        mediaType="image"
                         className="w-full aspect-square object-cover rounded-lg"
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      />
                     ))}
                   </div>
                 )}
@@ -608,20 +615,19 @@ function PostHistory({ token }: { token: string }) {
           {post.media_urls?.length > 0 && !post.media_deleted && (
             <div className="mb-2 rounded-xl overflow-hidden">
               {post.media_type === 'video' ? (
-                <video
-                  src={post.media_urls[0].startsWith('/') ? `${getApiBase()}${post.media_urls[0]}` : post.media_urls[0]}
-                  className="w-full max-h-40 object-cover rounded-xl bg-black"
-                  preload="metadata"
+                <DriveMedia
+                  src={post.media_urls[0]}
+                  mediaType="video"
+                  className="w-full max-h-40 rounded-xl bg-black"
                 />
               ) : (
                 <div className="flex gap-1">
                   {post.media_urls.slice(0, 3).map((url: string, i: number) => (
-                    <img
+                    <DriveMedia
                       key={i}
-                      src={url.startsWith('/') ? `${getApiBase()}${url}` : url}
-                      alt=""
+                      src={url}
+                      mediaType="image"
                       className="w-16 h-16 object-cover rounded-lg"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                   ))}
                   {post.media_urls.length > 3 && (

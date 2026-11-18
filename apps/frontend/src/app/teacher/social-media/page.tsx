@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { apiGet, apiPost, getApiBase } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { Wand2, Loader2, Upload, CheckCircle2, AlertCircle, Video, Image as ImageIcon, Zap, Clock } from 'lucide-react';
+import { DriveMedia } from '@/components/ui/DriveMedia';
 
 interface Platform { platform: string; handle: string | null; }
 interface Quota {
@@ -621,18 +622,19 @@ export default function TeacherSocialMediaPage() {
                   {post.media_urls?.length > 0 && !post.media_deleted && (
                     <div className="mb-2 rounded-xl overflow-hidden bg-neutral-100">
                       {post.media_type === 'video' ? (
-                        <video
-                          src={post.media_urls[0].startsWith('/') ? `${getApiBase()}${post.media_urls[0]}` : post.media_urls[0]}
-                          controls preload="metadata"
+                        <DriveMedia
+                          src={post.media_urls[0]}
+                          mediaType="video"
                           className="w-full max-h-48 object-contain bg-black rounded-xl"
                         />
                       ) : (
                         <div className="flex gap-1">
                           {post.media_urls.slice(0, 4).map((url: string, i: number) => (
-                            <img key={i}
-                              src={url.startsWith('/') ? `${getApiBase()}${url}` : url}
-                              alt="" className="w-16 h-16 object-cover rounded-lg"
-                              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            <DriveMedia
+                              key={i}
+                              src={url}
+                              mediaType="image"
+                              className="w-16 h-16 object-cover rounded-lg"
                             />
                           ))}
                         </div>
