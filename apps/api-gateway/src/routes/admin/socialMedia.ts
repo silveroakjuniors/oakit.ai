@@ -26,7 +26,7 @@ router.get('/config', async (req: Request, res: Response) => {
     const { school_id } = req.user!;
     const rows = await pool.query(
       `SELECT platform, enabled, token_expires_at, page_id, account_id, handle,
-              connected_at, extra_config,
+              connected_at, extra_config, app_id,
               CASE WHEN access_token IS NOT NULL THEN true ELSE false END as has_token
        FROM social_media_configs WHERE school_id=$1 ORDER BY platform`,
       [school_id],
@@ -47,6 +47,7 @@ router.get('/config', async (req: Request, res: Response) => {
       handle: configMap[p]?.handle ?? null,
       connected_at: configMap[p]?.connected_at ?? null,
       extra_config: configMap[p]?.extra_config ?? null,
+      app_id: configMap[p]?.app_id ?? null,  // returned so it can be pre-filled in edit form
     }));
 
     return res.json(result);

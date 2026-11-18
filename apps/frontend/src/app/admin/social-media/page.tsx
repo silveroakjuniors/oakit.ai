@@ -16,6 +16,7 @@ interface PlatformConfig {
   account_id: string | null;
   handle: string | null;
   connected_at: string | null;
+  app_id: string | null;
 }
 
 interface TestResult {
@@ -168,13 +169,11 @@ function PlatformConfigCard({
   // Pre-populate non-sensitive fields when opening edit mode
   function toggleExpanded() {
     if (!expanded && config.connected) {
-      // Seed form with saved non-sensitive values so user sees what's already stored.
-      // access_token is intentionally NOT returned by the API (security) — user only
-      // needs to re-enter it if they want to change it.
       setFields({
         page_id:    config.page_id    || '',
         account_id: config.account_id || '',
         handle:     config.handle     || '',
+        app_id:     config.app_id     || '',
       });
     }
     if (!expanded) setMsg('');
@@ -291,14 +290,16 @@ function PlatformConfigCard({
           {config.connected && ['instagram', 'facebook'].includes(config.platform) && (
             <button
               onClick={async () => {
-                setMsg('');
+                setMsg('Refreshing...');
                 try {
-                  const r = await apiPost<{message: string}>(
+                  const r = await apiPost<{message: string; expires_at: string}>(
                     `/api/v1/admin/social-media/config/${config.platform}/refresh-token`, {}, token
                   );
                   setMsg(r.message);
                   onSaved();
-                } catch (e: any) { setMsg(e?.message || 'Refresh failed — add App ID and Secret first'); }
+                } catch (e: any) {
+                  setMsg(e?.message || 'Refresh failed — save App ID + Secret first');
+                }
               }}
               className="text-xs font-medium px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
               title="Extend token by 60 days"
@@ -315,6 +316,17 @@ function PlatformConfigCard({
           </button>
         </div>
       </div>
+
+      {/* Token refresh result / save message — shown at card level */}
+      {msg && !expanded && (
+        <div className={`mx-5 mb-3 px-4 py-2.5 rounded-xl text-sm ${
+          msg.includes('refreshed') || msg === 'Saved' || msg.includes('expires')
+            ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+            : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          {msg}
+        </div>
+      )}
 
       {/* Test result */}
       {testResult && (
