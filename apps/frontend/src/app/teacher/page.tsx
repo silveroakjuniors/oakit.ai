@@ -24,7 +24,7 @@ import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
   ChevronDown, ChevronUp, Send, Paperclip, BookOpen, Sparkles,
   LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X, ClipboardList,
-  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet, Megaphone
+  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet, Megaphone, Share2
 } from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
@@ -1789,10 +1789,12 @@ export default function TeacherPlanner() {
           { id: 'plan', Icon: CalendarDays, label: 'Plan' },
           { id: 'chat', Icon: MessageCircle, label: 'Oakie' },
           { id: 'help', Icon: HelpCircle, label: 'Help' },
-        ] as { id: Tab; Icon: any; label: string }[]).map(tab => {
-          const active = activeTab === tab.id;
+          { id: 'social', Icon: Share2, label: 'Social' },
+        ] as { id: Tab | 'social'; Icon: any; label: string }[]).map(tab => {
+          const active = tab.id !== 'social' && activeTab === (tab.id as Tab);
           return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id}
+              onClick={() => tab.id === 'social' ? router.push('/teacher/social-media') : setActiveTab(tab.id as Tab)}
               className="flex-1 flex flex-col items-center py-2.5 gap-0.5 relative transition-all active:scale-95">
               {active && (
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-600 rounded-full" />

@@ -92,6 +92,8 @@ import teacherReportCardRouter from './routes/teacher/reportCard';
 import teacherHolisticReportRouter from './routes/teacher/holisticReport';
 import adminHolisticTemplateRouter from './routes/admin/holisticReportTemplate';
 import parentHolisticReportRouter from './routes/parent/holisticReport';
+import adminSocialMediaRouter from './routes/admin/socialMedia';
+import teacherSocialMediaRouter from './routes/teacher/socialMedia';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
@@ -405,6 +407,10 @@ app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
 app.use('/api/v1/teacher/holistic-report', teacherHolisticReportRouter);
 app.use('/api/v1/admin/holistic-template', adminHolisticTemplateRouter);
 app.use('/api/v1/parent/holistic-report', parentHolisticReportRouter);
+
+// Social Media Publisher module
+app.use('/api/v1/admin/social-media', adminSocialMediaRouter);
+app.use('/api/v1/teacher/social-media', teacherSocialMediaRouter);
 
 // Student Portal
 app.use('/api/v1/student', studentFeedRouter);
