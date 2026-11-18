@@ -160,6 +160,27 @@ export default function TeacherSocialMediaPage() {
 
     if (mediaType === 'video' && selected.length > 1) { setMsg('Only 1 video allowed per post'); return; }
     if (mediaType === 'image_carousel' && selected.length > 5) { setMsg('Maximum 5 images'); return; }
+    if (mediaType === 'image_carousel' && selected.length < 2) { setMsg('Select at least 2 images for a carousel'); return; }
+
+    // Validate file types match the chosen media type
+    const videoExts = ['.mp4', '.mov'];
+    const imageExts = ['.jpg', '.jpeg', '.png', '.webp'];
+    const videoMimes = ['video/mp4', 'video/quicktime', 'video/mov'];
+    const imageMimes = ['image/jpeg', 'image/png', 'image/webp'];
+
+    if (mediaType === 'video') {
+      const bad = selected.find(f => {
+        const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+        return !videoExts.includes(ext) && !videoMimes.includes(f.type);
+      });
+      if (bad) { setMsg('Please select a video file (MP4 or MOV)'); return; }
+    } else {
+      const bad = selected.find(f => {
+        const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+        return !imageExts.includes(ext) && !imageMimes.includes(f.type);
+      });
+      if (bad) { setMsg('Please select image files only (JPG, PNG, WEBP)'); return; }
+    }
 
     setMsg('');
     setUploadedPaths([]);
@@ -268,6 +289,8 @@ export default function TeacherSocialMediaPage() {
       if (!res.ok) throw new Error(data.error);
       setActionMsg('Post deleted');
       loadHistory();
+      // Refresh quota so the freed slot shows immediately
+      apiGet<Quota>('/api/v1/teacher/social-media/quota', token).then(setQuota).catch(() => {});
     } catch (e: any) { setActionMsg(e?.message || 'Delete failed'); }
   }
 
@@ -417,7 +440,7 @@ export default function TeacherSocialMediaPage() {
         ) : (
           <>
             <p className="text-sm font-medium text-neutral-500">Tap to select photos</p>
-            <p className="text-xs text-neutral-400 mt-1">JPG / PNG / WEBP · Up to 5 photos</p>
+            <p className="text-xs text-neutral-400 mt-1">JPG / PNG / WEBP · 2 to 5 photos required</p>
           </>
         )}
       </div>
@@ -601,11 +624,11 @@ export default function TeacherSocialMediaPage() {
             {posts.length === 0 ? (
               <p className="text-sm text-neutral-400 text-center py-10">No posts yet</p>
             ) : posts.map(post => {
-              const canRecall = ['pending_approval', 'rejected', 'failed'].includes(post.status);
+              const canRecall = ['rejected', 'failed'].includes(post.status);
               const canEdit   = ['recalled', 'rejected', 'failed'].includes(post.status);
               const canDelete = ['recalled', 'rejected', 'failed'].includes(post.status);
               const canResend = ['recalled', 'rejected', 'failed'].includes(post.status);
-              const isLocked  = ['approved', 'published', 'partially_published'].includes(post.status);
+              const isLocked  = ['pending_approval', 'approved', 'published', 'partially_published'].includes(post.status);
               const isEditing = postAction.id === post.id && postAction.action === 'edit';
 
               return (

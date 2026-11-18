@@ -60,7 +60,7 @@ router.get('/quota', async (req: Request, res: Response) => {
          COUNT(*) FILTER (WHERE media_type='image_carousel')::int  AS image_used
        FROM social_media_posts
        WHERE teacher_id=$1 AND school_id=$2
-         AND status NOT IN ('rejected','recalled')
+         AND status NOT IN ('rejected','recalled','failed')
          AND submitted_at::timestamptz AT TIME ZONE $3 >= (CURRENT_DATE AT TIME ZONE $3)`,
       [user_id, school_id, tz],
     );
@@ -208,6 +208,8 @@ router.post('/posts', async (req: Request, res: Response) => {
     if (!platforms?.length) return res.status(400).json({ error: 'Select at least one platform' });
     if (media_type === 'image_carousel' && media_paths.length > 5)
       return res.status(400).json({ error: 'Maximum 5 images per carousel' });
+    if (media_type === 'image_carousel' && media_paths.length < 2)
+      return res.status(400).json({ error: 'Carousel requires at least 2 images' });
 
     // Validate all paths are Drive paths
     const invalidPaths = (media_paths as string[]).filter(p => !p.startsWith('google_drive:'));
@@ -223,7 +225,7 @@ router.post('/posts', async (req: Request, res: Response) => {
          COUNT(*) FILTER (WHERE media_type='video')::int          AS video_used,
          COUNT(*) FILTER (WHERE media_type='image_carousel')::int AS image_used
        FROM social_media_posts
-       WHERE teacher_id=$1 AND school_id=$2 AND status NOT IN ('rejected','recalled')
+       WHERE teacher_id=$1 AND school_id=$2 AND status NOT IN ('rejected','recalled','failed')
          AND submitted_at::timestamptz AT TIME ZONE $3 >= (CURRENT_DATE AT TIME ZONE $3)`,
       [user_id, school_id, tz],
     );
@@ -312,8 +314,8 @@ router.post('/posts/:id/recall', async (req: Request, res: Response) => {
       [req.params.id, user_id, school_id],
     );
     if (!row.rows.length) return res.status(404).json({ error: 'Post not found' });
-    if (!['pending_approval', 'rejected', 'failed'].includes(row.rows[0].status)) {
-      return res.status(409).json({ error: `Cannot recall a post with status "${row.rows[0].status}"` });
+    if (!['rejected', 'failed'].includes(row.rows[0].status)) {
+      return res.status(409).json({ error: `Cannot recall a post with status "${row.rows[0].status}". Only rejected or failed posts can be recalled.` });
     }
     await pool.query(`UPDATE social_media_posts SET status='recalled', updated_at=now() WHERE id=$1`, [req.params.id]);
     return res.json({ message: 'Post recalled' });

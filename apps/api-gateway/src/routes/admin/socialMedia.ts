@@ -10,7 +10,7 @@ import { pool } from '../../lib/db';
 import { jwtVerify, schoolScope, roleGuard, forceResetGuard } from '../../middleware/auth';
 import { socialMediaModuleGuard } from '../../middleware/socialMediaModuleGuard';
 import { encryptCredential, decryptCredential } from '../../lib/credentialEncryption';
-import { publishPost } from '../../lib/socialMediaPublisher';
+import { publishPost, retryFailedPlatforms } from '../../lib/socialMediaPublisher';
 import { deleteDriveFile } from '../../lib/driveDelete';
 import crypto from 'crypto';
 
@@ -394,6 +394,242 @@ router.post('/posts/:id/reject', async (req: Request, res: Response) => {
     );
 
     return res.json({ message: 'Post rejected' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/admin/social-media/posts/:id/retry-failed
+// Retry only the platforms that failed on a partially_published or failed post
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/posts/:id/retry-failed', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { id } = req.params;
+
+    const post = await pool.query(
+      `SELECT id, status, media_deleted FROM social_media_posts WHERE id=$1 AND school_id=$2`,
+      [id, school_id],
+    );
+    if (!post.rows.length) return res.status(404).json({ error: 'Post not found' });
+    if (!['partially_published', 'failed'].includes(post.rows[0].status)) {
+      return res.status(400).json({ error: 'Only partially published or failed posts can be retried' });
+    }
+    if (post.rows[0].media_deleted) {
+      return res.status(400).json({ error: 'Media files were deleted after the initial publish attempt. This post cannot be retried.' });
+    }
+
+    // Check there are actually failed platforms to retry
+    const failedPlatforms = await pool.query(
+      `SELECT platform FROM social_media_post_platforms WHERE post_id=$1 AND status='failed'`,
+      [id],
+    );
+    if (!failedPlatforms.rows.length) {
+      return res.status(400).json({ error: 'No failed platforms found on this post' });
+    }
+
+    // Fire async — same pattern as approve
+    retryFailedPlatforms(id, school_id).catch(err =>
+      console.error(`[retry-failed] Error for post ${id}:`, err),
+    );
+
+    return res.json({
+      message: `Retrying ${failedPlatforms.rows.map((r: any) => r.platform).join(', ')} — check post history in a few seconds`,
+    });
+  } catch (err) {
+    console.error('[retry-failed]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/v1/admin/social-media/posts/:id/platform/:platform
+// Delete a published post from a specific platform (Instagram or Facebook)
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/posts/:id/platform/:platform', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { id, platform } = req.params;
+
+    if (!['instagram', 'facebook'].includes(platform)) {
+      return res.status(400).json({ error: 'Platform delete is only supported for Instagram and Facebook' });
+    }
+
+    // Get the platform_post_id stored when it was published
+    const pfRow = await pool.query(
+      `SELECT smpf.platform_post_id, smpf.status
+       FROM social_media_post_platforms smpf
+       JOIN social_media_posts smp ON smp.id = smpf.post_id
+       WHERE smpf.post_id=$1 AND smpf.platform=$2 AND smp.school_id=$3`,
+      [id, platform, school_id],
+    );
+    if (!pfRow.rows.length) return res.status(404).json({ error: 'Post/platform not found' });
+    if (pfRow.rows[0].status !== 'posted') {
+      return res.status(400).json({ error: `This post was not successfully published to ${platform}` });
+    }
+
+    const platformPostId = pfRow.rows[0].platform_post_id;
+    if (!platformPostId) {
+      return res.status(400).json({ error: `No platform post ID stored for ${platform} — cannot delete remotely` });
+    }
+
+    // Get access token for the platform
+    const credRow = await pool.query(
+      `SELECT access_token FROM social_media_configs WHERE school_id=$1 AND platform=$2 AND enabled=true`,
+      [school_id, platform],
+    );
+    if (!credRow.rows.length || !credRow.rows[0].access_token) {
+      return res.status(400).json({ error: `No credentials configured for ${platform}` });
+    }
+    const accessToken = decryptCredential(credRow.rows[0].access_token);
+
+    // Call Graph API DELETE /{post-id}
+    try {
+      await axios.delete(
+        `https://graph.facebook.com/v19.0/${platformPostId}`,
+        { params: { access_token: accessToken }, timeout: 10000 },
+      );
+    } catch (apiErr: any) {
+      const msg = apiErr?.response?.data?.error?.message || apiErr?.message || 'API call failed';
+      console.error(`[delete-platform] ${platform} Graph API error:`, msg);
+      return res.status(502).json({ error: `${platform} API error: ${msg}` });
+    }
+
+    // Mark deleted in DB
+    await pool.query(
+      `UPDATE social_media_post_platforms
+       SET status='deleted', error_message='Deleted by admin', updated_at=now()
+       WHERE post_id=$1 AND platform=$2`,
+      [id, platform],
+    );
+
+    // Recalculate overall post status
+    const allPf = await pool.query(
+      `SELECT status FROM social_media_post_platforms WHERE post_id=$1`, [id],
+    );
+    const statuses: string[] = allPf.rows.map((r: any) => r.status);
+    const hasPosted = statuses.some(s => s === 'posted');
+    const allDeletedOrFailed = statuses.every(s => ['deleted', 'failed'].includes(s));
+    const newStatus = allDeletedOrFailed ? 'deleted' : hasPosted ? 'partially_published' : 'failed';
+    await pool.query(
+      `UPDATE social_media_posts SET status=$1, updated_at=now() WHERE id=$2`,
+      [newStatus, id],
+    );
+
+    console.log(`[delete-platform] Post ${id} deleted from ${platform} (post ID: ${platformPostId})`);
+    return res.json({ message: `Post deleted from ${platform}` });
+  } catch (err) {
+    console.error('[delete-platform]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/admin/social-media/drive-cleanup
+// Delete Drive files for all posts submitted on or before `before_date`.
+// Only deletes files from posts that are published, failed, rejected, or recalled
+// (i.e. no longer pending or approved-in-progress).
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/drive-cleanup', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { before_date } = req.body; // YYYY-MM-DD
+
+    if (!before_date || !/^\d{4}-\d{2}-\d{2}$/.test(before_date)) {
+      return res.status(400).json({ error: 'before_date is required (YYYY-MM-DD)' });
+    }
+
+    // Find all posts submitted on or before that date that are safe to clean
+    const rows = await pool.query(
+      `SELECT id, media_paths FROM social_media_posts
+       WHERE school_id=$1
+         AND media_deleted=false
+         AND status IN ('published','partially_published','failed','rejected','recalled')
+         AND submitted_at::date <= $2::date`,
+      [school_id, before_date],
+    );
+
+    if (!rows.rows.length) {
+      return res.json({ deleted: 0, errors: 0, message: 'No Drive files found for the selected date range.' });
+    }
+
+    let deleted = 0;
+    let errors = 0;
+    const { deleteDriveFile } = await import('../../lib/driveDelete');
+
+    for (const post of rows.rows) {
+      let postHadError = false;
+      for (const mediaPath of post.media_paths || []) {
+        if (!mediaPath.startsWith('google_drive:')) continue;
+        const fileId = mediaPath.replace('google_drive:', '');
+        try {
+          await deleteDriveFile(fileId, school_id);
+          deleted++;
+        } catch (e: any) {
+          console.error(`[drive-cleanup] Failed to delete ${fileId}:`, e?.message);
+          errors++;
+          postHadError = true;
+        }
+      }
+      // Mark media_deleted even if some files errored — they may already be gone
+      if (!postHadError) {
+        await pool.query(
+          `UPDATE social_media_posts SET media_deleted=true WHERE id=$1`, [post.id],
+        );
+      }
+    }
+
+    console.log(`[drive-cleanup] school=${school_id} before=${before_date} deleted=${deleted} errors=${errors}`);
+    return res.json({
+      deleted,
+      errors,
+      posts_processed: rows.rows.length,
+      message: errors
+        ? `Deleted ${deleted} file(s). ${errors} file(s) could not be deleted (may already be gone).`
+        : `Deleted ${deleted} file(s) from ${rows.rows.length} post(s).`,
+    });
+  } catch (err) {
+    console.error('[drive-cleanup]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/admin/social-media/drive-cleanup/preview
+// Count how many files would be deleted for a given before_date
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/drive-cleanup/preview', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { before_date } = req.query as { before_date?: string };
+
+    if (!before_date || !/^\d{4}-\d{2}-\d{2}$/.test(before_date)) {
+      return res.status(400).json({ error: 'before_date query param required (YYYY-MM-DD)' });
+    }
+
+    const rows = await pool.query(
+      `SELECT id, media_paths, status, submitted_at::date AS submitted_date
+       FROM social_media_posts
+       WHERE school_id=$1
+         AND media_deleted=false
+         AND status IN ('published','partially_published','failed','rejected','recalled')
+         AND submitted_at::date <= $2::date
+       ORDER BY submitted_at DESC`,
+      [school_id, before_date],
+    );
+
+    const fileCount = rows.rows.reduce(
+      (sum: number, p: any) => sum + (p.media_paths || []).filter((x: string) => x.startsWith('google_drive:')).length,
+      0,
+    );
+
+    return res.json({
+      posts: rows.rows.length,
+      files: fileCount,
+      earliest: rows.rows.length ? rows.rows[rows.rows.length - 1].submitted_date : null,
+      latest: rows.rows.length ? rows.rows[0].submitted_date : null,
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }

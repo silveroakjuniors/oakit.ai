@@ -113,8 +113,25 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
 
     const caption = post.final_caption || post.ai_caption || post.raw_caption || '';
     const hashtags: string[] = post.hashtags || [];
-    const fullCaption = hashtags.length
-      ? `${caption}\n\n${hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`).join(' ')}`
+
+    // Reach-boosting hashtags appended to every post
+    const BOOST_TAGS = [
+      '#fyp', '#foryou', '#foryoupage', '#viral', '#trending',
+      '#school', '#preschool', '#primaryschool', '#earlylearning', '#kindergarten',
+      '#schoollife', '#kidsofinstagram', '#kidseducation', '#learningisfun',
+      '#teachersofinstagram', '#education', '#classroom', '#schooldays',
+      '#silveroakjuniors', '#oakitai',
+    ];
+
+    // Merge teacher/AI hashtags with boost tags — no duplicates, normalised to lowercase
+    const allTags = [
+      ...hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`),
+      ...BOOST_TAGS,
+    ];
+    const dedupedTags = [...new Map(allTags.map(t => [t.toLowerCase(), t])).values()];
+
+    const fullCaption = dedupedTags.length
+      ? `${caption}\n\n${dedupedTags.join(' ')}`
       : caption;
 
     // Publish to all platforms in parallel
@@ -183,16 +200,8 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
       [finalStatus, finalStatus !== 'failed' ? new Date().toISOString() : null, postId],
     );
 
-    // Delete from Google Drive after publishing (regardless of outcome)
-    for (const mediaPath of post.media_paths || []) {
-      if (mediaPath.startsWith('google_drive:')) {
-        const fileId = mediaPath.replace('google_drive:', '');
-        await deleteDriveFile(fileId, schoolId).catch(e =>
-          console.error(`[publisher] Drive delete failed for ${fileId}:`, e?.message),
-        );
-      }
-    }
-    await pool.query(`UPDATE social_media_posts SET media_deleted=true WHERE id=$1`, [postId]);
+    // Drive files are NOT deleted automatically — admin uses the Drive Cleanup tool
+    // in Post History to bulk-delete by date when they're done with retries.
 
     // Notify teacher
     const notifBody = finalStatus === 'published'
@@ -214,6 +223,135 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
     await pool.query(
       `UPDATE social_media_posts SET status='failed', updated_at=now() WHERE id=$1`, [postId],
     ).catch(() => {});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Retry only the platforms that previously failed on a partially_published/failed post
+// ─────────────────────────────────────────────────────────────────────────────
+export async function retryFailedPlatforms(postId: string, schoolId: string): Promise<void> {
+  try {
+    const postRow = await pool.query(
+      `SELECT smp.*, smpf.platform
+       FROM social_media_posts smp
+       JOIN social_media_post_platforms smpf ON smpf.post_id = smp.id
+       WHERE smp.id=$1 AND smp.school_id=$2 AND smpf.status='failed'`,
+      [postId, schoolId],
+    );
+    if (!postRow.rows.length) {
+      console.error(`[publisher retry] No failed platforms found for post ${postId}`);
+      return;
+    }
+
+    const post = postRow.rows[0];
+    const failedPlatforms: Platform[] = [...new Set(postRow.rows.map((r: any) => r.platform as Platform))];
+
+    if (post.media_deleted) {
+      // Drive files are gone — mark all failed platforms with a clear error
+      for (const platform of failedPlatforms) {
+        await pool.query(
+          `UPDATE social_media_post_platforms SET status='failed', error_message=$1, attempted_at=now() WHERE post_id=$2 AND platform=$3`,
+          ['Media files were deleted before retry was attempted. Post cannot be republished.', postId, platform],
+        );
+      }
+      return;
+    }
+
+    // Load credentials for the failed platforms only
+    const configRows = await pool.query(
+      `SELECT platform, access_token, refresh_token, page_id, account_id, extra_config
+       FROM social_media_configs
+       WHERE school_id=$1 AND platform=ANY($2::text[]) AND enabled=true`,
+      [schoolId, failedPlatforms],
+    );
+    const configs: Record<string, any> = {};
+    for (const row of configRows.rows) {
+      configs[row.platform] = {
+        ...row,
+        access_token: row.access_token ? decryptCredential(row.access_token) : null,
+        refresh_token: row.refresh_token ? decryptCredential(row.refresh_token) : null,
+      };
+    }
+
+    const mediaUrls: string[] = (post.media_paths || [])
+      .map(mediaPathToUrl)
+      .filter((u: string | null): u is string => u !== null);
+
+    if (!mediaUrls.length) {
+      console.error(`[publisher retry] No media URLs for post ${postId}`);
+      return;
+    }
+
+    const caption = post.final_caption || post.ai_caption || post.raw_caption || '';
+    const hashtags: string[] = post.hashtags || [];
+    const BOOST_TAGS = [
+      '#fyp', '#foryou', '#foryoupage', '#viral', '#trending',
+      '#school', '#preschool', '#primaryschool', '#earlylearning', '#kindergarten',
+      '#schoollife', '#kidsofinstagram', '#kidseducation', '#learningisfun',
+      '#teachersofinstagram', '#education', '#classroom', '#schooldays',
+      '#silveroakjuniors', '#oakitai',
+    ];
+    const allTags = [
+      ...hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`),
+      ...BOOST_TAGS,
+    ];
+    const dedupedTags = [...new Map(allTags.map(t => [t.toLowerCase(), t])).values()];
+    const fullCaption = dedupedTags.length ? `${caption}\n\n${dedupedTags.join(' ')}` : caption;
+
+    const results: PublishResult[] = await Promise.all(
+      failedPlatforms.map(async (platform) => {
+        const config = configs[platform];
+        if (!config?.access_token) return { platform, success: false, error: 'No valid credential found' };
+        try {
+          const result = await publishToPlatform(platform, config, post, mediaUrls, fullCaption);
+          if (!result.success && (result.error?.includes('OAuthException') || result.error?.includes('Session has expired'))) {
+            const freshToken = await tryRefreshMetaToken(schoolId, platform);
+            if (freshToken) return publishToPlatform(platform, { ...config, access_token: freshToken }, post, mediaUrls, fullCaption);
+          }
+          return result;
+        } catch (err: any) {
+          const errMsg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message || 'Unknown error';
+          if (errMsg.includes('OAuthException') || errMsg.includes('Session has expired')) {
+            const freshToken = await tryRefreshMetaToken(schoolId, platform);
+            if (freshToken) {
+              try { return await publishToPlatform(platform, { ...config, access_token: freshToken }, post, mediaUrls, fullCaption); }
+              catch (retryErr: any) { return { platform, success: false, error: retryErr?.response?.data ? JSON.stringify(retryErr.response.data) : retryErr?.message }; }
+            }
+          }
+          return { platform, success: false, error: errMsg };
+        }
+      }),
+    );
+
+    for (const result of results) {
+      await pool.query(
+        `UPDATE social_media_post_platforms
+         SET status=$1, platform_post_id=$2, error_message=$3, attempted_at=now(), posted_at=$4
+         WHERE post_id=$5 AND platform=$6`,
+        [result.success ? 'posted' : 'failed', result.platform_post_id || null, result.error || null,
+         result.success ? new Date().toISOString() : null, postId, result.platform],
+      );
+    }
+
+    // Recalculate overall post status across ALL platforms (not just the ones retried)
+    const allPlatformRows = await pool.query(
+      `SELECT status FROM social_media_post_platforms WHERE post_id=$1`, [postId],
+    );
+    const allStatuses: string[] = allPlatformRows.rows.map((r: any) => r.status);
+    const totalSuccess = allStatuses.filter(s => s === 'posted').length;
+    const newOverallStatus = totalSuccess === allStatuses.length ? 'published'
+      : totalSuccess > 0 ? 'partially_published' : 'failed';
+
+    await pool.query(
+      `UPDATE social_media_posts SET status=$1, published_at=COALESCE(published_at,$2), updated_at=now() WHERE id=$3`,
+      [newOverallStatus, totalSuccess > 0 ? new Date().toISOString() : null, postId],
+    );
+
+    // Drive files are NOT deleted automatically — use the Drive Cleanup tool.
+
+    console.log(`[publisher retry] Post ${postId} → ${newOverallStatus} (retried ${failedPlatforms.join(', ')})`);
+  } catch (err) {
+    console.error(`[publisher retry] Fatal error for post ${postId}:`, err);
   }
 }
 
@@ -249,7 +387,19 @@ async function publishToInstagram(config: any, post: any, mediaUrls: string[], c
     return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id };
   }
 
-  // Image carousel
+  // Single image — publish directly (Instagram requires 2+ items for carousels)
+  if (mediaUrls.length === 1) {
+    const containerRes = await axios.post(`${BASE}/${account_id}/media`, {
+      image_url: mediaUrls[0], caption, access_token,
+    });
+    await waitForInstagramContainer(containerRes.data.id, access_token);
+    const pubRes = await axios.post(`${BASE}/${account_id}/media_publish`, {
+      creation_id: containerRes.data.id, access_token,
+    });
+    return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id };
+  }
+
+  // Multi-image carousel (2–5 images)
   const childIds: string[] = [];
   for (const url of mediaUrls) {
     const r = await axios.post(`${BASE}/${account_id}/media`, {
@@ -291,6 +441,15 @@ async function publishToFacebook(config: any, post: any, mediaUrls: string[], ca
     return { platform: 'facebook', success: true, platform_post_id: r.data.id };
   }
 
+  // Single image — publish directly with caption (avoids "unpublished post" error)
+  if (mediaUrls.length === 1) {
+    const r = await axios.post(`${BASE}/${page_id}/photos`, {
+      url: mediaUrls[0], caption, published: true, access_token,
+    });
+    return { platform: 'facebook', success: true, platform_post_id: r.data.id };
+  }
+
+  // Multi-image — upload as unpublished, then create multi-photo feed post
   const photoIds: string[] = [];
   for (const url of mediaUrls) {
     const r = await axios.post(`${BASE}/${page_id}/photos`, { url, published: false, access_token });

@@ -440,7 +440,7 @@ function PlatformConfigCard({
 }
 
 // ── Approval Queue ────────────────────────────────────────────────────────────
-function ApprovalQueue({ token }: { token: string }) {
+function ApprovalQueue({ token, onCountChange }: { token: string; onCountChange: (n: number) => void }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState('');
@@ -456,9 +456,11 @@ function ApprovalQueue({ token }: { token: string }) {
     setLoading(true);
     try {
       const data = await apiGet<any[]>('/api/v1/admin/social-media/posts?status=pending_approval', token);
-      setPosts(data || []);
+      const list = data || [];
+      setPosts(list);
+      onCountChange(list.length);
       setSelected(new Set());
-    } catch { setPosts([]); }
+    } catch { setPosts([]); onCountChange(0); }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
@@ -642,17 +644,152 @@ function ApprovalQueue({ token }: { token: string }) {
   );
 }
 
+// ── Drive Cleanup ─────────────────────────────────────────────────────────────
+function DriveCleanup({ token }: { token: string }) {
+  const [beforeDate, setBeforeDate] = useState(() => {
+    // Default to 7 days ago
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  });
+  const [preview, setPreview] = useState<{ posts: number; files: number; earliest: string | null; latest: string | null } | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [result, setResult] = useState('');
+  const [resultIsError, setResultIsError] = useState(false);
+
+  async function loadPreview() {
+    if (!beforeDate) return;
+    setPreviewing(true); setPreview(null); setResult('');
+    try {
+      const r = await apiGet<any>(`/api/v1/admin/social-media/drive-cleanup/preview?before_date=${beforeDate}`, token);
+      setPreview(r);
+    } catch (e: any) {
+      setResult(e?.message || 'Preview failed'); setResultIsError(true);
+    } finally { setPreviewing(false); }
+  }
+
+  async function runCleanup() {
+    if (!preview) return;
+    if (!confirm(`Delete ${preview.files} file(s) from ${preview.posts} post(s) from Google Drive? This cannot be undone.`)) return;
+    setCleaning(true); setResult('');
+    try {
+      const r = await apiPost<any>('/api/v1/admin/social-media/drive-cleanup', { before_date: beforeDate }, token);
+      setResult(r.message); setResultIsError(false);
+      setPreview(null);
+    } catch (e: any) {
+      setResult(e?.message || 'Cleanup failed'); setResultIsError(true);
+    } finally { setCleaning(false); }
+  }
+
+  return (
+    <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+      <h3 className="text-sm font-bold text-neutral-800 mb-1">Drive Cleanup</h3>
+      <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
+        Delete media files from Google Drive for posts submitted up to a chosen date.
+        Only completed posts (published, failed, rejected, recalled) are cleaned —
+        pending or in-progress posts are never touched.
+      </p>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="text-xs font-semibold text-neutral-600 mb-1 block">Delete files for posts submitted on or before</label>
+          <input
+            type="date"
+            value={beforeDate}
+            max={new Date().toISOString().split('T')[0]}
+            onChange={e => { setBeforeDate(e.target.value); setPreview(null); setResult(''); }}
+            className="px-3 py-2 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+        <button
+          onClick={loadPreview}
+          disabled={previewing || !beforeDate}
+          className="px-4 py-2 rounded-xl border border-neutral-300 text-neutral-700 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50 transition-colors flex items-center gap-2"
+        >
+          {previewing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          Preview
+        </button>
+      </div>
+
+      {preview && (
+        <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          {preview.files === 0 ? (
+            <p className="text-sm text-amber-700">No Drive files found for posts up to {beforeDate} — nothing to delete.</p>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-amber-800">
+                {preview.files} file(s) across {preview.posts} post(s)
+                {preview.earliest && preview.latest && preview.earliest !== preview.latest
+                  ? ` from ${preview.earliest} to ${preview.latest}`
+                  : preview.earliest ? ` from ${preview.earliest}` : ''}
+              </p>
+              <p className="text-xs text-amber-600 mt-1">These files will be permanently deleted from Google Drive.</p>
+              <button
+                onClick={runCleanup}
+                disabled={cleaning}
+                className="mt-3 flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {cleaning ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {cleaning ? 'Deleting...' : `Delete ${preview.files} file(s) from Drive`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className={`mt-3 px-4 py-2.5 rounded-xl text-sm font-medium border ${resultIsError ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+          {result}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Post History ──────────────────────────────────────────────────────────────
 function PostHistory({ token }: { token: string }) {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [retryMsg, setRetryMsg] = useState<Record<string, string>>({});
 
-  useEffect(() => {
+  function load() {
     apiGet<any[]>('/api/v1/admin/social-media/posts', token)
       .then(d => setPosts((d || []).filter(p => p.status !== 'pending_approval')))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function deletePlatformPost(postId: string, platform: string) {
+    if (!confirm(`Delete this post from ${platform}? This cannot be undone.`)) return;
+    setRetryMsg(prev => ({ ...prev, [`${postId}:${platform}`]: 'Deleting...' }));
+    try {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/social-media/posts/${postId}/platform/${platform}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setRetryMsg(prev => ({ ...prev, [`${postId}:${platform}`]: `Deleted from ${platform}` }));
+      setTimeout(() => load(), 1500);
+    } catch (e: any) {
+      setRetryMsg(prev => ({ ...prev, [`${postId}:${platform}`]: e?.message || 'Delete failed' }));
+    }
+  }
+    setRetryMsg(prev => ({ ...prev, [postId]: 'Retrying...' }));
+    try {
+      const r = await apiPost<{ message: string }>(
+        `/api/v1/admin/social-media/posts/${postId}/retry-failed`, {}, token,
+      );
+      setRetryMsg(prev => ({ ...prev, [postId]: r.message }));
+      // Refresh history after a short delay to pick up new statuses
+      setTimeout(() => load(), 6000);
+    } catch (e: any) {
+      setRetryMsg(prev => ({ ...prev, [postId]: e?.message || 'Retry failed' }));
+    }
+  }
 
   const statusColor = (s: string) => s === 'published' ? 'text-emerald-700 bg-emerald-100'
     : s === 'failed' ? 'text-red-700 bg-red-100'
@@ -662,7 +799,9 @@ function PostHistory({ token }: { token: string }) {
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
+      <DriveCleanup token={token} />
+      <div className="flex flex-col gap-3">
       {posts.length === 0 ? <p className="text-sm text-neutral-400 text-center py-10">No posts yet</p> : posts.map(post => (
         <div key={post.id} className="bg-white border border-neutral-200 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-1">
@@ -701,21 +840,66 @@ function PostHistory({ token }: { token: string }) {
             </div>
           )}
           <p className="text-sm text-neutral-600 line-clamp-2">{post.final_caption || post.ai_caption || post.raw_caption}</p>
-          <div className="flex gap-1 mt-2">
+          <div className="flex gap-1 mt-2 flex-wrap">
             {post.platforms?.map((p: any) => (
-              <div key={p.platform}>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
-                  ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-neutral-100 text-neutral-500'}`}>
-                  {p.platform} {p.status === 'posted' ? '' : p.status === 'failed' ? '(failed)' : ''}
-                </span>
+              <div key={p.platform} className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
+                    ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700'
+                    : p.status === 'failed' ? 'bg-red-100 text-red-700'
+                    : p.status === 'deleted' ? 'bg-neutral-200 text-neutral-500 line-through'
+                    : 'bg-neutral-100 text-neutral-500'}`}>
+                    {p.platform} {p.status === 'failed' ? '(failed)' : p.status === 'deleted' ? '(deleted)' : ''}
+                  </span>
+                  {/* Delete from platform button — only for Instagram/Facebook that are posted */}
+                  {p.status === 'posted' && ['instagram', 'facebook'].includes(p.platform) && (
+                    <button
+                      onClick={() => deletePlatformPost(post.id, p.platform)}
+                      disabled={retryMsg[`${post.id}:${p.platform}`] === 'Deleting...'}
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-red-200 text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      title={`Delete from ${p.platform}`}
+                    >
+                      {retryMsg[`${post.id}:${p.platform}`] === 'Deleting...' ? '...' : 'Delete post'}
+                    </button>
+                  )}
+                </div>
                 {p.status === 'failed' && p.error && (
-                  <p className="text-[10px] text-red-500 mt-0.5 max-w-xs truncate" title={p.error}>{p.error}</p>
+                  <p className="text-[10px] text-red-500 max-w-xs truncate" title={p.error}>{p.error}</p>
+                )}
+                {retryMsg[`${post.id}:${p.platform}`] && retryMsg[`${post.id}:${p.platform}`] !== 'Deleting...' && (
+                  <p className={`text-[10px] ${retryMsg[`${post.id}:${p.platform}`].includes('failed') || retryMsg[`${post.id}:${p.platform}`].includes('error') ? 'text-red-500' : 'text-emerald-600'}`}>
+                    {retryMsg[`${post.id}:${p.platform}`]}
+                  </p>
                 )}
               </div>
             ))}
           </div>
+          {/* Retry button for partially published or failed posts */}
+          {['partially_published', 'failed'].includes(post.status) && !post.media_deleted && (
+            <div className="mt-3 pt-3 border-t border-neutral-100">
+              <button
+                onClick={() => retryFailed(post.id)}
+                disabled={retryMsg[post.id] === 'Retrying...'}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {retryMsg[post.id] === 'Retrying...' ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                Retry Failed Platforms
+              </button>
+              {retryMsg[post.id] && retryMsg[post.id] !== 'Retrying...' && (
+                <p className={`text-xs mt-1.5 ${retryMsg[post.id].includes('failed') || retryMsg[post.id].includes('deleted') ? 'text-red-500' : 'text-emerald-600'}`}>
+                  {retryMsg[post.id]}
+                </p>
+              )}
+            </div>
+          )}
+          {['partially_published', 'failed'].includes(post.status) && post.media_deleted && (
+            <p className="text-[11px] text-neutral-400 mt-2 pt-2 border-t border-neutral-100">
+              Media deleted — cannot retry. Ask the teacher to resubmit.
+            </p>
+          )}
         </div>
       ))}
+      </div>
     </div>
   );
 }
@@ -723,7 +907,7 @@ function PostHistory({ token }: { token: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function SocialMediaAdminPage() {
   const token = getToken() || '';
-  const [tab, setTab] = useState<'config' | 'queue' | 'history'>('config');
+  const [tab, setTab] = useState<'config' | 'queue' | 'history'>('queue');
   const [configs, setConfigs] = useState<PlatformConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
@@ -788,7 +972,7 @@ export default function SocialMediaAdminPage() {
           ))}
         </div>
       ) : tab === 'queue' ? (
-        <ApprovalQueue token={token} />
+        <ApprovalQueue token={token} onCountChange={setPendingCount} />
       ) : (
         <PostHistory token={token} />
       )}
