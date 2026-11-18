@@ -8,7 +8,7 @@ import * as crypto from 'crypto';
 function getKey(): Buffer {
   const key = process.env.CREDENTIAL_ENCRYPTION_KEY || '';
   if (!key || key.length !== 64) {
-    throw new Error('CREDENTIAL_ENCRYPTION_KEY must be a 64-character hex string (32 bytes)');
+    throw new Error(`CREDENTIAL_ENCRYPTION_KEY must be a 64-character hex string (32 bytes) — got ${key.length} chars`);
   }
   return Buffer.from(key, 'hex');
 }
