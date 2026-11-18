@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { apiGet, apiPost, API_BASE } from '@/lib/api';
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 
@@ -169,27 +169,19 @@ function PlatformConfigCard({
     setSaving(true); setMsg('');
     try {
       const payload: Record<string, any> = { ...fields, enabled: true };
-      if (fields.token_expires_at) payload.token_expires_at = fields.token_expires_at;
-      const resp = await fetch(`${API_BASE}/api/v1/admin/social-media/config/${config.platform}`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!resp.ok) {
-        let errMsg = `Save failed (${resp.status})`;
-        try {
-          const body = await resp.json();
-          if (body?.error) errMsg = body.error;
-        } catch { /* ignore */ }
-        if (resp.status === 403) errMsg = 'Social media module not enabled — run migration 114 and set social_media_enabled=true for your school in Supabase.';
-        setMsg(errMsg);
-        return;
-      }
+      await apiPut(`/api/v1/admin/social-media/config/${config.platform}`, payload, token);
       setMsg('Saved');
       onSaved();
       setExpanded(false);
     } catch (e: any) {
-      setMsg(e?.message || 'Save failed — check network connection');
+      const msg = e?.message || 'Save failed';
+      if (msg.toLowerCase().includes('not enabled')) {
+        setMsg('Module not enabled — run migration 114 and set social_media_enabled=true in Supabase');
+      } else if (msg.toLowerCase().includes('encryption') || msg.toLowerCase().includes('credential_encryption')) {
+        setMsg('Server config error: CREDENTIAL_ENCRYPTION_KEY not set on API server');
+      } else {
+        setMsg(msg);
+      }
     }
     finally { setSaving(false); }
   }
@@ -197,36 +189,35 @@ function PlatformConfigCard({
   async function testConnection() {
     setTesting(true); setTestResult(null);
     try {
-      const r = await fetch(`${API_BASE}/api/v1/admin/social-media/config/${config.platform}/test`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
-      const data = await r.json();
-      if (!r.ok) {
-        // Surface the actual backend error
-        let help: string | undefined;
-        if (r.status === 403) help = 'Run migration 114 in Supabase and set social_media_enabled=true for your school.';
-        else if (r.status === 400 && data?.error?.includes('No credentials')) help = 'Save your credentials first using "Save & Connect", then test.';
-        setTestResult({ success: false, error: data?.error || `HTTP ${r.status}`, help });
-        return;
-      }
-      setTestResult(data);
+      const r = await apiPost<TestResult>(
+        `/api/v1/admin/social-media/config/${config.platform}/test`,
+        {},
+        token,
+      );
+      setTestResult(r);
     } catch (e: any) {
-      setTestResult({
-        success: false,
-        error: e?.message || 'Network error',
-        help: 'Check that the backend is running and accessible.',
-      });
+      const msg = e?.message || 'Test failed';
+      let help: string | undefined;
+      if (msg.toLowerCase().includes('no credentials')) {
+        help = 'Save your credentials first using "Save & Connect", then test.';
+      } else if (msg.toLowerCase().includes('not enabled')) {
+        help = 'Run migration 114 in Supabase and set social_media_enabled=true for your school.';
+      } else if (msg.includes('401') || msg.includes('403')) {
+        help = 'Your token may have expired or permissions are insufficient. Please reconnect.';
+      }
+      setTestResult({ success: false, error: msg, help });
     }
     finally { setTesting(false); }
   }
 
   async function disconnect() {
     if (!confirm(`Disconnect ${meta.label}? You will need to reconnect to publish to this platform.`)) return;
-    await fetch(`${API_BASE}/api/v1/admin/social-media/config/${config.platform}`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
-    });
-    onSaved();
+    try {
+      await apiDelete(`/api/v1/admin/social-media/config/${config.platform}`, token);
+      onSaved();
+    } catch (e: any) {
+      setMsg(e?.message || 'Disconnect failed');
+    }
   }
 
   return (
