@@ -76,6 +76,15 @@ function verifySig(fileId: string, schoolId: string, sig: string): boolean {
 }
 
 // ── Route handler ────────────────────────────────────────────────────────────
+// Handle CORS preflight
+router.options('/', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Range');
+  res.sendStatus(204);
+});
+
 router.get('/', async (req: Request, res: Response) => {
   const fileId   = (req.query.id     as string || '').trim();
   const schoolId = (req.query.school as string || '').trim();
@@ -155,6 +164,8 @@ router.get('/', async (req: Request, res: Response) => {
       'Content-Type':  contentType,
       'Accept-Ranges': 'bytes',
       'Cache-Control': contentType.startsWith('video/') ? 'public, max-age=3600' : 'public, max-age=86400',
+      'Access-Control-Allow-Origin': req.headers.origin || '*',
+      'Access-Control-Allow-Credentials': 'true',
     };
 
     // Forward range-response headers
