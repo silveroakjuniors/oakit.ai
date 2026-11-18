@@ -170,37 +170,52 @@ function PlatformConfigCard({
     try {
       const payload: Record<string, any> = { ...fields, enabled: true };
       if (fields.token_expires_at) payload.token_expires_at = fields.token_expires_at;
-      await fetch(`${API_BASE}/api/v1/admin/social-media/config/${config.platform}`, {
+      const resp = await fetch(`${API_BASE}/api/v1/admin/social-media/config/${config.platform}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (!resp.ok) {
+        let errMsg = `Save failed (${resp.status})`;
+        try {
+          const body = await resp.json();
+          if (body?.error) errMsg = body.error;
+        } catch { /* ignore */ }
+        if (resp.status === 403) errMsg = 'Social media module not enabled — run migration 114 and set social_media_enabled=true for your school in Supabase.';
+        setMsg(errMsg);
+        return;
+      }
       setMsg('Saved');
       onSaved();
       setExpanded(false);
-    } catch { setMsg('Save failed'); }
+    } catch (e: any) {
+      setMsg(e?.message || 'Save failed — check network connection');
+    }
     finally { setSaving(false); }
   }
 
   async function testConnection() {
     setTesting(true); setTestResult(null);
     try {
-      // If the backend route isn't available yet, do a simple local validation
-      const r = await apiPost<TestResult>(
-        `/api/v1/admin/social-media/config/${config.platform}/test`,
-        {},
-        token,
-      );
-      setTestResult(r);
+      const r = await fetch(`${API_BASE}/api/v1/admin/social-media/config/${config.platform}/test`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        // Surface the actual backend error
+        let help: string | undefined;
+        if (r.status === 403) help = 'Run migration 114 in Supabase and set social_media_enabled=true for your school.';
+        else if (r.status === 400 && data?.error?.includes('No credentials')) help = 'Save your credentials first using "Save & Connect", then test.';
+        setTestResult({ success: false, error: data?.error || `HTTP ${r.status}`, help });
+        return;
+      }
+      setTestResult(data);
     } catch (e: any) {
-      // Backend route not available (not deployed yet) — show helpful message
-      const status = (e?.message || '').includes('403') ? 'Module not enabled' : e?.message;
       setTestResult({
         success: false,
-        error: status || 'Test endpoint not available',
-        help: status?.includes('not enabled')
-          ? 'Run the DB migration and enable social_media_enabled for your school first.'
-          : 'The social media backend routes need to be deployed first. Push the socialmedia branch to production.',
+        error: e?.message || 'Network error',
+        help: 'Check that the backend is running and accessible.',
       });
     }
     finally { setTesting(false); }
@@ -480,9 +495,11 @@ export default function SocialMediaAdminPage() {
   const [configs, setConfigs] = useState<PlatformConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
+  const [moduleError, setModuleError] = useState('');
 
   async function load() {
     setLoading(true);
+    setModuleError('');
     try {
       const [cfg, posts] = await Promise.all([
         apiGet<PlatformConfig[]>('/api/v1/admin/social-media/config', token),
@@ -490,7 +507,15 @@ export default function SocialMediaAdminPage() {
       ]);
       setConfigs(cfg || []);
       setPendingCount((posts || []).length);
-    } catch { setConfigs([]); }
+    } catch (e: any) {
+      const msg = e?.message || '';
+      if (msg.includes('403') || msg.toLowerCase().includes('not enabled')) {
+        setModuleError('Social media module is not enabled for your school. Run migration 114 in Supabase, then run: UPDATE schools SET social_media_enabled = true WHERE id = \'your-school-id\';');
+      } else {
+        setModuleError(`Failed to load: ${msg}`);
+      }
+      setConfigs([]);
+    }
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
@@ -514,6 +539,16 @@ export default function SocialMediaAdminPage() {
 
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+      ) : moduleError ? (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
+          <div className="flex items-start gap-3">
+            <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-red-800 mb-1">Module setup required</p>
+              <p className="text-xs text-red-700 leading-relaxed">{moduleError}</p>
+            </div>
+          </div>
+        </div>
       ) : tab === 'config' ? (
         <div className="flex flex-col gap-4">
           {configs.map(cfg => (
