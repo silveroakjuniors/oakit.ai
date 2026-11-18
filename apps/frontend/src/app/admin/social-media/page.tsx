@@ -185,6 +185,7 @@ function PlatformConfigCard({
   async function testConnection() {
     setTesting(true); setTestResult(null);
     try {
+      // If the backend route isn't available yet, do a simple local validation
       const r = await apiPost<TestResult>(
         `/api/v1/admin/social-media/config/${config.platform}/test`,
         {},
@@ -192,7 +193,15 @@ function PlatformConfigCard({
       );
       setTestResult(r);
     } catch (e: any) {
-      setTestResult({ success: false, error: e?.message || 'Connection failed' });
+      // Backend route not available (not deployed yet) — show helpful message
+      const status = (e?.message || '').includes('403') ? 'Module not enabled' : e?.message;
+      setTestResult({
+        success: false,
+        error: status || 'Test endpoint not available',
+        help: status?.includes('not enabled')
+          ? 'Run the DB migration and enable social_media_enabled for your school first.'
+          : 'The social media backend routes need to be deployed first. Push the socialmedia branch to production.',
+      });
     }
     finally { setTesting(false); }
   }
@@ -236,8 +245,8 @@ function PlatformConfigCard({
               Not connected
             </span>
           )}
-          {/* Test button */}
-          {config.connected && (
+          {/* Test button — show when connected OR when credentials are filled in the form */}
+          {(config.connected || Object.values(fields).some(v => v?.trim())) && (
             <button
               onClick={testConnection}
               disabled={testing}
@@ -315,6 +324,13 @@ function PlatformConfigCard({
               className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               {saving ? 'Saving...' : 'Save & Connect'}
+            </button>
+            <button
+              onClick={testConnection}
+              disabled={testing}
+              className="px-4 py-2 rounded-xl border border-neutral-300 text-neutral-700 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50 transition-colors"
+            >
+              {testing ? 'Testing...' : 'Test Connection'}
             </button>
             {config.connected && (
               <button

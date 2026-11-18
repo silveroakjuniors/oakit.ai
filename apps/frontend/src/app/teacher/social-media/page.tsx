@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiGet, apiPost, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import { Wand2, Loader2, Upload, X, CheckCircle2, AlertCircle, Video, Image } from 'lucide-react';
+import { Wand2, Loader2, Upload, X, CheckCircle2, AlertCircle, Video, Image as ImageIcon } from 'lucide-react';
 
 interface Platform { platform: string; handle: string | null; }
 interface Quota {
@@ -162,7 +162,7 @@ export default function TeacherSocialMediaPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Image className="w-4 h-4 text-amber-600" />
+                  <ImageIcon className="w-4 h-4 text-amber-600" />
                   <span className="text-sm text-neutral-600">
                     <strong>{quota.image_carousel.remaining}</strong> image post{quota.image_carousel.remaining !== 1 ? 's' : ''} left today
                   </span>

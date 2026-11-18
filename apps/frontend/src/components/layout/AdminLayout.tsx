@@ -35,6 +35,7 @@ import {
   Compass,
   Settings,
   LogOut,
+  Share2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -95,6 +96,7 @@ const navItems: NavItem[] = [
   { href: '/admin/hr',               label: 'HR',               icon: Briefcase,       group: 'system' },
   { href: '/admin/setup',            label: 'Setup Wizard',     icon: Compass,         group: 'system' },
   { href: '/admin/settings',         label: 'Settings',         icon: Settings,        group: 'system' },
+  { href: '/admin/social-media',     label: 'Social Media',     icon: Share2,          group: 'system' },
 ];
 
 const NAV_GROUPS = [

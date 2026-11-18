@@ -116,6 +116,8 @@ export default function ClassesPage() {
       setAligningSection(null);
     }
   }
+
+  async function saveTimings(classId: string) {
     const t = timings[classId];
     if (!t) return;
     try {

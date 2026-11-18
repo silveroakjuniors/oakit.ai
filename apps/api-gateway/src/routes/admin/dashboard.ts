@@ -465,7 +465,7 @@ router.post('/birthday-send', async (req: Request, res: Response) => {
       // AND send push to each linked parent directly
       await pool.query(
         `INSERT INTO announcements (school_id, author_id, title, body, target_audience, target_class_id, expires_at)
-         VALUES ($1, $2, $3, $4, 'parent', $5, now() + INTERVAL '1 day')`,
+         VALUES ($1, $2, $3, $4, 'parents', $5, now() + INTERVAL '1 day')`,
         [school_id, user_id, `Happy Birthday ${student.name}!`, message.trim(), student.class_id]
       );
 
