@@ -251,8 +251,8 @@ router.get('/posts', async (req: Request, res: Response) => {
         if (!p.startsWith('google_drive:')) return null;
         const fileId = p.replace('google_drive:', '');
         const sig = crypto.createHmac('sha256', process.env.JWT_SECRET || 'change_me')
-          .update(`${fileId}:${row.school_id}`).digest('hex').slice(0, 16);
-        return `/api/v1/drive-proxy?id=${fileId}&school=${row.school_id}&sig=${sig}`;
+          .update(`${fileId}:${school_id}`).digest('hex').slice(0, 16);
+        return `/api/v1/drive-proxy?id=${fileId}&school=${school_id}&sig=${sig}`;
       }).filter(Boolean),
     })));
   } catch (err) {
