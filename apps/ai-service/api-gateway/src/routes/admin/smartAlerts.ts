@@ -259,11 +259,18 @@ router.get('/', async (req: Request, res: Response) => {
        LEFT JOIN daily_completions dc ON dc.section_id = sec.id AND dc.completion_date = dp.plan_date
        LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $1
        LEFT JOIN audit_logs al ON al.school_id = $1 AND al.actor_id = u.id
+         AND al.created_at > NOW() - INTERVAL '7 days'
+         AND al.action = 'ai_query'
        LEFT JOIN attendance_records ar ON ar.section_id = sec.id AND ar.teacher_id = u.id
+         AND ar.attend_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN teacher_homework th ON th.section_id = sec.id AND th.teacher_id = u.id
+         AND th.homework_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN teacher_notes tn ON tn.section_id = sec.id AND tn.teacher_id = u.id
+         AND tn.note_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN child_journey_entries cj ON cj.section_id = sec.id AND cj.teacher_id = u.id
+         AND cj.entry_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN student_observations so ON so.school_id = $1 AND so.teacher_id = u.id
+         AND so.obs_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        WHERE sec.school_id = $1 AND u.id IS NOT NULL
        GROUP BY u.id, u.name, sec.label, c.name, sec.id, ts.current_streak, ts.best_streak`,
       [school_id, today]
