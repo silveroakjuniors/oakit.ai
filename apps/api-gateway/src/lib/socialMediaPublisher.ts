@@ -7,8 +7,42 @@
  */
 import axios from 'axios';
 import { pool } from './db';
-import { decryptCredential } from './credentialEncryption';
+import { decryptCredential, encryptCredential } from './credentialEncryption';
 import { deleteDriveFile } from './driveDelete';
+
+// ── Token auto-refresh for Meta (Instagram/Facebook) ─────────────────────────
+async function tryRefreshMetaToken(schoolId: string, platform: string): Promise<string | null> {
+  try {
+    const row = await pool.query(
+      'SELECT access_token, app_id, app_secret FROM social_media_configs WHERE school_id=$1 AND platform=$2',
+      [schoolId, platform],
+    );
+    if (!row.rows[0]?.app_id || !row.rows[0]?.app_secret || !row.rows[0]?.access_token) return null;
+
+    const currentToken = decryptCredential(row.rows[0].access_token);
+    const appId = row.rows[0].app_id;
+    const appSecret = decryptCredential(row.rows[0].app_secret);
+
+    const r = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
+      params: { grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: currentToken },
+      timeout: 10000,
+    });
+
+    const newToken = r.data?.access_token;
+    if (!newToken) return null;
+
+    const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    await pool.query(
+      `UPDATE social_media_configs SET access_token=$1, token_expires_at=$2, updated_at=now() WHERE school_id=$3 AND platform=$4`,
+      [encryptCredential(newToken), expiresAt, schoolId, platform],
+    );
+    console.log(`[publisher] Auto-refreshed ${platform} token for school ${schoolId}, expires ${expiresAt}`);
+    return newToken;
+  } catch (e: any) {
+    console.error(`[publisher] Token refresh failed for ${platform}:`, e?.response?.data?.error?.message || e?.message);
+    return null;
+  }
+}
 
 type Platform = 'instagram' | 'facebook' | 'youtube' | 'twitter' | 'linkedin';
 
@@ -95,13 +129,30 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
           const result = await publishToPlatform(platform, config, post, mediaUrls, fullCaption);
           if (!result.success) {
             console.error(`[publisher] Post ${postId} platform=${platform} failed:`, result.error);
+            // Auto-retry with fresh token if expired
+            if (result.error?.includes('OAuthException') || result.error?.includes('Session has expired')) {
+              const freshToken = await tryRefreshMetaToken(schoolId, platform);
+              if (freshToken) {
+                console.log(`[publisher] Retrying ${platform} with fresh token...`);
+                return await publishToPlatform(platform, { ...config, access_token: freshToken }, post, mediaUrls, fullCaption);
+              }
+            }
           }
           return result;
         } catch (err: any) {
-          const errMsg = err?.response?.data
-            ? JSON.stringify(err.response.data)
-            : err?.message || 'Unknown error';
+          const errMsg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message || 'Unknown error';
           console.error(`[publisher] Post ${postId} platform=${platform} threw:`, errMsg);
+          // Auto-retry on auth errors
+          if (errMsg.includes('OAuthException') || errMsg.includes('Session has expired')) {
+            const freshToken = await tryRefreshMetaToken(schoolId, platform);
+            if (freshToken) {
+              try {
+                return await publishToPlatform(platform, { ...config, access_token: freshToken }, post, mediaUrls, fullCaption);
+              } catch (retryErr: any) {
+                return { platform, success: false, error: retryErr?.response?.data ? JSON.stringify(retryErr.response.data) : retryErr?.message };
+              }
+            }
+          }
           return { platform, success: false, error: errMsg };
         }
       }),

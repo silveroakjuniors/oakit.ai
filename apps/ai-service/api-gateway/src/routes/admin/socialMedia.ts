@@ -67,14 +67,16 @@ router.put('/config/:platform', async (req: Request, res: Response) => {
     const VALID = ['instagram', 'facebook', 'youtube', 'twitter', 'linkedin'];
     if (!VALID.includes(platform)) return res.status(400).json({ error: 'Invalid platform' });
 
-    const { access_token, refresh_token, page_id, account_id, handle, enabled, extra_config, token_expires_at } = req.body;
+    const { access_token, refresh_token, page_id, account_id, handle, enabled, extra_config, token_expires_at, app_id, app_secret } = req.body;
 
     // Encrypt sensitive fields
     let encToken: string | undefined;
     let encRefresh: string | undefined;
+    let encAppSecret: string | undefined;
     try {
-      encToken   = access_token  ? encryptCredential(access_token)  : undefined;
-      encRefresh = refresh_token ? encryptCredential(refresh_token) : undefined;
+      encToken     = access_token  ? encryptCredential(access_token)  : undefined;
+      encRefresh   = refresh_token ? encryptCredential(refresh_token) : undefined;
+      encAppSecret = app_secret    ? encryptCredential(app_secret)    : undefined;
     } catch (encErr: any) {
       console.error('[social-media config PUT] encryption error:', encErr?.message);
       return res.status(500).json({ error: `Encryption config error: ${encErr?.message}` });
@@ -83,8 +85,8 @@ router.put('/config/:platform', async (req: Request, res: Response) => {
     await pool.query(
       `INSERT INTO social_media_configs
          (school_id, platform, enabled, access_token, refresh_token, token_expires_at,
-          page_id, account_id, handle, extra_config, connected_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now())
+          page_id, account_id, handle, app_id, app_secret, extra_config, connected_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())
        ON CONFLICT (school_id, platform) DO UPDATE
          SET enabled         = COALESCE($3, social_media_configs.enabled),
              access_token    = COALESCE($4, social_media_configs.access_token),
@@ -93,11 +95,13 @@ router.put('/config/:platform', async (req: Request, res: Response) => {
              page_id         = COALESCE($7, social_media_configs.page_id),
              account_id      = COALESCE($8, social_media_configs.account_id),
              handle          = COALESCE($9, social_media_configs.handle),
-             extra_config    = COALESCE($10, social_media_configs.extra_config),
+             app_id          = COALESCE($10, social_media_configs.app_id),
+             app_secret      = COALESCE($11, social_media_configs.app_secret),
+             extra_config    = COALESCE($12, social_media_configs.extra_config),
              connected_at    = CASE WHEN $4 IS NOT NULL THEN now() ELSE social_media_configs.connected_at END,
              updated_at      = now()`,
       [school_id, platform, enabled ?? true, encToken, encRefresh, token_expires_at,
-       page_id, account_id, handle, extra_config ? JSON.stringify(extra_config) : null],
+       page_id, account_id, handle, app_id || null, encAppSecret, extra_config ? JSON.stringify(extra_config) : null],
     );
 
     return res.json({ message: `${platform} configuration saved` });
@@ -125,6 +129,68 @@ router.delete('/config/:platform', async (req: Request, res: Response) => {
     return res.json({ message: `${platform} disconnected` });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/admin/social-media/config/:platform/refresh-token
+// Exchange the stored long-lived token for a fresh 60-day token using app credentials
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/config/:platform/refresh-token', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { platform } = req.params;
+
+    const row = await pool.query(
+      'SELECT access_token, app_id, app_secret FROM social_media_configs WHERE school_id=$1 AND platform=$2',
+      [school_id, platform],
+    );
+    if (!row.rows.length || !row.rows[0].access_token) {
+      return res.status(400).json({ error: 'No credentials configured for this platform' });
+    }
+    if (!row.rows[0].app_id || !row.rows[0].app_secret) {
+      return res.status(400).json({ error: 'Meta App ID and App Secret are required for auto-refresh. Edit the platform config to add them.' });
+    }
+
+    const currentToken = decryptCredential(row.rows[0].access_token);
+    const appId = row.rows[0].app_id;
+    const appSecret = decryptCredential(row.rows[0].app_secret);
+
+    // Exchange current long-lived token for a fresh one
+    const refreshRes = await axios.get(
+      `https://graph.facebook.com/v19.0/oauth/access_token`,
+      {
+        params: {
+          grant_type: 'fb_exchange_token',
+          client_id: appId,
+          client_secret: appSecret,
+          fb_exchange_token: currentToken,
+        },
+        timeout: 10000,
+      },
+    );
+
+    const newToken = refreshRes.data?.access_token;
+    if (!newToken) {
+      return res.status(502).json({ error: 'Meta did not return a new token' });
+    }
+
+    // Calculate expiry (60 days from now)
+    const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    const encNewToken = encryptCredential(newToken);
+
+    await pool.query(
+      `UPDATE social_media_configs
+       SET access_token=$1, token_expires_at=$2, updated_at=now()
+       WHERE school_id=$3 AND platform=$4`,
+      [encNewToken, expiresAt, school_id, platform],
+    );
+
+    return res.json({ message: `Token refreshed successfully. New token expires ${new Date(expiresAt).toLocaleDateString('en-IN')}.`, expires_at: expiresAt });
+  } catch (err: any) {
+    const metaErr = err?.response?.data?.error?.message;
+    console.error('[refresh-token]', metaErr || err?.message);
+    return res.status(500).json({ error: metaErr || 'Token refresh failed' });
   }
 });
 

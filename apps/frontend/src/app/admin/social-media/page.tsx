@@ -42,10 +42,12 @@ const PLATFORM_META: Record<string, {
     icon: '📸',
     cost: 'Free — Meta Graph API has no publishing fees',
     fields: [
-      { key: 'access_token', label: 'Page Access Token (Long-lived)', placeholder: 'EAAxxxxxxxx...', type: 'password' },
+      { key: 'access_token', label: 'Page Access Token (Long-lived, 60 days)', placeholder: 'EAAxxxxxxxx...', type: 'password' },
       { key: 'account_id', label: 'Instagram Business Account ID', placeholder: '17841400000000000' },
       { key: 'page_id', label: 'Facebook Page ID', placeholder: '123456789' },
       { key: 'handle', label: 'Instagram Handle', placeholder: '@silveroakjuniors' },
+      { key: 'app_id', label: 'Meta App ID (for auto-refresh)', placeholder: '10314683635351986' },
+      { key: 'app_secret', label: 'Meta App Secret (for auto-refresh)', placeholder: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', type: 'password' },
     ],
   },
   facebook: {
@@ -55,9 +57,11 @@ const PLATFORM_META: Record<string, {
     icon: '📘',
     cost: 'Free — Meta Graph API has no publishing fees',
     fields: [
-      { key: 'access_token', label: 'Page Access Token (Long-lived)', placeholder: 'EAAxxxxxxxx...', type: 'password' },
+      { key: 'access_token', label: 'Page Access Token (Long-lived, 60 days)', placeholder: 'EAAxxxxxxxx...', type: 'password' },
       { key: 'page_id', label: 'Facebook Page ID', placeholder: '123456789' },
       { key: 'handle', label: 'Facebook Page Name', placeholder: 'Silver Oak Juniors' },
+      { key: 'app_id', label: 'Meta App ID (for auto-refresh)', placeholder: '10314683635351986' },
+      { key: 'app_secret', label: 'Meta App Secret (for auto-refresh)', placeholder: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', type: 'password' },
     ],
   },
   youtube: {
@@ -283,6 +287,25 @@ function PlatformConfigCard({
               {testing ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Test'}
             </button>
           )}
+          {/* Quick token refresh for Meta platforms */}
+          {config.connected && ['instagram', 'facebook'].includes(config.platform) && (
+            <button
+              onClick={async () => {
+                setMsg('');
+                try {
+                  const r = await apiPost<{message: string}>(
+                    `/api/v1/admin/social-media/config/${config.platform}/refresh-token`, {}, token
+                  );
+                  setMsg(r.message);
+                  onSaved();
+                } catch (e: any) { setMsg(e?.message || 'Refresh failed — add App ID and Secret first'); }
+              }}
+              className="text-xs font-medium px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+              title="Extend token by 60 days"
+            >
+              Refresh Token
+            </button>
+          )}
           {/* Expand/Setup */}
           <button
             onClick={toggleExpanded}
@@ -375,7 +398,28 @@ function PlatformConfigCard({
                 Disconnect
               </button>
             )}
-            {msg && <span className={`text-sm self-center ${msg === 'Saved' ? 'text-emerald-600' : 'text-red-500'}`}>{msg}</span>}
+          {/* Refresh token button — only for Meta platforms with app credentials */}
+          {config.connected && ['instagram', 'facebook'].includes(config.platform) && (
+            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-neutral-100">
+              <button
+                onClick={async () => {
+                  setMsg('Refreshing token...');
+                  try {
+                    const r = await apiPost<{message: string; expires_at: string}>(
+                      `/api/v1/admin/social-media/config/${config.platform}/refresh-token`, {}, token
+                    );
+                    setMsg(r.message);
+                    onSaved();
+                  } catch (e: any) { setMsg(e?.message || 'Refresh failed'); }
+                }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors"
+              >
+                Refresh Token (extend 60 days)
+              </button>
+              <p className="text-[11px] text-neutral-400">Requires Meta App ID + App Secret saved below</p>
+            </div>
+          )}
+          {msg && <span className={`text-sm self-center ${msg === 'Saved' || msg.includes('refreshed') || msg.includes('extended') ? 'text-emerald-600' : 'text-red-500'}`}>{msg}</span>}
           </div>
         </div>
       )}
