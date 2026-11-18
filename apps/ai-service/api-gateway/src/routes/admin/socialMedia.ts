@@ -68,8 +68,15 @@ router.put('/config/:platform', async (req: Request, res: Response) => {
     const { access_token, refresh_token, page_id, account_id, handle, enabled, extra_config, token_expires_at } = req.body;
 
     // Encrypt sensitive fields
-    const encToken   = access_token  ? encryptCredential(access_token)  : undefined;
-    const encRefresh = refresh_token ? encryptCredential(refresh_token) : undefined;
+    let encToken: string | undefined;
+    let encRefresh: string | undefined;
+    try {
+      encToken   = access_token  ? encryptCredential(access_token)  : undefined;
+      encRefresh = refresh_token ? encryptCredential(refresh_token) : undefined;
+    } catch (encErr: any) {
+      console.error('[social-media config PUT] encryption error:', encErr?.message);
+      return res.status(500).json({ error: `Encryption config error: ${encErr?.message}` });
+    }
 
     await pool.query(
       `INSERT INTO social_media_configs
