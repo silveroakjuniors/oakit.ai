@@ -93,6 +93,7 @@ import teacherHolisticReportRouter from './routes/teacher/holisticReport';
 import adminHolisticTemplateRouter from './routes/admin/holisticReportTemplate';
 import parentHolisticReportRouter from './routes/parent/holisticReport';
 import adminSocialMediaRouter from './routes/admin/socialMedia';
+import adminDriveCleanupRouter from './routes/admin/driveCleanup';
 import teacherSocialMediaRouter from './routes/teacher/socialMedia';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
@@ -410,6 +411,7 @@ app.use('/api/v1/parent/holistic-report', parentHolisticReportRouter);
 
 // Social Media Publisher module
 app.use('/api/v1/admin/social-media', adminSocialMediaRouter);
+app.use('/api/v1/admin/drive-cleanup', adminDriveCleanupRouter);
 app.use('/api/v1/teacher/social-media', teacherSocialMediaRouter);
 
 // Student Portal

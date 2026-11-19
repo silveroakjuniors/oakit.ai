@@ -772,4 +772,232 @@ router.post('/generate-caption', async (req: Request, res: Response) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/feed/drive-cleanup/notify
+// Admin schedules a Drive cleanup: marks affected posts with a delete-after
+// date and sends a flash message popup to parents of each section.
+// Body: { older_than_days: number (min 7), delete_after_days: number (min 2) }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/drive-cleanup/notify', async (req: Request, res: Response) => {
+  const user = req.user!;
+  if (!['admin', 'principal'].includes(user.role)) return res.status(403).json({ error: 'Admin only' });
+
+  try {
+    const { older_than_days = 30, delete_after_days = 7 } = req.body;
+
+    if (older_than_days < 7) return res.status(400).json({ error: 'older_than_days must be at least 7' });
+    if (delete_after_days < 2) return res.status(400).json({ error: 'delete_after_days must be at least 2' });
+
+    const school_id = user.school_id;
+    const deleteAfterDate = new Date(Date.now() + delete_after_days * 86400000);
+    const deleteAfterStr = deleteAfterDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Find posts older than the threshold that still have Drive files
+    const postsRows = await pool.query(
+      `SELECT fp.id, fp.section_id, fp.class_id, fp.created_at,
+              s.label AS section_label, c.name AS class_name,
+              ss.google_drive_folder_id,
+              COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%')::int AS drive_file_count
+       FROM feed_posts fp
+       JOIN sections s ON s.id = fp.section_id
+       JOIN classes c ON c.id = fp.class_id
+       JOIN school_settings ss ON ss.school_id = fp.school_id
+       JOIN feed_post_images fpi ON fpi.post_id = fp.id
+       WHERE fp.school_id = $1
+         AND fp.drive_files_deleted = false
+         AND fp.created_at < NOW() - INTERVAL '1 day' * $2
+       GROUP BY fp.id, s.label, c.name, ss.google_drive_folder_id
+       HAVING COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%') > 0
+       ORDER BY c.name, s.label, fp.created_at DESC`,
+      [school_id, older_than_days],
+    );
+
+    if (!postsRows.rows.length) {
+      return res.json({ scheduled: 0, message: 'No Drive files found older than the specified days.' });
+    }
+
+    // Mark all matching posts with the delete-after date
+    const postIds = postsRows.rows.map((r: any) => r.id);
+    await pool.query(
+      `UPDATE feed_posts
+       SET drive_cleanup_scheduled_at = now(), drive_delete_after = $1
+       WHERE id = ANY($2::uuid[])`,
+      [deleteAfterStr, postIds],
+    );
+
+    // Build class-grouped summary for flash messages
+    const byClass: Record<string, { class_name: string; section_label: string; file_count: number; drive_folder_id: string | null }[]> = {};
+    for (const row of postsRows.rows) {
+      const key = row.class_name;
+      if (!byClass[key]) byClass[key] = [];
+      const existing = byClass[key].find((e: any) => e.section_label === row.section_label);
+      if (existing) {
+        existing.file_count += row.drive_file_count;
+      } else {
+        byClass[key].push({
+          class_name: row.class_name,
+          section_label: row.section_label,
+          file_count: row.drive_file_count,
+          drive_folder_id: row.google_drive_folder_id,
+        });
+      }
+    }
+
+    // Send one flash message per class to parents of that class
+    const totalFiles = postsRows.rows.reduce((s: number, r: any) => s + r.drive_file_count, 0);
+    const deleteByFormatted = deleteAfterDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    for (const [className, sections] of Object.entries(byClass)) {
+      const sectionLabels = sections.map((s: any) => s.section_label).join(', ');
+      const fileCount = sections.reduce((s: number, e: any) => s + e.file_count, 0);
+      const driveUrl = sections[0].drive_folder_id
+        ? `https://drive.google.com/drive/folders/${sections[0].drive_folder_id}`
+        : null;
+
+      const title = `Important: Download your child's photos/videos by ${deleteByFormatted}`;
+      const body = `Dear Parents of ${className} (${sectionLabels}),\n\nTo free up storage space, the school will permanently delete ${fileCount} photo(s)/video(s) from Google Drive on ${deleteByFormatted}.\n\nPlease download any photos or videos you would like to keep before this date.${driveUrl ? `\n\nClass Drive folder: ${driveUrl}` : ''}\n\nFiles already downloaded or saved to your device are not affected.`;
+
+      // Get section IDs for this class to target only affected parents
+      const sectionIds = (await pool.query(
+        `SELECT s.id FROM sections s JOIN classes c ON c.id = s.class_id
+         WHERE c.name = $1 AND c.school_id = $2`,
+        [className, school_id],
+      )).rows.map((r: any) => r.id);
+
+      await pool.query(
+        `INSERT INTO flash_messages (school_id, title, body, target_roles, start_date, end_date, created_by)
+         VALUES ($1, $2, $3, 'parent', CURRENT_DATE, $4::date, $5)`,
+        [school_id, title, body, deleteAfterStr, user.user_id],
+      );
+    }
+
+    console.log(`[feed-cleanup] school=${school_id} scheduled ${postIds.length} posts for deletion by ${deleteAfterStr}`);
+
+    return res.json({
+      scheduled: postIds.length,
+      total_files: totalFiles,
+      delete_after: deleteAfterStr,
+      flash_messages_sent: Object.keys(byClass).length,
+      message: `Scheduled deletion of ${totalFiles} file(s) across ${postIds.length} post(s). Parents notified — files will be deleted on ${deleteByFormatted}.`,
+    });
+  } catch (err) {
+    console.error('[feed-cleanup notify]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/feed/drive-cleanup/execute
+// Delete Drive files for all posts whose drive_delete_after date has passed.
+// Can be called manually by admin or triggered automatically.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/drive-cleanup/execute', async (req: Request, res: Response) => {
+  const user = req.user!;
+  if (!['admin', 'principal'].includes(user.role)) return res.status(403).json({ error: 'Admin only' });
+
+  try {
+    const school_id = user.school_id;
+
+    const postsRows = await pool.query(
+      `SELECT fp.id, fpi.storage_path
+       FROM feed_posts fp
+       JOIN feed_post_images fpi ON fpi.post_id = fp.id
+       WHERE fp.school_id = $1
+         AND fp.drive_files_deleted = false
+         AND fp.drive_delete_after IS NOT NULL
+         AND fp.drive_delete_after <= CURRENT_DATE
+         AND fpi.storage_path LIKE 'google_drive:%'`,
+      [school_id],
+    );
+
+    if (!postsRows.rows.length) {
+      return res.json({ deleted: 0, message: 'No files are due for deletion yet.' });
+    }
+
+    const { deleteDriveFile } = await import('../lib/driveDelete');
+    let deleted = 0;
+    let errors = 0;
+    const donePostIds = new Set<string>();
+    const errorPostIds = new Set<string>();
+
+    for (const row of postsRows.rows) {
+      const fileId = row.storage_path.replace('google_drive:', '');
+      try {
+        await deleteDriveFile(fileId, school_id);
+        deleted++;
+        donePostIds.add(row.id);
+      } catch (e: any) {
+        console.error(`[feed-cleanup execute] Failed to delete ${fileId}:`, e?.message);
+        errors++;
+        errorPostIds.add(row.id);
+      }
+    }
+
+    // Mark posts fully cleaned (even if some files errored — they may already be gone)
+    if (donePostIds.size) {
+      await pool.query(
+        `UPDATE feed_posts SET drive_files_deleted = true WHERE id = ANY($1::uuid[])`,
+        [Array.from(donePostIds)],
+      );
+    }
+
+    console.log(`[feed-cleanup execute] school=${school_id} deleted=${deleted} errors=${errors}`);
+
+    return res.json({
+      deleted,
+      errors,
+      message: errors
+        ? `Deleted ${deleted} file(s). ${errors} file(s) could not be deleted (may already be gone from Drive).`
+        : `Deleted ${deleted} file(s) from Google Drive.`,
+    });
+  } catch (err) {
+    console.error('[feed-cleanup execute]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/feed/drive-cleanup/preview
+// Preview what would be scheduled for cleanup
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/drive-cleanup/preview', async (req: Request, res: Response) => {
+  const user = req.user!;
+  if (!['admin', 'principal'].includes(user.role)) return res.status(403).json({ error: 'Admin only' });
+
+  try {
+    const { older_than_days = 30 } = req.query;
+    const school_id = user.school_id;
+
+    const rows = await pool.query(
+      `SELECT c.name AS class_name, s.label AS section_label,
+              COUNT(DISTINCT fp.id)::int AS post_count,
+              COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%')::int AS file_count,
+              MIN(fp.created_at)::date AS oldest_post,
+              MAX(fp.created_at)::date AS newest_post
+       FROM feed_posts fp
+       JOIN sections s ON s.id = fp.section_id
+       JOIN classes c ON c.id = fp.class_id
+       JOIN feed_post_images fpi ON fpi.post_id = fp.id
+       WHERE fp.school_id = $1
+         AND fp.drive_files_deleted = false
+         AND fp.created_at < NOW() - INTERVAL '1 day' * $2
+       GROUP BY c.name, s.label
+       HAVING COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%') > 0
+       ORDER BY c.name, s.label`,
+      [school_id, Number(older_than_days)],
+    );
+
+    const totalFiles = rows.rows.reduce((s: number, r: any) => s + r.file_count, 0);
+    const totalPosts = rows.rows.reduce((s: number, r: any) => s + r.post_count, 0);
+
+    return res.json({
+      by_class: rows.rows,
+      total_posts: totalPosts,
+      total_files: totalFiles,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

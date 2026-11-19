@@ -688,6 +688,23 @@ export default function SettingsPage() {
 
           {/* Student Credentials */}
           <StudentCredentialsSection token={token} />
+
+          {/* Drive Cleanup quick link */}
+          <a
+            href="/admin/drive-cleanup"
+            className="flex items-center gap-4 bg-white border border-neutral-200 rounded-2xl p-5 hover:shadow-md transition-shadow group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+              <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-neutral-800 group-hover:text-primary transition-colors">Google Drive Cleanup</p>
+              <p className="text-xs text-neutral-500 mt-0.5">Notify parents and bulk-delete all teacher-uploaded files from Drive — feed photos, videos, notes, homework</p>
+            </div>
+            <svg className="w-4 h-4 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+          </a>
         </div>
       )}
 
