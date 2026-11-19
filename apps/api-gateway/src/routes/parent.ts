@@ -1261,4 +1261,57 @@ router.get('/calendar', async (req: Request, res: Response) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/parent/instagram-follow-status
+// Returns the school's Instagram handle and whether this parent has acknowledged
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/instagram-follow-status', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+
+    const [igRow, parentRow] = await Promise.all([
+      pool.query(
+        `SELECT handle FROM social_media_configs
+         WHERE school_id=$1 AND platform='instagram' AND enabled=true AND handle IS NOT NULL`,
+        [school_id],
+      ),
+      pool.query(
+        `SELECT instagram_follow_acknowledged_at FROM parents WHERE user_id=$1`,
+        [user_id],
+      ),
+    ]);
+
+    const handle = igRow.rows[0]?.handle || null;
+    const acknowledgedAt = parentRow.rows[0]?.instagram_follow_acknowledged_at || null;
+
+    return res.json({
+      handle,
+      profile_url: handle ? `https://www.instagram.com/${handle.replace('@', '')}` : null,
+      acknowledged: !!acknowledgedAt,
+      acknowledged_at: acknowledgedAt,
+    });
+  } catch (err) {
+    console.error('[instagram-follow-status]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/parent/instagram-follow-ack
+// Parent clicks "I've followed" — record the timestamp
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/instagram-follow-ack', async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.user!;
+    await pool.query(
+      `UPDATE parents SET instagram_follow_acknowledged_at = now() WHERE user_id = $1`,
+      [user_id],
+    );
+    return res.json({ acknowledged: true });
+  } catch (err) {
+    console.error('[instagram-follow-ack]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
