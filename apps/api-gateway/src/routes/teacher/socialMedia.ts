@@ -141,26 +141,41 @@ router.post('/posts/generate-caption', async (req: Request, res: Response) => {
     const schoolRow = await pool.query('SELECT name FROM schools WHERE id=$1', [school_id]);
     const schoolName = schoolRow.rows[0]?.name || 'Silver Oak Juniors';
 
-    const platformNote = (platforms as string[]).includes('twitter')
-      ? 'Note: Twitter/X requires the total caption + hashtags to be under 280 characters.'
-      : '';
+    const isVideo = media_type === 'video';
+    const isTwitter = (platforms as string[]).includes('twitter');
 
-    const prompt = `You are a social media manager for a preschool called "${schoolName}".
-Write a warm, engaging caption for the following post.
+    // Seed for uniqueness — prevents identical captions on consecutive calls
+    const uniqueSeed = Date.now().toString(36).toUpperCase();
 
-Teacher's notes: ${raw_caption}
-Post type: ${media_type === 'video' ? 'Video/Reel' : 'Photo carousel'}
-${platformNote}
+    const prompt = `You are a viral social media strategist for "${schoolName}", a preschool with an Instagram and Facebook page. Your ONLY goal is to maximise reach, shares, saves, and new followers with every post.
 
-Requirements:
-- Keep the main caption under 300 characters
-- Tone: warm, celebratory, parent-friendly, educational
-- Do NOT use emojis (school policy)
-- Include the school name naturally
-- Generate 20-25 relevant hashtags (education, preschool, school-specific)
+Teacher's raw notes: ${raw_caption}
+Post format: ${isVideo ? 'Short video / Reel (most viral format)' : 'Photo carousel'}
+Unique seed (use this to vary your output): ${uniqueSeed}
+${isTwitter ? 'Twitter/X version must be under 240 characters total.' : ''}
 
-Respond ONLY with valid JSON in this exact format:
-{"caption": "...", "hashtags": ["#tag1", "#tag2"]}`;
+CAPTION RULES:
+- Main caption: 150-220 characters MAX (punchy, not rambling)
+- Open with a hook — a question, a bold claim, or a surprising fact that makes the reader STOP scrolling
+- Body: 1-2 short sentences about what is shown, warm and celebratory
+- End with a clear call-to-action: ask viewers to follow the page, tag a friend, save the post, or share with a parent they know
+- Tone: warm, fun, parent-friendly — speak directly to parents ("Your child...", "Watch your little one...")
+- Do NOT use emojis
+- Include the school name "${schoolName}" naturally at least once
+- Every caption must sound different — do not reuse phrases from previous outputs
+
+HASHTAG RULES — CRITICAL:
+- Generate EXACTLY 20 hashtags
+- Always include these exact tags: #yippppppp #fyp #foryoupage #viral #reels
+- Include 5 high-reach education tags: #preschool #earlylearning #kindergarten #kidsofinstagram #montessori
+- Include 5 niche school tags: #silveroakjuniors #oakitai #schoollife #teachersofinstagram #classroom
+- Fill remaining 5 with content-specific tags based on the teacher's notes (e.g. #artclass, #sportsday, #mathisfun)
+- All 20 must be unique and relevant — no filler
+
+CAPTION LENGTH CHECK: The combined caption + all hashtags joined by spaces must be under 2000 characters. Trim the caption if needed.
+
+Respond ONLY with valid JSON — no explanation, no markdown, just the JSON object:
+{"caption": "...", "hashtags": ["#tag1", "#tag2", ...]}`;
 
     const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
     const aiRes = await fetch(`${AI_URL}/internal/generate-report`, {
@@ -178,14 +193,29 @@ Respond ONLY with valid JSON in this exact format:
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        caption = parsed.caption || '';
-        hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags.slice(0, 30) : [];
+        caption = (parsed.caption || '').substring(0, 220);
+        // Enforce 20-tag cap and ensure #yippppppp is always present
+        let tags: string[] = Array.isArray(parsed.hashtags)
+          ? parsed.hashtags.map((t: string) => t.startsWith('#') ? t : '#' + t)
+          : [];
+        if (!tags.some(t => t.toLowerCase() === '#yippppppp')) tags.unshift('#yippppppp');
+        // Deduplicate and cap at 20
+        tags = [...new Map(tags.map(t => [t.toLowerCase(), t])).values()].slice(0, 20);
+        hashtags = tags;
       }
     } catch {
-      caption = rawText.substring(0, 300);
+      caption = rawText.substring(0, 220);
     }
 
-    if (!caption) return res.status(500).json({ error: 'AI could not generate caption. Please write one manually.' });
+    if (!caption) return res.status(500).json({ error: 'Oakie could not generate a caption. Please write one manually.' });
+
+    // Final combined length check — Instagram caption limit is 2200 chars
+    const combined = caption + '\n\n' + hashtags.join(' ');
+    if (combined.length > 2200) {
+      const overflow = combined.length - 2200;
+      caption = caption.substring(0, Math.max(50, caption.length - overflow - 5));
+    }
+
     return res.json({ caption, hashtags });
   } catch (err: any) {
     console.error('[sm generate-caption]', err);

@@ -764,7 +764,7 @@ function PostHistory({ token }: { token: string }) {
 
   async function deletePlatformPost(postId: string, platform: string) {
     if (!confirm(`Delete this post from ${platform}? This cannot be undone.`)) return;
-    setRetryMsg(prev => ({ ...prev, [`${postId}:${platform}`]: 'Deleting...' }));
+    setRetryMsg(prev => ({ ...prev, [postId + ':' + platform]: 'Deleting...' }));
     try {
       const res = await fetch(`${getApiBase()}/api/v1/admin/social-media/posts/${postId}/platform/${platform}`, {
         method: 'DELETE',
@@ -772,12 +772,14 @@ function PostHistory({ token }: { token: string }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setRetryMsg(prev => ({ ...prev, [`${postId}:${platform}`]: `Deleted from ${platform}` }));
+      setRetryMsg(prev => ({ ...prev, [postId + ':' + platform]: 'Deleted from ' + platform }));
       setTimeout(() => load(), 1500);
     } catch (e: any) {
-      setRetryMsg(prev => ({ ...prev, [`${postId}:${platform}`]: e?.message || 'Delete failed' }));
+      setRetryMsg(prev => ({ ...prev, [postId + ':' + platform]: e?.message || 'Delete failed' }));
     }
   }
+
+  async function retryFailed(postId: string) {
     setRetryMsg(prev => ({ ...prev, [postId]: 'Retrying...' }));
     try {
       const r = await apiPost<{ message: string }>(
@@ -841,38 +843,42 @@ function PostHistory({ token }: { token: string }) {
           )}
           <p className="text-sm text-neutral-600 line-clamp-2">{post.final_caption || post.ai_caption || post.raw_caption}</p>
           <div className="flex gap-1 mt-2 flex-wrap">
-            {post.platforms?.map((p: any) => (
+            {post.platforms?.map((p: any) => {
+              const pfKey = post.id + ':' + p.platform;
+              const pfMsg = retryMsg[pfKey];
+              return (
               <div key={p.platform} className="flex flex-col gap-0.5">
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
-                    ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700'
-                    : p.status === 'failed' ? 'bg-red-100 text-red-700'
-                    : p.status === 'deleted' ? 'bg-neutral-200 text-neutral-500 line-through'
-                    : 'bg-neutral-100 text-neutral-500'}`}>
+                  <span className={
+                    p.status === 'posted' ? 'text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize bg-emerald-100 text-emerald-700'
+                    : p.status === 'failed' ? 'text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize bg-red-100 text-red-700'
+                    : p.status === 'deleted' ? 'text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize bg-neutral-200 text-neutral-500 line-through'
+                    : 'text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize bg-neutral-100 text-neutral-500'
+                  }>
                     {p.platform} {p.status === 'failed' ? '(failed)' : p.status === 'deleted' ? '(deleted)' : ''}
                   </span>
-                  {/* Delete from platform button — only for Instagram/Facebook that are posted */}
                   {p.status === 'posted' && ['instagram', 'facebook'].includes(p.platform) && (
                     <button
                       onClick={() => deletePlatformPost(post.id, p.platform)}
-                      disabled={retryMsg[`${post.id}:${p.platform}`] === 'Deleting...'}
+                      disabled={pfMsg === 'Deleting...'}
                       className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-red-200 text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-                      title={`Delete from ${p.platform}`}
+                      title={'Delete from ' + p.platform}
                     >
-                      {retryMsg[`${post.id}:${p.platform}`] === 'Deleting...' ? '...' : 'Delete post'}
+                      {pfMsg === 'Deleting...' ? '...' : 'Delete post'}
                     </button>
                   )}
                 </div>
                 {p.status === 'failed' && p.error && (
                   <p className="text-[10px] text-red-500 max-w-xs truncate" title={p.error}>{p.error}</p>
                 )}
-                {retryMsg[`${post.id}:${p.platform}`] && retryMsg[`${post.id}:${p.platform}`] !== 'Deleting...' && (
-                  <p className={`text-[10px] ${retryMsg[`${post.id}:${p.platform}`].includes('failed') || retryMsg[`${post.id}:${p.platform}`].includes('error') ? 'text-red-500' : 'text-emerald-600'}`}>
-                    {retryMsg[`${post.id}:${p.platform}`]}
+                {pfMsg && pfMsg !== 'Deleting...' && (
+                  <p className={['failed','error'].some(w => pfMsg.includes(w)) ? 'text-[10px] text-red-500' : 'text-[10px] text-emerald-600'}>
+                    {pfMsg}
                   </p>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
           {/* Retry button for partially published or failed posts */}
           {['partially_published', 'failed'].includes(post.status) && (
@@ -892,7 +898,7 @@ function PostHistory({ token }: { token: string }) {
                     Retry Failed Platforms
                   </button>
                   {retryMsg[post.id] && retryMsg[post.id] !== 'Retrying...' && (
-                    <p className={`text-xs mt-1.5 ${retryMsg[post.id].includes('failed') || retryMsg[post.id].includes('deleted') || retryMsg[post.id].includes('Error') ? 'text-red-500' : 'text-emerald-600'}`}>
+                    <p className={['failed','deleted','Error'].some(w => retryMsg[post.id].includes(w)) ? 'text-xs mt-1.5 text-red-500' : 'text-xs mt-1.5 text-emerald-600'}>
                       {retryMsg[post.id]}
                     </p>
                   )}

@@ -116,7 +116,7 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
 
     // Reach-boosting hashtags — kept to exactly 10 so teacher tags + boost never exceed Instagram's 30-tag limit
     const BOOST_TAGS = [
-      '#fyp', '#foryoupage', '#viral', '#trending', '#school',
+      '#yippppppp', '#fyp', '#foryoupage', '#viral', '#trending',
       '#preschool', '#earlylearning', '#kidsofinstagram', '#silveroakjuniors', '#oakitai',
     ];
 
@@ -280,7 +280,7 @@ export async function retryFailedPlatforms(postId: string, schoolId: string): Pr
     const caption = post.final_caption || post.ai_caption || post.raw_caption || '';
     const hashtags: string[] = post.hashtags || [];
     const BOOST_TAGS = [
-      '#fyp', '#foryoupage', '#viral', '#trending', '#school',
+      '#yippppppp', '#fyp', '#foryoupage', '#viral', '#trending',
       '#preschool', '#earlylearning', '#kidsofinstagram', '#silveroakjuniors', '#oakitai',
     ];
     const teacherTags = hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`);
