@@ -814,10 +814,406 @@
   <p>Contact your Franchise Admin or the Oakit support team. For technical issues, share the error message shown in the app — it contains the exact error code from the system.</p>
 </div>
 
+<!-- ═══════════════════════ ADMIN — CALENDAR & PLANNER (DETAILED) ═══════════════════════ -->
+<h2 id="calendar-planner">17. Calendar Setup, Special Days &amp; the Lesson Planner — Complete Guide</h2>
+
+<p>This is the most powerful and most misunderstood part of Oakit. Take 10 minutes to read this section fully. It explains how the system plans lessons, what happens when you add a holiday after plans are generated, and how to fix anything that goes wrong.</p>
+
+<h3>17.1 How the Planner Works — The Core Logic</h3>
+<p>When you generate plans for a class, Oakit does the following:</p>
+<ol>
+  <li>Looks at the academic calendar (start date, end date, working days)</li>
+  <li>Removes all holidays and full-day special events from the working day count</li>
+  <li>Takes the curriculum chunks (topics) for that class</li>
+  <li>Distributes them one per working day, in order</li>
+  <li>If a day gets cleared (holiday added later), the chunk from that day <strong>carries forward</strong> to the next available working day — no topic is ever lost</li>
+</ol>
+
+<div class="box box-blue no-break">
+  <div class="box-label">Key principle — carry-forward</div>
+  <p>Oakit never deletes a topic. If Day 15 becomes a holiday, Day 15's topic shifts to Day 16, Day 16's topic shifts to Day 17, and so on. The plan compresses intelligently. This is why you must refresh the planner after adding any holiday or special day.</p>
+</div>
+
+<h3>17.2 Setting Up the Academic Calendar (do this once per year)</h3>
+
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin → Calendar</strong>.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Click <strong>New Calendar</strong>. Enter the academic year (e.g. 2025-2026), start date, and end date.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">Select the <strong>working days</strong> — tick Monday through Friday (or whatever your school follows). This tells the system which days of the week are school days.</div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body">Click <strong>Save Calendar</strong>.</div></div>
+</div>
+
+<div class="box box-amber no-break">
+  <div class="box-label">Do this before uploading curriculum</div>
+  <p>The academic calendar must exist before you generate plans. Curriculum chunks cannot be distributed until the system knows when school starts, ends, and which days are working days.</p>
+</div>
+
+<h3>17.3 Holidays vs Special Days — What is the Difference?</h3>
+
+<table>
+  <tr><th>Type</th><th>What it means</th><th>Effect on the plan</th><th>Example</th></tr>
+  <tr>
+    <td><strong>Holiday</strong></td>
+    <td>School is completely closed. No teachers, no students.</td>
+    <td>That day is removed entirely from the plan. Its topic carries forward.</td>
+    <td>Diwali, Independence Day, sudden government holiday</td>
+  </tr>
+  <tr>
+    <td><strong>Special Day — Full Day</strong></td>
+    <td>School is open but no curriculum teaching happens. The full day is used for an event or activity.</td>
+    <td>That day is marked as a special event. Its topic carries forward. The day shows the event name instead of a topic.</td>
+    <td>Annual Day, Sports Day, Parent-Teacher Meeting (full day)</td>
+  </tr>
+  <tr>
+    <td><strong>Special Day — Half Day</strong></td>
+    <td>School is open but only half the day is used for curriculum. The other half has an activity/event.</td>
+    <td>That day counts as 0.5 curriculum days. The topic stays but the teacher gets an instruction note. No carry-forward.</td>
+    <td>Fancy Dress competition in the morning, curriculum in afternoon</td>
+  </tr>
+</table>
+
+<div class="box box-blue no-break">
+  <div class="box-label">Why half-day events exist</div>
+  <p>A half-day special day lets the teacher know they have less time than usual, but still need to cover the topic. For example: "Sports Day preparation 9–11 AM. Regular class after 11 AM." The topic stays assigned; the teacher just covers it in less time. The net curriculum days count is reduced by 0.5.</p>
+</div>
+
+<h3>17.4 Adding a Holiday</h3>
+
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin → Calendar</strong> → select your academic year.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Click <strong>Add Holiday</strong>. Enter the date and event name (e.g. "Republic Day", "Sudden School Closure").</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">Click <strong>Save</strong>.</div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body">If plans have already been generated for that date, you will see a yellow warning: <em>"X section plans were cleared. Those topics will carry forward once you refresh the planner."</em></div></div>
+  <div class="step"><div class="step-num">5</div><div class="step-body">Select the affected class and click <strong>Refresh Planner</strong>. The system redistributes the topics. Done.</div></div>
+</div>
+
+<div class="box box-red no-break">
+  <div class="box-label">Always refresh after adding a holiday</div>
+  <p>Adding a holiday clears the plan for that day but does NOT automatically shift all subsequent topics. You must click <strong>Refresh Planner</strong> for each affected class. If you skip this step, teachers will see a blank day followed by a gap in the sequence.</p>
+</div>
+
+<h3>17.5 Adding a Special Day (School Event)</h3>
+
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin → Calendar</strong> → <strong>Special Days</strong> tab.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Click <strong>Add Special Day</strong>.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">Fill in:
+    <ul>
+      <li><strong>From date / To date</strong> — single day or multi-day event (e.g. 3-day cultural festival)</li>
+      <li><strong>Event type</strong> — select from the list: Settling In, Sports Day, Cultural Event, Revision Day, Parent-Teacher Meeting, or Custom</li>
+      <li><strong>Label</strong> — the display name teachers and parents see (e.g. "Annual Sports Day")</li>
+      <li><strong>Duration type</strong> — Full Day or Half Day (see the table above)</li>
+      <li><strong>Activity note</strong> — instructions for the teacher (optional, e.g. "Bring students to ground at 9 AM")</li>
+      <li><strong>Start time / End time</strong> — for half-day events, specify when the event runs</li>
+    </ul>
+  </div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body">Click <strong>Save</strong>. For full-day events, you will see the same carry-forward warning as holidays. Click <strong>Refresh Planner</strong>.</div></div>
+</div>
+
+<h3>17.6 Special Day Types — What Each Means</h3>
+
+<table>
+  <tr><th>Type</th><th>When to use it</th></tr>
+  <tr><td>Settling In</td><td>First few days of school year — children are adjusting. No formal curriculum yet. Teachers do welcome activities.</td></tr>
+  <tr><td>Sports Day</td><td>School athletic event. Teachers go to the ground, not the classroom.</td></tr>
+  <tr><td>Cultural Event / Annual Day</td><td>Performance, concert, prize ceremony.</td></tr>
+  <tr><td>Revision Day</td><td>A full day dedicated to revision of previously taught topics. When you add this type, you can specify which topics to revise — Oakie will suggest relevant questions.</td></tr>
+  <tr><td>Parent-Teacher Meeting</td><td>Admin marks these so teachers know to prepare reports. Curriculum paused for the day or half-day.</td></tr>
+  <tr><td>Custom</td><td>Anything else — Republic Day programme, field trip, health check day.</td></tr>
+</table>
+
+<h3>17.7 Generating Monthly and Yearly Plans</h3>
+
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin → Plans</strong>.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Select the <strong>Class</strong> and <strong>Section</strong>.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">Choose <strong>Generate Month Plans</strong> (for a single month) or <strong>Generate Full Year Plans</strong> (for all remaining months).</div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body">The system distributes curriculum chunks across working days, skipping holidays and full-day special events automatically.</div></div>
+  <div class="step"><div class="step-num">5</div><div class="step-body">Once generated, teachers immediately see their daily plans in the Teacher → Plan tab.</div></div>
+</div>
+
+<div class="box box-amber no-break">
+  <div class="box-label">Generate month-by-month vs full year</div>
+  <p>Full year generation is faster but locks in all plans at once. Month-by-month gives you flexibility — if December has an unexpected event, you only need to regenerate December, not the whole year. Recommended: generate month-by-month, one month at a time, at the start of each month.</p>
+</div>
+
+<h3>17.8 Regenerating Plans — When You Need to Delete and Regenerate</h3>
+
+<p>Use <strong>Refresh Planner</strong> after adding a holiday or special day to an already-generated month. This shifts topics forward without deleting them.</p>
+
+<p>Use <strong>Delete All Plans</strong> + <strong>Generate</strong> only when you need to completely redo a month — for example if you uploaded new curriculum, changed working days, or the month is severely out of sequence.</p>
+
+<div class="box box-red no-break">
+  <div class="box-label">Important — you cannot regenerate a month that already has plans</div>
+  <p>The system prevents overwriting existing plans to avoid teachers losing their work. To regenerate:
+    <ol style="margin-top:6px">
+      <li>Go to Admin → Plans → select the class and month</li>
+      <li>Click <strong>Delete All Plans</strong> for that month</li>
+      <li>Then click <strong>Generate Month Plans</strong></li>
+    </ol>
+    Teachers will not lose their completion records — only the plan distribution resets.
+  </p>
+</div>
+
+<h3>17.9 Editing a Day Plan — Adding a Note or Changing a Topic Label</h3>
+
+<p>Sometimes you want to adjust a specific day without regenerating everything. Go to <strong>Admin → Plans</strong>, click on any day, and you can:</p>
+
+<ul>
+  <li><strong>Admin Note</strong> — add a note visible only to the teacher for that day (e.g. "Use the new chart from the storeroom today"). This appears as a blue notice box in the teacher's plan.</li>
+  <li><strong>Edit topic label</strong> — rename the topic for that day without affecting the curriculum database (the AI still uses the original topic internally).</li>
+  <li><strong>Add an extra topic or activity</strong> — if you want to insert an additional topic for a specific day that is not in the uploaded curriculum (e.g. a school-specific activity), use the Admin Note field to instruct the teacher. The raw curriculum chunks cannot be injected mid-plan without regenerating — but the admin note achieves the same result for one-off additions.</li>
+</ul>
+
+<div class="box box-green no-break">
+  <div class="box-label">How to add a topic not in the curriculum</div>
+  <p>If the school wants to add a topic that is not in the uploaded textbook (e.g. a special environmental awareness lesson):
+    <ol style="margin-top:6px">
+      <li>Go to Admin → Plans → find the target day</li>
+      <li>Click the day → <strong>Add Admin Note</strong></li>
+      <li>Write: "Today's additional topic: Environmental Awareness — discuss waste sorting, recycling, and conservation with the class."</li>
+      <li>Save. The teacher sees this note highlighted in blue on their daily plan.</li>
+    </ol>
+    For a permanent addition to the curriculum, upload a new PDF or add the topic to the existing curriculum source and re-ingest.
+  </p>
+</div>
+
+<h3>17.10 The Coverage Report — How to Read It</h3>
+
+<p>Go to <strong>Admin → Coverage</strong>. This shows how much of the curriculum each section has actually completed (not just planned).</p>
+
+<table>
+  <tr><th>Column</th><th>Meaning</th></tr>
+  <tr><td>Section</td><td>Class name and section label</td></tr>
+  <tr><td>Total chunks</td><td>Total curriculum topics for that class</td></tr>
+  <tr><td>Covered</td><td>Topics marked as done by the teacher</td></tr>
+  <tr><td>Coverage %</td><td>Covered ÷ Total × 100</td></tr>
+  <tr><td>Flagged</td><td>Admin or principal has flagged this section for attention</td></tr>
+</table>
+
+<div class="box box-amber no-break">
+  <div class="box-label">Coverage vs Plans</div>
+  <p>Plans tell you what was <em>scheduled</em>. Coverage tells you what was <em>actually taught</em>. A section can have 100% plans generated but only 40% coverage if teachers are behind. Coverage is the real metric.</p>
+</div>
+
+<h3>17.11 Carry-Forward Scenario — Step by Step</h3>
+
+<p>Here is a concrete example so you understand exactly what happens:</p>
+
+<div class="box box-blue no-break">
+  <div class="box-label">Scenario: Sudden holiday on Wednesday, 15 January</div>
+  <p>The plan before the holiday:</p>
+  <ul>
+    <li>Mon 13 Jan — Topic: "Numbers 1–10"</li>
+    <li>Tue 14 Jan — Topic: "Addition basics"</li>
+    <li><strong>Wed 15 Jan — Topic: "Subtraction intro"</strong> ← You add a holiday here</li>
+    <li>Thu 16 Jan — Topic: "Shapes"</li>
+    <li>Fri 17 Jan — Topic: "Colours"</li>
+  </ul>
+  <p style="margin-top:8px">After you add the holiday and click <strong>Refresh Planner</strong>:</p>
+  <ul>
+    <li>Mon 13 Jan — Topic: "Numbers 1–10" (unchanged)</li>
+    <li>Tue 14 Jan — Topic: "Addition basics" (unchanged)</li>
+    <li>Wed 15 Jan — <strong>Holiday</strong> (no topic)</li>
+    <li>Thu 16 Jan — Topic: "Subtraction intro" (shifted from Wed)</li>
+    <li>Fri 17 Jan — Topic: "Shapes" (shifted from Thu)</li>
+    <li>Mon 20 Jan — Topic: "Colours" (shifted from Fri)</li>
+  </ul>
+  <p style="margin-top:8px">Every topic is preserved. The plan simply extends by one day.</p>
+</div>
+
+<!-- ═══════════════════════ PRINCIPAL GUIDE ═══════════════════════ -->
+<h2 id="principal-guide">18. Principal — What You Can Do</h2>
+
+<p>The principal role has visibility across the entire school and can do almost everything the admin can do, except manage fees, HR salary records, and school settings. The principal's focus is on academic oversight, teacher performance, and content approval.</p>
+
+<h3>18.1 Principal Dashboard</h3>
+<p>Your dashboard shows:</p>
+<ul>
+  <li>School health charts — attendance rate, coverage rate, teacher engagement</li>
+  <li>Sections with low coverage (flagged automatically below 50%)</li>
+  <li>Pending approvals — leave requests, fee concessions waiting for action</li>
+  <li>Teacher streaks — which teachers have been consistently active</li>
+  <li>Birthday list — students and staff with upcoming birthdays</li>
+  <li>Finance snapshot (read-only)</li>
+</ul>
+
+<h3>18.2 Social Media — Full Approval Access</h3>
+<p>The principal has identical access to the Social Media Publisher as the admin:</p>
+<ul>
+  <li>Approve or reject posts in the approval queue</li>
+  <li>Edit captions before approving</li>
+  <li>View post history, retry failed platforms, delete published posts from Instagram/Facebook</li>
+  <li>Configure platform credentials</li>
+  <li>Run Drive cleanup for social media files</li>
+</ul>
+<p>Access: <strong>Principal Dashboard → Social Media card</strong> (shown on the dashboard) or navigate directly to <code>/principal/social-media</code>.</p>
+
+<h3>18.3 Coverage and Planner Oversight</h3>
+<p>The principal can view coverage reports for all classes and sections. If a section is falling behind, the principal can:</p>
+<ul>
+  <li>View the specific topics not yet covered</li>
+  <li>Check teacher activity logs</li>
+  <li>Go to <strong>Admin → Plans</strong> (accessible to principal) to add an admin note to upcoming days with specific instructions</li>
+  <li>Flag a section for follow-up</li>
+</ul>
+
+<h3>18.4 Teacher Performance</h3>
+<p>Go to <strong>Principal → Teacher Activity</strong>. This shows each teacher's:</p>
+<ul>
+  <li>Number of days they marked attendance</li>
+  <li>Number of feed posts created</li>
+  <li>Curriculum coverage percentage for their sections</li>
+  <li>Streak (consecutive days of activity)</li>
+</ul>
+<p>Use this to identify teachers who are consistently not using the platform, then have a conversation with them.</p>
+
+<h3>18.5 Announcements</h3>
+<p>The principal can create school-wide and class-specific announcements, the same as the admin.</p>
+
+<h3>18.6 Leave Approval</h3>
+<p>The principal can approve or reject staff leave requests from <strong>Principal Dashboard → Leave</strong>.</p>
+
+<h3>18.7 Holistic Reports</h3>
+<p>The principal can view all student holistic reports generated by teachers, and can download them as PDFs for record-keeping or parent meetings.</p>
+
+<!-- ═══════════════════════ TEACHER GUIDE ═══════════════════════ -->
+<h2 id="teacher-guide">19. Teacher — What You Can Do</h2>
+
+<p>The teacher role is the core daily user of Oakit. Everything a teacher does feeds into the parent's view and the admin's oversight.</p>
+
+<h3>19.1 Teacher Home — The Daily Workflow</h3>
+<p>When a teacher logs in, they see:</p>
+<ul>
+  <li><strong>Today's plan</strong> — the topic assigned for today, with Oakie's suggested activities</li>
+  <li><strong>Attendance section</strong> — mark who is present, absent, or late with one tap</li>
+  <li><strong>Pending topics</strong> — topics from previous days that were not completed and carried forward</li>
+  <li><strong>Admin note</strong> (if any) — a blue box with instructions from the admin for today</li>
+</ul>
+
+<h3>19.2 Marking Attendance</h3>
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Open the app → today's view shows the class list.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Tap each student's name to mark Present, Absent, or Late.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">Tap <strong>Submit Attendance</strong>. Parents are notified immediately if their child is absent.</div></div>
+</div>
+
+<div class="box box-amber no-break">
+  <div class="box-label">Mark attendance before 10 AM</div>
+  <p>Parents check the app first thing in the morning. Late attendance marking causes parents to contact the school unnecessarily. Train teachers to mark attendance by 9:30 AM every day.</p>
+</div>
+
+<h3>19.3 Completing a Topic (Plan Tab)</h3>
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Plan</strong> tab → find today's topic.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Tick the checkbox next to the topic after teaching it.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">The topic moves to "Completed". Coverage percentage updates on the admin's dashboard immediately.</div></div>
+</div>
+
+<p>If the teacher <strong>does not tick</strong> a topic, Oakit automatically carries it forward to the next day. The teacher will see it in the "Pending" section tomorrow.</p>
+
+<h3>19.4 Posting to the Class Feed</h3>
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Feed</strong> tab → tap <strong>New Post</strong>.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Upload 1–5 photos, or one video (max 90 seconds). Videos over 15 MB are auto-compressed.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">Write a caption or tap <strong>Generate with Oakie</strong> for an AI caption.</div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body">Post. Parents of that section see it immediately in their app.</div></div>
+</div>
+
+<h3>19.5 Homework and Notes</h3>
+<ul>
+  <li><strong>Assign homework</strong>: Teacher → Homework → New. Write the task, set a due date. Parents see it in the app. Parents tick "acknowledged" when they have seen it.</li>
+  <li><strong>Class notes</strong>: Teacher → Notes → New Note. Attach files or write text. Notes auto-expire after the number of days configured by admin (default 14 days).</li>
+</ul>
+
+<h3>19.6 Oakie AI Chat</h3>
+<p>Teachers can ask Oakie anything from the chat tab:</p>
+<ul>
+  <li>"What activities can I do for the topic Numbers 1–10 for Nursery kids?"</li>
+  <li>"Write a homework task for today's lesson on colours."</li>
+  <li>"Suggest a 5-minute warm-up activity for a Monday morning class."</li>
+  <li>"What topics has my class not covered yet?"</li>
+</ul>
+<p>Oakie knows the class's curriculum because it was indexed from the uploaded PDF. Every response can be downloaded as a PDF.</p>
+
+<h3>19.7 Social Media Posts (if module is enabled)</h3>
+<div class="steps">
+  <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Social Media</strong> in the teacher app.</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body">Select <strong>Video/Reel</strong> or <strong>Photo Carousel</strong> (carousel requires at least 2 photos).</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body">Upload media. Write a caption or use Oakie to generate one.</div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body">Select platforms (Instagram, Facebook, etc.) and tap <strong>Submit for Approval</strong>.</div></div>
+  <div class="step"><div class="step-num">5</div><div class="step-body">The admin/principal reviews and approves. The teacher gets a notification when published.</div></div>
+  <div class="step"><div class="step-num">6</div><div class="step-body">In <strong>My Posts</strong>, the teacher can see the status of each post and a direct link to view it on Instagram/Facebook after it is published.</div></div>
+</div>
+
+<div class="box box-blue no-break">
+  <div class="box-label">Daily limits</div>
+  <p>Teachers can submit 1 video and 2 photo carousels per day. Failed posts (not published due to errors) do not count against this limit. Posts that were deleted by the teacher also do not count — the slot is freed.</p>
+</div>
+
+<h3>19.8 Milestones and Observations</h3>
+<p>Go to <strong>Teacher → Milestones</strong>. Mark developmental milestones for each student — physical, cognitive, social, and emotional. Write observations. These feed into the holistic term report generated by Oakie at the end of term.</p>
+
+<h3>19.9 Teacher Handout (PDF)</h3>
+<p>Go to <strong>Teacher → Download Handout</strong>. This generates a full weekly or monthly PDF plan for the teacher to keep at their desk or share with the principal. It includes every day's topic, activities, and special day notes.</p>
+
+<!-- ═══════════════════════ PARENT GUIDE ═══════════════════════ -->
+<h2 id="parent-guide">20. Parent — What You Can See and Do</h2>
+
+<p>The parent portal is designed to keep parents informed without overwhelming them. It is intentionally read-focused — parents cannot change curriculum, attendance, or class content. They can communicate with teachers and download their child's materials.</p>
+
+<h3>20.1 What Parents See on Login</h3>
+<ul>
+  <li><strong>Instagram follow prompt</strong> — a one-time popup asking them to follow the school's Instagram page</li>
+  <li><strong>Flash message</strong> — if the admin has sent an urgent notice (e.g. sudden holiday, Drive cleanup warning), it appears as a full-screen popup</li>
+  <li><strong>Home feed</strong> — today's class photo/video posts from the teacher</li>
+</ul>
+
+<h3>20.2 Home Tab</h3>
+<ul>
+  <li>Today's class feed posts (photos and videos)</li>
+  <li>Today's attendance status for their child</li>
+  <li>Today's curriculum topic (what was planned for teaching)</li>
+  <li>Homework due today</li>
+</ul>
+
+<h3>20.3 Attendance Tab</h3>
+<p>Parents can see a 30-day attendance history for their child — present, absent, late. The attendance percentage is shown clearly.</p>
+
+<h3>20.4 Progress Tab</h3>
+<p>Parents see the curriculum coverage percentage for their child's class — how much of the textbook has been taught so far. This is the same metric the admin and principal see.</p>
+
+<h3>20.5 Homework Tab</h3>
+<p>All homework assigned by the teacher. Parents tap <strong>Acknowledge</strong> once they have seen it and ensured their child has done it. The teacher sees who has acknowledged.</p>
+
+<h3>20.6 Messages Tab</h3>
+<p>Direct messaging between the parent and the class teacher. Parents can ask questions about their child's progress, attendance, or homework. All messages are logged and visible to the admin.</p>
+
+<h3>20.7 Milestones Tab</h3>
+<p>Parents can see developmental milestones marked by the teacher. When new milestones are added, the parent receives a notification.</p>
+
+<h3>20.8 Fees Tab</h3>
+<p>Parents can view their child's fee invoice, payment history, and outstanding balance. They cannot make payments through the app — payments are recorded by the admin after receiving cash/online transfer.</p>
+
+<h3>20.9 Reports Tab</h3>
+<p>End-of-term holistic reports generated by Oakie are available here as downloadable PDFs. Parents can also see the student journey (a timeline of milestones and observations through the year).</p>
+
+<h3>20.10 Multi-Language Support</h3>
+<p>Parents can enable translation in Settings. The app supports Hindi, Telugu, Kannada, Tamil, Malayalam, Gujarati, Marathi, Bengali, Punjabi, Urdu, Arabic, French, and Spanish. When enabled, all teacher-written content is automatically translated for that parent.</p>
+
+<h3>20.11 What Parents CANNOT Do</h3>
+<ul>
+  <li>Mark attendance</li>
+  <li>Edit homework or curriculum</li>
+  <li>See other children's data (each parent only sees their linked children)</li>
+  <li>Access teacher or admin sections</li>
+  <li>Make fee payments through the app</li>
+</ul>
+
 <!-- ═══════════════════════ FOOTER ═══════════════════════ -->
 <div class="footer">
-  <p>Oakit.ai Admin Guide &nbsp;·&nbsp; Silver Oak Juniors &nbsp;·&nbsp; <strong>oakit.silveroakjuniors.in</strong></p>
-  <p style="margin-top:4px">This document is confidential and intended for school administrators only.</p>
+  <p>Oakit.ai Complete User Guide &nbsp;·&nbsp; Silver Oak Juniors &nbsp;·&nbsp; <strong>oakit.silveroakjuniors.in</strong></p>
+  <p style="margin-top:4px">This document is confidential. Admin, Principal, Teacher and Parent sections — November 2026.</p>
 </div>
 
 </div><!-- /page -->
