@@ -50,6 +50,7 @@ interface PublishResult {
   platform: Platform;
   success: boolean;
   platform_post_id?: string;
+  permalink?: string;
   error?: string;
 }
 
@@ -174,13 +175,14 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
     for (const result of results) {
       await pool.query(
         `UPDATE social_media_post_platforms
-         SET status=$1, platform_post_id=$2, error_message=$3, attempted_at=now(), posted_at=$4
-         WHERE post_id=$5 AND platform=$6`,
+         SET status=$1, platform_post_id=$2, error_message=$3, attempted_at=now(), posted_at=$4, permalink=$5
+         WHERE post_id=$6 AND platform=$7`,
         [
           result.success ? 'posted' : 'failed',
           result.platform_post_id || null,
           result.error ? translateGraphError(result.error, result.platform) : null,
           result.success ? new Date().toISOString() : null,
+          result.permalink || null,
           postId, result.platform,
         ],
       );
@@ -316,10 +318,10 @@ export async function retryFailedPlatforms(postId: string, schoolId: string): Pr
     for (const result of results) {
       await pool.query(
         `UPDATE social_media_post_platforms
-         SET status=$1, platform_post_id=$2, error_message=$3, attempted_at=now(), posted_at=$4
-         WHERE post_id=$5 AND platform=$6`,
+         SET status=$1, platform_post_id=$2, error_message=$3, attempted_at=now(), posted_at=$4, permalink=$5
+         WHERE post_id=$6 AND platform=$7`,
         [result.success ? 'posted' : 'failed', result.platform_post_id || null, result.error || null,
-         result.success ? new Date().toISOString() : null, postId, result.platform],
+         result.success ? new Date().toISOString() : null, result.permalink || null, postId, result.platform],
       );
     }
 
@@ -407,6 +409,26 @@ async function publishToPlatform(
 }
 
 // ── Instagram ────────────────────────────────────────────────────────────────
+async function fetchInstagramPermalink(postId: string, accessToken: string): Promise<string | null> {
+  try {
+    const r = await axios.get(
+      `https://graph.facebook.com/v19.0/${postId}?fields=permalink&access_token=${accessToken}`,
+      { timeout: 8000 },
+    );
+    return r.data?.permalink || null;
+  } catch { return null; }
+}
+
+async function fetchFacebookPermalink(postId: string, accessToken: string): Promise<string | null> {
+  try {
+    const r = await axios.get(
+      `https://graph.facebook.com/v19.0/${postId}?fields=permalink_url&access_token=${accessToken}`,
+      { timeout: 8000 },
+    );
+    return r.data?.permalink_url || null;
+  } catch { return null; }
+}
+
 async function publishToInstagram(config: any, post: any, mediaUrls: string[], caption: string): Promise<PublishResult> {
   const { access_token, account_id } = config;
   const BASE = 'https://graph.facebook.com/v19.0';
@@ -419,7 +441,8 @@ async function publishToInstagram(config: any, post: any, mediaUrls: string[], c
     const pubRes = await axios.post(`${BASE}/${account_id}/media_publish`, {
       creation_id: containerRes.data.id, access_token,
     });
-    return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id };
+    const permalink = await fetchInstagramPermalink(pubRes.data.id, access_token);
+    return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id, permalink: permalink || undefined };
   }
 
   // Single image — publish directly (Instagram requires 2+ items for carousels)
@@ -431,7 +454,8 @@ async function publishToInstagram(config: any, post: any, mediaUrls: string[], c
     const pubRes = await axios.post(`${BASE}/${account_id}/media_publish`, {
       creation_id: containerRes.data.id, access_token,
     });
-    return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id };
+    const permalink = await fetchInstagramPermalink(pubRes.data.id, access_token);
+    return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id, permalink: permalink || undefined };
   }
 
   // Multi-image carousel (2–5 images)
@@ -449,7 +473,8 @@ async function publishToInstagram(config: any, post: any, mediaUrls: string[], c
   const pubRes = await axios.post(`${BASE}/${account_id}/media_publish`, {
     creation_id: carouselRes.data.id, access_token,
   });
-  return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id };
+  const permalink = await fetchInstagramPermalink(pubRes.data.id, access_token);
+  return { platform: 'instagram', success: true, platform_post_id: pubRes.data.id, permalink: permalink || undefined };
 }
 
 async function waitForInstagramContainer(containerId: string, token: string, maxWait = 60000): Promise<void> {
@@ -473,7 +498,8 @@ async function publishToFacebook(config: any, post: any, mediaUrls: string[], ca
     const r = await axios.post(`${BASE}/${page_id}/videos`, {
       file_url: mediaUrls[0], description: caption, access_token,
     });
-    return { platform: 'facebook', success: true, platform_post_id: r.data.id };
+    const permalink = await fetchFacebookPermalink(r.data.id, access_token);
+    return { platform: 'facebook', success: true, platform_post_id: r.data.id, permalink: permalink || undefined };
   }
 
   // Single image — publish directly with caption (avoids "unpublished post" error)
@@ -481,7 +507,8 @@ async function publishToFacebook(config: any, post: any, mediaUrls: string[], ca
     const r = await axios.post(`${BASE}/${page_id}/photos`, {
       url: mediaUrls[0], caption, published: true, access_token,
     });
-    return { platform: 'facebook', success: true, platform_post_id: r.data.id };
+    const permalink = await fetchFacebookPermalink(r.data.id, access_token);
+    return { platform: 'facebook', success: true, platform_post_id: r.data.id, permalink: permalink || undefined };
   }
 
   // Multi-image — upload as unpublished, then create multi-photo feed post
@@ -495,7 +522,8 @@ async function publishToFacebook(config: any, post: any, mediaUrls: string[], ca
     attached_media: photoIds.map(id => ({ media_fbid: id })),
     access_token,
   });
-  return { platform: 'facebook', success: true, platform_post_id: feedRes.data.id };
+  const permalink = await fetchFacebookPermalink(feedRes.data.id, access_token);
+  return { platform: 'facebook', success: true, platform_post_id: feedRes.data.id, permalink: permalink || undefined };
 }
 
 // ── YouTube Shorts ────────────────────────────────────────────────────────────

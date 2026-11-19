@@ -308,7 +308,14 @@ router.get('/posts', async (req: Request, res: Response) => {
               smp.final_caption, smp.hashtags, smp.status, smp.rejection_reason,
               smp.submitted_at, smp.published_at,
               COALESCE(
-                json_agg(json_build_object('platform', pf.platform, 'status', pf.status, 'error', pf.error_message))
+                json_agg(json_build_object(
+                  'platform', pf.platform,
+                  'status', pf.status,
+                  'error', pf.error_message,
+                  'platform_post_id', pf.platform_post_id,
+                  'permalink', pf.permalink,
+                  'posted_at', pf.posted_at
+                ))
                 FILTER (WHERE pf.id IS NOT NULL), '[]'
               ) AS platforms
        FROM social_media_posts smp

@@ -707,13 +707,39 @@ export default function TeacherSocialMediaPage() {
                     </p>
                   )}
 
-                  {/* Platforms */}
-                  <div className="flex gap-1 mb-3">
+                  {/* Platforms — with status, posted time, and direct links */}
+                  <div className="flex flex-col gap-1 mb-3">
                     {post.platforms?.map((p: any) => (
-                      <span key={p.platform} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
-                        ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-600' : 'bg-neutral-100 text-neutral-500'}`}>
-                        {PLATFORM_ICONS[p.platform]} {p.platform}
-                      </span>
+                      <div key={p.platform} className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize
+                          ${p.status === 'posted' ? 'bg-emerald-100 text-emerald-700'
+                          : p.status === 'failed' ? 'bg-red-100 text-red-600'
+                          : p.status === 'deleted' ? 'bg-neutral-200 text-neutral-500 line-through'
+                          : 'bg-neutral-100 text-neutral-500'}`}>
+                          {PLATFORM_ICONS[p.platform]} {p.platform}
+                          {p.status === 'failed' ? ' - failed' : p.status === 'deleted' ? ' - deleted' : ''}
+                        </span>
+                        {p.status === 'posted' && p.posted_at && (
+                          <span className="text-[10px] text-neutral-400">
+                            {new Date(p.posted_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                        {p.status === 'posted' && p.permalink && (
+                          <a
+                            href={p.permalink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] font-semibold text-primary underline hover:text-primary/80"
+                          >
+                            View on {p.platform}
+                          </a>
+                        )}
+                        {p.status === 'failed' && p.error && (
+                          <span className="text-[10px] text-red-500 max-w-[200px] truncate" title={p.error}>
+                            {p.error}
+                          </span>
+                        )}
+                      </div>
                     ))}
                   </div>
 
