@@ -114,21 +114,16 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
     const caption = post.final_caption || post.ai_caption || post.raw_caption || '';
     const hashtags: string[] = post.hashtags || [];
 
-    // Reach-boosting hashtags appended to every post
+    // Reach-boosting hashtags — kept to exactly 10 so teacher tags + boost never exceed Instagram's 30-tag limit
     const BOOST_TAGS = [
-      '#fyp', '#foryou', '#foryoupage', '#viral', '#trending',
-      '#school', '#preschool', '#primaryschool', '#earlylearning', '#kindergarten',
-      '#schoollife', '#kidsofinstagram', '#kidseducation', '#learningisfun',
-      '#teachersofinstagram', '#education', '#classroom', '#schooldays',
-      '#silveroakjuniors', '#oakitai',
+      '#fyp', '#foryoupage', '#viral', '#trending', '#school',
+      '#preschool', '#earlylearning', '#kidsofinstagram', '#silveroakjuniors', '#oakitai',
     ];
 
-    // Merge teacher/AI hashtags with boost tags — no duplicates, normalised to lowercase
-    const allTags = [
-      ...hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`),
-      ...BOOST_TAGS,
-    ];
-    const dedupedTags = [...new Map(allTags.map(t => [t.toLowerCase(), t])).values()];
+    // Merge teacher/AI hashtags with boost tags — no duplicates, cap total at 28 (safe under Instagram's 30 limit)
+    const teacherTags = hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`);
+    const allTags = [...teacherTags, ...BOOST_TAGS];
+    const dedupedTags = [...new Map(allTags.map(t => [t.toLowerCase(), t])).values()].slice(0, 28);
 
     const fullCaption = dedupedTags.length
       ? `${caption}\n\n${dedupedTags.join(' ')}`
@@ -184,7 +179,7 @@ export async function publishPost(postId: string, schoolId: string): Promise<voi
         [
           result.success ? 'posted' : 'failed',
           result.platform_post_id || null,
-          result.error || null,
+          result.error ? translateGraphError(result.error, result.platform) : null,
           result.success ? new Date().toISOString() : null,
           postId, result.platform,
         ],
@@ -285,17 +280,12 @@ export async function retryFailedPlatforms(postId: string, schoolId: string): Pr
     const caption = post.final_caption || post.ai_caption || post.raw_caption || '';
     const hashtags: string[] = post.hashtags || [];
     const BOOST_TAGS = [
-      '#fyp', '#foryou', '#foryoupage', '#viral', '#trending',
-      '#school', '#preschool', '#primaryschool', '#earlylearning', '#kindergarten',
-      '#schoollife', '#kidsofinstagram', '#kidseducation', '#learningisfun',
-      '#teachersofinstagram', '#education', '#classroom', '#schooldays',
-      '#silveroakjuniors', '#oakitai',
+      '#fyp', '#foryoupage', '#viral', '#trending', '#school',
+      '#preschool', '#earlylearning', '#kidsofinstagram', '#silveroakjuniors', '#oakitai',
     ];
-    const allTags = [
-      ...hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`),
-      ...BOOST_TAGS,
-    ];
-    const dedupedTags = [...new Map(allTags.map(t => [t.toLowerCase(), t])).values()];
+    const teacherTags = hashtags.map((h: string) => h.startsWith('#') ? h : `#${h}`);
+    const allTags = [...teacherTags, ...BOOST_TAGS];
+    const dedupedTags = [...new Map(allTags.map(t => [t.toLowerCase(), t])).values()].slice(0, 28);
     const fullCaption = dedupedTags.length ? `${caption}\n\n${dedupedTags.join(' ')}` : caption;
 
     const results: PublishResult[] = await Promise.all(
@@ -356,11 +346,56 @@ export async function retryFailedPlatforms(postId: string, schoolId: string): Pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Translate Graph API error codes into actionable messages
+// ─────────────────────────────────────────────────────────────────────────────
+function translateGraphError(errMsg: string, platform: string): string {
+  if (errMsg.includes('pages_manage_posts') || errMsg.includes('The permission') || errMsg.includes('need to be approved')) {
+    return `${platform} App Review required: your Meta app needs "pages_manage_posts" permission approved. Go to Meta Developer Console → App Review → Permissions → request "pages_manage_posts". Until approved, only test users can publish.`;
+  }
+  if (errMsg.includes('No permission to publish')) {
+    return `${platform}: App does not have permission to publish. Ensure "pages_manage_posts" is approved in Meta App Review and the token has that scope.`;
+  }
+  if (errMsg.includes('too many hashtags') || errMsg.includes('caption was too long') || errMsg.includes('36004')) {
+    return `${platform}: Caption has too many hashtags (Instagram allows max 30). The caption will be trimmed on retry.`;
+  }
+  if (errMsg.includes('Session has expired') || errMsg.includes('OAuthException')) {
+    return `${platform}: Access token expired. Go to Admin → Social Media → Platform Setup → Refresh Token.`;
+  }
+  if (errMsg.includes('Only photo or video')) {
+    return `${platform}: Media file is not accessible. The Drive file may not be public — check Google Drive sharing settings.`;
+  }
+  return errMsg;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pre-flight: verify all media URLs are publicly reachable before calling Graph API
+// ─────────────────────────────────────────────────────────────────────────────
+async function checkMediaReachable(mediaUrls: string[]): Promise<string | null> {
+  for (const url of mediaUrls) {
+    try {
+      const r = await axios.head(url, { timeout: 8000, maxRedirects: 5 });
+      if (r.status < 200 || r.status >= 400) {
+        return `Media file is not publicly accessible (HTTP ${r.status}): ${url}`;
+      }
+    } catch (e: any) {
+      return `Media file could not be reached (${e?.message || 'network error'}). Make sure Google Drive sharing is set to "Anyone with the link".`;
+    }
+  }
+  return null; // all good
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Platform dispatchers
 // ─────────────────────────────────────────────────────────────────────────────
 async function publishToPlatform(
   platform: Platform, config: any, post: any, mediaUrls: string[], caption: string,
 ): Promise<PublishResult> {
+  // Pre-flight media check for platforms that fetch media by URL
+  if (['instagram', 'facebook', 'youtube'].includes(platform)) {
+    const mediaError = await checkMediaReachable(mediaUrls);
+    if (mediaError) return { platform, success: false, error: mediaError };
+  }
+
   switch (platform) {
     case 'instagram': return publishToInstagram(config, post, mediaUrls, caption);
     case 'facebook':  return publishToFacebook(config, post, mediaUrls, caption);
