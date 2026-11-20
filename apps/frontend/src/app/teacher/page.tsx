@@ -1539,7 +1539,7 @@ export default function TeacherPlanner() {
           </div>
           <div className="px-4 pb-4 flex gap-2">
             <a
-              href="/guide-teacher.html"
+              href="/guide-teacher"
               target="_blank"
               rel="noopener noreferrer"
               className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 transition-colors"
@@ -1844,7 +1844,7 @@ export default function TeacherPlanner() {
         })}
         {/* Guide icon — opens teacher guide in new tab with download option */}
         <a
-          href="/guide-teacher.html"
+          href="/guide-teacher"
           target="_blank"
           rel="noopener noreferrer"
           className="flex flex-col items-center py-2.5 gap-0.5 px-3 relative transition-all active:scale-95"

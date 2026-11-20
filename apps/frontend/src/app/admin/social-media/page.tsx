@@ -954,7 +954,7 @@ export default function SocialMediaAdminPage() {
         </div>
         {/* Help / Guide button — visible on all screen sizes */}
         <a
-          href="/guide-admin.html#social-media"
+          href="/guide-admin#social-media"
           target="_blank"
           rel="noopener noreferrer"
           className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl bg-primary/5 border border-primary/20 hover:bg-primary/10 transition-colors shrink-0"

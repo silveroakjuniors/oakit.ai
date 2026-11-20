@@ -437,7 +437,7 @@ export default function SettingsPage() {
 
       {/* User Guide link */}
       <a
-        href="/guide-admin.html"
+        href="/guide-admin"
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl px-4 py-3 hover:bg-primary/10 transition-colors group"
