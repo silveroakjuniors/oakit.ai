@@ -1526,6 +1526,39 @@ export default function TeacherPlanner() {
   const helpTabContent = (
       <div className="p-4 flex flex-col gap-4" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
+        {/* Teacher Guide card */}
+        <div className="rounded-2xl border border-primary-200 bg-primary-50 overflow-hidden">
+          <div className="px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center shrink-0">
+              <BookOpen className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-primary-800">Teacher User Guide</p>
+              <p className="text-xs text-primary-600 leading-tight">Complete guide — attendance, plans, Oakie, social media, milestones</p>
+            </div>
+          </div>
+          <div className="px-4 pb-4 flex gap-2">
+            <a
+              href="/guide-teacher.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+              Read Guide
+            </a>
+            <a
+              href="/guide-teacher.html"
+              download="oakit-teacher-guide.html"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-primary-300 bg-white text-primary-700 text-xs font-semibold hover:bg-primary-50 transition-colors"
+              title="Download for offline / print"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download
+            </a>
+          </div>
+        </div>
+
         {/* How Oakie works */}
         <div className="rounded-2xl overflow-hidden border border-primary-200 shadow-sm">
           <div className="bg-gradient-to-br from-primary-600 to-primary-800 px-4 py-4 flex items-center gap-3">
@@ -1809,6 +1842,19 @@ export default function TeacherPlanner() {
             </button>
           );
         })}
+        {/* Guide icon — opens teacher guide in new tab with download option */}
+        <a
+          href="/guide-teacher.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col items-center py-2.5 gap-0.5 px-3 relative transition-all active:scale-95"
+          title="Teacher Guide"
+        >
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-transparent">
+            <BookOpen size={18} className="text-neutral-400" />
+          </div>
+          <span className="text-[10px] font-semibold tracking-wide text-neutral-400">Guide</span>
+        </a>
       </nav>
     </div>
   );

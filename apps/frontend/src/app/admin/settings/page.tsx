@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { API_BASE, apiGet, apiPut, apiPost } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { applyBrandColor, saveTagline } from '@/lib/branding';
-import { FileText, X } from 'lucide-react';
+import { FileText, X, BookOpen } from 'lucide-react';
 
 interface Settings {
   school_name: string;
@@ -434,6 +434,23 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-neutral-900">Settings</h1>
         <p className="text-sm text-neutral-500 mt-0.5">Manage your school profile and configuration</p>
       </div>
+
+      {/* User Guide link */}
+      <a
+        href="/guide-admin.html"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl px-4 py-3 hover:bg-primary/10 transition-colors group"
+      >
+        <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+          <BookOpen className="w-5 h-5 text-primary" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-primary group-hover:underline">Admin User Guide</p>
+          <p className="text-xs text-neutral-500">Complete reference — students, teachers, planner, fees, social media, drive cleanup</p>
+        </div>
+        <svg className="w-4 h-4 text-neutral-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      </a>
 
       {loading ? (
         <p className="text-sm text-neutral-400">Loading...</p>
