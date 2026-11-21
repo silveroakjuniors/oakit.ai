@@ -80,7 +80,7 @@ router.get('/', async (req: Request, res: Response) => {
     const params: any[] = [school_id];
     const conditions: string[] = ['th.school_id = $1'];
 
-    if (date) { params.push(date); conditions.push(`th.homework_date = $${params.length}`); }
+    if (date) { params.push(date); conditions.push(`th.homework_date = $${params.length}::date`); }
     else { conditions.push(`th.homework_date >= CURRENT_DATE - 7`); }
     if (section_id) { params.push(section_id); conditions.push(`th.section_id = $${params.length}`); }
     if (class_id) { params.push(class_id); conditions.push(`s.class_id = $${params.length}`); }

@@ -5,7 +5,7 @@ import { getTeacherSections } from '../../lib/teacherSection';
 import { getToday, getNowIST } from '../../lib/today';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 async function resolveSection(
   sections: { section_id: string }[],
@@ -282,6 +282,74 @@ router.patch('/today/:student_id', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/v1/teacher/attendance/stats?from=&to=&section_id=
+router.get('/stats', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const today = await getToday(school_id);
+
+    const toDate   = (req.query.to   as string) || today;
+    const fromDate = (req.query.from as string) || (() => {
+      const d = new Date(toDate + 'T12:00:00');
+      d.setDate(d.getDate() - 29);
+      return d.toISOString().split('T')[0];
+    })();
+
+    const sections = await getTeacherSections(user_id, school_id);
+    const resolved = await resolveSection(sections, req.query.section_id as string | undefined);
+    if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
+    const { section_id } = resolved;
+
+    // Daily attendance % for the range
+    const dailyResult = await pool.query(
+      `SELECT
+         ar.attend_date::text AS date,
+         COUNT(*) FILTER (WHERE ar.status = 'present')::int AS present,
+         COUNT(*) FILTER (WHERE ar.status = 'absent')::int  AS absent,
+         COUNT(*)::int AS total
+       FROM attendance_records ar
+       WHERE ar.section_id = $1
+         AND ar.attend_date BETWEEN $2::date AND $3::date
+       GROUP BY ar.attend_date
+       ORDER BY ar.attend_date`,
+      [section_id, fromDate, toDate]
+    );
+
+    // Summary: today, this week, this month
+    const summaryResult = await pool.query(
+      `SELECT
+         ROUND(COUNT(*) FILTER (WHERE ar.status = 'present' AND ar.attend_date = $2) * 100.0 /
+           NULLIF(COUNT(*) FILTER (WHERE ar.attend_date = $2), 0), 1)::float AS today_pct,
+         ROUND(COUNT(*) FILTER (WHERE ar.status = 'present' AND ar.attend_date >= date_trunc('week', $2::date)) * 100.0 /
+           NULLIF(COUNT(*) FILTER (WHERE ar.attend_date >= date_trunc('week', $2::date)), 0), 1)::float AS week_pct,
+         ROUND(COUNT(*) FILTER (WHERE ar.status = 'present' AND ar.attend_date >= date_trunc('month', $2::date)) * 100.0 /
+           NULLIF(COUNT(*) FILTER (WHERE ar.attend_date >= date_trunc('month', $2::date)), 0), 1)::float AS month_pct,
+         COUNT(*) FILTER (WHERE ar.status = 'absent' AND ar.attend_date = $2)::int AS absent_today,
+         COUNT(*) FILTER (WHERE ar.status = 'present' AND ar.attend_date = $2)::int AS present_today
+       FROM attendance_records ar
+       WHERE ar.section_id = $1`,
+      [section_id, today]
+    );
+
+    // Range-level avg
+    const rangeTotal = dailyResult.rows.reduce((s: number, r: any) => s + r.total, 0);
+    const rangePresent = dailyResult.rows.reduce((s: number, r: any) => s + r.present, 0);
+    const range_pct = rangeTotal > 0 ? Math.round((rangePresent / rangeTotal) * 100) : null;
+
+    return res.json({
+      today,
+      from: fromDate,
+      to: toDate,
+      range_pct,
+      summary: summaryResult.rows[0] || { today_pct: 0, week_pct: 0, month_pct: 0, absent_today: 0, present_today: 0 },
+      daily: dailyResult.rows,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/v1/teacher/attendance/:date
 router.get('/:date', async (req: Request, res: Response) => {
   try {
@@ -311,6 +379,83 @@ router.get('/:date', async (req: Request, res: Response) => {
 
     return res.json({ date, section_id, students: students.rows, editable });
   } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/teacher/attendance/student/:student_id/absences
+// Returns all absent dates for a specific student in the current academic year.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/student/:student_id/absences', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const { student_id } = req.params;
+
+    // Verify the student belongs to one of the teacher's sections
+    const sections = await getTeacherSections(user_id, school_id);
+    const sectionIds = sections.map((s: any) => s.section_id);
+    if (!sectionIds.length) return res.status(403).json({ error: 'No sections assigned' });
+
+    const studentCheck = await pool.query(
+      `SELECT s.id, s.name, s.section_id, sec.label AS section_label, c.name AS class_name
+       FROM students s
+       JOIN sections sec ON sec.id = s.section_id
+       JOIN classes c ON c.id = sec.class_id
+       WHERE s.id = $1 AND s.section_id = ANY($2::uuid[]) AND s.is_active = true`,
+      [student_id, sectionIds]
+    );
+    if (!studentCheck.rows.length) return res.status(403).json({ error: 'Student not in your section' });
+
+    const student = studentCheck.rows[0];
+
+    // Get academic year date range
+    const calRow = await pool.query(
+      `SELECT start_date, end_date FROM school_calendar WHERE school_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [school_id]
+    );
+    const startDate = calRow.rows[0]?.start_date || new Date(new Date().getFullYear(), 5, 1).toISOString().split('T')[0];
+    const today = await getToday(school_id);
+
+    const absences = await pool.query(
+      `SELECT attend_date::text AS date, is_late, arrived_at, submitted_at
+       FROM attendance_records
+       WHERE student_id = $1
+         AND school_id = $2
+         AND status = 'absent'
+         AND attend_date BETWEEN $3::date AND $4::date
+       ORDER BY attend_date DESC`,
+      [student_id, school_id, startDate, today]
+    );
+
+    const totalDays = await pool.query(
+      `SELECT COUNT(DISTINCT attend_date)::int AS school_days,
+              COUNT(*) FILTER (WHERE status = 'present')::int AS present_count,
+              COUNT(*) FILTER (WHERE status = 'absent')::int AS absent_count
+       FROM attendance_records
+       WHERE student_id = $1 AND school_id = $2
+         AND attend_date BETWEEN $3::date AND $4::date`,
+      [student_id, school_id, startDate, today]
+    );
+
+    const { school_days, present_count, absent_count } = totalDays.rows[0];
+    const attendance_pct = school_days > 0 ? Math.round((present_count / school_days) * 100) : null;
+
+    return res.json({
+      student: {
+        id: student.id,
+        name: student.name,
+        class_name: student.class_name,
+        section_label: student.section_label,
+      },
+      school_days,
+      present_count,
+      absent_count,
+      attendance_pct,
+      absences: absences.rows,
+    });
+  } catch (err) {
+    console.error('[attendance absences]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

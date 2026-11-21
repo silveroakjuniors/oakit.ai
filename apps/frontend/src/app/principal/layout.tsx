@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard, ClipboardList, Users, BarChart2, TrendingUp,
   FileText, DollarSign, Camera, Megaphone, BookOpen, CalendarDays,
-  ChevronLeft, ChevronRight, Menu, X, GraduationCap, Calculator,
+  ChevronLeft, ChevronRight, Menu, X, GraduationCap, Calculator, PenLine,
 } from 'lucide-react';
 import OakitLogo from '@/components/OakitLogo';
 import { getToken, getRole } from '@/lib/auth';
@@ -24,6 +24,7 @@ const NAV_GROUPS = [
     label: 'Academic',
     items: [
       { href: '/principal/attendance',  label: 'Attendance',  Icon: ClipboardList },
+      { href: '/principal/homework',    label: 'Homework',    Icon: PenLine },
       { href: '/principal/teachers',    label: 'Teachers',    Icon: Users },
       { href: '/principal/coverage',    label: 'Coverage',    Icon: BarChart2 },
       { href: '/principal/curriculum',  label: 'Curriculum',  Icon: BookOpen },

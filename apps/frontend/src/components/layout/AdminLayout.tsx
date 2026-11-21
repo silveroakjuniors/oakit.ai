@@ -35,6 +35,8 @@ import {
   Compass,
   Settings,
   LogOut,
+  Share2,
+  MessageSquare,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -83,6 +85,7 @@ const navItems: NavItem[] = [
   { href: '/admin/finance/salary',         label: 'Salary',           icon: Briefcase,     group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
   { href: '/admin/finance/reports',        label: 'Reports',          icon: TrendingUp,    group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
   { href: '/admin/reports',          label: 'Reports',          icon: BarChart3,       group: 'insights' },
+  { href: '/admin/attendance',       label: 'Attendance',       icon: ClipboardList,   group: 'insights' },
   { href: '/admin/announcements',    label: 'Announcements',    icon: Megaphone,       group: 'insights' },
   { href: '/admin/audit',            label: 'Audit Log',        icon: Search,          group: 'insights' },
   { href: '/admin/smart-alerts',     label: 'Smart Alerts',     icon: AlertTriangle,   group: 'insights' },
@@ -94,6 +97,8 @@ const navItems: NavItem[] = [
   { href: '/admin/hr',               label: 'HR',               icon: Briefcase,       group: 'system' },
   { href: '/admin/setup',            label: 'Setup Wizard',     icon: Compass,         group: 'system' },
   { href: '/admin/settings',         label: 'Settings',         icon: Settings,        group: 'system' },
+  { href: '/admin/social-media',     label: 'Social Media',     icon: Share2,          group: 'system' },
+  { href: '/admin/whatsapp',         label: 'WhatsApp',         icon: MessageSquare,   group: 'system' },
 ];
 
 const NAV_GROUPS = [

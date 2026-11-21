@@ -89,7 +89,17 @@ router.get('/:id', async (req: Request, res: Response) => {
 // PATCH /:id/features -- toggle feature flags
 router.patch('/:id/features', async (req: Request, res: Response) => {
   try {
-    const { translation_enabled } = req.body;
+    const { translation_enabled, social_media_enabled } = req.body;
+
+    // social_media_enabled is stored directly on the schools table
+    if (typeof social_media_enabled === 'boolean') {
+      await pool.query(
+        `UPDATE schools SET social_media_enabled = $1 WHERE id = $2`,
+        [social_media_enabled, req.params.id],
+      );
+      return res.json({ ok: true, social_media_enabled });
+    }
+
     if (typeof translation_enabled !== 'boolean') return res.status(400).json({ error: 'translation_enabled must be a boolean' });
     await pool.query(
       `INSERT INTO school_settings (school_id, translation_enabled, updated_at) VALUES ($1, $2, now())

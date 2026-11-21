@@ -18,16 +18,6 @@ router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('admin', 'principa
  * 5. Teacher performance scores (compliance + AI usage + streak)
  */
 router.get('/', async (req: Request, res: Response) => {
-  // DISABLED: Smart alerts temporarily on hold — heavy query causes temp disk overflow on Supabase free tier.
-  // Will re-enable after DB upgrade or query optimization.
-  return res.json({
-    alerts: [],
-    teacher_scores: [],
-    generated_at: new Date().toISOString(),
-    summary: { total_alerts: 0, high: 0, medium: 0, low: 0 },
-    disabled: true,
-  });
-
   try {
     const { school_id } = req.user!;
     const cacheKey = `smart-alerts:${school_id}`;
@@ -35,6 +25,21 @@ router.get('/', async (req: Request, res: Response) => {
     if (cached) return res.json(JSON.parse(cached));
 
     const today = await getToday(school_id);
+
+    // Check if school has enough data (at least 5 working days of completions)
+    const dataCheck = await pool.query(
+      `SELECT COUNT(DISTINCT completion_date)::int as days
+       FROM daily_completions WHERE school_id = $1`,
+      [school_id]
+    );
+    const workingDays = dataCheck.rows[0]?.days || 0;
+    if (workingDays < 5) {
+      // Not enough data yet — return empty alerts with a message
+      const result = { alerts: [], teacher_scores: [], message: 'Smart alerts will appear after 5 days of school activity.' };
+      await redis.set(cacheKey, JSON.stringify(result), { EX: 300 });
+      return res.json(result);
+    }
+
     const alerts: any[] = [];
 
     // ── 1. Teachers not completing plans ─────────────────────────────────
@@ -254,11 +259,18 @@ router.get('/', async (req: Request, res: Response) => {
        LEFT JOIN daily_completions dc ON dc.section_id = sec.id AND dc.completion_date = dp.plan_date
        LEFT JOIN teacher_streaks ts ON ts.teacher_id = u.id AND ts.school_id = $1
        LEFT JOIN audit_logs al ON al.school_id = $1 AND al.actor_id = u.id
+         AND al.created_at > NOW() - INTERVAL '7 days'
+         AND al.action = 'ai_query'
        LEFT JOIN attendance_records ar ON ar.section_id = sec.id AND ar.teacher_id = u.id
+         AND ar.attend_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN teacher_homework th ON th.section_id = sec.id AND th.teacher_id = u.id
+         AND th.homework_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN teacher_notes tn ON tn.section_id = sec.id AND tn.teacher_id = u.id
+         AND tn.note_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN child_journey_entries cj ON cj.section_id = sec.id AND cj.teacher_id = u.id
+         AND cj.entry_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        LEFT JOIN student_observations so ON so.school_id = $1 AND so.teacher_id = u.id
+         AND so.obs_date BETWEEN ($2::date - INTERVAL '29 days') AND $2::date
        WHERE sec.school_id = $1 AND u.id IS NOT NULL
        GROUP BY u.id, u.name, sec.label, c.name, sec.id, ts.current_streak, ts.best_streak`,
       [school_id, today]
@@ -375,6 +387,7 @@ router.get('/', async (req: Request, res: Response) => {
     return res.json(result);
   } catch (err) {
     console.error('[smart-alerts]', err);
+    // Return empty result on error (e.g., temp disk full) instead of 500
     return res.json({
       alerts: [],
       teacher_scores: [],

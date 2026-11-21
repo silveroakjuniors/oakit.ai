@@ -41,7 +41,9 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Get settings
     const settingsRow = await pool.query(
-      `SELECT notes_expiry_days, ai_plan_mode, voice_enabled, instagram_handle, translation_enabled FROM school_settings WHERE school_id = $1`,
+      `SELECT notes_expiry_days, ai_plan_mode, voice_enabled, instagram_handle, translation_enabled,
+              google_drive_enabled, google_drive_folder_id, google_drive_class_folder 
+       FROM school_settings WHERE school_id = $1`,
       [school_id]
     );
     if (settingsRow.rows.length === 0) {
@@ -65,6 +67,9 @@ router.get('/', async (req: Request, res: Response) => {
       tagline: school.tagline ?? '',
       instagram_handle: settingsRow.rows[0]?.instagram_handle ?? '',
       translation_enabled: settingsRow.rows[0]?.translation_enabled ?? true,
+      google_drive_enabled: settingsRow.rows[0]?.google_drive_enabled ?? false,
+      google_drive_folder_id: settingsRow.rows[0]?.google_drive_folder_id ?? '',
+      google_drive_class_folder: settingsRow.rows[0]?.google_drive_class_folder ?? 'SOJS2627',
     });
   } catch (err) {
     console.error('[settings GET]', err);
@@ -151,6 +156,24 @@ router.put('/', async (req: Request, res: Response) => {
       );
     }
 
+    // Google Drive settings
+    const { google_drive_enabled, google_drive_folder_id } = req.body;
+    if (google_drive_enabled !== undefined || google_drive_folder_id !== undefined) {
+      await pool.query(
+        `INSERT INTO school_settings (school_id, google_drive_enabled, google_drive_folder_id, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (school_id) DO UPDATE
+         SET google_drive_enabled   = COALESCE(EXCLUDED.google_drive_enabled,   google_drive_enabled),
+             google_drive_folder_id = COALESCE(EXCLUDED.google_drive_folder_id, google_drive_folder_id),
+             updated_at = now()`,
+        [
+          school_id,
+          google_drive_enabled !== undefined ? Boolean(google_drive_enabled) : null,
+          google_drive_folder_id !== undefined ? (google_drive_folder_id || null) : null,
+        ]
+      );
+    }
+
     // Return updated settings
     const updated = await pool.query(
       `SELECT s.name as school_name, s.subdomain, s.contact, s.logo_path, s.primary_color, s.tagline,
@@ -158,7 +181,10 @@ router.put('/', async (req: Request, res: Response) => {
               COALESCE(ss.ai_plan_mode, 'standard') as ai_plan_mode,
               COALESCE(ss.voice_enabled, false) as voice_enabled,
               ss.instagram_handle,
-              COALESCE(ss.translation_enabled, true) as translation_enabled
+              COALESCE(ss.translation_enabled, true) as translation_enabled,
+              COALESCE(ss.google_drive_enabled, false) as google_drive_enabled,
+              ss.google_drive_folder_id,
+              ss.google_drive_class_folder
        FROM schools s
        LEFT JOIN school_settings ss ON ss.school_id = s.id
        WHERE s.id = $1`,
@@ -179,6 +205,9 @@ router.put('/', async (req: Request, res: Response) => {
       tagline: r.tagline ?? '',
       instagram_handle: r.instagram_handle ?? '',
       translation_enabled: r.translation_enabled ?? true,
+      google_drive_enabled: r.google_drive_enabled ?? false,
+      google_drive_folder_id: r.google_drive_folder_id ?? '',
+      google_drive_class_folder: r.google_drive_class_folder ?? 'SOJS2627',
     });
   } catch (err) {
     console.error(err);

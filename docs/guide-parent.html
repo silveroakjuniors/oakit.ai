@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Oakit.ai — Parent Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--brand:#7c3aed;--accent:#f59e0b;--bg:#faf5ff;--surface:#fff;--border:#e9d5ff;--text:#1f2937;--muted:#6b7280;--sidebar:260px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:15px}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+.top-nav{position:sticky;top:0;z-index:100;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:56px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.nav-logo{font-weight:900;font-size:18px;letter-spacing:-.5px}.nav-logo span{color:var(--accent)}
+.nav-title{font-size:13px;font-weight:600;opacity:.8;display:none}
+.nav-actions{display:flex;gap:8px}
+.nav-btn{background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:5px}
+.nav-btn:hover{background:rgba(255,255,255,.25)}
+.hamburger{background:none;border:none;color:#fff;cursor:pointer;padding:8px;display:none}
+.layout{display:flex;min-height:calc(100vh - 56px)}
+.sidebar{width:var(--sidebar);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;padding:20px 0}
+.sidebar-inner{padding:0 16px 40px}
+.sidebar h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:20px 0 6px}
+.sidebar a{display:block;font-size:12.5px;color:var(--text);text-decoration:none;padding:4px 8px;border-radius:6px;margin-bottom:1px}
+.sidebar a:hover,.sidebar a.active{background:#f3e8ff;color:var(--brand);font-weight:600}
+.main{flex:1;min-width:0;padding:32px 40px 80px;max-width:860px}
+h1{font-size:28px;font-weight:800;color:var(--brand);margin-bottom:8px}
+h2{font-size:20px;font-weight:800;color:var(--brand);margin:48px 0 14px;padding-bottom:8px;border-bottom:2px solid #ddd6fe;scroll-margin-top:72px}
+h3{font-size:15px;font-weight:700;color:var(--brand);margin:28px 0 10px;scroll-margin-top:72px}
+h4{font-size:13px;font-weight:600;color:#374151;margin:16px 0 6px}
+p{margin-bottom:10px;color:#374151}
+ul,ol{padding-left:22px;margin-bottom:10px}
+li{margin-bottom:5px;color:#374151}
+strong{color:#111827}
+a{color:var(--brand);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:'SF Mono',monospace;font-size:12px;background:#f3e8ff;padding:2px 6px;border-radius:4px;color:var(--brand)}
+.box{border-radius:10px;padding:14px 18px;margin:14px 0}
+.box-green{background:#f0fdf4;border-left:4px solid #22c55e}
+.box-amber{background:#fffbeb;border-left:4px solid var(--accent)}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444}
+.box-blue{background:#eff6ff;border-left:4px solid #3b82f6}
+.box-purple{background:#faf5ff;border-left:4px solid var(--brand)}
+.box-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.box-green .box-label{color:#16a34a}
+.box-amber .box-label{color:#d97706}
+.box-red .box-label{color:#dc2626}
+.box-blue .box-label{color:#2563eb}
+.box-purple .box-label{color:var(--brand)}
+.steps{margin:12px 0}
+.step{display:flex;gap:14px;margin-bottom:12px}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step-body{flex:1;padding-top:3px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+th{background:var(--brand);color:#fff;padding:9px 12px;text-align:left;font-weight:600}
+td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:nth-child(even) td{background:#faf5ff}
+#btt{position:fixed;bottom:24px;right:20px;background:var(--brand);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.2);opacity:0;transition:opacity .3s;z-index:50}
+#btt.show{opacity:1}
+.hero{background:linear-gradient(135deg,var(--brand),#6d28d9);color:#fff;border-radius:16px;padding:32px 36px;margin-bottom:36px}
+.hero .logo{font-size:28px;font-weight:900}.hero .logo span{color:var(--accent)}
+.hero h1{color:#fff;font-size:22px;margin:8px 0 4px}
+.hero p{color:rgba(255,255,255,.8);font-size:13px;margin:0}
+.hero .role-badge{display:inline-flex;margin-top:12px;padding:4px 14px;background:rgba(255,255,255,.2);border-radius:20px;font-size:12px;font-weight:600}
+@media(max-width:768px){
+  .sidebar{display:none;position:fixed;top:56px;left:0;height:calc(100vh - 56px);z-index:90;box-shadow:4px 0 20px rgba(0,0,0,.15)}
+  .sidebar.open{display:block}
+  .hamburger{display:flex}
+  .nav-title{display:block}
+  .main{padding:20px 18px 80px}
+  .hero{padding:22px 20px}
+  h2{font-size:17px;margin-top:36px}
+  table{font-size:12px}
+  th,td{padding:7px 9px}
+}
+@media(min-width:1200px){.nav-title{display:block}}
+</style>
+</head>
+<body>
+<nav class="top-nav">
+  <div style="display:flex;align-items:center;gap:14px">
+    <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="nav-logo">Oakit<span>.ai</span></div>
+    <div class="nav-title">Parent Guide</div>
+  </div>
+  <div class="nav-actions">
+    <a class="nav-btn" href="guide-admin.html">Admin Guide</a>
+    <a class="nav-btn" href="guide-teacher.html">Teacher Guide</a>
+    <button class="nav-btn" onclick="window.print()">Print / PDF</button>
+  </div>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <h3>Getting Started</h3>
+      <a href="#overview">1. What is Oakit for Parents</a>
+      <a href="#login">2. Logging In</a>
+      <a href="#install">3. Installing the App</a>
+      <a href="#first-time">4. First Time You Open the App</a>
+      <h3>Daily Use</h3>
+      <a href="#home">5. Home Tab</a>
+      <a href="#feed">6. Class Feed</a>
+      <a href="#attendance">7. Attendance</a>
+      <a href="#progress">8. Progress</a>
+      <a href="#homework">9. Homework</a>
+      <a href="#messages">10. Messages</a>
+      <h3>Your Child's Growth</h3>
+      <a href="#milestones">11. Milestones</a>
+      <a href="#reports">12. Reports</a>
+      <h3>Fees &amp; More</h3>
+      <a href="#fees">13. Fees</a>
+      <a href="#settings">14. Settings</a>
+      <h3>Important Notices</h3>
+      <a href="#drive-notice">15. Drive Cleanup Notice</a>
+      <a href="#instagram">16. Instagram Follow</a>
+      <a href="#privacy">17. Privacy</a>
+      <a href="#help">18. Getting Help</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="hero">
+      <div class="logo">Oakit<span>.ai</span></div>
+      <h1>Parent User Guide</h1>
+      <p>Silver Oak Juniors &nbsp;&middot;&nbsp; <a href="https://oakit.silveroakjuniors.in" style="color:rgba(255,255,255,.8)">oakit.silveroakjuniors.in</a></p>
+      <span class="role-badge">Role: Parent &nbsp;&mdash;&nbsp; Stay connected with your child's school day</span>
+    </div>
+
+    <h2 id="overview">1. What is Oakit.ai for Parents?</h2>
+    <p>Oakit.ai is your school's parent communication and updates app. Through Oakit, you can see everything happening in your child's school day without calling the school or messaging teachers on WhatsApp.</p>
+    <table>
+      <tr><th>You can see</th><th>You cannot change</th></tr>
+      <tr><td>Daily photos and videos from class</td><td>Attendance records</td></tr>
+      <tr><td>Your child's attendance status</td><td>Curriculum or lesson plans</td></tr>
+      <tr><td>Homework assigned by the teacher</td><td>Other children's information</td></tr>
+      <tr><td>Curriculum coverage progress</td><td>Fee amounts or structures</td></tr>
+      <tr><td>Milestones your child has achieved</td><td>Teacher or admin accounts</td></tr>
+      <tr><td>Holistic term reports (AI-generated)</td><td></td></tr>
+      <tr><td>Fee invoices and payment history</td><td></td></tr>
+      <tr><td>Messages from the teacher</td><td></td></tr>
+      <tr><td>School announcements and updates</td><td></td></tr>
+    </table>
+
+    <h2 id="login">2. Logging In</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Open <code>https://oakit.silveroakjuniors.in</code> in Chrome (Android) or Safari (iPhone).</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Enter your mobile number (the one registered with the school) and your password.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Tap <strong>Sign In</strong>. The app opens to your child's home view.</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">If you cannot log in</div>
+      <p>Your account is set up by the school admin. If you are logging in for the first time and the school gave you a temporary password, that password is usually your mobile number. Contact the school if you are still unable to log in.</p>
+    </div>
+    <h3>2.1 Changing Your Password</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Log in &rarr; tap the <strong>Settings</strong> tab (gear icon).</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Tap <strong>Change Password</strong>.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Enter your current password, then your new password twice. Use at least 8 characters.</div></div>
+    </div>
+
+    <h2 id="install">3. Installing the App on Your Phone</h2>
+    <p>Oakit works as a web app — you do not need to download it from an app store. But you can install it on your home screen for quick access, just like a regular app.</p>
+    <h3>3.1 On Android (Chrome)</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Open <code>https://oakit.silveroakjuniors.in</code> in Chrome.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Tap the three-dot menu (top right of Chrome).</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Tap <strong>Add to Home Screen</strong>. Confirm by tapping <strong>Add</strong>.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">The Oakit icon appears on your home screen. Tap it to open the app anytime.</div></div>
+    </div>
+    <h3>3.2 On iPhone (Safari)</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Open <code>https://oakit.silveroakjuniors.in</code> in Safari (not Chrome — it must be Safari on iPhone).</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Tap the Share button at the bottom of the screen (the box with an arrow pointing up).</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Scroll down and tap <strong>Add to Home Screen</strong>.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Tap <strong>Add</strong>. The Oakit icon appears on your home screen.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Works offline too</div>
+      <p>Once installed, you can browse your child's feed, homework, and reports even without internet. The app shows the last loaded data until you reconnect.</p>
+    </div>
+
+    <h2 id="first-time">4. First Time You Open the App</h2>
+    <p>When you open Oakit for the first time (or until you complete the prompts), you may see these screens:</p>
+    <h3>4.1 Instagram Follow Prompt</h3>
+    <p>A colourful popup asks you to follow the school's Instagram page. Tap <strong>Open Instagram</strong> to follow the school. Once you have followed, tap <strong>I have followed — close</strong>. This popup will not appear again.</p>
+    <p>Following the school's Instagram means you will see all the great moments from school on your Instagram feed — photos, videos, and reels posted by teachers. It also helps the school reach other parents who might want to enrol their children.</p>
+    <h3>4.2 Flash Message Popup</h3>
+    <p>If the school has sent an important notice (e.g. a sudden holiday, a fee reminder, or a drive cleanup warning), you will see a full-screen message popup. Read it carefully and tap to close. It will not appear again once you have dismissed it.</p>
+
+    <h2 id="home">5. Home Tab</h2>
+    <p>The Home tab is your daily dashboard. It shows everything that matters about your child today.</p>
+    <table>
+      <tr><th>Section</th><th>What it shows</th></tr>
+      <tr><td>Attendance</td><td>Whether your child is Present, Absent, or Late today. If Absent, you should have received a notification.</td></tr>
+      <tr><td>Today's topic</td><td>What curriculum topic the teacher is covering today. You can discuss this with your child at home.</td></tr>
+      <tr><td>Feed posts</td><td>Recent photos and videos the teacher posted from class today.</td></tr>
+      <tr><td>Homework due</td><td>Any homework that is due today or tomorrow.</td></tr>
+      <tr><td>Notifications / Updates</td><td>New messages from the teacher, school announcements, and milestone achievements.</td></tr>
+    </table>
+    <div class="box box-blue">
+      <div class="box-label">Multiple children</div>
+      <p>If you have more than one child enrolled at the school, you will see a switcher at the top of the screen. Tap your child's name to switch between their views. Each child has completely separate information.</p>
+    </div>
+
+    <h2 id="feed">6. Class Feed</h2>
+    <p>The Class Feed is the daily photo and video diary of your child's classroom. Teachers post 2–5 times per day showing activities, art projects, playground moments, and learning milestones.</p>
+    <h3>6.1 Viewing Posts</h3>
+    <ul>
+      <li>Scroll through the feed to see all recent posts</li>
+      <li>Tap a photo to see it larger</li>
+      <li>Swipe left/right on a carousel of photos to see all images in that post</li>
+      <li>Tap the play button to watch a class video</li>
+    </ul>
+    <h3>6.2 Liking a Post</h3>
+    <p>Tap the heart icon on any post to like it. The teacher sees how many parents have liked their posts — it encourages them to keep posting regularly.</p>
+    <h3>6.3 Downloading Photos and Videos</h3>
+    <p>Tap a photo &rarr; tap the download button (downward arrow icon). The photo saves to your phone's gallery.</p>
+    <div class="box box-amber">
+      <div class="box-label">Photos are only available temporarily</div>
+      <p>Feed photos are stored for 20–30 days (the school's retention period). After that, they are automatically removed from the feed. Download and save any photos you want to keep permanently. The school may also run a Drive Cleanup occasionally — see Section 15 for what to do when you receive that notice.</p>
+    </div>
+    <h3>6.4 Sharing a Post to Instagram</h3>
+    <p>Tap the share icon on a post &rarr; <strong>Share to Instagram</strong>. The app copies the caption and hashtags to your clipboard and opens Instagram. Paste the caption and tag the school when posting. This helps grow the school's social media presence and lets your friends see what your child is learning.</p>
+
+    <h2 id="attendance">7. Attendance</h2>
+    <p>Go to the <strong>Attendance</strong> tab to see your child's attendance history.</p>
+    <h3>7.1 Today's Status</h3>
+    <ul>
+      <li><strong>Present</strong> — your child was marked present by the teacher</li>
+      <li><strong>Absent</strong> — your child was marked absent. You received a notification. If this is incorrect, contact the teacher through the Messages tab.</li>
+      <li><strong>Late</strong> — your child arrived late</li>
+      <li><strong>Not marked yet</strong> — the teacher has not submitted attendance yet today (usually by 9:30 AM)</li>
+    </ul>
+    <h3>7.2 Attendance History</h3>
+    <p>The tab shows the last 30 days of attendance with a calendar view. You can see the attendance percentage and punctuality percentage.</p>
+    <div class="box box-blue">
+      <div class="box-label">What the percentage means</div>
+      <p>Attendance percentage = number of days present &divide; total school days &times; 100. If your child's attendance is below 75%, it may affect their learning continuity. The app shows a warning when attendance drops below the target.</p>
+    </div>
+
+    <h2 id="progress">8. Progress</h2>
+    <p>Go to the <strong>Progress</strong> tab to see how much of the curriculum your child's class has covered.</p>
+    <ul>
+      <li><strong>Coverage percentage</strong> — what percentage of the textbook topics have been taught so far this term</li>
+      <li><strong>By subject</strong> — if multiple subjects are uploaded, you can see coverage per subject</li>
+    </ul>
+    <div class="box box-blue">
+      <div class="box-label">What this means for your child</div>
+      <p>A coverage percentage of 60% at mid-term means 60% of the planned topics have been completed. This is updated in real time as the teacher ticks off topics each day. If coverage is significantly behind, it means the class needs to catch up — the teacher and admin are aware of this.</p>
+    </div>
+
+    <h2 id="homework">9. Homework</h2>
+    <p>Go to the <strong>Homework</strong> tab to see all assigned homework.</p>
+    <h3>9.1 Viewing Homework</h3>
+    <ul>
+      <li>Each homework card shows: what to do, due date, and status (pending / acknowledged)</li>
+      <li>Tap a homework card to see full details</li>
+    </ul>
+    <h3>9.2 Acknowledging Homework</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Tap the homework card to open it.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Once you have seen it and ensured your child will complete it, tap <strong>Acknowledge</strong>.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">The teacher can see that you have acknowledged. This replaces the need for a physical homework diary signature.</div></div>
+    </div>
+    <div class="box box-purple">
+      <div class="box-label">Why acknowledging is important</div>
+      <p>When you tap Acknowledge, it confirms to the teacher that you are aware of the homework and have supported your child to complete it. Teachers can see which parents have not acknowledged, and may follow up with those families. It is the digital equivalent of signing the homework diary.</p>
+    </div>
+    <h3>9.3 Homework History</h3>
+    <p>Go to <strong>Homework</strong> &rarr; <strong>History</strong> tab to see all past homework assignments and your acknowledgement status for each.</p>
+
+    <h2 id="messages">10. Messages</h2>
+    <p>Go to the <strong>Messages</strong> tab to communicate directly with your child's teacher.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Tap the <strong>Messages</strong> tab.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">You will see conversation threads — one per teacher.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Tap a thread to open it. Type your message and tap <strong>Send</strong>.</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">Response times</div>
+      <p>Teachers are with students during school hours. Expect replies during breaks or after school hours (3–5 PM). For urgent matters, call the school office directly.</p>
+    </div>
+    <div class="box box-blue">
+      <div class="box-label">What to use messages for</div>
+      <ul>
+        <li>Informing the teacher your child will be absent tomorrow</li>
+        <li>Asking about homework or class activities</li>
+        <li>Requesting a parent-teacher meeting</li>
+        <li>Sharing information the teacher should know (e.g. child is unwell today)</li>
+      </ul>
+    </div>
+    <p>All messages are visible to the school admin. This ensures transparency and allows the school to monitor communication quality.</p>
+
+    <h2 id="milestones">11. Milestones</h2>
+    <p>Go to the <strong>Milestones</strong> tab to see developmental milestones your child has achieved.</p>
+    <h3>11.1 What are Milestones?</h3>
+    <p>Milestones are specific developmental achievements recorded by the teacher. They cover four areas:</p>
+    <ul>
+      <li><strong>Cognitive</strong> — thinking, problem-solving, counting, recognising letters</li>
+      <li><strong>Physical</strong> — motor skills, coordination, drawing, cutting with scissors</li>
+      <li><strong>Social</strong> — playing with others, sharing, following rules</li>
+      <li><strong>Emotional</strong> — managing feelings, expressing emotions, independence</li>
+    </ul>
+    <h3>11.2 Reading the Milestones View</h3>
+    <ul>
+      <li>Achieved milestones are shown with a tick and the date they were recorded</li>
+      <li>Upcoming milestones (not yet achieved) may also be visible so you know what to work on at home</li>
+      <li>When a new milestone is recorded, you receive a notification</li>
+    </ul>
+    <div class="box box-green">
+      <div class="box-label">Use milestones to support learning at home</div>
+      <p>If you see a milestone your child has not achieved yet, you can practice it at home. For example, if "counts from 1 to 20 independently" is not yet ticked, spend 5 minutes counting with your child each evening.</p>
+    </div>
+
+    <h2 id="reports">12. Holistic Reports and Student Journey</h2>
+    <p>Go to the <strong>Reports</strong> tab to access term reports and your child's learning journey.</p>
+    <h3>12.1 Holistic Term Reports</h3>
+    <p>At the end of each term, the teacher generates an AI-assisted holistic development report for your child. This is a paragraph-format report covering all four development areas based on the teacher's recorded milestones and observations.</p>
+    <ul>
+      <li>Reports appear in the Reports tab when the teacher publishes them</li>
+      <li>You receive a notification when a new report is available</li>
+      <li>Tap <strong>Download PDF</strong> to save the report to your phone. Keep it — it is your child's developmental record.</li>
+    </ul>
+    <div class="box box-purple">
+      <div class="box-label">These reports replace the paper term report</div>
+      <p>The holistic report in Oakit is the school's official developmental report for your child. It replaces the printed paper reports that schools traditionally send home. Download and save a copy after each term.</p>
+    </div>
+    <h3>12.2 Student Journey</h3>
+    <p>Go to <strong>Reports &rarr; Student Journey</strong>. This shows a timeline of your child's milestones, observations, and key moments from the academic year — a digital memory book of their growth.</p>
+
+    <h2 id="fees">13. Fees</h2>
+    <p>Go to the <strong>Fees</strong> tab to view your child's fee account.</p>
+    <h3>13.1 What You Can See</h3>
+    <ul>
+      <li><strong>Invoice</strong> — the full fee structure for the academic year with all line items</li>
+      <li><strong>Payment history</strong> — all payments recorded by the school with dates and amounts</li>
+      <li><strong>Outstanding balance</strong> — how much is still due</li>
+      <li><strong>Concessions applied</strong> — any discounts or concessions on your account</li>
+    </ul>
+    <h3>13.2 Making a Payment</h3>
+    <p>Payments are recorded by the school admin when you pay in person or via bank transfer. The Oakit app does not process payments directly. After you pay the school, the payment appears in your Fees tab within 1–2 working days.</p>
+    <div class="box box-amber">
+      <div class="box-label">If your payment is not showing</div>
+      <p>Contact the school office. The admin records payments manually in the system. It may take a day for them to update the records after receiving your payment.</p>
+    </div>
+    <h3>13.3 Downloading Fee Receipt</h3>
+    <p>Go to <strong>Fees &rarr; Payment History</strong> &rarr; tap any payment &rarr; tap <strong>Download Receipt</strong>. The receipt saves as a PDF to your phone.</p>
+
+    <h2 id="settings">14. Settings and Preferences</h2>
+    <p>Go to the <strong>Settings</strong> tab (gear icon at the bottom) to personalise your app experience.</p>
+    <h3>14.1 Language Translation</h3>
+    <p>Oakit can translate all teacher-written content into your language automatically.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to Settings &rarr; <strong>Translation Settings</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Turn on <strong>Enable Translation</strong>.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Select your language from the dropdown.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Feed posts, homework, and notes will now appear in your selected language.</div></div>
+    </div>
+    <p>Supported languages: Hindi, Telugu, Kannada, Tamil, Malayalam, Gujarati, Marathi, Bengali, Punjabi, Urdu, Arabic, French, Spanish, and English.</p>
+    <h3>14.2 Notification Preferences</h3>
+    <p>Go to Settings &rarr; <strong>Notification Preferences</strong>. Turn individual notifications on or off:</p>
+    <ul>
+      <li>Attendance updates (when teacher marks your child present/absent)</li>
+      <li>Homework assigned</li>
+      <li>New feed posts</li>
+      <li>New messages from teacher</li>
+      <li>Milestone achievements</li>
+      <li>Announcements</li>
+    </ul>
+    <h3>14.3 Emergency Contacts</h3>
+    <p>Go to Settings &rarr; <strong>Emergency Contacts</strong>. Add or update emergency contact details for your child. These are visible to the school admin and teacher in case of an emergency.</p>
+    <h3>14.4 Profile Photo</h3>
+    <p>Tap your profile photo at the top of the screen to upload a new one. Your photo appears in messages to teachers.</p>
+    <h3>14.5 Attendance Goals</h3>
+    <p>Go to Settings &rarr; <strong>Attendance Goals</strong>. Set a target attendance percentage for your child (e.g. 90%). The app will alert you when your child's attendance drops below your target.</p>
+
+    <h2 id="drive-notice">15. Drive Cleanup Notice — What to Do</h2>
+    <p>Occasionally, the school runs a Google Drive cleanup to free up storage space. When this happens, you will receive a flash message popup telling you that photos and videos will be permanently deleted from Drive on a specific date.</p>
+    <div class="box box-red">
+      <div class="box-label">Act before the deadline — files cannot be recovered after deletion</div>
+      <p>Once the school deletes files from Google Drive, they are permanently gone. No one can recover them — not the school, not the admin, not Google. Download any photos or videos you want to keep <strong>before the date shown in the notice</strong>.</p>
+    </div>
+    <h3>15.1 How to Download Your Child's Photos</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">The flash message popup includes a link to your class's Google Drive folder. Tap the link to open it.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">In Google Drive, you will see folders organised by date (e.g. "2025-10-15/Photos"). Open each folder to see the photos.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Long-press any photo and tap <strong>Select All</strong>, then tap the download button to save to your Google Photos or phone storage.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">On desktop: right-click &rarr; Download to download individual files, or select all and download as ZIP.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Also download from the Oakit feed</div>
+      <p>You can also download photos directly from the Oakit Class Feed while they are still visible (before the feed retention period expires). Go to Home &rarr; tap a photo &rarr; download icon. This is faster than going to Google Drive.</p>
+    </div>
+    <h3>15.2 After the Cleanup</h3>
+    <p>After the cleanup date, feed posts will still be visible in the Oakit app (the text, likes, and comments stay) but their photos and videos will no longer load. This is expected — the files have been removed from Drive. The posts themselves expire after the school's retention period (usually 20–30 days) and disappear from the feed entirely.</p>
+
+    <h2 id="instagram">16. Instagram Follow Prompt</h2>
+    <p>When you first open the app, you see a prompt asking you to follow the school's Instagram page. Here is why the school asks and what happens when you follow:</p>
+    <ul>
+      <li>The school posts reels and carousel photos of classroom activities on Instagram</li>
+      <li>When you follow, you see these posts in your Instagram feed</li>
+      <li>Your follow helps the school's page grow, which helps them reach other parents who might want to enrol their children</li>
+      <li>Tap <strong>Open Instagram</strong> in the popup to go directly to the school's profile</li>
+      <li>Tap <strong>I have followed</strong> after following — the popup will not appear again</li>
+      <li>If you tap <strong>Remind me later</strong>, the popup appears again on your next login</li>
+    </ul>
+
+    <h2 id="privacy">17. Privacy and Data Safety</h2>
+    <p>Your child's information and your family's data are protected in Oakit.</p>
+    <table>
+      <tr><th>Question</th><th>Answer</th></tr>
+      <tr><td>Can other parents see my child's data?</td><td>No. Each parent account is linked only to their own children. No other parent can see your child's attendance, fees, or messages.</td></tr>
+      <tr><td>Can teachers see my fee balance?</td><td>No. Teachers do not have access to fee records.</td></tr>
+      <tr><td>Who can see my messages to the teacher?</td><td>The teacher and the school admin can see messages. This ensures transparency and child safety.</td></tr>
+      <tr><td>Are photos shared with other schools?</td><td>No. Photos are stored in your school's private Google Drive account and are not shared with any other school or organisation.</td></tr>
+      <tr><td>Can I request data deletion?</td><td>Contact the school admin. They can deactivate your account and remove your data from the system.</td></tr>
+      <tr><td>Is my mobile number private?</td><td>Your mobile number is your login ID and is known to the school admin. It is not shared with other parents.</td></tr>
+    </table>
+
+    <h2 id="help">18. Getting Help</h2>
+    <table>
+      <tr><th>Problem</th><th>Who to contact</th></tr>
+      <tr><td>Cannot log in</td><td>Call or visit the school office. The admin can reset your password.</td></tr>
+      <tr><td>Attendance is marked incorrectly</td><td>Message the teacher through the Messages tab. The teacher can correct it the same day.</td></tr>
+      <tr><td>Homework is not showing</td><td>Ask the teacher if they have assigned homework. It appears in your app within seconds of assignment.</td></tr>
+      <tr><td>Photos are not loading</td><td>Check your internet connection. If the issue persists, the photos may have been deleted during a cleanup — download in time next time.</td></tr>
+      <tr><td>Report is not available yet</td><td>Reports are published by the teacher at term end. Contact the teacher if you expected a report and it is not showing.</td></tr>
+      <tr><td>Fee payment not reflected</td><td>Contact the school office. Payments are recorded manually and may take 1–2 days to appear.</td></tr>
+      <tr><td>App is not working / crashing</td><td>Try refreshing the page (pull down to refresh). If the issue persists, clear your browser cache and reload the site. Contact the school office if still not working.</td></tr>
+      <tr><td>I want to change my mobile number</td><td>Contact the school admin. They update your mobile number in the system.</td></tr>
+    </table>
+
+    <div style="margin-top:48px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center">
+      <p>Oakit.ai Parent Guide &nbsp;&middot;&nbsp; Silver Oak Juniors &nbsp;&middot;&nbsp; <a href="https://oakit.silveroakjuniors.in">oakit.silveroakjuniors.in</a></p>
+      <p style="margin-top:4px">Also see: <a href="guide-admin.html">Admin Guide</a> &nbsp;&middot;&nbsp; <a href="guide-teacher.html">Teacher Guide</a></p>
+    </div>
+  </main>
+</div>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">&#8679;</button>
+<script>
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+document.addEventListener('click',function(e){var sb=document.getElementById('sidebar');if(sb.classList.contains('open')&&!sb.contains(e.target)&&!e.target.closest('.hamburger'))sb.classList.remove('open');});
+window.addEventListener('scroll',function(){document.getElementById('btt').classList.toggle('show',window.scrollY>300);var links=document.querySelectorAll('.sidebar a');var sections=document.querySelectorAll('h2[id],h3[id]');var cur='';sections.forEach(function(s){if(s.getBoundingClientRect().top<120)cur=s.id;});links.forEach(function(l){l.classList.toggle('active',l.getAttribute('href')==='#'+cur);});});
+</script>
+</body>
+</html>

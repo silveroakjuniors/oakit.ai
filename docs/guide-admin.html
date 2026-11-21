@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Oakit.ai — Admin Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--brand:#1B4332;--accent:#E8960C;--bg:#f8fafc;--surface:#fff;--border:#e5e7eb;--text:#1f2937;--muted:#6b7280;--sidebar:260px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:15px}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+
+/* NAV */
+.top-nav{position:sticky;top:0;z-index:100;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:56px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.nav-logo{font-weight:900;font-size:18px;letter-spacing:-.5px}.nav-logo span{color:var(--accent)}
+.nav-title{font-size:13px;font-weight:600;opacity:.8;display:none}
+.nav-actions{display:flex;gap:8px}
+.nav-btn{background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:5px}
+.nav-btn:hover{background:rgba(255,255,255,.25)}
+.hamburger{background:none;border:none;color:#fff;cursor:pointer;padding:8px;display:none}
+.hamburger svg{display:block}
+
+/* LAYOUT */
+.layout{display:flex;min-height:calc(100vh - 56px)}
+
+/* SIDEBAR */
+.sidebar{width:var(--sidebar);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;padding:20px 0}
+.sidebar-inner{padding:0 16px 40px}
+.sidebar h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:20px 0 6px}
+.sidebar a{display:block;font-size:12.5px;color:var(--text);text-decoration:none;padding:4px 8px;border-radius:6px;margin-bottom:1px}
+.sidebar a:hover,.sidebar a.active{background:#f0fdf4;color:var(--brand);font-weight:600}
+.sidebar .sub{padding-left:12px}
+
+/* MAIN CONTENT */
+.main{flex:1;min-width:0;padding:32px 40px 80px;max-width:860px}
+
+/* TYPOGRAPHY */
+h1{font-size:28px;font-weight:800;color:var(--brand);margin-bottom:8px}
+h2{font-size:20px;font-weight:800;color:var(--brand);margin:48px 0 14px;padding-bottom:8px;border-bottom:2px solid #d1fae5;scroll-margin-top:72px}
+h3{font-size:15px;font-weight:700;color:var(--brand);margin:28px 0 10px;scroll-margin-top:72px}
+h4{font-size:13px;font-weight:600;color:#374151;margin:16px 0 6px}
+p{margin-bottom:10px;color:#374151}
+ul,ol{padding-left:22px;margin-bottom:10px}
+li{margin-bottom:5px;color:#374151}
+strong{color:#111827}
+a{color:var(--brand);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:'SF Mono',monospace;font-size:12px;background:#f3f4f6;padding:2px 6px;border-radius:4px;color:var(--brand)}
+
+/* CALLOUT BOXES */
+.box{border-radius:10px;padding:14px 18px;margin:14px 0}
+.box-green{background:#f0fdf4;border-left:4px solid #22c55e}
+.box-amber{background:#fffbeb;border-left:4px solid var(--accent)}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444}
+.box-blue{background:#eff6ff;border-left:4px solid #3b82f6}
+.box-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.box-green .box-label{color:#16a34a}
+.box-amber .box-label{color:#d97706}
+.box-red .box-label{color:#dc2626}
+.box-blue .box-label{color:#2563eb}
+
+/* STEPS */
+.steps{margin:12px 0}
+.step{display:flex;gap:14px;margin-bottom:12px}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step-body{flex:1;padding-top:3px}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+th{background:var(--brand);color:#fff;padding:9px 12px;text-align:left;font-weight:600}
+td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:nth-child(even) td{background:#f9fafb}
+
+/* BADGE */
+.badge{display:inline-flex;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.badge-green{background:#dcfce7;color:#15803d}
+.badge-amber{background:#fef3c7;color:#92400e}
+.badge-red{background:#fee2e2;color:#991b1b}
+.badge-blue{background:#dbeafe;color:#1e40af}
+
+/* BACK TO TOP */
+#btt{position:fixed;bottom:24px;right:20px;background:var(--brand);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.2);opacity:0;transition:opacity .3s;z-index:50}
+#btt.show{opacity:1}
+
+/* HERO */
+.hero{background:linear-gradient(135deg,var(--brand),#2d6a4f);color:#fff;border-radius:16px;padding:32px 36px;margin-bottom:36px}
+.hero .logo{font-size:28px;font-weight:900}.hero .logo span{color:var(--accent)}
+.hero h1{color:#fff;font-size:22px;margin:8px 0 4px}
+.hero p{color:rgba(255,255,255,.8);font-size:13px;margin:0}
+.hero .role-badge{display:inline-flex;margin-top:12px;padding:4px 14px;background:rgba(255,255,255,.2);border-radius:20px;font-size:12px;font-weight:600}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .sidebar{display:none;position:fixed;top:56px;left:0;height:calc(100vh - 56px);z-index:90;box-shadow:4px 0 20px rgba(0,0,0,.15)}
+  .sidebar.open{display:block}
+  .hamburger{display:flex}
+  .nav-title{display:block}
+  .main{padding:20px 18px 80px}
+  .hero{padding:22px 20px}
+  h1{font-size:22px}
+  h2{font-size:17px;margin-top:36px}
+  table{font-size:12px}
+  th,td{padding:7px 9px}
+}
+@media(min-width:1200px){.nav-title{display:block}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <div style="display:flex;align-items:center;gap:14px">
+    <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="nav-logo">Oakit<span>.ai</span></div>
+    <div class="nav-title">Admin Guide</div>
+  </div>
+  <div class="nav-actions">
+    <a class="nav-btn" href="guide-teacher.html">Teacher Guide</a>
+    <a class="nav-btn" href="guide-parent.html">Parent Guide</a>
+    <button class="nav-btn" onclick="window.print()">Print / PDF</button>
+  </div>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <h3>Admin Guide</h3>
+      <a href="#overview">1. Overview</a>
+      <a href="#login">2. Logging In</a>
+      <a href="#dashboard">3. Dashboard</a>
+      <a href="#students">4. Students</a>
+      <a href="#teachers">5. Teachers</a>
+      <a href="#parents">6. Parents</a>
+      <a href="#curriculum">7. Curriculum</a>
+      <h3>Calendar &amp; Planner</h3>
+      <a href="#calendar">8. Calendar Setup</a>
+      <a href="#holidays">9. Holidays</a>
+      <a href="#special-days">10. Special Days</a>
+      <a href="#planner">11. Lesson Planner</a>
+      <a href="#plan-edit">12. Editing Plans</a>
+      <a href="#coverage">13. Coverage Report</a>
+      <h3>Content &amp; Media</h3>
+      <a href="#feed">14. Class Feed</a>
+      <a href="#social-media">15. Social Media</a>
+      <a href="#drive-cleanup">16. Drive Cleanup</a>
+      <h3>Finance &amp; HR</h3>
+      <a href="#fees">17. Fees</a>
+      <a href="#hr">18. HR &amp; Staff</a>
+      <h3>Communication</h3>
+      <a href="#announcements">19. Announcements</a>
+      <a href="#settings">20. Settings</a>
+      <h3>Reference</h3>
+      <a href="#checklist">21. Weekly Checklist</a>
+      <a href="#troubleshoot">22. Troubleshooting</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="hero">
+      <div class="logo">Oakit<span>.ai</span></div>
+      <h1>Admin User Guide</h1>
+      <p>Silver Oak Juniors &nbsp;&middot;&nbsp; <a href="https://oakit.silveroakjuniors.in" style="color:rgba(255,255,255,.8)">oakit.silveroakjuniors.in</a></p>
+      <span class="role-badge">Role: Admin &nbsp;&mdash;&nbsp; Full access to all school data and settings</span>
+    </div>
+
+    <h2 id="overview">1. What is Oakit.ai and What Can an Admin Do?</h2>
+    <p>Oakit.ai is an AI-powered school management platform connecting teachers, parents, and leadership in one place. The AI assistant <strong>Oakie</strong> helps teachers plan lessons, generate content, and communicate with parents.</p>
+    <p>As <strong>Admin</strong>, you have full control over everything within your school — the only role with access to fees, HR salary, school settings, and system configuration.</p>
+    <table>
+      <tr><th>Module</th><th>Your responsibility</th></tr>
+      <tr><td>Students</td><td>Enrol, edit, photos, promotions, deactivations</td></tr>
+      <tr><td>Teachers</td><td>Accounts, section assignments, password resets</td></tr>
+      <tr><td>Parents</td><td>Accounts, child links, portal access</td></tr>
+      <tr><td>Curriculum</td><td>Upload textbooks, monitor class coverage</td></tr>
+      <tr><td>Calendar &amp; Planner</td><td>Academic year, holidays, special days, generate plans</td></tr>
+      <tr><td>Feed</td><td>Settings, storage management, delete posts</td></tr>
+      <tr><td>Social Media</td><td>Platform credentials, approve/reject posts</td></tr>
+      <tr><td>Fees</td><td>Structures, collections, concessions, invoices</td></tr>
+      <tr><td>HR</td><td>Staff, leave, offer letters, salary</td></tr>
+      <tr><td>Announcements</td><td>School-wide and class-specific notices</td></tr>
+      <tr><td>Settings</td><td>All school configuration</td></tr>
+      <tr><td>Google Drive</td><td>Bulk delete uploaded media files</td></tr>
+    </table>
+
+    <h2 id="login">2. Logging In</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Open <code>https://oakit.silveroakjuniors.in</code> in any browser (Chrome, Safari, Firefox).</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Enter your mobile number and password. Tap <strong>Sign In</strong>.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">The system redirects you automatically to the Admin portal.</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">If you are locked out</div>
+      <p>Contact your Franchise Admin or Super Admin to reset your password. Only a Super Admin can reset an admin account directly from the platform.</p>
+    </div>
+    <h3>Session Security</h3>
+    <p>Sessions expire after 8 hours of inactivity. If another device logs into your account, your current session ends automatically. Never share your login credentials. The admin account has access to fee records, salary data, and student PII.</p>
+
+    <h2 id="dashboard">3. Admin Dashboard</h2>
+    <p>Your daily starting point. Check this every morning — it surfaces exceptions that need your attention.</p>
+    <table>
+      <tr><th>Widget</th><th>What it shows</th><th>What to do if something is wrong</th></tr>
+      <tr><td>Attendance summary</td><td>Present/absent counts for today</td><td>Contact the section teacher or check the Attendance module</td></tr>
+      <tr><td>Coverage alerts</td><td>Sections below 50% curriculum coverage</td><td>Speak to the teacher or check if plans were generated</td></tr>
+      <tr><td>Pending approvals</td><td>Fee concessions, leave requests waiting</td><td>Go to the relevant module and approve/reject today</td></tr>
+      <tr><td>Social Media badge</td><td>Red number = posts waiting for approval</td><td>Go to Admin &rarr; Social Media &rarr; Approval Queue immediately</td></tr>
+      <tr><td>Birthday today</td><td>Students and staff birthdays</td><td>Optional: arrange a celebration</td></tr>
+      <tr><td>Finance snapshot</td><td>Fee collections, outstanding dues</td><td>Check if collections are on track</td></tr>
+    </table>
+    <div class="box box-blue">
+      <div class="box-label">Why review the dashboard daily</div>
+      <p>The dashboard shows exceptions — things outside the normal. Checking it first thing each morning takes under 2 minutes and ensures teachers, parents, and finances are on track.</p>
+    </div>
+
+    <h2 id="students">4. Student Management</h2>
+    <h3>4.1 Adding a New Student</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Students &rarr; Add Student</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Fill in: name, date of birth, section, parent names, parent mobile numbers, and emergency contact.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Click <strong>Save</strong>. The student is now enrolled and visible to their section teacher.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Bulk import via Excel</div>
+      <p>To add many students at once: download the Excel template from the Students page, fill in all rows (one student per row), and upload it back. The system validates each row and shows errors before importing anything.</p>
+    </div>
+    <h3>4.2 Editing a Student</h3>
+    <p>Click the student name &rarr; <strong>Edit</strong>. You can change section, parent details, date of birth, photo, and emergency contacts. Changes take effect immediately.</p>
+    <h3>4.3 Uploading a Student Photo</h3>
+    <p>Open the student profile and tap the photo area. Upload a JPG or PNG (max 5 MB, face clearly visible). Photos appear in the parent app, teacher attendance view, and ID cards.</p>
+    <h3>4.4 Deactivating a Student</h3>
+    <p>When a child leaves the school: open the student profile &rarr; <strong>Deactivate</strong>. Historical data (attendance, fees, progress) is retained for records. The student is removed from active lists, attendance, and fee calculations.</p>
+    <div class="box box-red">
+      <div class="box-label">Do not delete — always deactivate</div>
+      <p>Deleting a student permanently removes all their historical data: attendance records, fee history, curriculum progress, and observations. This cannot be undone. Always use Deactivate.</p>
+    </div>
+    <h3>4.5 Promoting Students</h3>
+    <p>At year end, go to <strong>Admin &rarr; Students &rarr; Promote</strong>. Select a class and move all students up to the next class. Students without a destination class are marked as graduated/left.</p>
+
+    <h2 id="teachers">5. Teacher Management</h2>
+    <h3>5.1 Adding a Teacher</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Teachers &rarr; Add Teacher</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Enter name, mobile number, email. Set a temporary password.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Assign one or more sections. The teacher will only see students and plans from their assigned sections.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Share the app URL and credentials with the teacher. Ask them to change their password on first login.</div></div>
+    </div>
+    <h3>5.2 Resetting a Teacher Password</h3>
+    <p>Go to <strong>Admin &rarr; Teachers</strong> &rarr; click the teacher name &rarr; <strong>Reset Password</strong>. Enter a new temporary password, share it securely with the teacher.</p>
+    <h3>5.3 Reassigning Sections</h3>
+    <p>Open the teacher profile &rarr; <strong>Edit</strong> &rarr; modify the sections list. The teacher immediately loses access to removed sections and gains access to added ones.</p>
+    <h3>5.4 Deactivating a Teacher</h3>
+    <p>Use Deactivate (not delete) to preserve attendance, coverage, and feed history linked to that teacher. A deactivated teacher cannot log in.</p>
+
+    <h2 id="parents">6. Parent Management</h2>
+    <h3>6.1 Adding a Parent and Linking Children</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Parents &rarr; Add Parent</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Enter name and mobile number. The mobile number is their login ID.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Link one or more children using the student search field.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Share the app URL and their mobile number as the login. Default password is their mobile number — they can change it in Settings.</div></div>
+    </div>
+    <h3>6.2 The Instagram Follow Prompt</h3>
+    <p>When a parent logs in for the first time (or until they click "I've followed"), they see a popup asking them to follow the school's Instagram page. This is automatic — no admin action needed once the Instagram handle is configured in Settings. You can track which parents have acknowledged this in the database.</p>
+    <div class="box box-blue">
+      <div class="box-label">Why parents matter in Oakit</div>
+      <p>Active parents reduce the number of phone calls the school receives. When parents can see attendance, homework, and daily photos in the app, they stop WhatsApp-messaging teachers for updates. This saves teacher time significantly.</p>
+    </div>
+
+    <h2 id="curriculum">7. Curriculum Management</h2>
+    <h3>7.1 Uploading a Textbook PDF</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Curriculum &rarr; Upload PDF</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Select the class and subject. Upload the PDF (max 50 MB per file).</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Oakit's AI automatically extracts topics, chunks them into daily-sized units, and indexes them for Oakie's lesson planning.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Status shows "Processing" (2–5 minutes) then "Ready". Teachers can use it once it shows "Ready".</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">Upload curriculum before generating plans</div>
+      <p>If you upload new curriculum after plans are already generated, the new topics will not appear in existing plans. You must delete and regenerate the plans for the affected months. See Section 11 for how to regenerate.</p>
+    </div>
+    <h3>7.2 Multiple PDFs Per Class</h3>
+    <p>You can upload multiple PDFs for one class (e.g. English + Maths + EVS). Oakie knows each subject's topics separately and can answer subject-specific questions.</p>
+
+    <h2 id="calendar">8. Academic Calendar Setup</h2>
+    <p>The academic calendar defines when school starts and ends, which days of the week are working days, and what the academic year code is (e.g. 2025-2026). This must be set up before you can generate plans.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Calendar</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Click <strong>New Calendar</strong>. Enter the academic year, start date, and end date.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Select working days (tick Monday through Friday, or your school's working days).</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Click <strong>Save Calendar</strong>. The calendar is now the foundation for all plans, attendance, and coverage calculations.</div></div>
+    </div>
+    <div class="box box-red">
+      <div class="box-label">Set the calendar before the academic year begins</div>
+      <p>Changing the calendar after plans have been generated can invalidate existing plans. Set it up once, correctly, at the start of the year.</p>
+    </div>
+
+    <h2 id="holidays">9. Holidays</h2>
+    <h3>What is a Holiday?</h3>
+    <p>A holiday is a day when school is completely closed — no teachers, no students. Examples: Diwali, Independence Day, a sudden government-declared holiday.</p>
+    <p><strong>Effect on plans:</strong> The topic assigned to that day carries forward to the next working day. All subsequent topics shift by one day.</p>
+    <h3>9.1 Adding a Holiday</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Calendar</strong> &rarr; <strong>Holidays</strong> tab.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Click <strong>Add Holiday</strong>. Enter the date and event name (e.g. "Republic Day" or "School Closed — Water Supply Repair").</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Click <strong>Save</strong>.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">If plans exist for that date, a yellow warning appears: "X section plans were cleared. Refresh the planner to shift topics forward."</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body">Select the affected class below and click <strong>Refresh Planner</strong>. This shifts all topics forward automatically. Done.</div></div>
+    </div>
+    <div class="box box-red">
+      <div class="box-label">Always click Refresh Planner after adding a holiday</div>
+      <p>Adding a holiday clears that day's plan but does NOT automatically shift subsequent days. The Refresh Planner step is mandatory. If you skip it, teachers will see a blank day followed by a gap in the topic sequence.</p>
+    </div>
+    <h3>9.2 Editing or Deleting a Holiday</h3>
+    <p>Go to <strong>Admin &rarr; Calendar &rarr; Holidays</strong>. Click the holiday &rarr; Edit or Delete. After deleting a holiday, the day becomes a working day again — plans need to be refreshed or the month regenerated to fill the freed slot.</p>
+    <h3>9.3 Exporting the Holiday Calendar</h3>
+    <p>Use the <strong>Export</strong> button to download all holidays as a CSV file. Use this to share the academic calendar with parents or staff.</p>
+
+    <h2 id="special-days">10. Special Days</h2>
+    <h3>What is a Special Day?</h3>
+    <p>A special day is a school-open day where either no curriculum happens (full day event) or less curriculum happens (half day event). Unlike holidays, the school is open — but teachers and students are doing something other than the regular timetable.</p>
+    <table>
+      <tr><th>Type</th><th>School open?</th><th>Curriculum taught?</th><th>Topic carry-forward?</th><th>Example</th></tr>
+      <tr><td><strong>Holiday</strong></td><td>No</td><td>No</td><td>Yes — full carry-forward</td><td>Diwali, sudden closure</td></tr>
+      <tr><td><strong>Special Day — Full Day</strong></td><td>Yes</td><td>No</td><td>Yes — full carry-forward</td><td>Annual Day, Sports Day</td></tr>
+      <tr><td><strong>Special Day — Half Day</strong></td><td>Yes</td><td>Half (0.5 days)</td><td>No — topic stays, reduced time</td><td>Morning assembly programme, Fancy Dress</td></tr>
+    </table>
+    <div class="box box-blue">
+      <div class="box-label">Why half-day events exist</div>
+      <p>A half-day special day tells the teacher: "You have less teaching time today." The topic is still assigned, but the teacher knows to adjust the depth. For example: "Fancy Dress competition 9–11 AM. Regular class after 11 AM." The net curriculum days count is reduced by 0.5 for coverage calculations.</p>
+    </div>
+    <h3>10.1 Special Day Types</h3>
+    <table>
+      <tr><th>Type</th><th>When to use it</th></tr>
+      <tr><td>Settling In</td><td>First 2–5 days of the school year. Children are adjusting. No formal curriculum — teachers do welcome activities, name learning, free play.</td></tr>
+      <tr><td>Sports Day</td><td>School athletic event. Teachers go to the ground. No classroom teaching.</td></tr>
+      <tr><td>Cultural Event / Annual Day</td><td>Performance, concert, prize ceremony. No classroom teaching.</td></tr>
+      <tr><td>Revision Day</td><td>A full day for reviewing previously taught topics. When you add this type, you can specify which topics to revise — Oakie will suggest questions and activities for revision.</td></tr>
+      <tr><td>Parent-Teacher Meeting (PTM)</td><td>Admin marks these so teachers know to prepare reports. Curriculum paused for the full day or half day.</td></tr>
+      <tr><td>Custom</td><td>Anything not listed — field trips, health check day, Republic Day programme.</td></tr>
+    </table>
+    <h3>10.2 Adding a Special Day</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Calendar &rarr; Special Days</strong> tab.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Click <strong>Add Special Day</strong>.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Fill in:
+        <ul>
+          <li><strong>From date / To date</strong> — single day or range (e.g. 3-day cultural festival)</li>
+          <li><strong>Event type</strong> — select from the list above</li>
+          <li><strong>Label</strong> — the display name visible to teachers (e.g. "Annual Sports Day")</li>
+          <li><strong>Duration</strong> — Full Day or Half Day</li>
+          <li><strong>Activity note</strong> — optional instructions for teachers (e.g. "Bring students to ground at 9 AM")</li>
+          <li><strong>Start/End time</strong> — required for half-day events</li>
+        </ul>
+      </div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Click Save. For full-day events, you will see the carry-forward warning. Click <strong>Refresh Planner</strong> for affected classes.</div></div>
+    </div>
+
+    <h2 id="planner">11. Lesson Planner — Complete Guide</h2>
+    <h3>11.1 How the Planner Works</h3>
+    <p>When you generate plans for a class, Oakit does exactly this:</p>
+    <ol>
+      <li>Looks at the academic calendar (start date, end date, working days)</li>
+      <li>Removes all holidays and full-day special events from the working day count</li>
+      <li>Takes the curriculum chunks (topics extracted from the uploaded PDF)</li>
+      <li>Distributes one topic per working day, in order</li>
+      <li>If a day gets cleared later (holiday added), that day's topic <strong>carries forward</strong> to the next available working day — no topic is ever lost</li>
+    </ol>
+    <div class="box box-blue">
+      <div class="box-label">The key principle: carry-forward</div>
+      <p>Oakit never discards a topic. If Day 15 becomes a holiday, Day 15's topic shifts to Day 16, Day 16's to Day 17, and so on. The plan compresses intelligently — the academic year just ends slightly later than originally planned.</p>
+    </div>
+    <h3>11.2 Carry-Forward Scenario — Exactly What Happens</h3>
+    <div class="box box-green">
+      <div class="box-label">Concrete example: sudden holiday on Wednesday 15 January</div>
+      <p><strong>Plan before the holiday:</strong></p>
+      <ul>
+        <li>Mon 13 Jan — Numbers 1–10</li>
+        <li>Tue 14 Jan — Addition basics</li>
+        <li>Wed 15 Jan — Subtraction intro &larr; you add a holiday here</li>
+        <li>Thu 16 Jan — Shapes</li>
+        <li>Fri 17 Jan — Colours</li>
+      </ul>
+      <p><strong>After adding the holiday and clicking Refresh Planner:</strong></p>
+      <ul>
+        <li>Mon 13 Jan — Numbers 1–10 (unchanged)</li>
+        <li>Tue 14 Jan — Addition basics (unchanged)</li>
+        <li>Wed 15 Jan — HOLIDAY (no topic)</li>
+        <li>Thu 16 Jan — Subtraction intro (shifted from Wed)</li>
+        <li>Fri 17 Jan — Shapes (shifted from Thu)</li>
+        <li>Mon 20 Jan — Colours (shifted from Fri)</li>
+      </ul>
+      <p>Every topic is preserved. The plan extends by one day at the end of the sequence.</p>
+    </div>
+    <h3>11.3 Generating Plans</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Plans</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Select the <strong>Class</strong> and <strong>Section</strong>.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Choose the month (or select Full Year).</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Click <strong>Generate Month Plans</strong> or <strong>Generate Full Year Plans</strong>.</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body">The system distributes topics. Teachers immediately see their daily plans.</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">Generate month-by-month vs full year</div>
+      <p>Full year generation is faster but locks everything in. Month-by-month gives flexibility — if something unexpected happens in December, you only regenerate December. <strong>Recommended approach:</strong> generate month-by-month at the start of each month, after adding any special days or holidays for that month.</p>
+    </div>
+    <h3>11.4 Regenerating Plans (Delete + Regenerate)</h3>
+    <p>Use <strong>Refresh Planner</strong> for carry-forward adjustments after adding holidays/special days.</p>
+    <p>Use <strong>Delete All Plans + Generate</strong> only when you need to completely redo a month — for example if you uploaded new curriculum, or the month's sequence is severely out of order.</p>
+    <div class="box box-red">
+      <div class="box-label">You cannot regenerate a month that already has plans</div>
+      <p>The system prevents overwriting existing plans to protect teacher work. To regenerate:
+        <ol style="margin-top:6px">
+          <li>Go to Admin &rarr; Plans &rarr; select the class and month</li>
+          <li>Click <strong>Delete All Plans</strong> for that month</li>
+          <li>Then click <strong>Generate Month Plans</strong></li>
+        </ol>
+        Teacher completion records are NOT deleted — only the daily topic assignments reset.
+      </p>
+    </div>
+
+    <h2 id="plan-edit">12. Editing Day Plans</h2>
+    <h3>12.1 Adding an Admin Note to a Day</h3>
+    <p>Go to <strong>Admin &rarr; Plans</strong>. Click on any day card. Use the <strong>Admin Note</strong> field to add instructions visible only to the teacher for that specific day. This appears as a blue highlighted box in the teacher's daily view.</p>
+    <p>Examples of admin notes:</p>
+    <ul>
+      <li>"Use the new chart from the storeroom today."</li>
+      <li>"PTM preparation — brief parents on today's topic during pick-up."</li>
+      <li>"Nursery annual day rehearsal from 11 AM — shorten today's lesson."</li>
+    </ul>
+    <h3>12.2 Changing a Topic Label</h3>
+    <p>Click the day &rarr; <strong>Edit</strong> &rarr; modify the topic display name. The underlying AI still uses the original topic internally for Oakie queries. Use this to simplify topic names for teacher display.</p>
+    <h3>12.3 Adding a Topic Not in the Curriculum</h3>
+    <div class="box box-green">
+      <div class="box-label">How to add an out-of-curriculum topic</div>
+      <p>If the school wants to add a topic not in the uploaded textbook (e.g. a special environmental awareness lesson):
+        <ol style="margin-top:6px">
+          <li>Go to Admin &rarr; Plans &rarr; find the target day</li>
+          <li>Click the day &rarr; <strong>Add Admin Note</strong></li>
+          <li>Write the full topic and instructions: "Today's additional topic: Environmental Awareness — discuss waste sorting, recycling, and conservation with the class. Use the display board in the corridor."</li>
+          <li>Save. The teacher sees this highlighted in blue on their daily plan.</li>
+        </ol>
+        For a permanent addition to the curriculum, upload a new PDF section and re-ingest it.
+      </p>
+    </div>
+
+    <h2 id="coverage">13. Coverage Report</h2>
+    <p>Go to <strong>Admin &rarr; Coverage</strong>. This shows how much of the curriculum each section has actually completed (not just planned).</p>
+    <table>
+      <tr><th>Column</th><th>Meaning</th></tr>
+      <tr><td>Section</td><td>Class name and section label</td></tr>
+      <tr><td>Total chunks</td><td>Total curriculum topics for that class</td></tr>
+      <tr><td>Covered</td><td>Topics ticked as done by the teacher</td></tr>
+      <tr><td>Coverage %</td><td>Covered &divide; Total &times; 100</td></tr>
+      <tr><td>Flagged</td><td>Admin or principal has flagged this section for attention</td></tr>
+    </table>
+    <div class="box box-amber">
+      <div class="box-label">Coverage vs Plans — the key difference</div>
+      <p>Plans tell you what was <em>scheduled</em>. Coverage tells you what was <em>actually taught</em>. A section can have 100% plans generated but only 40% coverage if teachers are not ticking topics. Coverage is the real metric of learning progress.</p>
+    </div>
+    <p>Sections below 60% warrant a conversation with the teacher. Sections below 40% need urgent action — check if plans were generated, if the teacher is using the app, and if there are unresolved carry-forward issues.</p>
+
+    <h2 id="feed">14. Class Feed</h2>
+    <p>The Class Feed is where teachers post daily photos and videos of classroom activities. Parents see these in real time in the Oakit parent app. All media is stored in Google Drive.</p>
+    <h3>14.1 Feed Settings</h3>
+    <p>Go to <strong>Admin &rarr; Settings &rarr; Feed Settings</strong>:</p>
+    <ul>
+      <li><strong>Daily post limit per section</strong> — prevents flooding (recommended: 5 posts/section/day)</li>
+      <li><strong>School-wide daily limit</strong> — total across all sections</li>
+      <li><strong>Retention days</strong> — how long posts remain visible (recommended: 20–30 days)</li>
+    </ul>
+    <div class="box box-blue">
+      <div class="box-label">Why set retention days</div>
+      <p>Feed posts are not meant to be permanent galleries. 20–30 days is enough for parents to see recent activity. Shorter retention keeps the feed fresh. For long-term memories, use Student Notes and Observations — not the feed.</p>
+    </div>
+    <h3>14.2 Deleting a Feed Post</h3>
+    <p>Admins can delete any post. Go to <strong>Admin &rarr; Feed</strong> &rarr; find the post &rarr; click the delete icon. Use this if inappropriate content is posted or if a parent requests removal.</p>
+
+    <h2 id="social-media">15. Social Media Publisher</h2>
+    <div class="box box-amber">
+      <div class="box-label">Module activation required</div>
+      <p>This module must be enabled by your Franchise Admin or Super Admin before it appears. Once enabled, go to Admin &rarr; Social Media.</p>
+    </div>
+    <h3>15.1 Platform Setup (one time)</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Social Media &rarr; Platform Setup</strong>. The page opens here by default.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">For <strong>Instagram</strong>: enter your Page Access Token, Instagram Business Account ID, Facebook Page ID, handle, Meta App ID, and App Secret. Follow the step-by-step guide shown on the page.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">For <strong>Facebook</strong>: enter Page Access Token, Page ID, handle, Meta App ID, and App Secret.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Click <strong>Test Connection</strong> for each platform to verify credentials are working. A green tick confirms success.</div></div>
+    </div>
+    <div class="box box-red">
+      <div class="box-label">Token expiry — act before it expires</div>
+      <p>Meta tokens expire every 60 days. The platform warns you 7 days before expiry. Click <strong>Refresh Token</strong> immediately when you see this warning. If the token expires, all teacher posts will fail to publish and you will need to generate a new token from the Meta Developer Console.</p>
+    </div>
+    <h3>15.2 Meta App Review — Required for Public Publishing</h3>
+    <p>If posts fail with the error "pages_manage_posts not approved", your Meta Developer App needs to pass App Review. Go to <code>developers.facebook.com</code> &rarr; your app &rarr; App Review &rarr; request the <code>pages_manage_posts</code> permission. Until approved, publishing only works for accounts added as test users.</p>
+    <h3>15.3 Approval Queue — Your Most Time-Sensitive Task</h3>
+    <p>When teachers submit posts, a red badge appears on the Social Media tab. Check this daily.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Social Media</strong>. The <strong>Approval Queue</strong> tab opens by default.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Review the photo/video, caption, and selected platforms for each post.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Click <strong>Approve &amp; Publish</strong> to send live, or <strong>Reject</strong> with a written reason.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Approved posts publish within 30–60 seconds. The teacher receives an in-app notification with a link to the live post.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Bulk approve</div>
+      <p>Select multiple posts using the checkboxes and click <strong>Approve all</strong> to publish them simultaneously. Use this at the end of the day when multiple posts are queued.</p>
+    </div>
+    <h3>15.4 Post History</h3>
+    <table>
+      <tr><th>Status</th><th>Meaning</th><th>Action</th></tr>
+      <tr><td><span class="badge badge-green">published</span></td><td>Live on the platform</td><td>Use "Delete post" button if removal needed</td></tr>
+      <tr><td><span class="badge badge-amber">partially published</span></td><td>Posted to some platforms, failed on others</td><td>Click <strong>Retry Failed Platforms</strong></td></tr>
+      <tr><td><span class="badge badge-red">failed</span></td><td>All platforms failed</td><td>Read the error message, fix credentials, retry</td></tr>
+      <tr><td><span class="badge badge-blue">pending approval</span></td><td>Waiting for your review</td><td>Go to Approval Queue</td></tr>
+    </table>
+    <h3>15.5 Deleting a Published Post from Instagram/Facebook</h3>
+    <p>Go to <strong>Post History</strong>, find the post, and click the red <strong>Delete post</strong> button next to the platform badge. This calls the Graph API and removes the post from Instagram or Facebook directly. The post record remains in Oakit history.</p>
+    <h3>15.6 Retrying Failed Posts</h3>
+    <p>If a post failed (expired token, temporary API error), read the error message shown below the platform badge. After fixing the issue (e.g. refresh the token), click <strong>Retry Failed Platforms</strong>. The system only retries the platforms that failed — successful platforms are not affected.</p>
+    <div class="box box-amber">
+      <div class="box-label">Media deleted warning</div>
+      <p>If the post card shows "Media files were deleted — ask teacher to resubmit", the Drive file was deleted before retry was possible. The teacher must upload the photos/video again and submit a new post.</p>
+    </div>
+
+    <h2 id="drive-cleanup">16. Google Drive Bulk Cleanup</h2>
+    <p>Every photo, video, and file uploaded by teachers lands in your school's Google Drive. Over time this fills up. The Drive Cleanup tool deletes all old files in bulk after notifying parents first.</p>
+    <p><strong>What gets deleted:</strong> All teacher-uploaded files older than your chosen cutoff — class feed photos/videos, teacher media, social media post files, student notes, homework files.</p>
+    <h3>16.1 When to Run a Cleanup</h3>
+    <ul>
+      <li>At the end of each term (every 3–4 months)</li>
+      <li>When Google Drive shows less than 20% free storage</li>
+      <li>Before the start of a new academic year</li>
+    </ul>
+    <h3>16.2 Step-by-Step Cleanup Process</h3>
+    <div class="box box-red">
+      <div class="box-label">Notify parents first — mandatory</div>
+      <p>Parents cannot recover files after deletion. Always run Step 2 (Notify) and give parents at least 7 days to download photos/videos before running Step 3 (Delete).</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Settings &rarr; Google Drive Cleanup</strong> (or directly to <code>/admin/drive-cleanup</code>).</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Set "Delete files older than" to 30 days (minimum 7).</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Set "Notify parents (days before delete)" to at least 7.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Click <strong>Preview files to delete</strong>. The system shows file count, size, and which classes are affected — before deleting anything.</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body">Click <strong>Notify parents</strong>. This sends a popup to all affected parents with a warning, the deadline, and a link to their class Drive folder.</div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-body">Wait the notification period (7+ days).</div></div>
+      <div class="step"><div class="step-num">7</div><div class="step-body">Return to the cleanup page, type <code>DELETE</code> in the confirmation box, click <strong>Delete files permanently</strong>.</div></div>
+    </div>
+
+    <h2 id="fees">17. Fee Management</h2>
+    <div class="box box-amber">
+      <div class="box-label">Financial module must be enabled</div>
+      <p>The fee module requires the Financial module to be enabled for your school. Contact your Franchise Admin if fee options are not visible.</p>
+    </div>
+    <h3>17.1 Setting Up a Fee Structure</h3>
+    <p>Go to <strong>Admin &rarr; Fees &rarr; Fee Structures &rarr; New Structure</strong>. Add line items (tuition, activity fee, transport, etc.) with amounts. Assign the structure to a class or section.</p>
+    <h3>17.2 Recording a Payment</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Fees &rarr; Students</strong>. Find the student by name or ID.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Click <strong>Record Payment</strong>. Enter amount, payment mode (cash/online/cheque), and date.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">The system generates a receipt automatically. Download and share with the parent.</div></div>
+    </div>
+    <h3>17.3 Concessions</h3>
+    <p>Go to <strong>Admin &rarr; Fees &rarr; Concessions</strong>. Create a concession (e.g. "Sibling discount — 10%") and apply it to a student's record. Concessions appear on the invoice.</p>
+    <h3>17.4 Defaulter Report</h3>
+    <p>Go to <strong>Admin &rarr; Fees &rarr; Reports &rarr; Defaulters</strong>. This lists all students with outstanding dues sorted by amount owed. Use this for follow-up calls.</p>
+
+    <h2 id="hr">18. HR &amp; Staff</h2>
+    <h3>18.1 Staff Records</h3>
+    <p>Go to <strong>Admin &rarr; HR &rarr; Staff</strong>. Maintain: designation, joining date, salary grade, emergency contact, and document uploads.</p>
+    <h3>18.2 Leave Management</h3>
+    <p>Staff apply for leave through the app. Pending requests appear on your dashboard. Go to <strong>Admin &rarr; HR &rarr; Leave</strong> to approve or reject with a reason.</p>
+    <h3>18.3 Offer Letters</h3>
+    <p>Go to <strong>Admin &rarr; HR &rarr; Offer Letters</strong>. Select a template, fill in staff details, generate a PDF. Download or email directly.</p>
+    <h3>18.4 Salary</h3>
+    <p>Go to <strong>Admin &rarr; HR &rarr; Salary</strong>. Protected by a separate PIN (not your login password). Set up the PIN on first use. Enter monthly salary, deductions, and generate pay slips.</p>
+    <div class="box box-red">
+      <div class="box-label">Salary PIN security</div>
+      <p>The salary PIN is separate from your login password. Keep it confidential. Only admin and principal can access salary data. Never write the PIN where others can find it.</p>
+    </div>
+
+    <h2 id="announcements">19. Announcements &amp; Flash Messages</h2>
+    <h3>19.1 Announcements</h3>
+    <p>Go to <strong>Admin &rarr; Announcements &rarr; New</strong>. Write a title and body. Choose target: all parents, all teachers, or a specific class. Set an expiry date. Appears in the notifications tab of the parent and teacher apps.</p>
+    <h3>19.2 Flash Messages (Full-Screen Popups)</h3>
+    <p>Flash messages appear as full-screen popups the next time the user opens the app. Use for urgent communication.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Admin &rarr; Announcements &rarr; Flash Messages &rarr; New Flash Message</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Enter title, body, target role (parent / teacher / all), start date, and end date.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">The message shows to every matching user once per session, until the end date.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Best uses for Flash Messages</div>
+      <ul>
+        <li>Sudden school closure or holiday notice</li>
+        <li>Fee payment deadline reminder</li>
+        <li>Parent-teacher meeting schedule</li>
+        <li>Google Drive cleanup warning (auto-generated)</li>
+        <li>Important notices that cannot wait for the next regular communication</li>
+      </ul>
+    </div>
+
+    <h2 id="settings">20. School Settings</h2>
+    <p>Go to <strong>Admin &rarr; Settings</strong>.</p>
+    <table>
+      <tr><th>Setting</th><th>What it does</th><th>When to change</th></tr>
+      <tr><td>School name, logo, tagline</td><td>Branding in app and reports</td><td>Initial setup or rebrand</td></tr>
+      <tr><td>Contact phone &amp; address</td><td>Shown on invoices and letters</td><td>Initial setup</td></tr>
+      <tr><td>Primary colour</td><td>App theme colour for your school</td><td>Initial setup</td></tr>
+      <tr><td>Academic calendar</td><td>Start/end dates, working days</td><td>Start of each academic year</td></tr>
+      <tr><td>Google Drive</td><td>OAuth credentials and folder ID</td><td>Initial setup or when credentials expire</td></tr>
+      <tr><td>AI credits</td><td>Quota for Oakie queries per school</td><td>When teachers report "out of credits" errors</td></tr>
+      <tr><td>Notes expiry</td><td>How long teacher notes are retained</td><td>Default 14 days; increase if needed</td></tr>
+      <tr><td>Instagram handle</td><td>Used in parent follow prompt and feed sharing</td><td>When Instagram account changes</td></tr>
+      <tr><td>Social media module</td><td>Enable/disable the publisher feature</td><td>When activating the module</td></tr>
+    </table>
+    <h3>20.1 Google Drive OAuth Setup (one time)</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Create a Google Cloud Project at <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Enable the Google Drive API.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Create OAuth 2.0 credentials (Web application). Get Client ID and Client Secret.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Use <a href="https://developers.google.com/oauthplayground" target="_blank">OAuth Playground</a> to generate a refresh token with <code>drive.file</code> scope.</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body">In Oakit: Settings &rarr; Google Drive &rarr; Configure. Enter Client ID, Client Secret, Refresh Token, and Folder ID.</div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-body">Click <strong>Test Connection</strong>. Green tick = working.</div></div>
+    </div>
+
+    <h2 id="checklist">21. Weekly Admin Checklist</h2>
+    <table>
+      <tr><th>Frequency</th><th>Task</th><th>Why it matters</th></tr>
+      <tr><td>Every morning</td><td>Check dashboard for alerts and Social Media approval badge</td><td>Time-sensitive — posts should be approved within hours</td></tr>
+      <tr><td>Every morning</td><td>Review pending leave requests</td><td>Staff need a decision quickly</td></tr>
+      <tr><td>Weekly</td><td>Check coverage report for sections below 60%</td><td>Low coverage = teachers behind on curriculum</td></tr>
+      <tr><td>Weekly</td><td>Check fee defaulters report</td><td>Early follow-up improves collection rates</td></tr>
+      <tr><td>Monthly</td><td>Refresh Meta token if expiring within 7 days</td><td>Expired token stops all social media publishing</td></tr>
+      <tr><td>Start of each month</td><td>Generate plans for the new month after adding any special days/holidays</td><td>Teachers need plans before the month begins</td></tr>
+      <tr><td>Every term</td><td>Run Google Drive Cleanup (notify parents first)</td><td>Prevents Drive storage from filling up</td></tr>
+      <tr><td>Start of year</td><td>Upload curriculum PDFs for all classes</td><td>Teachers cannot use Oakie for lesson planning without this</td></tr>
+      <tr><td>Start of year</td><td>Update academic calendar dates</td><td>Attendance and coverage calculations depend on this</td></tr>
+    </table>
+
+    <h2 id="troubleshoot">22. Troubleshooting</h2>
+    <table>
+      <tr><th>Problem</th><th>Likely cause</th><th>Fix</th></tr>
+      <tr><td>Social media post shows "Session has expired"</td><td>Meta access token expired</td><td>Admin &rarr; Social Media &rarr; Platform Setup &rarr; Refresh Token</td></tr>
+      <tr><td>Post fails with "pages_manage_posts not approved"</td><td>Meta App Review incomplete</td><td>Meta Developer Console &rarr; App Review &rarr; request pages_manage_posts</td></tr>
+      <tr><td>Teacher upload fails "Google Drive not configured"</td><td>Drive credentials invalid or not set up</td><td>Admin &rarr; Settings &rarr; Google Drive &rarr; Test Connection &rarr; fix credentials</td></tr>
+      <tr><td>Teacher sees "out of AI credits"</td><td>School's AI credit quota exhausted</td><td>Admin &rarr; Settings &rarr; AI Credits &rarr; top up with Franchise Admin</td></tr>
+      <tr><td>Parent cannot log in</td><td>Account not created or wrong mobile number</td><td>Admin &rarr; Parents &rarr; verify account exists and mobile matches</td></tr>
+      <tr><td>Attendance not showing for a section</td><td>Teacher has not marked attendance</td><td>Contact the teacher; check section assignment is correct</td></tr>
+      <tr><td>Coverage shows 0% for a class</td><td>Curriculum PDF not uploaded or still processing</td><td>Admin &rarr; Curriculum &rarr; check status shows "Ready" not "Processing"</td></tr>
+      <tr><td>Plans not visible to teacher</td><td>Plans not generated for that month/class</td><td>Admin &rarr; Plans &rarr; select class and generate</td></tr>
+      <tr><td>Topic appears twice after adding holiday</td><td>Refresh Planner not clicked after holiday was added</td><td>Admin &rarr; Calendar &rarr; select class &rarr; Refresh Planner</td></tr>
+      <tr><td>Feed photos not showing for parents</td><td>Drive file deleted or Drive credentials expired</td><td>Check Settings &rarr; Google Drive status; reconfigure if expired</td></tr>
+      <tr><td>"Carousel requires at least 2 images" on teacher submit</td><td>Teacher selected carousel but uploaded only 1 image</td><td>Teacher must upload 2–5 images for carousel, or switch to single photo mode</td></tr>
+      <tr><td>Social media retry button says "Media deleted"</td><td>Drive file was deleted before retry</td><td>Teacher must submit the post again with fresh media upload</td></tr>
+    </table>
+
+    <div style="margin-top:48px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center">
+      <p>Oakit.ai Admin Guide &nbsp;&middot;&nbsp; Silver Oak Juniors &nbsp;&middot;&nbsp; <a href="https://oakit.silveroakjuniors.in">oakit.silveroakjuniors.in</a></p>
+      <p style="margin-top:4px">Also see: <a href="guide-teacher.html">Teacher Guide</a> &nbsp;&middot;&nbsp; <a href="guide-parent.html">Parent Guide</a></p>
+    </div>
+  </main>
+</div>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">&#8679;</button>
+
+<script>
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+document.addEventListener('click',function(e){
+  var sb=document.getElementById('sidebar');
+  if(sb.classList.contains('open')&&!sb.contains(e.target)&&!e.target.closest('.hamburger'))sb.classList.remove('open');
+});
+window.addEventListener('scroll',function(){
+  document.getElementById('btt').classList.toggle('show',window.scrollY>300);
+  var links=document.querySelectorAll('.sidebar a');
+  var sections=document.querySelectorAll('h2[id],h3[id]');
+  var cur='';
+  sections.forEach(function(s){if(s.getBoundingClientRect().top<120)cur=s.id;});
+  links.forEach(function(l){l.classList.toggle('active',l.getAttribute('href')==='#'+cur);});
+});
+</script>
+</body>
+</html>

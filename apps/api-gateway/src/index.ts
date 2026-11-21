@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
@@ -20,6 +20,7 @@ import adminAnnouncementsRouter, { teacherAnnouncementsRouter, parentAnnouncemen
 import adminDashboardRouter from './routes/admin/dashboard';
 import adminAuditRouter from './routes/admin/audit';
 import timeMachineRouter from './routes/admin/timeMachine';
+import adminGoogleDriveRouter from './routes/admin/googleDrive';
 import teacherPlansRouter from './routes/teacher/plans';
 import teacherCoverageRouter from './routes/teacher/coverage';
 import teacherAttendanceRouter from './routes/teacher/attendance';
@@ -27,6 +28,7 @@ import teacherCompletionRouter from './routes/teacher/completion';
 import teacherExportRouter from './routes/teacher/export';
 import teacherContextRouter from './routes/teacher/context';
 import teacherSectionsRouter from './routes/teacher/sections';
+import teacherMediaRouter from './routes/teacher/media';
 import teacherNotesRouter from './routes/teacher/notes';
 import teacherStreaksRouter from './routes/teacher/streaks';
 import teacherCalendarRouter from './routes/teacher/calendar';
@@ -87,6 +89,14 @@ import adminEnquiriesRouter from './routes/admin/enquiries';
 import teacherStudentCredentialsRouter from './routes/teacher/studentCredentials';
 import teacherQuizRouter from './routes/teacher/quiz';
 import teacherReportCardRouter from './routes/teacher/reportCard';
+import teacherHolisticReportRouter from './routes/teacher/holisticReport';
+import adminHolisticTemplateRouter from './routes/admin/holisticReportTemplate';
+import parentHolisticReportRouter from './routes/parent/holisticReport';
+import adminSocialMediaRouter from './routes/admin/socialMedia';
+import adminDriveCleanupRouter from './routes/admin/driveCleanup';
+import adminWhatsAppRouter from './routes/admin/whatsapp';
+import whatsappWebhookRouter from './routes/shared/whatsappWebhook';
+import teacherSocialMediaRouter from './routes/teacher/socialMedia';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
 import feedRouter from './routes/feed';
@@ -115,9 +125,12 @@ import financialReportsRouter from './routes/financial/reports';
 import financialInsightsRouter from './routes/financial/insights';
 import financialRemindersRouter from './routes/financial/reminders';
 import parentFeesRouter from './routes/parent/fees';
+import parentDriveFolderRouter from './routes/parent/driveFolderLink';
 
 import sharedTodayContextRouter from './routes/shared/todayContext';
 import pushSubscriptionRouter from './routes/shared/pushSubscription';
+import driveProxyRouter from './routes/shared/driveProxy';
+import { flashMessagesRouter, adminFlashMessagesRouter } from './routes/shared/flashMessages';
 import staffHrRouter from './routes/staff/hr';
 import { cleanupExpiredFiles } from './lib/storage';
 import { pool } from './lib/db';
@@ -126,7 +139,7 @@ import { connectRedis } from './lib/redis';
 dotenv.config();
 connectRedis();
 
-// ── OWASP A02: Enforce strong JWT secret at startup ──────────────────────────
+// â”€â”€ OWASP A02: Enforce strong JWT secret at startup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 if (JWT_SECRET === 'change_me' || JWT_SECRET.length < 32) {
   if (process.env.NODE_ENV === 'production') {
@@ -136,7 +149,7 @@ if (JWT_SECRET === 'change_me' || JWT_SECRET.length < 32) {
     console.warn('[SECURITY] WARNING: JWT_SECRET is weak. Set a strong secret before deploying to production.');
   }
 }
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -189,10 +202,10 @@ app.use(express.json({ limit: '1mb' })); // OWASP: limit request body size
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(apiRateLimit);
 
-// PII guard — blocks franchise_admin from accessing individual PII endpoints
+// PII guard â€” blocks franchise_admin from accessing individual PII endpoints
 app.use(piiGuard);
 
-// Chunk guard — blocks school users from modifying franchise-owned curriculum
+// Chunk guard â€” blocks school users from modifying franchise-owned curriculum
 app.use(chunkGuard);
 
 // OWASP: Remove server fingerprinting
@@ -205,7 +218,7 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Serve uploaded files — require authentication
+// Serve uploaded files â€” require authentication
 const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || './uploads');
 app.use('/uploads', jwtVerify, express.static(UPLOAD_DIR));
 
@@ -245,13 +258,16 @@ app.get('/health/ai', async (_req, res) => {
   });
 });
 
-// Public routes — no authentication required
+// Public routes â€” no authentication required
 app.use('/api/v1/public/enquiries', publicEnquiriesRouter);
 app.use('/api/v1/public/uniform', publicUniformRouter);
 
 // Shared (any authenticated role)
 app.use('/api/v1/shared/today-context', sharedTodayContextRouter);
 app.use('/api/v1/push', pushSubscriptionRouter);
+app.use('/api/v1/drive-proxy', driveProxyRouter);
+app.use('/api/v1/flash-messages', flashMessagesRouter);
+app.use('/api/v1/admin/flash-messages', adminFlashMessagesRouter);
 
 // Staff HR (leave, offer letters, payslips)
 app.use('/api/v1/staff/hr', staffHrRouter);
@@ -276,6 +292,7 @@ app.use('/api/v1/admin/announcements', adminAnnouncementsRouter);
 app.use('/api/v1/admin/dashboard', adminDashboardRouter);
 app.use('/api/v1/admin/audit', adminAuditRouter);
 app.use('/api/v1/admin/time-machine', timeMachineRouter);
+app.use('/api/v1/admin/google-drive', adminGoogleDriveRouter);
 
 // Teacher
 app.use('/api/v1/teacher/plan', teacherPlansRouter);
@@ -285,6 +302,7 @@ app.use('/api/v1/teacher/completion', teacherCompletionRouter);
 app.use('/api/v1/teacher/export', teacherExportRouter);
 app.use('/api/v1/teacher/context', teacherContextRouter);
 app.use('/api/v1/teacher/sections', teacherSectionsRouter);
+app.use('/api/v1/teacher/media', teacherMediaRouter);
 app.use('/api/v1/teacher/notes', teacherNotesRouter);
 app.use('/api/v1/teacher/homework', teacherHomeworkRouter);
 app.use('/api/v1/teacher/supplementary', teacherSupplementaryRouter);
@@ -334,7 +352,7 @@ app.use('/api/v1/franchise', franchiseDashboardRouter);
 app.use('/api/v1/franchise', franchiseCurriculumRouter);
 app.use('/api/v1/franchise/schools', franchiseSchoolsRouter);
 
-// School franchise privacy status (Req 7.3) — accessible to admin + principal
+// School franchise privacy status (Req 7.3) â€” accessible to admin + principal
 app.get('/api/v1/schools/:school_id/franchise-privacy-status', jwtVerify, roleGuard('admin', 'principal'), async (req, res) => {
   try {
     const { school_id } = req.params;
@@ -377,7 +395,7 @@ app.use('/api/v1/parent/student-analytics', parentStudentAnalyticsRouter);
 app.use('/api/v1/parent/calendar', parentCalendarRouter);
 app.use('/api/v1/parent/class-comparison', parentClassComparisonRouter);
 
-// Admin — Student Portal
+// Admin â€” Student Portal
 app.use('/api/v1/admin/student-portal', adminStudentPortalRouter);
 app.use('/api/v1/admin/textbook-planner', textbookPlannerRouter);
 app.use('/api/v1/admin/quizzes', adminQuizzesRouter);
@@ -385,10 +403,23 @@ app.use('/api/v1/admin/smart-alerts', adminSmartAlertsRouter);
 app.use('/api/v1/admin/uniform', adminUniformRouter);
 app.use('/api/v1/admin/enquiries', adminEnquiriesRouter);
 
-// Teacher — Student Credentials, Quiz & Report Card
+// Teacher â€” Student Credentials, Quiz, Report Card & Face Attendance
 app.use('/api/v1/teacher/students/credentials', teacherStudentCredentialsRouter);
 app.use('/api/v1/teacher/quiz', teacherQuizRouter);
 app.use('/api/v1/teacher/report-card', teacherReportCardRouter);
+app.use('/api/v1/teacher/holistic-report', teacherHolisticReportRouter);
+app.use('/api/v1/admin/holistic-template', adminHolisticTemplateRouter);
+app.use('/api/v1/parent/holistic-report', parentHolisticReportRouter);
+
+// Social Media Publisher module
+app.use('/api/v1/admin/social-media', adminSocialMediaRouter);
+app.use('/api/v1/admin/drive-cleanup', adminDriveCleanupRouter);
+
+// WhatsApp Business module
+app.use('/api/v1/admin/whatsapp', adminWhatsAppRouter);
+// Webhook — no auth (external Meta callback)
+app.use('/api/v1/whatsapp/webhook', whatsappWebhookRouter);
+app.use('/api/v1/teacher/social-media', teacherSocialMediaRouter);
 
 // Student Portal
 app.use('/api/v1/student', studentFeedRouter);
@@ -398,8 +429,8 @@ app.use('/api/v1/parent', parentRouter);
 // Class Memory Feed (teacher, parent, admin, principal)
 app.use('/api/v1/feed', feedRouter);
 
-// ── Financial Module ──────────────────────────────────────────────────────────
-// Settings & permissions (no financialModuleGuard — needed to enable/disable the module)
+// â”€â”€ Financial Module â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Settings & permissions (no financialModuleGuard â€” needed to enable/disable the module)
 app.use('/api/v1/financial', financialSettingsRouter);
 
 // All other financial routes are guarded by financialModuleGuard
@@ -420,6 +451,7 @@ app.use('/api/v1/financial',                financialModuleGuard, financialInsig
 
 // Parent fees (guarded by financialModuleGuard)
 app.use('/api/v1/parent/fees', financialModuleGuard, parentFeesRouter);
+app.use('/api/v1/parent/drive-folder', parentDriveFolderRouter);
 
 app.listen(PORT, () => {
   console.log(`Oakit API Gateway running on port ${PORT}`);
@@ -430,6 +462,31 @@ app.listen(PORT, () => {
       const schools = await pool.query('SELECT id FROM schools WHERE status != $1', ['inactive']);
       for (const school of schools.rows) {
         await cleanupExpiredFiles(school.id);
+      }
+
+      // Social media: delete media from Supabase for posts that have been
+      // pending_approval for >7 days (admin never reviewed) or already published/deleted
+      const stalePosts = await pool.query(
+        `SELECT id, media_paths FROM social_media_posts
+         WHERE media_deleted = false
+           AND media_paths IS NOT NULL AND array_length(media_paths, 1) > 0
+           AND (
+             (status = 'pending_approval' AND submitted_at < now() - interval '7 days')
+             OR status IN ('published', 'partially_published', 'failed', 'recalled')
+           )`
+      );
+      if (stalePosts.rows.length > 0) {
+        const { deleteFile } = await import('./lib/storage');
+        for (const row of stalePosts.rows) {
+          for (const path of row.media_paths || []) {
+            try { await deleteFile(path); } catch { /* non-fatal */ }
+          }
+          await pool.query(
+            `UPDATE social_media_posts SET media_deleted = true WHERE id = $1`,
+            [row.id]
+          );
+        }
+        console.log(`[social-media cleanup] Freed media for ${stalePosts.rows.length} post(s)`);
       }
     } catch (e) {
       console.error('[cleanup scheduler]', e);
