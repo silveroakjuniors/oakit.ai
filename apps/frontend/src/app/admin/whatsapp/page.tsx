@@ -419,7 +419,7 @@ function TestMessagePanel({ token }: { token: string }) {
   const [isError, setIsError]   = useState(false);
 
   useEffect(() => {
-    apiGet<any[]>('/api/v1/admin/whatsapp/contacts', token).then(d => setContacts(d || [])).catch(() => {});
+    apiGet<any[]>('/api/v1/admin/whatsapp/contacts?role=staff', token).then(d => setContacts(d || [])).catch(() => {});
   }, [token]);
 
   function pickContact(c: any) {
