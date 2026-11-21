@@ -53,6 +53,7 @@ interface Template {
   name: string;
   display_name: string;
   category: string;
+  language: string;
   status: string;
   body_text: string;
   variable_labels: string[];
