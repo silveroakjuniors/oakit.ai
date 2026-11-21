@@ -150,8 +150,25 @@ router.post('/config/test', async (req: Request, res: Response) => {
   }
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
-// DASHBOARD
+// POST /api/v1/admin/whatsapp/config/test-message — send a test message to any number
+router.post('/config/test-message', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { to_phone, message } = req.body;
+
+    if (!to_phone?.trim()) return res.status(400).json({ error: 'to_phone is required (E.164 format, e.g. 919876543210)' });
+
+    const { sendTextMessage, normalisePhone } = await import('../../lib/whatsappSender');
+    const result = await sendTextMessage(school_id, normalisePhone(to_phone), message || 'Hello from Oakit.ai! This is a test message to confirm your WhatsApp Business integration is working correctly. Silver Oak Juniors is now connected via WhatsApp.');
+
+    if (result.success) {
+      return res.json({ success: true, wa_message_id: result.wa_message_id, message: `Test message sent to ${to_phone}` });
+    }
+    return res.status(502).json({ success: false, error: result.error });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Internal server error' });
+  }
+});
 // ══════════════════════════════════════════════════════════════════════════════
 
 router.get('/dashboard', async (req: Request, res: Response) => {
@@ -410,35 +427,68 @@ router.patch('/conversations/:id/status', async (req: Request, res: Response) =>
 // CONTACTS (parent opt-in management)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── Contacts (parent opt-in management)
+// ══════════════════════════════════════════════════════════════════════════════
+
 router.get('/contacts', async (req: Request, res: Response) => {
   try {
     const { school_id } = req.user!;
-    const { opted_in, class_id, section_id } = req.query as Record<string, string>;
+    const { opted_in, class_id, section_id, role } = req.query as Record<string, string>;
 
-    const conditions = ['pu.school_id=$1 AND pu.is_active=true'];
-    const params: any[] = [school_id];
+    // Build parent contacts
+    const parentConditions = ['pu.school_id=$1 AND pu.is_active=true'];
+    const parentParams: any[] = [school_id];
     let idx = 2;
+    if (opted_in === 'true')  parentConditions.push('pu.whatsapp_opt_in=true');
+    if (opted_in === 'false') parentConditions.push('pu.whatsapp_opt_in=false');
+    if (class_id)   { parentConditions.push(`c.id=$${idx++}`);   parentParams.push(class_id); }
+    if (section_id) { parentConditions.push(`sec.id=$${idx++}`); parentParams.push(section_id); }
 
-    if (opted_in === 'true')  { conditions.push(`pu.whatsapp_opt_in=true`); }
-    if (opted_in === 'false') { conditions.push(`pu.whatsapp_opt_in=false`); }
-    if (class_id)   { conditions.push(`c.id=$${idx++}`);   params.push(class_id); }
-    if (section_id) { conditions.push(`sec.id=$${idx++}`); params.push(section_id); }
-
-    const rows = await pool.query(
-      `SELECT DISTINCT pu.id, pu.name, pu.mobile, pu.whatsapp_phone,
+    const parentRows = !role || role === 'parent' ? await pool.query(
+      `SELECT DISTINCT pu.id, pu.name, pu.mobile AS phone, pu.whatsapp_phone,
               pu.whatsapp_opt_in, pu.whatsapp_opt_in_at,
+              'parent' AS contact_role,
               st.name AS student_name, sec.label AS section_label, c.name AS class_name
        FROM parent_users pu
        LEFT JOIN parent_student_links psl ON psl.parent_id = pu.id
        LEFT JOIN students st ON st.id = psl.student_id AND st.is_active=true
        LEFT JOIN sections sec ON sec.id = st.section_id
        LEFT JOIN classes c ON c.id = st.class_id
-       WHERE ${conditions.join(' AND ')}
+       WHERE ${parentConditions.join(' AND ')}
        ORDER BY pu.name`,
-      params,
-    );
-    return res.json(rows.rows);
+      parentParams,
+    ) : { rows: [] };
+
+    // Build staff/teacher contacts (users table)
+    const staffRows = !role || role !== 'parent' ? await pool.query(
+      `SELECT u.id, u.name, u.mobile AS phone, NULL AS whatsapp_phone,
+              true AS whatsapp_opt_in, NULL AS whatsapp_opt_in_at,
+              u.role AS contact_role,
+              NULL AS student_name, NULL AS section_label, NULL AS class_name
+       FROM users u
+       WHERE u.school_id=$1 AND u.is_active=true
+         AND u.role IN ('teacher','principal','admin','staff')
+       ORDER BY u.role, u.name`,
+      [school_id],
+    ) : { rows: [] };
+
+    // Always include Oakit Super Admin as first entry for testing
+    const superAdmin = {
+      id: 'super-admin-oakit',
+      name: 'Oakit Super Admin',
+      phone: '919008166252',
+      whatsapp_phone: '919008166252',
+      whatsapp_opt_in: true,
+      whatsapp_opt_in_at: null,
+      contact_role: 'super_admin',
+      student_name: null,
+      section_label: null,
+      class_name: null,
+    };
+
+    return res.json([superAdmin, ...staffRows.rows, ...parentRows.rows]);
   } catch (err) {
+    console.error('[wa contacts]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -463,7 +513,97 @@ router.patch('/contacts/:parent_id/opt-in', async (req: Request, res: Response) 
 // TEMPLATES
 // ══════════════════════════════════════════════════════════════════════════════
 
-router.get('/templates', async (req: Request, res: Response) => {
+// ── Templates
+// ══════════════════════════════════════════════════════════════════════════════
+
+// POST /api/v1/admin/whatsapp/templates/sync — fetch approved templates from Meta
+router.post('/templates/sync', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const credRow = await pool.query(
+      `SELECT access_token, waba_id FROM whatsapp_configs WHERE school_id=$1 AND verified=true`,
+      [school_id],
+    );
+    if (!credRow.rows[0]?.access_token || !credRow.rows[0]?.waba_id) {
+      return res.status(400).json({ error: 'WhatsApp not configured or not verified' });
+    }
+    const { decryptCredential } = await import('../../lib/credentialEncryption');
+    const token  = decryptCredential(credRow.rows[0].access_token);
+    const wabaId = credRow.rows[0].waba_id;
+
+    // Fetch all templates from Meta Graph API
+    const metaRes = await axios.get(
+      `https://graph.facebook.com/v20.0/${wabaId}/message_templates`,
+      {
+        params: { access_token: token, limit: 100, fields: 'name,status,category,language,components' },
+        timeout: 15000,
+      },
+    );
+
+    const metaTemplates: any[] = metaRes.data?.data || [];
+    let synced = 0; let skipped = 0;
+
+    for (const t of metaTemplates) {
+      // Find body component
+      const bodyComp   = t.components?.find((c: any) => c.type === 'BODY');
+      const headerComp = t.components?.find((c: any) => c.type === 'HEADER');
+      const footerComp = t.components?.find((c: any) => c.type === 'FOOTER');
+      const buttonComp = t.components?.find((c: any) => c.type === 'BUTTONS');
+
+      if (!bodyComp?.text) { skipped++; continue; }
+
+      // Extract variable count from body {{1}}, {{2}}, etc.
+      const varMatches = bodyComp.text.match(/\{\{(\d+)\}\}/g) || [];
+      const variableLabels = varMatches.map((_: string, i: number) => `Variable ${i + 1}`);
+
+      await pool.query(
+        `INSERT INTO whatsapp_templates
+           (school_id, name, display_name, category, language, body_text,
+            header_text, footer_text, button_config, variable_labels,
+            status, meta_template_id, approved_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         ON CONFLICT (school_id, name) DO UPDATE SET
+           status           = EXCLUDED.status,
+           body_text        = EXCLUDED.body_text,
+           header_text      = EXCLUDED.header_text,
+           footer_text      = EXCLUDED.footer_text,
+           button_config    = EXCLUDED.button_config,
+           variable_labels  = EXCLUDED.variable_labels,
+           meta_template_id = EXCLUDED.meta_template_id,
+           approved_at      = CASE WHEN EXCLUDED.status='APPROVED' THEN now() ELSE whatsapp_templates.approved_at END,
+           updated_at       = now()`,
+        [
+          school_id,
+          t.name,
+          t.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()), // display name
+          t.category || 'UTILITY',
+          t.language || 'en',
+          bodyComp.text,
+          headerComp?.text || null,
+          footerComp?.text || null,
+          buttonComp ? JSON.stringify(buttonComp.buttons) : null,
+          variableLabels,
+          t.status?.toLowerCase() === 'approved' ? 'approved' : t.status?.toLowerCase() === 'rejected' ? 'rejected' : 'pending',
+          t.id || t.name,
+          t.status?.toLowerCase() === 'approved' ? new Date() : null,
+        ],
+      );
+      synced++;
+    }
+
+    console.log(`[wa templates sync] school=${school_id} synced=${synced} skipped=${skipped}`);
+    return res.json({
+      synced,
+      skipped,
+      total: metaTemplates.length,
+      message: `Synced ${synced} template(s) from Meta. ${skipped > 0 ? `${skipped} skipped (no body text).` : ''}`,
+    });
+  } catch (err: any) {
+    const msg = err?.response?.data?.error?.message || err?.message || 'Sync failed';
+    console.error('[wa templates sync]', msg);
+    return res.status(500).json({ error: msg });
+  }
+});
   try {
     const { school_id } = req.user!;
     const rows = await pool.query(

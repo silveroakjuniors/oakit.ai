@@ -192,39 +192,51 @@ export default function AdminWhatsAppPage() {
 // SETUP TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig | null; onSaved: () => void }) {
+  const isConnected = !!(config?.has_token && config?.verified);
+  const [editMode, setEditMode]       = useState(!isConnected);
   const [fields, setFields] = useState({
     access_token: '', phone_number_id: '', waba_id: '', business_phone: '',
     display_name: '', meta_app_id: '', meta_app_secret: '', webhook_verify_token: '',
   });
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [msg, setMsg] = useState('');
-  const [testResult, setTestResult] = useState<any>(null);
+  const [saving, setSaving]           = useState(false);
+  const [testing, setTesting]         = useState(false);
+  const [msg, setMsg]                 = useState('');
+  const [msgIsError, setMsgIsError]   = useState(false);
+  const [testResult, setTestResult]   = useState<any>(null);
+  const [testPhone, setTestPhone]     = useState('');
+  const [testMsg, setTestMsg]         = useState(
+    'Hello! This is a test message from Silver Oak Juniors via Oakit.ai.\n\nYour WhatsApp Business integration is working perfectly.\n\nWe will use this channel to keep you updated about your child\'s school activities, attendance, and important announcements.\n\nWelcome aboard! - Team Silver Oak Juniors'
+  );
+  const [sending, setSending]         = useState(false);
+  const [sendResult, setSendResult]   = useState('');
+  const [sendIsError, setSendIsError] = useState(false);
 
   useEffect(() => {
+    setEditMode(!isConnected);
     if (config) {
       setFields(f => ({
         ...f,
-        phone_number_id: config.phone_number_id || '',
-        waba_id: config.waba_id || '',
-        business_phone: config.business_phone || '',
-        display_name: config.display_name || '',
-        meta_app_id: config.meta_app_id || '',
+        phone_number_id:    config.phone_number_id || '',
+        waba_id:            config.waba_id || '',
+        business_phone:     config.business_phone || '',
+        display_name:       config.display_name || '',
+        meta_app_id:        config.meta_app_id || '',
         webhook_verify_token: config.webhook_verify_token || '',
       }));
     }
-  }, [config]);
+  }, [config, isConnected]);
 
   async function save() {
-    setSaving(true); setMsg('');
+    setSaving(true); setMsg(''); setMsgIsError(false);
     try {
       const payload: any = { ...fields };
-      if (!payload.access_token) delete payload.access_token;
+      if (!payload.access_token)    delete payload.access_token;
       if (!payload.meta_app_secret) delete payload.meta_app_secret;
       await apiPut('/api/v1/admin/whatsapp/config', payload, token);
-      setMsg('Configuration saved');
-      onSaved();
-    } catch (e: any) { setMsg(e?.message || 'Save failed'); }
+      setMsg('Configuration saved successfully.');
+      setMsgIsError(false);
+      onSaved(); setEditMode(false);
+    } catch (e: any) { setMsg(e?.message || 'Save failed'); setMsgIsError(true); }
     finally { setSaving(false); }
   }
 
@@ -233,6 +245,7 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
     try {
       const r = await apiPost<any>('/api/v1/admin/whatsapp/config/test', {}, token);
       setTestResult(r);
+      if (r.success) onSaved();
     } catch (e: any) { setTestResult({ success: false, error: e?.message }); }
     finally { setTesting(false); }
   }
@@ -241,80 +254,255 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
     if (!confirm('Disconnect WhatsApp? Teachers will not be able to send messages until reconnected.')) return;
     try {
       await fetch(`${getApiBase()}/api/v1/admin/whatsapp/config`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      setMsg('Disconnected'); onSaved();
-    } catch (e: any) { setMsg(e?.message || 'Failed'); }
+      setMsg('Disconnected'); setMsgIsError(false); onSaved(); setEditMode(true);
+    } catch (e: any) { setMsg(e?.message || 'Failed'); setMsgIsError(true); }
+  }
+
+  async function sendTestMessage() {
+    if (!testPhone.trim()) { setSendResult('Enter a phone number first'); setSendIsError(true); return; }
+    setSending(true); setSendResult(''); setSendIsError(false);
+    try {
+      const r = await apiPost<any>('/api/v1/admin/whatsapp/config/test-message', { to_phone: testPhone.trim(), message: testMsg.trim() }, token);
+      if (r.success) { setSendResult('Message sent successfully. Check the WhatsApp app on that number.'); setSendIsError(false); }
+      else { setSendResult(r.error || 'Send failed'); setSendIsError(true); }
+    } catch (e: any) { setSendResult(e?.message || 'Send failed'); setSendIsError(true); }
+    finally { setSending(false); }
   }
 
   const FIELDS = [
-    { key: 'access_token',         label: 'Access Token (Permanent)',         placeholder: config?.has_token ? 'Leave blank to keep existing' : 'EAAxxxxxxxx...', type: 'password' },
-    { key: 'phone_number_id',      label: 'Phone Number ID',                  placeholder: '123456789012345' },
-    { key: 'waba_id',              label: 'WhatsApp Business Account ID',     placeholder: '123456789012345' },
-    { key: 'business_phone',       label: 'Business Phone (E.164)',           placeholder: '+919876543210' },
-    { key: 'display_name',         label: 'Business Display Name',           placeholder: 'Silver Oak Juniors' },
-    { key: 'meta_app_id',          label: 'Meta App ID',                      placeholder: '1031468xxxxxxx' },
-    { key: 'meta_app_secret',      label: 'Meta App Secret',                  placeholder: config?.has_token ? 'Leave blank to keep existing' : 'xxxxxxxxxxxxxxxxxx', type: 'password' },
+    { key: 'access_token',         label: 'Access Token (Permanent)',          placeholder: config?.has_token ? 'Leave blank to keep existing' : 'EAAxxxxxxxx...', type: 'password' },
+    { key: 'phone_number_id',      label: 'Phone Number ID',                   placeholder: '123456789012345' },
+    { key: 'waba_id',              label: 'WhatsApp Business Account ID',      placeholder: '123456789012345' },
+    { key: 'business_phone',       label: 'Business Phone (E.164)',            placeholder: '+919876543210' },
+    { key: 'display_name',         label: 'Business Display Name',            placeholder: 'Silver Oak Juniors' },
+    { key: 'meta_app_id',          label: 'Meta App ID',                       placeholder: '1031468xxxxxxx' },
+    { key: 'meta_app_secret',      label: 'Meta App Secret',                   placeholder: config?.has_token ? 'Leave blank to keep existing' : 'xxxxxxxxxxxxxxxxxx', type: 'password' },
     { key: 'webhook_verify_token', label: 'Webhook Verify Token (any string)', placeholder: 'oakit-wa-webhook-2024' },
   ];
 
   return (
     <div className="max-w-xl space-y-5">
-      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800">
-        <p className="font-semibold mb-2">Setup instructions</p>
-        <ol className="list-decimal pl-5 space-y-1 text-xs text-blue-700">
-          <li>Go to <a href="https://business.facebook.com" target="_blank" className="underline">business.facebook.com</a> and create a Meta Business Account.</li>
-          <li>Add a WhatsApp Business Account (WABA) and verify your business phone number.</li>
-          <li>In Meta Developer Console, create an app and add the WhatsApp product.</li>
-          <li>Generate a permanent access token (System User with WhatsApp Business Management permission).</li>
-          <li>Copy the Phone Number ID and WABA ID from the WhatsApp configuration panel.</li>
-          <li>Set Webhook URL to: <code className="bg-blue-100 px-1 rounded">https://oakit.silveroakjuniors.in/api/v1/whatsapp/webhook</code></li>
-          <li>Use your Webhook Verify Token (any string you choose above) in the Meta webhook registration.</li>
-          <li>Subscribe to: <code className="bg-blue-100 px-1 rounded">messages</code> webhook field.</li>
-        </ol>
-      </div>
 
-      <div className="bg-white border border-neutral-200 rounded-2xl p-5 space-y-3">
-        {FIELDS.map(f => (
-          <div key={f.key}>
-            <label className="text-xs font-semibold text-neutral-600 mb-1 block">{f.label}</label>
-            <input
-              type={(f as any).type || 'text'}
-              placeholder={f.placeholder}
-              value={(fields as any)[f.key]}
-              onChange={e => setFields(p => ({ ...p, [f.key]: e.target.value }))}
-              className="w-full px-3 py-2 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
+      {/* Connected banner */}
+      {isConnected && !editMode && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-4">
+          <div className="w-11 h-11 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-6 h-6 text-green-600"/>
           </div>
-        ))}
+          <div className="flex-1">
+            <p className="text-sm font-bold text-green-800">WhatsApp Business Connected</p>
+            <p className="text-xs text-green-600 mt-0.5">{config?.display_name || 'SilverOakJuniors'} &nbsp;&middot;&nbsp; {config?.business_phone || config?.phone_number_id}</p>
+          </div>
+          <button onClick={() => setEditMode(true)}
+            className="px-3 py-1.5 rounded-xl border border-green-300 text-green-700 text-xs font-semibold hover:bg-green-100 flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            Edit Config
+          </button>
+        </div>
+      )}
 
-        <div className="flex flex-wrap gap-2 pt-2">
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : null} Save & Connect
-          </button>
-          <button onClick={test} disabled={testing}
-            className="px-4 py-2 rounded-xl border border-neutral-300 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50 flex items-center gap-2">
-            {testing ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>} Test Connection
-          </button>
-          {config?.has_token && (
-            <button onClick={disconnect}
-              className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50">
-              Disconnect
+      {/* Edit disclaimer */}
+      {isConnected && editMode && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5"/>
+          <div>
+            <p className="text-xs font-bold text-amber-800">Editing live configuration</p>
+            <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+              Changing these credentials will immediately affect WhatsApp messaging for the entire school. Wrong values will stop all WhatsApp communication until corrected. Only change what is necessary.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Setup instructions — only for new setup */}
+      {!isConnected && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800">
+          <p className="font-semibold mb-2">Setup instructions</p>
+          <ol className="list-decimal pl-5 space-y-1 text-xs text-blue-700">
+            <li>Go to <a href="https://business.facebook.com" target="_blank" className="underline font-medium">business.facebook.com</a> and create a Meta Business Account.</li>
+            <li>Add a WhatsApp Business Account (WABA) and verify your business phone number.</li>
+            <li>In Meta Developer Console, create an app and add the WhatsApp product.</li>
+            <li>Generate a permanent access token (System User with WhatsApp Business Management permission).</li>
+            <li>Copy the Phone Number ID and WABA ID from the WhatsApp configuration panel.</li>
+            <li>Set Webhook URL to: <code className="bg-blue-100 px-1 rounded text-blue-900">https://oakit.silveroakjuniors.in/api/v1/whatsapp/webhook</code></li>
+            <li>Use your Webhook Verify Token when registering the webhook in Meta.</li>
+            <li>Subscribe to: <code className="bg-blue-100 px-1 rounded text-blue-900">messages</code> webhook field.</li>
+          </ol>
+        </div>
+      )}
+
+      {/* Credential fields — shown when editing or not connected */}
+      {(editMode || !isConnected) && (
+        <div className="bg-white border border-neutral-200 rounded-2xl p-5 space-y-3">
+          <p className="text-sm font-bold text-neutral-800 mb-1">{isConnected ? 'Update Credentials' : 'Connect WhatsApp Business'}</p>
+          {FIELDS.map(f => (
+            <div key={f.key}>
+              <label className="text-xs font-semibold text-neutral-600 mb-1 block">{f.label}</label>
+              <input type={(f as any).type || 'text'} placeholder={f.placeholder}
+                value={(fields as any)[f.key]} onChange={e => setFields(p => ({ ...p, [f.key]: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"/>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2 pt-2">
+            <button onClick={save} disabled={saving}
+              className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : null}{saving ? 'Saving...' : 'Save & Connect'}
             </button>
+            <button onClick={test} disabled={testing}
+              className="px-4 py-2 rounded-xl border border-neutral-300 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50 flex items-center gap-2">
+              {testing ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>}{testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            {isConnected && <button onClick={() => setEditMode(false)} className="px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 text-sm font-semibold hover:bg-neutral-50">Cancel</button>}
+            {isConnected && <button onClick={disconnect} className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50">Disconnect</button>}
+          </div>
+          {msg && <p className={`text-sm font-medium px-3 py-2 rounded-xl ${msgIsError ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>{msg}</p>}
+          {testResult && (
+            <div className={`text-sm px-4 py-2.5 rounded-xl border ${testResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              {testResult.success ? `Connected — ${testResult.display_phone_number || testResult.verified_name} · Quality: ${testResult.quality_rating || 'N/A'}` : testResult.error}
+            </div>
           )}
         </div>
+      )}
 
-        {msg && (
-          <p className={`text-sm font-medium ${msg.includes('failed') || msg.includes('Failed') ? 'text-red-500' : 'text-emerald-600'}`}>{msg}</p>
-        )}
-
-        {testResult && (
-          <div className={`text-sm px-4 py-2.5 rounded-xl border ${testResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-            {testResult.success
-              ? `Connected — ${testResult.display_phone_number || testResult.verified_name} (${testResult.quality_rating || 'unknown'} quality)`
-              : testResult.error}
+      {/* Blurred config summary when connected and not editing */}
+      {isConnected && !editMode && (
+        <div className="bg-white border border-neutral-200 rounded-2xl p-5 relative overflow-hidden">
+          <div className="absolute inset-0 backdrop-blur-[3px] bg-white/50 z-10 flex flex-col items-center justify-center gap-2">
+            <svg className="w-8 h-8 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+            <p className="text-xs font-semibold text-neutral-500">Credentials hidden for security</p>
+            <button onClick={() => setEditMode(true)} className="text-xs text-primary underline font-medium">Click Edit Config to view or change</button>
           </div>
-        )}
+          <div className="space-y-2 select-none pointer-events-none">
+            {FIELDS.map(f => (
+              <div key={f.key} className="flex items-center justify-between py-1">
+                <span className="text-xs text-neutral-400 font-medium">{f.label}</span>
+                <span className="text-xs text-neutral-200 font-mono tracking-widest">{'•'.repeat(14)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Test Message Panel — only when connected */}
+      {isConnected && (
+        <div className="rounded-2xl overflow-hidden border border-green-200 shadow-sm">
+          <div className="bg-gradient-to-r from-green-600 to-emerald-500 px-5 py-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white">Send Test Message</p>
+              <p className="text-xs text-white/80">Verify your integration end-to-end by sending a real message</p>
+            </div>
+          </div>
+          <div className="bg-white p-5 space-y-3">
+            <TestMessagePanel token={token} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEST MESSAGE PANEL (standalone reusable component)
+// ═══════════════════════════════════════════════════════════════════════════════
+function TestMessagePanel({ token }: { token: string }) {
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [phone, setPhone]       = useState('919008166252');
+  const [selectedName, setSelectedName] = useState('Oakit Super Admin');
+  const [msg, setMsg]           = useState(
+    'Hello! Greetings from Silver Oak Juniors.\n\nThis is a test message from our new WhatsApp Business channel powered by Oakit.ai.\n\nWe will be using this channel to send you:\n- Daily attendance updates\n- Homework notifications\n- School announcements\n- Fee reminders\n- And much more!\n\nThank you for being part of the Silver Oak Juniors family.\n\n- Team Silver Oak Juniors'
+  );
+  const [sending, setSending]   = useState(false);
+  const [result, setResult]     = useState('');
+  const [isError, setIsError]   = useState(false);
+
+  useEffect(() => {
+    apiGet<any[]>('/api/v1/admin/whatsapp/contacts', token).then(d => setContacts(d || [])).catch(() => {});
+  }, [token]);
+
+  function pickContact(c: any) {
+    const p = c.whatsapp_phone || c.phone || c.mobile || '';
+    setPhone(p.replace(/[^0-9]/g, ''));
+    setSelectedName(c.name);
+  }
+
+  async function send() {
+    if (!phone.trim()) { setResult('Enter a phone number'); setIsError(true); return; }
+    setSending(true); setResult(''); setIsError(false);
+    try {
+      const r = await apiPost<any>('/api/v1/admin/whatsapp/config/test-message', { to_phone: phone.trim(), message: msg.trim() }, token);
+      if (r.success) { setResult('Message sent to ' + (selectedName || phone) + '. Check the WhatsApp app.'); setIsError(false); }
+      else { setResult(r.error || 'Send failed'); setIsError(true); }
+    } catch (e: any) { setResult(e?.message || 'Send failed'); setIsError(true); }
+    finally { setSending(false); }
+  }
+
+  const roleLabel = (r: string) =>
+    r === 'super_admin' ? 'Oakit' : r === 'principal' ? 'Principal' : r === 'teacher' ? 'Teacher' : r === 'admin' ? 'Admin' : r === 'staff' ? 'Staff' : 'Parent';
+
+  const roleColor = (r: string) =>
+    r === 'super_admin' ? 'bg-purple-100 text-purple-700' : r === 'principal' ? 'bg-blue-100 text-blue-700' : r === 'teacher' ? 'bg-emerald-100 text-emerald-700' : r === 'admin' ? 'bg-primary/10 text-primary' : 'bg-neutral-100 text-neutral-500';
+
+  return (
+    <div className="space-y-3">
+      {/* Quick pick from staff list */}
+      {contacts.length > 0 && (
+        <div>
+          <label className="text-xs font-bold text-neutral-700 mb-2 block">Quick Pick — Staff, Teachers, Principal</label>
+          <div className="max-h-36 overflow-y-auto flex flex-col gap-1 border border-green-100 rounded-xl p-2 bg-green-50/30">
+            {contacts.slice(0, 30).map((c, i) => {
+              const p = (c.whatsapp_phone || c.phone || c.mobile || '').replace(/[^0-9]/g, '');
+              const isSelected = p === phone;
+              return (
+                <button key={i} onClick={() => pickContact(c)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-left transition-colors text-xs ${isSelected ? 'bg-green-100 border border-green-300' : 'hover:bg-green-100/60'}`}>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${roleColor(c.contact_role)}`}>{roleLabel(c.contact_role)}</span>
+                  <span className="font-semibold text-neutral-800 truncate">{c.name}</span>
+                  <span className="text-neutral-400 ml-auto shrink-0">{p}</span>
+                  {isSelected && <CheckCircle2 className="w-3 h-3 text-green-600 shrink-0"/>}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-neutral-400 mt-1">Scroll to see all. Click to select.</p>
+        </div>
+      )}
+
+      {/* Manual phone input */}
+      <div>
+        <label className="text-xs font-bold text-neutral-700 mb-1 block">
+          Recipient Phone <span className="font-normal text-neutral-400">(digits only, with country code)</span>
+        </label>
+        <div className="flex gap-2">
+          <input type="tel" value={phone} onChange={e => { setPhone(e.target.value.replace(/[^0-9]/g, '')); setSelectedName(''); }}
+            placeholder="919876543210"
+            className="flex-1 px-3 py-2.5 rounded-xl border border-green-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400/30"/>
+          {selectedName && <span className="flex items-center px-2 text-xs text-green-700 bg-green-100 rounded-xl font-medium whitespace-nowrap">{selectedName}</span>}
+        </div>
       </div>
+
+      {/* Message */}
+      <div>
+        <label className="text-xs font-bold text-neutral-700 mb-1 block">Message</label>
+        <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={6}
+          className="w-full px-3 py-2.5 rounded-xl border border-green-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-400/30 leading-relaxed"/>
+        <p className="text-[10px] text-neutral-400 mt-1">{msg.length} characters</p>
+      </div>
+
+      <button onClick={send} disabled={sending || !phone.trim()}
+        className="w-full py-3 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm">
+        {sending ? <Loader2 className="w-4 h-4 animate-spin"/> : <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>}
+        {sending ? 'Sending...' : 'Send Test Message'}
+      </button>
+
+      {result && (
+        <div className={`flex items-start gap-2.5 px-4 py-3 rounded-xl text-sm font-medium ${isError ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+          {isError ? <AlertCircle className="w-4 h-4 shrink-0 mt-0.5"/> : <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5"/>}
+          {result}
+        </div>
+      )}
     </div>
   );
 }
@@ -747,6 +935,7 @@ function TemplatesTab({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ name: '', display_name: '', category: 'UTILITY', body_text: '', language: 'en' });
   const [creating, setCreating] = useState(false);
+  const [syncing, setSyncing]   = useState(false);
   const [msg, setMsg] = useState('');
 
   function load() {
@@ -755,6 +944,16 @@ function TemplatesTab({ token }: { token: string }) {
       .then(d => setTemplates(d || [])).catch(() => {}).finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+
+  async function sync() {
+    setSyncing(true); setMsg('');
+    try {
+      const r = await apiPost<any>('/api/v1/admin/whatsapp/templates/sync', {}, token);
+      setMsg(r.message || `Synced ${r.synced} template(s) from Meta`);
+      load();
+    } catch (e: any) { setMsg(e?.message || 'Sync failed'); }
+    finally { setSyncing(false); }
+  }
 
   async function create() {
     setCreating(true); setMsg('');
@@ -783,6 +982,17 @@ function TemplatesTab({ token }: { token: string }) {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
         Templates must be approved by Meta before use. Create them here, then register and submit them for approval in your Meta Business Manager. Use <code>{'{{1}}'}</code>, <code>{'{{2}}'}</code> for dynamic variables.
       </div>
+
+      {/* Sync from Meta button */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-bold text-neutral-800">{templates.length} template(s)</p>
+        <button onClick={sync} disabled={syncing}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary/90 disabled:opacity-50">
+          {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <RefreshCw className="w-3.5 h-3.5"/>}
+          {syncing ? 'Syncing from Meta...' : 'Sync from Meta'}
+        </button>
+      </div>
+      {msg && <p className="text-xs text-emerald-600 font-medium bg-emerald-50 px-3 py-2 rounded-xl">{msg}</p>}
 
       <div className="bg-white border border-neutral-200 rounded-2xl p-5 space-y-3">
         <p className="text-sm font-bold text-neutral-800">New Template</p>
