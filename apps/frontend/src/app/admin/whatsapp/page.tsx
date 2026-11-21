@@ -291,12 +291,10 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
             className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
             {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : null} Save & Connect
           </button>
-          {config?.has_token && (
-            <button onClick={test} disabled={testing}
-              className="px-4 py-2 rounded-xl border border-neutral-300 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50 flex items-center gap-2">
-              {testing ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>} Test Connection
-            </button>
-          )}
+          <button onClick={test} disabled={testing}
+            className="px-4 py-2 rounded-xl border border-neutral-300 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50 flex items-center gap-2">
+            {testing ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>} Test Connection
+          </button>
           {config?.has_token && (
             <button onClick={disconnect}
               className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50">
