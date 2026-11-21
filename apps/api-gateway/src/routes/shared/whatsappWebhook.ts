@@ -459,7 +459,7 @@ async function downloadAndStoreMedia(
     writeFileSync(tmpPath, fileBuffer);
 
     // 4. Upload to Google Drive
-    const { uploadToGoogleDrive } = await import('../storage');
+    const { uploadToGoogleDrive } = await import('../../lib/storage');
     const driveResult = await uploadToGoogleDrive({
       schoolId,
       localPath: tmpPath,
