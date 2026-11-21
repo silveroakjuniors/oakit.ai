@@ -94,6 +94,8 @@ import adminHolisticTemplateRouter from './routes/admin/holisticReportTemplate';
 import parentHolisticReportRouter from './routes/parent/holisticReport';
 import adminSocialMediaRouter from './routes/admin/socialMedia';
 import adminDriveCleanupRouter from './routes/admin/driveCleanup';
+import adminWhatsAppRouter from './routes/admin/whatsapp';
+import whatsappWebhookRouter from './routes/shared/whatsappWebhook';
 import teacherSocialMediaRouter from './routes/teacher/socialMedia';
 import studentFeedRouter from './routes/student/feed';
 import studentQuizRouter from './routes/student/quiz';
@@ -412,6 +414,11 @@ app.use('/api/v1/parent/holistic-report', parentHolisticReportRouter);
 // Social Media Publisher module
 app.use('/api/v1/admin/social-media', adminSocialMediaRouter);
 app.use('/api/v1/admin/drive-cleanup', adminDriveCleanupRouter);
+
+// WhatsApp Business module
+app.use('/api/v1/admin/whatsapp', adminWhatsAppRouter);
+// Webhook — no auth (external Meta callback)
+app.use('/api/v1/whatsapp/webhook', whatsappWebhookRouter);
 app.use('/api/v1/teacher/social-media', teacherSocialMediaRouter);
 
 // Student Portal
