@@ -451,13 +451,15 @@ router.get('/contacts', async (req: Request, res: Response) => {
     const staffRows = !role || role !== 'parent'
       ? await pool.query(
           `SELECT u.id, u.name, u.mobile AS phone, NULL AS whatsapp_phone,
-                  true AS whatsapp_opt_in, NULL AS whatsapp_opt_in_at,
-                  u.role AS contact_role,
+                  COALESCE(u.whatsapp_opt_in, false) AS whatsapp_opt_in,
+                  u.whatsapp_opt_in_at,
+                  r.name AS contact_role,
                   NULL AS student_name, NULL AS section_label, NULL AS class_name
            FROM users u
+           JOIN roles r ON r.id = u.role_id
            WHERE u.school_id=$1 AND u.is_active=true
-             AND u.role IN ('teacher','principal','admin','staff')
-           ORDER BY u.role, u.name`,
+             AND r.name IN ('teacher','principal','admin','staff')
+           ORDER BY r.name, u.name`,
           [school_id],
         )
       : { rows: [] };
@@ -1036,18 +1038,19 @@ router.get('/optin-report', async (req: Request, res: Response) => {
     // ── Staff/teacher opt-in by role ──────────────────────────────────────────
     const staffByRole = await pool.query(
       `SELECT
-         u.role,
+         r.name AS role,
          COUNT(*)::int                                        AS total_staff,
          COUNT(*) FILTER (WHERE u.whatsapp_opt_in=true)::int  AS opted_in,
-         COUNT(*) FILTER (WHERE u.whatsapp_opt_in=false)::int AS not_opted_in,
+         COUNT(*) FILTER (WHERE u.whatsapp_opt_in=false OR u.whatsapp_opt_in IS NULL)::int AS not_opted_in,
          ROUND(
            COUNT(*) FILTER (WHERE u.whatsapp_opt_in=true) * 100.0
            / NULLIF(COUNT(*), 0), 1
          ) AS opt_in_pct
        FROM users u
+       JOIN roles r ON r.id = u.role_id
        WHERE u.school_id=$1 AND u.is_active=true
-         AND u.role IN ('teacher','principal','admin','staff')
-       GROUP BY u.role ORDER BY u.role`,
+         AND r.name IN ('teacher','principal','admin','staff')
+       GROUP BY r.name ORDER BY r.name`,
       [school_id],
     );
 
@@ -1066,12 +1069,13 @@ router.get('/optin-report', async (req: Request, res: Response) => {
     );
 
     const staffNotIn = await pool.query(
-      `SELECT u.id, u.name, u.mobile, u.whatsapp_opt_in, u.role
+      `SELECT u.id, u.name, u.mobile, u.whatsapp_opt_in, r.name AS role
        FROM users u
+       JOIN roles r ON r.id = u.role_id
        WHERE u.school_id=$1 AND u.is_active=true
-         AND u.role IN ('teacher','principal','admin','staff')
-         AND u.whatsapp_opt_in=false
-       ORDER BY u.role, u.name`,
+         AND r.name IN ('teacher','principal','admin','staff')
+         AND (u.whatsapp_opt_in=false OR u.whatsapp_opt_in IS NULL)
+       ORDER BY r.name, u.name`,
       [school_id],
     );
 
@@ -1108,18 +1112,25 @@ router.post('/optin-report/send-staff-reminder', async (req: Request, res: Respo
     const targetParams: any[] = [school_id];
 
     if (user_ids?.length) {
-      targetQuery = `SELECT id, name, mobile, whatsapp_phone FROM users
-                     WHERE school_id=$1 AND is_active=true AND whatsapp_opt_in=false
-                       AND id=ANY($2::uuid[])`;
+      targetQuery = `SELECT u.id, u.name, u.mobile, u.whatsapp_phone FROM users u
+                     JOIN roles r ON r.id = u.role_id
+                     WHERE u.school_id=$1 AND u.is_active=true
+                       AND (u.whatsapp_opt_in=false OR u.whatsapp_opt_in IS NULL)
+                       AND u.id=ANY($2::uuid[])`;
       targetParams.push(user_ids);
     } else if (role) {
-      targetQuery = `SELECT id, name, mobile, whatsapp_phone FROM users
-                     WHERE school_id=$1 AND is_active=true AND whatsapp_opt_in=false AND role=$2`;
+      targetQuery = `SELECT u.id, u.name, u.mobile, u.whatsapp_phone FROM users u
+                     JOIN roles r ON r.id = u.role_id
+                     WHERE u.school_id=$1 AND u.is_active=true
+                       AND (u.whatsapp_opt_in=false OR u.whatsapp_opt_in IS NULL)
+                       AND r.name=$2`;
       targetParams.push(role);
     } else {
-      targetQuery = `SELECT id, name, mobile, whatsapp_phone FROM users
-                     WHERE school_id=$1 AND is_active=true AND whatsapp_opt_in=false
-                       AND role IN ('teacher','principal','admin','staff')`;
+      targetQuery = `SELECT u.id, u.name, u.mobile, u.whatsapp_phone FROM users u
+                     JOIN roles r ON r.id = u.role_id
+                     WHERE u.school_id=$1 AND u.is_active=true
+                       AND (u.whatsapp_opt_in=false OR u.whatsapp_opt_in IS NULL)
+                       AND r.name IN ('teacher','principal','admin','staff')`;
     }
 
     const staff = (await pool.query(targetQuery, targetParams)).rows;
