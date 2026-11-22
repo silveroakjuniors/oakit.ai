@@ -21,7 +21,7 @@ interface Instalment {
 
 interface FeeHead {
   name: string;
-  type: 'admission' | 'tuition' | 'transport' | 'activity' | 'custom';
+  type: 'admission' | 'tuition' | 'transport' | 'activity' | 'custom' | 'daycare' | 'bags_and_books';
   billing_basis: 'per_hour' | 'per_day' | 'per_week' | 'per_month_flat' | 'per_year' | 'per_term';
   pricing_model: 'fixed' | 'instalment';
   amount: string;
@@ -38,11 +38,13 @@ interface FeeWizardProps {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FEE_HEAD_TYPES: { value: string; label: string }[] = [
-  { value: 'admission', label: 'Admission' },
-  { value: 'tuition', label: 'Tuition' },
-  { value: 'transport', label: 'Transport' },
-  { value: 'activity', label: 'Activity' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'admission',      label: 'Admission' },
+  { value: 'tuition',        label: 'Tuition' },
+  { value: 'transport',      label: 'Transport' },
+  { value: 'activity',       label: 'Activity' },
+  { value: 'daycare',        label: 'Daycare' },
+  { value: 'bags_and_books', label: 'Bags & Books' },
+  { value: 'custom',         label: 'Custom' },
 ];
 
 const BILLING_BASIS_OPTIONS: { value: string; label: string }[] = [
