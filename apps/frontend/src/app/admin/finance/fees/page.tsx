@@ -117,8 +117,8 @@ export default function FeesPage() {
 
   const [selectedAccount, setSelectedAccount] = useState<FeeAccount | null>(null);
   const [amount, setAmount] = useState('');
-  const [paymentMode, setPaymentMode] = useState('cash');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentDate, setPaymentDate] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState('');
@@ -198,10 +198,7 @@ export default function FeesPage() {
       const firstPending = data.accounts.find(a => a.status !== 'paid');
       if (firstPending) {
         setSelectedAccount(firstPending);
-        const suggested = firstPending.next_instalment
-          ? firstPending.next_instalment.amount
-          : firstPending.outstanding_balance;
-        setAmount(String(suggested));
+        setAmount('');
       }
     } catch { setInvoice(null); }
     finally { setInvoiceLoading(false); }
@@ -221,10 +218,15 @@ export default function FeesPage() {
 
   function selectAccount(acc: FeeAccount) {
     setSelectedAccount(acc);
+    setAmount('');
+    setPaymentMode('');
+    setPaymentDate('');
+    setReferenceNumber('');
+    setDupInfo(null);
+    setDupOverride(false);
+    setDupOverrideComment('');
     setPayError('');
     setPayResult(null);
-    const suggested = acc.next_instalment ? acc.next_instalment.amount : acc.outstanding_balance;
-    setAmount(String(suggested));
   }
 
   async function handleScreenshotUpload(file: File) {
@@ -285,7 +287,7 @@ export default function FeesPage() {
     }
   }
 
-  const canSubmit = amtNum > 0 && selectedAccount && selectedAccount.status !== 'paid'
+  const canSubmit = amtNum > 0 && !!paymentMode && !!paymentDate && selectedAccount && selectedAccount.status !== 'paid'
     && (!needsRef || referenceNumber.trim())
     && (!dupInfo || (dupOverride && dupOverrideComment.trim()))
     && !dupChecking;
@@ -318,6 +320,8 @@ export default function FeesPage() {
       );
       setPayResult(result);
       setAmount('');
+      setPaymentMode('');
+      setPaymentDate('');
       setReferenceNumber('');
       setScreenshotFile(null);
       setScreenshotUrl('');
@@ -544,6 +548,7 @@ export default function FeesPage() {
                       <label className="block text-xs font-medium text-gray-600 mb-1">Payment Mode</label>
                       <select className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                         value={paymentMode} onChange={e => { setPaymentMode(e.target.value); setReferenceNumber(''); setDupInfo(null); setDupOverride(false); }}>
+                        <option value="" disabled>Select mode</option>
                         <option value="cash">Cash</option>
                         <option value="upi">UPI</option>
                         <option value="online">Online</option>
