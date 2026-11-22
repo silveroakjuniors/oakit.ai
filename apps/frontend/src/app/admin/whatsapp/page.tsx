@@ -80,7 +80,7 @@ interface DashboardData {
   daily: { date: string; sent: number; received: number }[];
 }
 
-type Tab = 'setup' | 'dashboard' | 'inbox' | 'contacts' | 'campaigns' | 'templates' | 'automations';
+type Tab = 'setup' | 'dashboard' | 'inbox' | 'contacts' | 'campaigns' | 'templates' | 'automations' | 'optin';
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
@@ -128,6 +128,7 @@ export default function AdminWhatsAppPage() {
     { id: 'campaigns',   label: 'Campaigns',   Icon: Megaphone },
     { id: 'templates',   label: 'Templates',   Icon: FileText },
     { id: 'automations', label: 'Automations', Icon: Zap },
+    { id: 'optin',       label: 'Opt-In Report', Icon: CheckCircle2 },
   ];
 
   if (loading) return (
@@ -184,7 +185,7 @@ export default function AdminWhatsAppPage() {
       {tab === 'campaigns'   && <CampaignsTab token={token} />}
       {tab === 'templates'   && <TemplatesTab token={token} />}
       {tab === 'automations' && <AutomationsTab token={token} />}
-    </div>
+      {tab === 'optin'       && <OptInReportTab token={token} />}    </div>
   );
 }
 
@@ -508,7 +509,170 @@ function TestMessagePanel({ token }: { token: string }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DASHBOARD TAB
+// OPT-IN REPORT TAB
+// ═══════════════════════════════════════════════════════════════════════════════
+function OptInReportTab({ token }: { token: string }) {
+  const [data, setData]           = useState<{ by_class: any[]; not_opted_in: any[] } | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [sending, setSending]     = useState<string | null>(null); // class_id or 'all'
+  const [sendResult, setSendResult] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
+
+  function load() {
+    setLoading(true);
+    const params = selectedClass ? `?class_id=${selectedClass}` : '';
+    apiGet<{ by_class: any[]; not_opted_in: any[] }>(
+      `/api/v1/admin/whatsapp/optin-report${params}`, token,
+    ).then(d => setData(d || null)).catch(() => {}).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { load(); }, [selectedClass]);
+
+  async function sendReminder(classId?: string, parentIds?: string[]) {
+    const key = classId || 'all';
+    setSending(key); setSendResult('');
+    try {
+      const r = await apiPost<any>('/api/v1/admin/whatsapp/optin-report/send-reminder', {
+        ...(classId   ? { class_id: classId }     : {}),
+        ...(parentIds ? { parent_ids: parentIds }  : {}),
+      }, token);
+      setSendResult(r.message);
+      load();
+    } catch (e: any) { setSendResult(e?.message || 'Send failed'); }
+    finally { setSending(null); }
+  }
+
+  const totalParents  = data?.by_class.reduce((s, c) => s + c.total_parents, 0) || 0;
+  const totalOptedIn  = data?.by_class.reduce((s, c) => s + c.opted_in, 0) || 0;
+  const totalNotIn    = data?.by_class.reduce((s, c) => s + c.not_opted_in, 0) || 0;
+  const overallPct    = totalParents > 0 ? Math.round(totalOptedIn / totalParents * 100) : 0;
+
+  return (
+    <div className="max-w-2xl space-y-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white border border-neutral-200 rounded-2xl p-4 text-center">
+          <div className="text-2xl font-bold text-neutral-800">{totalParents}</div>
+          <div className="text-xs text-neutral-500 font-semibold mt-0.5">Total Parents</div>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
+          <div className="text-2xl font-bold text-green-700">{totalOptedIn}</div>
+          <div className="text-xs text-green-600 font-semibold mt-0.5">Opted In ({overallPct}%)</div>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-center">
+          <div className="text-2xl font-bold text-red-600">{totalNotIn}</div>
+          <div className="text-xs text-red-500 font-semibold mt-0.5">Not Opted In</div>
+        </div>
+      </div>
+
+      {/* Overall progress bar */}
+      <div>
+        <div className="flex justify-between text-xs text-neutral-500 mb-1">
+          <span>Overall opt-in rate</span>
+          <span className={overallPct >= 75 ? 'text-green-600 font-bold' : 'text-amber-600 font-bold'}>{overallPct}%</span>
+        </div>
+        <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${overallPct >= 75 ? 'bg-green-500' : overallPct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+            style={{ width: `${overallPct}%` }} />
+        </div>
+      </div>
+
+      {/* Send reminder to ALL not opted-in */}
+      {totalNotIn > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-amber-800">{totalNotIn} parent(s) have not opted in</p>
+            <p className="text-xs text-amber-600 mt-0.5">Send a WhatsApp reminder to all of them at once</p>
+          </div>
+          <button onClick={() => sendReminder()} disabled={sending === 'all'}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50 shrink-0">
+            {sending === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Send className="w-3.5 h-3.5"/>}
+            {sending === 'all' ? 'Sending...' : 'Send All Reminders'}
+          </button>
+        </div>
+      )}
+
+      {sendResult && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm text-emerald-700 font-medium">
+          <CheckCircle2 className="w-4 h-4 shrink-0"/> {sendResult}
+        </div>
+      )}
+
+      {/* Class filter */}
+      {data?.by_class && data.by_class.length > 1 && (
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setSelectedClass('')}
+            className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${!selectedClass ? 'bg-primary text-white border-primary' : 'bg-white text-neutral-600 border-neutral-200'}`}>
+            All Classes
+          </button>
+          {data.by_class.map(c => (
+            <button key={c.class_id} onClick={() => setSelectedClass(c.class_id)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${selectedClass === c.class_id ? 'bg-primary text-white border-primary' : 'bg-white text-neutral-600 border-neutral-200'}`}>
+              {c.class_name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Class-wise breakdown */}
+      {loading ? <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary"/></div>
+      : data?.by_class.map(c => (
+        <div key={c.class_id} className="bg-white border border-neutral-200 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-sm font-bold text-neutral-800">{c.class_name}</p>
+              <p className="text-xs text-neutral-500">{c.opted_in}/{c.total_parents} opted in &nbsp;&middot;&nbsp;
+                <span className={c.not_opted_in > 0 ? 'text-red-500 font-semibold' : 'text-green-600 font-semibold'}>
+                  {c.not_opted_in} not opted in
+                </span>
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-bold ${Number(c.opt_in_pct) >= 75 ? 'text-green-600' : 'text-amber-600'}`}>
+                {c.opt_in_pct}%
+              </span>
+              {c.not_opted_in > 0 && (
+                <button onClick={() => sendReminder(c.class_id)} disabled={sending === c.class_id}
+                  className="text-xs px-2.5 py-1.5 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50 flex items-center gap-1">
+                  {sending === c.class_id ? <Loader2 className="w-3 h-3 animate-spin"/> : <Send className="w-3 h-3"/>}
+                  Remind
+                </button>
+              )}
+            </div>
+          </div>
+          {/* Mini bar */}
+          <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full ${Number(c.opt_in_pct) >= 75 ? 'bg-green-500' : 'bg-amber-400'}`}
+              style={{ width: `${c.opt_in_pct}%` }} />
+          </div>
+        </div>
+      ))}
+
+      {/* Not opted-in list */}
+      {data?.not_opted_in && data.not_opted_in.length > 0 && (
+        <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-neutral-100 bg-red-50">
+            <p className="text-xs font-bold text-red-800">Parents who have not opted in ({data.not_opted_in.length})</p>
+          </div>
+          <div className="divide-y divide-neutral-50 max-h-64 overflow-y-auto">
+            {data.not_opted_in.map((p, i) => (
+              <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                <div>
+                  <p className="text-xs font-semibold text-neutral-800">{p.name}</p>
+                  <p className="text-[10px] text-neutral-400">{p.class_name} &nbsp;&middot;&nbsp; {p.mobile}</p>
+                </div>
+                <button onClick={() => sendReminder(undefined, [p.id])} disabled={!!sending}
+                  className="text-[10px] px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50">
+                  Send
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 // ═══════════════════════════════════════════════════════════════════════════════
 function DashboardTab({ token }: { token: string }) {
   const [data, setData] = useState<DashboardData | null>(null);

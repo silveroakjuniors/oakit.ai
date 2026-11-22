@@ -82,4 +82,63 @@ router.post('/:parentId/:studentId', async (req: Request, res: Response) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// WhatsApp opt-in for teachers / staff
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/v1/teacher/messages/whatsapp-optin-status
+router.get('/whatsapp-optin-status', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const [waRow, userRow] = await Promise.all([
+      pool.query(
+        `SELECT wc.business_phone, wc.display_name, wc.verified
+         FROM whatsapp_configs wc
+         JOIN schools s ON s.id = wc.school_id
+         WHERE wc.school_id=$1 AND s.whatsapp_enabled=true AND wc.verified=true LIMIT 1`,
+        [school_id],
+      ),
+      pool.query(
+        `SELECT whatsapp_opt_in, whatsapp_opt_in_at, whatsapp_phone, mobile FROM users WHERE id=$1`,
+        [user_id],
+      ),
+    ]);
+
+    if (!waRow.rows[0]) return res.json({ enabled: false });
+
+    return res.json({
+      enabled:        true,
+      business_phone: waRow.rows[0].business_phone,
+      display_name:   waRow.rows[0].display_name,
+      opted_in:       userRow.rows[0]?.whatsapp_opt_in || false,
+      opted_in_at:    userRow.rows[0]?.whatsapp_opt_in_at || null,
+      current_phone:  userRow.rows[0]?.whatsapp_phone || userRow.rows[0]?.mobile || null,
+    });
+  } catch (err) {
+    console.error('[teacher wa-optin-status]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/teacher/messages/whatsapp-optin
+router.post('/whatsapp-optin', async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.user!;
+    const { opt_in, whatsapp_phone } = req.body;
+    const val = !!opt_in;
+    await pool.query(
+      `UPDATE users
+       SET whatsapp_opt_in=$1,
+           whatsapp_opt_in_at=CASE WHEN $1=true THEN now() ELSE NULL END,
+           whatsapp_phone=COALESCE($2, whatsapp_phone)
+       WHERE id=$3`,
+      [val, whatsapp_phone || null, user_id],
+    );
+    return res.json({ opted_in: val });
+  } catch (err) {
+    console.error('[teacher wa-optin]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

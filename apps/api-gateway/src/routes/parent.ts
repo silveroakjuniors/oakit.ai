@@ -1314,4 +1314,64 @@ router.post('/instagram-follow-ack', async (req: Request, res: Response) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/parent/whatsapp-optin-status
+// Returns whether WhatsApp is enabled for this school and parent's opt-in state
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/whatsapp-optin-status', async (req: Request, res: Response) => {
+  try {
+    const { user_id, school_id } = req.user!;
+    const [waRow, parentRow, phoneRow] = await Promise.all([
+      pool.query(
+        `SELECT wc.business_phone, wc.display_name, wc.verified
+         FROM whatsapp_configs wc
+         JOIN schools s ON s.id = wc.school_id
+         WHERE wc.school_id=$1 AND s.whatsapp_enabled=true AND wc.verified=true LIMIT 1`,
+        [school_id],
+      ),
+      pool.query(
+        `SELECT whatsapp_opt_in, whatsapp_opt_in_at, whatsapp_phone, mobile
+         FROM parent_users WHERE user_id=$1`,
+        [user_id],
+      ),
+      pool.query(`SELECT mobile FROM parent_users WHERE user_id=$1`, [user_id]),
+    ]);
+
+    if (!waRow.rows[0]) return res.json({ enabled: false });
+
+    return res.json({
+      enabled:         true,
+      business_phone:  waRow.rows[0].business_phone,
+      display_name:    waRow.rows[0].display_name,
+      opted_in:        parentRow.rows[0]?.whatsapp_opt_in || false,
+      opted_in_at:     parentRow.rows[0]?.whatsapp_opt_in_at || null,
+      current_phone:   parentRow.rows[0]?.whatsapp_phone || parentRow.rows[0]?.mobile || null,
+    });
+  } catch (err) {
+    console.error('[parent wa-optin-status]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/v1/parent/whatsapp-optin — parent opts in with optional alternate phone
+router.post('/whatsapp-optin', async (req: Request, res: Response) => {
+  try {
+    const { user_id } = req.user!;
+    const { opt_in, whatsapp_phone } = req.body;
+    const val = !!opt_in;
+    await pool.query(
+      `UPDATE parent_users
+       SET whatsapp_opt_in=$1,
+           whatsapp_opt_in_at=CASE WHEN $1=true THEN now() ELSE NULL END,
+           whatsapp_phone=COALESCE($2, whatsapp_phone)
+       WHERE user_id=$3`,
+      [val, whatsapp_phone || null, user_id],
+    );
+    return res.json({ opted_in: val });
+  } catch (err) {
+    console.error('[parent wa-optin]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
