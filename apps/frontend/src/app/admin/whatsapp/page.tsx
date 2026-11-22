@@ -512,7 +512,241 @@ function TestMessagePanel({ token }: { token: string }) {
 // OPT-IN REPORT TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 function OptInReportTab({ token }: { token: string }) {
-  const [data, setData]           = useState<{ by_class: any[]; not_opted_in: any[] } | null>(null);
+  const [data, setData]           = useState<{ by_class: any[]; staff_by_role: any[]; not_opted_in: any[]; staff_not_opted_in: any[] } | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [sending, setSending]     = useState<string | null>(null);
+  const [sendResult, setSendResult] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
+  const [view, setView]           = useState<'parents' | 'staff'>('parents');
+
+  function load() {
+    setLoading(true);
+    const params = selectedClass ? `?class_id=${selectedClass}` : '';
+    apiGet<{ by_class: any[]; staff_by_role: any[]; not_opted_in: any[]; staff_not_opted_in: any[] }>(
+      `/api/v1/admin/whatsapp/optin-report${params}`, token,
+    ).then(d => setData(d || null)).catch(() => {}).finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, [selectedClass]);
+
+  async function sendReminder(classId?: string, parentIds?: string[]) {
+    const key = classId || 'all';
+    setSending(key); setSendResult('');
+    try {
+      const r = await apiPost<any>('/api/v1/admin/whatsapp/optin-report/send-reminder', {
+        ...(classId   ? { class_id: classId }    : {}),
+        ...(parentIds ? { parent_ids: parentIds } : {}),
+      }, token);
+      setSendResult(r.message); load();
+    } catch (e: any) { setSendResult(e?.message || 'Send failed'); }
+    finally { setSending(null); }
+  }
+
+  async function sendStaffReminder(userIds?: string[], role?: string) {
+    const key = role || 'all-staff';
+    setSending(key); setSendResult('');
+    try {
+      const r = await apiPost<any>('/api/v1/admin/whatsapp/optin-report/send-staff-reminder', {
+        ...(userIds ? { user_ids: userIds } : {}),
+        ...(role    ? { role }              : {}),
+      }, token);
+      setSendResult(r.message); load();
+    } catch (e: any) { setSendResult(e?.message || 'Send failed'); }
+    finally { setSending(null); }
+  }
+
+  // Parent totals
+  const totalP   = data?.by_class.reduce((s, c) => s + c.total_parents, 0) || 0;
+  const inP      = data?.by_class.reduce((s, c) => s + c.opted_in, 0) || 0;
+  const notInP   = data?.by_class.reduce((s, c) => s + c.not_opted_in, 0) || 0;
+  const pctP     = totalP > 0 ? Math.round(inP / totalP * 100) : 0;
+
+  // Staff totals
+  const totalS   = data?.staff_by_role.reduce((s, r) => s + r.total_staff, 0) || 0;
+  const inS      = data?.staff_by_role.reduce((s, r) => s + r.opted_in, 0) || 0;
+  const notInS   = data?.staff_by_role.reduce((s, r) => s + r.not_opted_in, 0) || 0;
+  const pctS     = totalS > 0 ? Math.round(inS / totalS * 100) : 0;
+
+  const roleLabel = (r: string) => r === 'teacher' ? 'Teachers' : r === 'principal' ? 'Principals' : r === 'admin' ? 'Admins' : 'Staff';
+
+  return (
+    <div className="max-w-2xl space-y-5">
+      {/* Summary cards — combined */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white border border-neutral-200 rounded-2xl p-4">
+          <p className="text-xs text-neutral-500 font-semibold mb-1">Parents</p>
+          <p className="text-2xl font-bold text-neutral-800">{inP}/{totalP}</p>
+          <div className="h-1.5 bg-neutral-100 rounded-full mt-2 overflow-hidden">
+            <div className={`h-full rounded-full ${pctP >= 75 ? 'bg-green-500' : 'bg-amber-400'}`} style={{ width: `${pctP}%` }}/>
+          </div>
+          <p className={`text-xs font-bold mt-1 ${pctP >= 75 ? 'text-green-600' : 'text-amber-600'}`}>{pctP}% opted in</p>
+        </div>
+        <div className="bg-white border border-neutral-200 rounded-2xl p-4">
+          <p className="text-xs text-neutral-500 font-semibold mb-1">Staff &amp; Teachers</p>
+          <p className="text-2xl font-bold text-neutral-800">{inS}/{totalS}</p>
+          <div className="h-1.5 bg-neutral-100 rounded-full mt-2 overflow-hidden">
+            <div className={`h-full rounded-full ${pctS >= 75 ? 'bg-green-500' : 'bg-amber-400'}`} style={{ width: `${pctS}%` }}/>
+          </div>
+          <p className={`text-xs font-bold mt-1 ${pctS >= 75 ? 'text-green-600' : 'text-amber-600'}`}>{pctS}% opted in</p>
+        </div>
+      </div>
+
+      {/* View toggle */}
+      <div className="flex gap-1 bg-neutral-100 rounded-xl p-1 w-fit">
+        <button onClick={() => setView('parents')}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold ${view === 'parents' ? 'bg-white text-primary shadow-sm' : 'text-neutral-500'}`}>
+          Parents ({notInP} not opted)
+        </button>
+        <button onClick={() => setView('staff')}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold ${view === 'staff' ? 'bg-white text-primary shadow-sm' : 'text-neutral-500'}`}>
+          Staff &amp; Teachers ({notInS} not opted)
+        </button>
+      </div>
+
+      {sendResult && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm text-emerald-700 font-medium">
+          <CheckCircle2 className="w-4 h-4 shrink-0"/> {sendResult}
+        </div>
+      )}
+
+      {loading ? <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary"/></div>
+
+      : view === 'parents' ? (
+        <>
+          {/* Send all parents */}
+          {notInP > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-amber-800">{notInP} parent(s) not opted in</p>
+                <p className="text-xs text-amber-600 mt-0.5">Send WhatsApp reminder to all</p>
+              </div>
+              <button onClick={() => sendReminder()} disabled={sending === 'all'}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50 shrink-0">
+                {sending === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Send className="w-3.5 h-3.5"/>}
+                Send All
+              </button>
+            </div>
+          )}
+          {/* Class filter */}
+          {data?.by_class && data.by_class.length > 1 && (
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setSelectedClass('')}
+                className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${!selectedClass ? 'bg-primary text-white border-primary' : 'bg-white text-neutral-600 border-neutral-200'}`}>
+                All Classes
+              </button>
+              {data.by_class.map(c => (
+                <button key={c.class_id} onClick={() => setSelectedClass(c.class_id)}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${selectedClass === c.class_id ? 'bg-primary text-white border-primary' : 'bg-white text-neutral-600 border-neutral-200'}`}>
+                  {c.class_name}
+                </button>
+              ))}
+            </div>
+          )}
+          {data?.by_class.map(c => (
+            <div key={c.class_id} className="bg-white border border-neutral-200 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <p className="text-sm font-bold text-neutral-800">{c.class_name}</p>
+                  <p className="text-xs text-neutral-500">{c.opted_in}/{c.total_parents} opted in &nbsp;&middot;&nbsp;
+                    <span className={c.not_opted_in > 0 ? 'text-red-500 font-semibold' : 'text-green-600 font-semibold'}>{c.not_opted_in} not opted in</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${Number(c.opt_in_pct) >= 75 ? 'text-green-600' : 'text-amber-600'}`}>{c.opt_in_pct}%</span>
+                  {c.not_opted_in > 0 && (
+                    <button onClick={() => sendReminder(c.class_id)} disabled={!!sending}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50 flex items-center gap-1">
+                      {sending === c.class_id ? <Loader2 className="w-3 h-3 animate-spin"/> : <Send className="w-3 h-3"/>} Remind
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="h-1.5 bg-neutral-100 rounded-full"><div className={`h-full rounded-full ${Number(c.opt_in_pct) >= 75 ? 'bg-green-500' : 'bg-amber-400'}`} style={{ width: `${c.opt_in_pct}%` }}/></div>
+            </div>
+          ))}
+          {data?.not_opted_in && data.not_opted_in.length > 0 && (
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-neutral-100 bg-red-50">
+                <p className="text-xs font-bold text-red-800">Parents not opted in ({data.not_opted_in.length})</p>
+              </div>
+              <div className="divide-y divide-neutral-50 max-h-64 overflow-y-auto">
+                {data.not_opted_in.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                    <div>
+                      <p className="text-xs font-semibold text-neutral-800">{p.name}</p>
+                      <p className="text-[10px] text-neutral-400">{p.class_name} &nbsp;&middot;&nbsp; {p.mobile}</p>
+                    </div>
+                    <button onClick={() => sendReminder(undefined, [p.id])} disabled={!!sending}
+                      className="text-[10px] px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50">Send</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Send all staff */}
+          {notInS > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-amber-800">{notInS} staff member(s) not opted in</p>
+                <p className="text-xs text-amber-600 mt-0.5">Send WhatsApp reminder to all staff</p>
+              </div>
+              <button onClick={() => sendStaffReminder()} disabled={sending === 'all-staff'}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50 shrink-0">
+                {sending === 'all-staff' ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Send className="w-3.5 h-3.5"/>}
+                Send All
+              </button>
+            </div>
+          )}
+          {/* Staff by role */}
+          {data?.staff_by_role.map(r => (
+            <div key={r.role} className="bg-white border border-neutral-200 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <p className="text-sm font-bold text-neutral-800">{roleLabel(r.role)}</p>
+                  <p className="text-xs text-neutral-500">{r.opted_in}/{r.total_staff} opted in &nbsp;&middot;&nbsp;
+                    <span className={r.not_opted_in > 0 ? 'text-red-500 font-semibold' : 'text-green-600 font-semibold'}>{r.not_opted_in} not opted in</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${Number(r.opt_in_pct) >= 75 ? 'text-green-600' : 'text-amber-600'}`}>{r.opt_in_pct}%</span>
+                  {r.not_opted_in > 0 && (
+                    <button onClick={() => sendStaffReminder(undefined, r.role)} disabled={!!sending}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50 flex items-center gap-1">
+                      {sending === r.role ? <Loader2 className="w-3 h-3 animate-spin"/> : <Send className="w-3 h-3"/>} Remind
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="h-1.5 bg-neutral-100 rounded-full"><div className={`h-full rounded-full ${Number(r.opt_in_pct) >= 75 ? 'bg-green-500' : 'bg-amber-400'}`} style={{ width: `${r.opt_in_pct}%` }}/></div>
+            </div>
+          ))}
+          {/* Staff not opted-in list */}
+          {data?.staff_not_opted_in && data.staff_not_opted_in.length > 0 && (
+            <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-neutral-100 bg-red-50">
+                <p className="text-xs font-bold text-red-800">Staff not opted in ({data.staff_not_opted_in.length})</p>
+              </div>
+              <div className="divide-y divide-neutral-50 max-h-64 overflow-y-auto">
+                {data.staff_not_opted_in.map((u, i) => (
+                  <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                    <div>
+                      <p className="text-xs font-semibold text-neutral-800">{u.name}</p>
+                      <p className="text-[10px] text-neutral-400 capitalize">{u.role} &nbsp;&middot;&nbsp; {u.mobile}</p>
+                    </div>
+                    <button onClick={() => sendStaffReminder([u.id])} disabled={!!sending}
+                      className="text-[10px] px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50">Send</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
   const [loading, setLoading]     = useState(true);
   const [sending, setSending]     = useState<string | null>(null); // class_id or 'all'
   const [sendResult, setSendResult] = useState('');

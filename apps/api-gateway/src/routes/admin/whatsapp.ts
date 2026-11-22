@@ -1006,18 +1006,17 @@ router.get('/optin-report', async (req: Request, res: Response) => {
     const { school_id } = req.user!;
     const { class_id, opted_in } = req.query as Record<string, string>;
 
-    const conditions: string[] = ['pu.school_id=$1 AND pu.is_active=true'];
-    const params: any[]        = [school_id];
+    // ── Parent opt-in by class ────────────────────────────────────────────────
+    const parentConditions: string[] = ['pu.school_id=$1 AND pu.is_active=true'];
+    const parentParams: any[]        = [school_id];
     let idx = 2;
+    if (opted_in === 'true')  parentConditions.push('pu.whatsapp_opt_in=true');
+    if (opted_in === 'false') parentConditions.push('pu.whatsapp_opt_in=false');
+    if (class_id) { parentConditions.push(`c.id=$${idx++}`); parentParams.push(class_id); }
 
-    if (opted_in === 'true')  conditions.push('pu.whatsapp_opt_in=true');
-    if (opted_in === 'false') conditions.push('pu.whatsapp_opt_in=false');
-    if (class_id) { conditions.push(`c.id=$${idx++}`); params.push(class_id); }
-
-    const rows = await pool.query(
+    const parentByClass = await pool.query(
       `SELECT
-         c.name AS class_name,
-         c.id   AS class_id,
+         c.name AS class_name, c.id AS class_id,
          COUNT(DISTINCT pu.id)::int                                           AS total_parents,
          COUNT(DISTINCT pu.id) FILTER (WHERE pu.whatsapp_opt_in=true)::int   AS opted_in,
          COUNT(DISTINCT pu.id) FILTER (WHERE pu.whatsapp_opt_in=false)::int  AS not_opted_in,
@@ -1029,35 +1028,125 @@ router.get('/optin-report', async (req: Request, res: Response) => {
        JOIN parent_student_links psl ON psl.parent_id = pu.id
        JOIN students st ON st.id = psl.student_id AND st.is_active=true
        JOIN classes c ON c.id = st.class_id
-       WHERE ${conditions.join(' AND ')}
-       GROUP BY c.id, c.name
-       ORDER BY c.name`,
-      params,
+       WHERE ${parentConditions.join(' AND ')}
+       GROUP BY c.id, c.name ORDER BY c.name`,
+      parentParams,
     );
 
-    // Per-parent detail for not-opted-in
-    const detailRows = await pool.query(
-      `SELECT DISTINCT pu.id, pu.name, pu.mobile, pu.whatsapp_opt_in, pu.whatsapp_opt_in_at,
+    // ── Staff/teacher opt-in by role ──────────────────────────────────────────
+    const staffByRole = await pool.query(
+      `SELECT
+         u.role,
+         COUNT(*)::int                                        AS total_staff,
+         COUNT(*) FILTER (WHERE u.whatsapp_opt_in=true)::int  AS opted_in,
+         COUNT(*) FILTER (WHERE u.whatsapp_opt_in=false)::int AS not_opted_in,
+         ROUND(
+           COUNT(*) FILTER (WHERE u.whatsapp_opt_in=true) * 100.0
+           / NULLIF(COUNT(*), 0), 1
+         ) AS opt_in_pct
+       FROM users u
+       WHERE u.school_id=$1 AND u.is_active=true
+         AND u.role IN ('teacher','principal','admin','staff')
+       GROUP BY u.role ORDER BY u.role`,
+      [school_id],
+    );
+
+    // ── Not opted-in detail lists ─────────────────────────────────────────────
+    const parentNotIn = await pool.query(
+      `SELECT DISTINCT pu.id, pu.name, pu.mobile, pu.whatsapp_opt_in,
               c.name AS class_name, c.id AS class_id
        FROM parent_users pu
        JOIN parent_student_links psl ON psl.parent_id = pu.id
        JOIN students st ON st.id = psl.student_id AND st.is_active=true
        JOIN classes c ON c.id = st.class_id
-       WHERE pu.school_id=$1 AND pu.is_active=true
-         AND pu.whatsapp_opt_in=false
+       WHERE pu.school_id=$1 AND pu.is_active=true AND pu.whatsapp_opt_in=false
          ${class_id ? `AND c.id=$2` : ''}
        ORDER BY c.name, pu.name`,
       class_id ? [school_id, class_id] : [school_id],
     );
 
-    return res.json({ by_class: rows.rows, not_opted_in: detailRows.rows });
+    const staffNotIn = await pool.query(
+      `SELECT u.id, u.name, u.mobile, u.whatsapp_opt_in, u.role
+       FROM users u
+       WHERE u.school_id=$1 AND u.is_active=true
+         AND u.role IN ('teacher','principal','admin','staff')
+         AND u.whatsapp_opt_in=false
+       ORDER BY u.role, u.name`,
+      [school_id],
+    );
+
+    return res.json({
+      by_class:        parentByClass.rows,
+      staff_by_role:   staffByRole.rows,
+      not_opted_in:    parentNotIn.rows,
+      staff_not_opted_in: staffNotIn.rows,
+    });
   } catch (err) {
     console.error('[wa optin-report]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// POST /api/v1/admin/whatsapp/optin-report/send-reminder
+// POST /api/v1/admin/whatsapp/optin-report/send-staff-reminder
+// Send WhatsApp opt-in reminder to staff who haven't opted in
+router.post('/optin-report/send-staff-reminder', async (req: Request, res: Response) => {
+  try {
+    const { school_id } = req.user!;
+    const { user_ids, role, message } = req.body;
+
+    const credRow = await pool.query(
+      `SELECT wc.business_phone, wc.display_name, wc.verified
+       FROM whatsapp_configs wc WHERE school_id=$1 AND verified=true`,
+      [school_id],
+    );
+    if (!credRow.rows[0]) return res.status(400).json({ error: 'WhatsApp not configured or not verified' });
+
+    const displayName   = credRow.rows[0].display_name || 'Silver Oak Juniors';
+    const businessPhone = credRow.rows[0].business_phone || '';
+
+    let targetQuery = '';
+    const targetParams: any[] = [school_id];
+
+    if (user_ids?.length) {
+      targetQuery = `SELECT id, name, mobile, whatsapp_phone FROM users
+                     WHERE school_id=$1 AND is_active=true AND whatsapp_opt_in=false
+                       AND id=ANY($2::uuid[])`;
+      targetParams.push(user_ids);
+    } else if (role) {
+      targetQuery = `SELECT id, name, mobile, whatsapp_phone FROM users
+                     WHERE school_id=$1 AND is_active=true AND whatsapp_opt_in=false AND role=$2`;
+      targetParams.push(role);
+    } else {
+      targetQuery = `SELECT id, name, mobile, whatsapp_phone FROM users
+                     WHERE school_id=$1 AND is_active=true AND whatsapp_opt_in=false
+                       AND role IN ('teacher','principal','admin','staff')`;
+    }
+
+    const staff = (await pool.query(targetQuery, targetParams)).rows;
+    if (!staff.length) return res.json({ sent: 0, message: 'All staff have already opted in.' });
+
+    const reminderText = message || `Hi! This is ${displayName}.\n\nWe are now on WhatsApp Business! Save this number and reply YES to receive:\n- School announcements\n- Leave approval status\n- Payslip notifications\n- Important circulars\n\nReply YES to subscribe.\n\n- ${displayName} Admin`;
+
+    let sent = 0; let failed = 0;
+    for (const user of staff) {
+      await new Promise(r => setTimeout(r, 120));
+      const phone = (user.whatsapp_phone || user.mobile || '').replace(/[^0-9]/g, '');
+      if (!phone) { failed++; continue; }
+
+      const { sendTextMessage, normalisePhone } = await import('../../lib/whatsappSender');
+      const result = await sendTextMessage(school_id, normalisePhone(phone), reminderText);
+      result.success ? sent++ : failed++;
+    }
+
+    return res.json({
+      sent, failed, total: staff.length,
+      message: `Reminder sent to ${sent} staff member(s).${failed > 0 ? ` ${failed} could not be delivered.` : ''}`,
+    });
+  } catch (err: any) {
+    console.error('[wa staff-reminder]', err);
+    return res.status(500).json({ error: err?.message || 'Internal server error' });
+  }
+});
 // Send WhatsApp opt-in reminder to parents who haven't opted in
 // Body: { parent_ids?: string[], class_id?: string, message?: string }
 router.post('/optin-report/send-reminder', async (req: Request, res: Response) => {
