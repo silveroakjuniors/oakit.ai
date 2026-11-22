@@ -67,6 +67,7 @@ interface Payment {
   payment_mode: string;
   payment_date: string;
   receipt_number: string;
+  reference_number?: string;
   receipt_url?: string;
   fee_head_name?: string;
   needs_reconciliation?: boolean;
@@ -679,6 +680,7 @@ export default function FeesPage() {
                       <th className="text-left py-2 px-3">Fee Head</th>
                       <th className="text-right py-2 px-3">Amount</th>
                       <th className="text-center py-2 px-3">Mode</th>
+                      <th className="text-left py-2 px-3">Reference</th>
                       <th className="text-center py-2 px-3">Date</th>
                       <th className="text-left py-2 px-3">Collected by</th>
                       <th className="text-left py-2 px-3">Reconciled</th>
@@ -695,6 +697,9 @@ export default function FeesPage() {
                         <td className="py-2 px-3 text-right font-semibold text-gray-800">₹{Number(p.amount).toLocaleString('en-IN')}</td>
                         <td className="py-2 px-3 text-center">
                           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{p.payment_mode}</span>
+                        </td>
+                        <td className="py-2 px-3 text-xs text-gray-600 font-mono">
+                          {p.reference_number || <span className="text-gray-300">—</span>}
                         </td>
                         <td className="py-2 px-3 text-center text-gray-600 text-xs">
                           {new Date(p.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -764,6 +769,7 @@ export default function FeesPage() {
                         <td className="py-2 px-3 text-center">
                           <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-500">cancelled</span>
                         </td>
+                        <td className="py-2 px-3 text-xs text-gray-300 font-mono">—</td>
                         <td className="py-2 px-3 text-center text-xs text-gray-400">
                           {new Date(c.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
@@ -777,7 +783,7 @@ export default function FeesPage() {
                       </tr>
                     ))}
                     {history.length === 0 && cancellations.length === 0 && (
-                      <tr><td colSpan={10} className="py-6 text-center text-gray-400 text-sm">No payment history</td></tr>
+                      <tr><td colSpan={11} className="py-6 text-center text-gray-400 text-sm">No payment history</td></tr>
                     )}
                   </tbody>
                 </table>
