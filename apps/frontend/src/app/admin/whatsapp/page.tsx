@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, getApiBase } from '@/lib/api';
@@ -9,7 +9,7 @@ import {
   FileText, Plus, Trash2, RefreshCw, Wand2, Clock,
 } from 'lucide-react';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface WaConfig {
   phone_number_id: string;
   waba_id: string;
@@ -82,7 +82,7 @@ interface DashboardData {
 
 type Tab = 'setup' | 'dashboard' | 'inbox' | 'contacts' | 'campaigns' | 'templates' | 'automations' | 'optin';
 
-// ── Stat card ─────────────────────────────────────────────────────────────────
+// â”€â”€ Stat card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function StatCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
     <div className="bg-white border border-neutral-200 rounded-2xl p-4">
@@ -93,9 +93,9 @@ function StatCard({ label, value, sub, color }: { label: string; value: string |
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MAIN PAGE
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function AdminWhatsAppPage() {
   const token = getToken() || '';
   const [tab, setTab] = useState<Tab>('setup');
@@ -161,7 +161,7 @@ export default function AdminWhatsAppPage() {
         <div>
           <h1 className="text-xl font-bold text-neutral-900">WhatsApp Business</h1>
           <p className="text-xs text-neutral-500">
-            {config?.verified ? `Connected — ${config.display_name || config.business_phone}` : 'Not connected'}
+            {config?.verified ? `Connected â€” ${config.display_name || config.business_phone}` : 'Not connected'}
           </p>
         </div>
         {config?.verified && <span className="ml-auto flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 px-3 py-1 rounded-full"><CheckCircle2 className="w-3 h-3"/>Connected</span>}
@@ -189,9 +189,9 @@ export default function AdminWhatsAppPage() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SETUP TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig | null; onSaved: () => void }) {
   const isConnected = !!(config?.has_token && config?.verified);
   const [editMode, setEditMode]       = useState(!isConnected);
@@ -315,7 +315,7 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
         </div>
       )}
 
-      {/* Setup instructions — only for new setup */}
+      {/* Setup instructions â€” only for new setup */}
       {!isConnected && (
         <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-800">
           <p className="font-semibold mb-2">Setup instructions</p>
@@ -332,7 +332,7 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
         </div>
       )}
 
-      {/* Credential fields — shown when editing or not connected */}
+      {/* Credential fields â€” shown when editing or not connected */}
       {(editMode || !isConnected) && (
         <div className="bg-white border border-neutral-200 rounded-2xl p-5 space-y-3">
           <p className="text-sm font-bold text-neutral-800 mb-1">{isConnected ? 'Update Credentials' : 'Connect WhatsApp Business'}</p>
@@ -359,7 +359,7 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
           {msg && <p className={`text-sm font-medium px-3 py-2 rounded-xl ${msgIsError ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>{msg}</p>}
           {testResult && (
             <div className={`text-sm px-4 py-2.5 rounded-xl border ${testResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-              {testResult.success ? `Connected — ${testResult.display_phone_number || testResult.verified_name} · Quality: ${testResult.quality_rating || 'N/A'}` : testResult.error}
+              {testResult.success ? `Connected â€” ${testResult.display_phone_number || testResult.verified_name} Â· Quality: ${testResult.quality_rating || 'N/A'}` : testResult.error}
             </div>
           )}
         </div>
@@ -377,14 +377,14 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
             {FIELDS.map(f => (
               <div key={f.key} className="flex items-center justify-between py-1">
                 <span className="text-xs text-neutral-400 font-medium">{f.label}</span>
-                <span className="text-xs text-neutral-200 font-mono tracking-widest">{'•'.repeat(14)}</span>
+                <span className="text-xs text-neutral-200 font-mono tracking-widest">{'â€¢'.repeat(14)}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Test Message Panel — only when connected */}
+      {/* Test Message Panel â€” only when connected */}
       {isConnected && (
         <div className="rounded-2xl overflow-hidden border border-green-200 shadow-sm">
           <div className="bg-gradient-to-r from-green-600 to-emerald-500 px-5 py-4 flex items-center gap-3">
@@ -405,9 +405,9 @@ function SetupTab({ token, config, onSaved }: { token: string; config: WaConfig 
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // TEST MESSAGE PANEL (standalone reusable component)
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function TestMessagePanel({ token }: { token: string }) {
   const [contacts, setContacts] = useState<any[]>([]);
   const [phone, setPhone]       = useState('919008166252');
@@ -451,7 +451,7 @@ function TestMessagePanel({ token }: { token: string }) {
       {/* Quick pick from staff list */}
       {contacts.length > 0 && (
         <div>
-          <label className="text-xs font-bold text-neutral-700 mb-2 block">Quick Pick — Staff, Teachers, Principal</label>
+          <label className="text-xs font-bold text-neutral-700 mb-2 block">Quick Pick â€” Staff, Teachers, Principal</label>
           <div className="max-h-36 overflow-y-auto flex flex-col gap-1 border border-green-100 rounded-xl p-2 bg-green-50/30">
             {contacts.slice(0, 30).map((c, i) => {
               const p = (c.whatsapp_phone || c.phone || c.mobile || '').replace(/[^0-9]/g, '');
@@ -508,9 +508,9 @@ function TestMessagePanel({ token }: { token: string }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // OPT-IN REPORT TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function OptInReportTab({ token }: { token: string }) {
   const [data, setData]           = useState<{ by_class: any[]; staff_by_role: any[]; not_opted_in: any[]; staff_not_opted_in: any[] } | null>(null);
   const [loading, setLoading]     = useState(true);
@@ -570,7 +570,7 @@ function OptInReportTab({ token }: { token: string }) {
 
   return (
     <div className="max-w-2xl space-y-5">
-      {/* Summary cards — combined */}
+      {/* Summary cards â€” combined */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white border border-neutral-200 rounded-2xl p-4">
           <p className="text-xs text-neutral-500 font-semibold mb-1">Parents</p>
@@ -747,166 +747,9 @@ function OptInReportTab({ token }: { token: string }) {
     </div>
   );
 }
-  const [loading, setLoading]     = useState(true);
-  const [sending, setSending]     = useState<string | null>(null); // class_id or 'all'
-  const [sendResult, setSendResult] = useState('');
-  const [selectedClass, setSelectedClass] = useState('');
 
-  function load() {
-    setLoading(true);
-    const params = selectedClass ? `?class_id=${selectedClass}` : '';
-    apiGet<{ by_class: any[]; not_opted_in: any[] }>(
-      `/api/v1/admin/whatsapp/optin-report${params}`, token,
-    ).then(d => setData(d || null)).catch(() => {}).finally(() => setLoading(false));
-  }
-
-  useEffect(() => { load(); }, [selectedClass]);
-
-  async function sendReminder(classId?: string, parentIds?: string[]) {
-    const key = classId || 'all';
-    setSending(key); setSendResult('');
-    try {
-      const r = await apiPost<any>('/api/v1/admin/whatsapp/optin-report/send-reminder', {
-        ...(classId   ? { class_id: classId }     : {}),
-        ...(parentIds ? { parent_ids: parentIds }  : {}),
-      }, token);
-      setSendResult(r.message);
-      load();
-    } catch (e: any) { setSendResult(e?.message || 'Send failed'); }
-    finally { setSending(null); }
-  }
-
-  const totalParents  = data?.by_class.reduce((s, c) => s + c.total_parents, 0) || 0;
-  const totalOptedIn  = data?.by_class.reduce((s, c) => s + c.opted_in, 0) || 0;
-  const totalNotIn    = data?.by_class.reduce((s, c) => s + c.not_opted_in, 0) || 0;
-  const overallPct    = totalParents > 0 ? Math.round(totalOptedIn / totalParents * 100) : 0;
-
-  return (
-    <div className="max-w-2xl space-y-5">
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white border border-neutral-200 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-neutral-800">{totalParents}</div>
-          <div className="text-xs text-neutral-500 font-semibold mt-0.5">Total Parents</div>
-        </div>
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-green-700">{totalOptedIn}</div>
-          <div className="text-xs text-green-600 font-semibold mt-0.5">Opted In ({overallPct}%)</div>
-        </div>
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-center">
-          <div className="text-2xl font-bold text-red-600">{totalNotIn}</div>
-          <div className="text-xs text-red-500 font-semibold mt-0.5">Not Opted In</div>
-        </div>
-      </div>
-
-      {/* Overall progress bar */}
-      <div>
-        <div className="flex justify-between text-xs text-neutral-500 mb-1">
-          <span>Overall opt-in rate</span>
-          <span className={overallPct >= 75 ? 'text-green-600 font-bold' : 'text-amber-600 font-bold'}>{overallPct}%</span>
-        </div>
-        <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all ${overallPct >= 75 ? 'bg-green-500' : overallPct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-            style={{ width: `${overallPct}%` }} />
-        </div>
-      </div>
-
-      {/* Send reminder to ALL not opted-in */}
-      {totalNotIn > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-bold text-amber-800">{totalNotIn} parent(s) have not opted in</p>
-            <p className="text-xs text-amber-600 mt-0.5">Send a WhatsApp reminder to all of them at once</p>
-          </div>
-          <button onClick={() => sendReminder()} disabled={sending === 'all'}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50 shrink-0">
-            {sending === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Send className="w-3.5 h-3.5"/>}
-            {sending === 'all' ? 'Sending...' : 'Send All Reminders'}
-          </button>
-        </div>
-      )}
-
-      {sendResult && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 flex items-center gap-2 text-sm text-emerald-700 font-medium">
-          <CheckCircle2 className="w-4 h-4 shrink-0"/> {sendResult}
-        </div>
-      )}
-
-      {/* Class filter */}
-      {data?.by_class && data.by_class.length > 1 && (
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setSelectedClass('')}
-            className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${!selectedClass ? 'bg-primary text-white border-primary' : 'bg-white text-neutral-600 border-neutral-200'}`}>
-            All Classes
-          </button>
-          {data.by_class.map(c => (
-            <button key={c.class_id} onClick={() => setSelectedClass(c.class_id)}
-              className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${selectedClass === c.class_id ? 'bg-primary text-white border-primary' : 'bg-white text-neutral-600 border-neutral-200'}`}>
-              {c.class_name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Class-wise breakdown */}
-      {loading ? <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary"/></div>
-      : data?.by_class.map(c => (
-        <div key={c.class_id} className="bg-white border border-neutral-200 rounded-2xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-sm font-bold text-neutral-800">{c.class_name}</p>
-              <p className="text-xs text-neutral-500">{c.opted_in}/{c.total_parents} opted in &nbsp;&middot;&nbsp;
-                <span className={c.not_opted_in > 0 ? 'text-red-500 font-semibold' : 'text-green-600 font-semibold'}>
-                  {c.not_opted_in} not opted in
-                </span>
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`text-sm font-bold ${Number(c.opt_in_pct) >= 75 ? 'text-green-600' : 'text-amber-600'}`}>
-                {c.opt_in_pct}%
-              </span>
-              {c.not_opted_in > 0 && (
-                <button onClick={() => sendReminder(c.class_id)} disabled={sending === c.class_id}
-                  className="text-xs px-2.5 py-1.5 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50 flex items-center gap-1">
-                  {sending === c.class_id ? <Loader2 className="w-3 h-3 animate-spin"/> : <Send className="w-3 h-3"/>}
-                  Remind
-                </button>
-              )}
-            </div>
-          </div>
-          {/* Mini bar */}
-          <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full ${Number(c.opt_in_pct) >= 75 ? 'bg-green-500' : 'bg-amber-400'}`}
-              style={{ width: `${c.opt_in_pct}%` }} />
-          </div>
-        </div>
-      ))}
-
-      {/* Not opted-in list */}
-      {data?.not_opted_in && data.not_opted_in.length > 0 && (
-        <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-neutral-100 bg-red-50">
-            <p className="text-xs font-bold text-red-800">Parents who have not opted in ({data.not_opted_in.length})</p>
-          </div>
-          <div className="divide-y divide-neutral-50 max-h-64 overflow-y-auto">
-            {data.not_opted_in.map((p, i) => (
-              <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                <div>
-                  <p className="text-xs font-semibold text-neutral-800">{p.name}</p>
-                  <p className="text-[10px] text-neutral-400">{p.class_name} &nbsp;&middot;&nbsp; {p.mobile}</p>
-                </div>
-                <button onClick={() => sendReminder(undefined, [p.id])} disabled={!!sending}
-                  className="text-[10px] px-2 py-1 rounded-lg bg-green-100 text-green-700 font-semibold hover:bg-green-200 disabled:opacity-50">
-                  Send
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 function DashboardTab({ token }: { token: string }) {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -941,7 +784,7 @@ function DashboardTab({ token }: { token: string }) {
       {/* Daily chart (simple bar) */}
       {data.daily.length > 0 && (
         <div className="bg-white border border-neutral-200 rounded-2xl p-5">
-          <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4">Messages — Last 30 Days</p>
+          <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-4">Messages â€” Last 30 Days</p>
           <div className="flex items-end gap-1 h-24">
             {data.daily.map((d, i) => {
               const max = Math.max(...data.daily.map(x => x.sent + x.received), 1);
@@ -963,9 +806,9 @@ function DashboardTab({ token }: { token: string }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // INBOX TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function InboxTab({ token }: { token: string }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected]           = useState<Conversation | null>(null);
@@ -1052,7 +895,7 @@ function InboxTab({ token }: { token: string }) {
         </button>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-neutral-800 truncate">{selected.parent_name}</p>
-          <p className="text-xs text-neutral-500">{selected.wa_phone} · {selected.student_name || 'No student'}</p>
+          <p className="text-xs text-neutral-500">{selected.wa_phone} Â· {selected.student_name || 'No student'}</p>
         </div>
         <div className="flex gap-2">
           {!inSession && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold flex items-center gap-0.5"><Clock className="w-2.5 h-2.5"/>Session expired</span>}
@@ -1073,7 +916,7 @@ function InboxTab({ token }: { token: string }) {
               <p className="leading-relaxed">{msg.body}</p>
               <p className={`text-[10px] mt-1 opacity-60 text-right`}>
                 {new Date(msg.sent_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                {msg.direction === 'outbound' && ` · ${msg.status}`}
+                {msg.direction === 'outbound' && ` Â· ${msg.status}`}
               </p>
             </div>
           </div>
@@ -1084,7 +927,7 @@ function InboxTab({ token }: { token: string }) {
       <div className="p-3 bg-white border-t border-neutral-100 rounded-b-2xl">
         {!inSession && (
           <p className="text-xs text-amber-600 mb-2 bg-amber-50 px-3 py-1.5 rounded-lg">
-            Session expired — use an approved template to message this parent.
+            Session expired â€” use an approved template to message this parent.
           </p>
         )}
         <div className="flex gap-2 mb-2">
@@ -1141,7 +984,7 @@ function InboxTab({ token }: { token: string }) {
               {conv.last_message_at && <span className="text-[10px] text-neutral-400 shrink-0 ml-2">{new Date(conv.last_message_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
             </div>
             <p className="text-xs text-neutral-500 truncate">{conv.last_message_text || 'No messages yet'}</p>
-            {conv.student_name && <p className="text-[10px] text-neutral-400">{conv.student_name} · {conv.class_name}</p>}
+            {conv.student_name && <p className="text-[10px] text-neutral-400">{conv.student_name} Â· {conv.class_name}</p>}
           </div>
           {conv.unread_count > 0 && <span className="w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0">{conv.unread_count}</span>}
           <ChevronRight className="w-4 h-4 text-neutral-300 shrink-0"/>
@@ -1151,9 +994,9 @@ function InboxTab({ token }: { token: string }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // CONTACTS TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function ContactsTab({ token }: { token: string }) {
   const [contacts, setContacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1211,7 +1054,7 @@ function ContactsTab({ token }: { token: string }) {
               {contacts.map(c => (
                 <tr key={c.id} className="border-b border-neutral-50 last:border-0 hover:bg-neutral-50">
                   <td className="px-4 py-3 font-medium text-neutral-800">{c.name}</td>
-                  <td className="px-4 py-3 text-neutral-500">{c.student_name || '—'} {c.class_name ? `· ${c.class_name}` : ''}</td>
+                  <td className="px-4 py-3 text-neutral-500">{c.student_name || 'â€”'} {c.class_name ? `Â· ${c.class_name}` : ''}</td>
                   <td className="px-4 py-3 text-neutral-500">{c.mobile}</td>
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => toggleOptIn(c.id, c.whatsapp_opt_in)}
@@ -1229,9 +1072,9 @@ function ContactsTab({ token }: { token: string }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // CAMPAIGNS TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function CampaignsTab({ token }: { token: string }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1288,7 +1131,7 @@ function CampaignsTab({ token }: { token: string }) {
           <option value="section">Specific Section</option>
           <option value="custom">Custom Selection</option>
         </select>
-        <textarea placeholder="Message (plain text — only usable within 24h session window; use a template for new outreach)"
+        <textarea placeholder="Message (plain text â€” only usable within 24h session window; use a template for new outreach)"
           value={form.message_body} onChange={e => setForm(f => ({...f, message_body: e.target.value}))}
           rows={3} className="w-full px-3 py-2 rounded-xl border border-neutral-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20"/>
         <button onClick={create} disabled={creating || !form.name.trim()}
@@ -1325,9 +1168,9 @@ function CampaignsTab({ token }: { token: string }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // TEMPLATES TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function TemplatesTab({ token }: { token: string }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1357,7 +1200,7 @@ function TemplatesTab({ token }: { token: string }) {
     setCreating(true); setMsg('');
     try {
       await apiPost('/api/v1/admin/whatsapp/templates', form, token);
-      setMsg('Template saved — submit for Meta approval from your Meta Business dashboard.');
+      setMsg('Template saved â€” submit for Meta approval from your Meta Business dashboard.');
       setForm({ name: '', display_name: '', category: 'UTILITY', body_text: '', language: 'en' });
       load();
     } catch (e: any) { setMsg(e?.message || 'Failed'); }
@@ -1429,7 +1272,7 @@ function TemplatesTab({ token }: { token: string }) {
           <div className="flex items-start justify-between mb-2">
             <div>
               <p className="text-sm font-bold text-neutral-800">{t.display_name}</p>
-              <p className="text-xs text-neutral-400 font-mono">{t.name} · {t.category} · {t.language || 'en'}</p>
+              <p className="text-xs text-neutral-400 font-mono">{t.name} Â· {t.category} Â· {t.language || 'en'}</p>
             </div>
             <div className="flex items-center gap-2">
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${statusColor(t.status)}`}>{t.status}</span>
@@ -1448,9 +1291,9 @@ function TemplatesTab({ token }: { token: string }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // AUTOMATIONS TAB
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function AutomationsTab({ token }: { token: string }) {
   const [automations, setAutomations] = useState<any[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -1543,8 +1386,8 @@ function AutomationsTab({ token }: { token: string }) {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-neutral-800">{a.name}</p>
             <p className="text-xs text-neutral-500">{TRIGGERS.find(t => t.value === a.trigger_type)?.label || a.trigger_type}
-              {a.template_name ? ` · Template: ${a.template_name}` : ' · No template'}
-              {a.delay_minutes > 0 ? ` · ${a.delay_minutes}m delay` : ''}
+              {a.template_name ? ` Â· Template: ${a.template_name}` : ' Â· No template'}
+              {a.delay_minutes > 0 ? ` Â· ${a.delay_minutes}m delay` : ''}
             </p>
           </div>
           <button onClick={() => toggle(a.id, a.is_active)}
