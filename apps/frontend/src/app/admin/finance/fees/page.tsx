@@ -330,7 +330,7 @@ export default function FeesPage() {
         amountInfo = `Partial payment. ₹${(outstanding - amtNum).toLocaleString('en-IN')} will remain outstanding.`;
       }
     } else if (nextInstAmt > 0 && amtNum < nextInstAmt) {
-      amountWarning = `Less than next instalment (₹${nextInstAmt.toLocaleString('en-IN')}). Recorded as partial payment.`;
+      amountWarning = `Less than next instalment (₹${Number(nextInstAmt).toLocaleString('en-IN', { maximumFractionDigits: 0 })}). Recorded as partial payment.`;
     }
   }
 
@@ -850,6 +850,95 @@ export default function FeesPage() {
               </div>
             )}
           </Card>
+
+          {/* Concession modal */}
+          {concessionTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-violet-200">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="font-bold text-gray-800 text-base">Grant Concession</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">{concessionTarget.fee_head_name}</p>
+                  </div>
+                  <button onClick={() => setConcessionTarget(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+                </div>
+
+                {concMsg && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3 text-xs text-green-700 font-medium">
+                    {concMsg}
+                  </div>
+                )}
+                {concErr && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3 text-xs text-red-600">
+                    {concErr}
+                  </div>
+                )}
+
+                {/* Type toggle */}
+                <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
+                  <button onClick={() => { setConcType('fixed'); setConcValue(''); }}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${concType === 'fixed' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
+                    Fixed Amount (₹)
+                  </button>
+                  <button onClick={() => { setConcType('percentage'); setConcValue(''); }}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${concType === 'percentage' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
+                    Percentage (%)
+                  </button>
+                </div>
+
+                {/* Value */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {concType === 'fixed' ? 'Concession Amount (₹)' : 'Concession Percentage (%)'} <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      {concType === 'fixed' ? '₹' : '%'}
+                    </span>
+                    <input type="number" min="1" max={concType === 'percentage' ? 100 : undefined}
+                      className="w-full pl-7 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200"
+                      placeholder={concType === 'fixed' ? '0' : '0–100'}
+                      value={concValue} onChange={e => setConcValue(e.target.value)} />
+                  </div>
+                  {/* Preview */}
+                  {concValue && parseFloat(concValue) > 0 && (
+                    <p className="text-xs text-violet-600 mt-1">
+                      {concType === 'fixed'
+                        ? `₹${Number(concValue).toLocaleString('en-IN')} off the outstanding balance`
+                        : `₹${((parseFloat(concValue) / 100) * Number(concessionTarget.assigned_amount)).toLocaleString('en-IN')} off (${concValue}% of ₹${Number(concessionTarget.assigned_amount).toLocaleString('en-IN')})`}
+                    </p>
+                  )}
+                </div>
+
+                {/* Reason */}
+                <div className="mb-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Reason <span className="text-red-500">*</span>
+                  </label>
+                  <textarea rows={2}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200 resize-none"
+                    placeholder="e.g. Sibling discount, scholarship, financial hardship…"
+                    value={concReason} onChange={e => setConcReason(e.target.value)} />
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-4 text-xs text-amber-700">
+                  Concession will be sent to the Principal for approval before it is applied.
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="ghost" onClick={() => setConcessionTarget(null)} disabled={concLoading}>
+                    Cancel
+                  </Button>
+                  <Button size="sm"
+                    className="bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-40"
+                    disabled={!concValue || parseFloat(concValue) <= 0 || !concReason.trim() || concLoading}
+                    onClick={handleGrantConcession}>
+                    {concLoading ? 'Submitting…' : 'Submit for Approval'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Cancel request modal */}
           {cancelTarget && (
