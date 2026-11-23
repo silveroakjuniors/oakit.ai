@@ -43,7 +43,7 @@ const ALL_TILES = [
   { path: '/admin/finance/reconciliation/online',      icon: '🔍', label: 'Online Reconciliation', perm: 'VIEW_RECONCILIATION' },
   { path: '/admin/finance/enquiries',                  icon: '📝', label: 'Admissions',            perm: 'VIEW_FEES' },
   { path: '/admin/finance/fee-structures',             icon: '🏷️', label: 'Fee Structures',        perm: 'MANAGE_FEE_STRUCTURE' },
-  { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'VIEW_EXPENSE' },
+  { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'ADD_EXPENSE' },
   { path: '/admin/finance/salary',                     icon: '👔', label: 'Salary',                perm: 'VIEW_SALARY' },
   { path: '/admin/finance/reports',                    icon: '📈', label: 'Reports',               perm: 'VIEW_REPORTS' },
   { path: '/admin/finance/profitability',              icon: '💹', label: 'Profitability',         perm: 'VIEW_PROFIT' },

@@ -27,7 +27,7 @@ interface ReportOption {
 
 const REPORT_OPTIONS: ReportOption[] = [
   { id: 'revenue',                label: 'Revenue' },
-  { id: 'expenses',               label: 'Expenses' },
+  { id: 'expenses',               label: 'Expenses',               principalOnly: true },
   { id: 'profit-loss',            label: 'Profit & Loss',          principalOnly: true },
   { id: 'daily-collection',       label: 'Daily Collection' },
   { id: 'monthly-collection',     label: 'Monthly Collection' },

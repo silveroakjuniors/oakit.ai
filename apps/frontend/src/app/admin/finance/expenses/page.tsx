@@ -166,17 +166,65 @@ export default function ExpensesPage() {
   }
 
   const canAdd = permissions.includes('ADD_EXPENSE');
+  const canView = permissions.includes('VIEW_EXPENSE');
   // finance_manager cannot edit/delete (backend enforces; we mirror in UI).
-  // Principal and admin always can edit/delete when they have ADD_EXPENSE.
   const role = getRole() || '';
   const canEdit = canAdd && role !== 'finance_manager';
 
-  if (permsLoaded && !permissions.includes('VIEW_EXPENSE')) {
+  // Admin has ADD_EXPENSE but not VIEW_EXPENSE — show only the add form
+  if (permsLoaded && canAdd && !canView) {
+    return (
+      <div className="p-6 max-w-xl">
+        <h1 className="text-2xl font-semibold text-primary mb-1">Record Expense</h1>
+        <p className="text-xs text-gray-400 mb-6">You can record expenses. Only the Principal can view the expense list.</p>
+        <Card>
+          {createSuccess && <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">{createSuccess}</div>}
+          {createError  && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-600">{createError}</div>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+              <input type="date" max={today} className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm"
+                value={date} onChange={e => setDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₹)</label>
+              <input type="number" min="1" className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm"
+                placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+              <select className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm"
+                value={category} onChange={e => setCategory(e.target.value)}>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+              <input type="text" className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm"
+                placeholder="Description…" value={notes} onChange={e => setNotes(e.target.value)} />
+            </div>
+          </div>
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Attachment (optional)</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf"
+              className="text-sm text-gray-600"
+              onChange={e => setAttachment(e.target.files?.[0] || null)} />
+          </div>
+          <div className="mt-5">
+            <Button onClick={handleCreate} disabled={createLoading}>
+              {createLoading ? 'Saving…' : 'Save Expense'}
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (permsLoaded && !canView) {
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[300px] text-center">
-        <p className="text-4xl mb-3">🔒</p>
         <p className="text-base font-semibold text-gray-700 mb-1">Access Restricted</p>
-        <p className="text-sm text-gray-400">You don't have permission to view expenses.<br />Contact the Principal to request access.</p>
+        <p className="text-sm text-gray-400">You don&apos;t have permission to view expenses.<br />Contact the Principal to request access.</p>
       </div>
     );
   }
