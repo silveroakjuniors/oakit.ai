@@ -181,7 +181,7 @@ export default function AdminPendingFeesPage() {
                       <td className="py-2 px-3 text-right font-bold text-green-600">{fmt(r.total_paid)}</td>
                       <td className="py-2 px-3 text-right font-bold text-violet-600">
                         {Number(r.approved_concession_amount) > 0
-                          ? <span title={r.concession_type === 'percentage' ? `${r.concession_value}%` : undefined}>{fmt(r.approved_concession_amount)}</span>
+                          ? <span title={r.concession_type === 'percentage' ? `${r.concession_value}%` : undefined}>{fmt(r.approved_concession_amount ?? 0)}</span>
                           : <span className="text-gray-300">&#x20B9;0</span>}
                       </td>
                       <td className="py-2 px-3 text-right font-bold text-amber-600">{fmt(r.outstanding_balance)}</td>
@@ -191,7 +191,7 @@ export default function AdminPendingFeesPage() {
                           <span>
                             {r.next_instalment_label}
                             {r.next_due_date && ` \u00B7 ${new Date(r.next_due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
-                            {r.next_instalment_amount && <span className="font-semibold text-amber-600 ml-1">({fmt(r.next_instalment_amount)})</span>}
+                            {r.next_instalment_amount && <span className="font-semibold text-amber-600 ml-1">({fmt(r.next_instalment_amount ?? 0)})</span>}
                           </span>
                         ) : '\u2014'}
                       </td>
