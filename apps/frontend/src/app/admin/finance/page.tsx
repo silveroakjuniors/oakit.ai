@@ -90,8 +90,15 @@ export default function FinanceDashboardPage() {
       setCashTasks(cash.filter(c => c.status === 'pending').slice(0, 5));
 
       // Fetch recent transactions (last 10)
-      const txns = await apiGet<RecentTransaction[]>(`/api/v1/financial/reports/daily-collection?date=${today}&limit=10`, token).catch(() => []);
-      setRecentTransactions(Array.isArray(txns) ? txns : []);
+      try {
+        const txnData = await apiGet<{ payments?: RecentTransaction[] } | RecentTransaction[]>(
+          `/api/v1/financial/reports/daily-collection?date=${today}`, token
+        );
+        const txnList = Array.isArray(txnData)
+          ? txnData
+          : (txnData as any)?.payments ?? [];
+        setRecentTransactions(Array.isArray(txnList) ? txnList.slice(0, 10) : []);
+      } catch { setRecentTransactions([]); }
     } catch {
       // Ignore
     } finally {
@@ -117,14 +124,14 @@ export default function FinanceDashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <StatCard
           label="Today's Collections"
-          value={`₹${dailyCollection?.total.toLocaleString('en-IN') || 0}`}
-          subvalue={`${dailyCollection?.count || 0} payments`}
+          value={`₹${(dailyCollection?.total ?? 0).toLocaleString('en-IN')}`}
+          subvalue={`${dailyCollection?.count ?? 0} payments`}
           color="success"
         />
         <StatCard
           label="Total Pending"
-          value={`₹${studentPending?.total_pending.toLocaleString('en-IN') || 0}`}
-          subvalue={`${studentPending?.student_count || 0} students`}
+          value={`₹${(studentPending?.total_pending ?? 0).toLocaleString('en-IN')}`}
+          subvalue={`${studentPending?.student_count ?? 0} students`}
           color="warning"
         />
         <div
@@ -133,7 +140,7 @@ export default function FinanceDashboardPage() {
         >
           <p className="text-xs font-medium text-gray-500 mb-1">Reconciliation Pending</p>
           <p className={`text-2xl font-black ${reconPending.count > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
-            {reconPending.count > 0 ? `₹${reconPending.total_amount.toLocaleString('en-IN')}` : '—'}
+            {reconPending.count > 0 ? `₹${(reconPending.total_amount || 0).toLocaleString('en-IN')}` : '—'}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
             {reconPending.count > 0 ? `${reconPending.count} payment${reconPending.count === 1 ? '' : 's'} awaiting bank match` : 'All payments reconciled'}
