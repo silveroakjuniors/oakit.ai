@@ -592,19 +592,65 @@ export default function FeeStructuresPage() {
                             ₹{Number(displayAmount).toLocaleString('en-IN')}
                             {label}
                           </span>
-                          {/* If payments exist — locked, show Restructure only */}
+                          {/* If payments exist — show Manage/Assign AND Restructure */}
                           {(fh.payments_count ?? 0) > 0 ? (
-                            <button
-                              onClick={() => {
-                                setRestructureHead({ structureId: s.id, headId: fh.id, headName: fh.name });
-                                setRestructureConfirmText('');
-                                setRestructureError('');
-                              }}
-                              className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium"
-                              title={`${fh.payments_count} payment(s) recorded — restructure to reset`}
-                            >
-                              🔒 Restructure
-                            </button>
+                            <div className="flex items-center gap-1">
+                              {/* Still allow managing/assigning students even when payments exist */}
+                              {fh.class_id ? (
+                                <button
+                                  onClick={() => {
+                                    setStudentPickerClassId(fh.class_id ?? '');
+                                    setStudentList([]);
+                                    setStudentPickerMsg('');
+                                    setSelectedStudentIds(new Set());
+                                    setAssignStudentsHead({
+                                      structureId: s.id,
+                                      headId: fh.id,
+                                      headName: fh.name,
+                                      classId: fh.class_id ?? '',
+                                    });
+                                    loadClasses();
+                                    if (fh.class_id) loadStudentsForHead(fh.class_id, fh.id);
+                                  }}
+                                  className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                  title="Manage individual students"
+                                >
+                                  Manage
+                                </button>
+                              ) : CLASS_ASSIGN_TYPES.includes(fh.type) ? (
+                                <button
+                                  onClick={() => {
+                                    setAssignHead({ structureId: s.id, headId: fh.id, headName: fh.name, feeType: fh.type });
+                                    setAssignClassId('');
+                                    setAssignMsg('');
+                                    loadClasses(s.id);
+                                  }}
+                                  className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                >
+                                  Assign Class
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setStudentPickerClassId('');
+                                    setStudentList([]);
+                                    setStudentPickerMsg('');
+                                    setAssignStudentsHead({ structureId: s.id, headId: fh.id, headName: fh.name, classId: '' });
+                                    loadClasses();
+                                  }}
+                                  className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                >
+                                  Assign Students
+                                </button>
+                              )}
+                              <button
+                                onClick={() => { setRestructureHead({ structureId: s.id, headId: fh.id, headName: fh.name }); setRestructureConfirmText(''); setRestructureError(''); }}
+                                className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium"
+                                title={`${fh.payments_count} payment(s) recorded — restructure to reset`}
+                              >
+                                Restructure
+                              </button>
+                            </div>
                           ) : (
                             <>
                               {/* Assign / Unassign per fee head */}
