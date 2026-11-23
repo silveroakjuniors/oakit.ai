@@ -658,9 +658,14 @@ router.get('/pending-detail', async (req, res) => {
          fh.name   AS fee_head_name,
          fh.type   AS fee_type,
          sfa.assigned_amount,
-         sfa.outstanding_balance,
+         -- Live calculation: outstanding = assigned - paid (not from stored column)
+         GREATEST(0, sfa.assigned_amount - COALESCE(fp_totals.paid, 0)) AS outstanding_balance,
          COALESCE(fp_totals.paid, 0)             AS total_paid,
-         sfa.status,
+         CASE
+           WHEN GREATEST(0, sfa.assigned_amount - COALESCE(fp_totals.paid, 0)) = 0 THEN 'paid'
+           WHEN COALESCE(fp_totals.paid, 0) > 0 THEN 'partially_paid'
+           ELSE 'pending'
+         END AS status,
          -- Approved concessions for this student+fee_head
          COALESCE(conc_totals.concession_amount, 0) AS approved_concession_amount,
          conc_totals.concession_type,
@@ -702,7 +707,9 @@ router.get('/pending-detail', async (req, res) => {
          LIMIT 1
        ) next_inst ON true
        WHERE sfa.school_id = $1 AND sfa.deleted_at IS NULL
-         AND sfa.outstanding_balance > 0${where}
+         -- Only show rows where live-calculated outstanding > 0
+         AND GREATEST(0, sfa.assigned_amount - COALESCE(fp_totals.paid, 0)) > 0
+         ${where}
        ORDER BY c.name, s.name, fh.name`,
       params,
     );
