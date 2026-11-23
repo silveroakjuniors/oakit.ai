@@ -58,6 +58,7 @@ export default function AdminPendingFeesPage() {
   const [error, setError] = useState('');
   const [classFilter, setClassFilter] = useState('');
   const [feeTypeFilter, setFeeTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
   const [search, setSearch] = useState('');
 
@@ -83,6 +84,7 @@ export default function AdminPendingFeesPage() {
   const filtered = data.filter(r => {
     if (search.trim() && !r.student_name.toLowerCase().includes(search.toLowerCase())) return false;
     if (feeTypeFilter && r.fee_type !== feeTypeFilter) return false;
+    if (statusFilter && r.status !== statusFilter) return false;
     return true;
   });
 
@@ -118,6 +120,16 @@ export default function AdminPendingFeesPage() {
             value={feeTypeFilter} onChange={e => setFeeTypeFilter(e.target.value)}>
             <option value="">All Types</option>
             {FEE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+          <select className="px-3 py-2 rounded-lg border border-gray-200 text-xs"
+            value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="partially_paid">Partially Paid</option>
+            <option value="overdue">Overdue</option>
           </select>
         </div>
       </div>
