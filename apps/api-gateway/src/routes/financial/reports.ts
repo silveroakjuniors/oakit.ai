@@ -659,13 +659,17 @@ router.get('/pending-detail', async (req, res) => {
          fh.type   AS fee_type,
          sfa.assigned_amount,
          sfa.outstanding_balance,
-         COALESCE(fp_totals.paid, 0)  AS total_paid,
+         COALESCE(fp_totals.paid, 0)             AS total_paid,
          sfa.status,
+         -- Approved concessions for this student+fee_head
+         COALESCE(conc_totals.concession_amount, 0) AS approved_concession_amount,
+         conc_totals.concession_type,
+         conc_totals.concession_value,
          next_inst.due_date           AS next_due_date,
          next_inst.amount             AS next_instalment_amount,
          COALESCE(next_inst.label, 'Instalment ' || next_inst.instalment_number) AS next_instalment_label
        FROM student_fee_accounts sfa
-       JOIN students s ON s.id = sfa.student_id
+       JOIN students s ON s.id = sfa.student_id AND s.is_active = true
        LEFT JOIN classes c ON c.id = s.class_id
        JOIN fee_heads fh ON fh.id = sfa.fee_head_id
        LEFT JOIN (
@@ -673,6 +677,22 @@ router.get('/pending-detail', async (req, res) => {
          FROM fee_payments WHERE school_id = $1 AND deleted_at IS NULL
          GROUP BY student_id, fee_head_id
        ) fp_totals ON fp_totals.student_id = sfa.student_id AND fp_totals.fee_head_id = sfa.fee_head_id
+       LEFT JOIN (
+         SELECT
+           cn.student_id, cn.fee_head_id,
+           cn.type  AS concession_type,
+           cn.value AS concession_value,
+           CASE cn.type
+             WHEN 'fixed'      THEN cn.value
+             WHEN 'percentage' THEN (cn.value / 100.0) * sfa2.assigned_amount
+             ELSE 0
+           END AS concession_amount
+         FROM concessions cn
+         JOIN student_fee_accounts sfa2
+           ON sfa2.student_id = cn.student_id AND sfa2.fee_head_id = cn.fee_head_id
+           AND sfa2.school_id = $1 AND sfa2.deleted_at IS NULL
+         WHERE cn.school_id = $1 AND cn.status = 'approved' AND cn.deleted_at IS NULL
+       ) conc_totals ON conc_totals.student_id = sfa.student_id AND conc_totals.fee_head_id = sfa.fee_head_id
        LEFT JOIN LATERAL (
          SELECT fi.due_date, fi.amount, fi.instalment_number, fi.label
          FROM fee_instalments fi

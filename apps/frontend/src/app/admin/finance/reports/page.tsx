@@ -52,6 +52,16 @@ export default function ReportsPage() {
   const userRole = getUserRole(token);
   const isPrincipal = userRole === 'principal' || userRole === 'super_admin';
 
+  // Admin cannot access the full reports page
+  if (!isPrincipal) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-[300px] text-center">
+        <p className="text-base font-semibold text-gray-700 mb-1">Access Restricted</p>
+        <p className="text-sm text-gray-400">Financial reports are only available to the Principal.</p>
+      </div>
+    );
+  }
+
   const [reportType, setReportType] = useState<ReportType>('revenue');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');

@@ -15,6 +15,9 @@ interface PendingRow {
   outstanding_balance: number;
   total_paid: number;
   status: string;
+  approved_concession_amount?: number;
+  concession_type?: string;
+  concession_value?: number;
   next_due_date?: string;
   next_instalment_label?: string;
   next_instalment_amount?: number;
@@ -128,6 +131,7 @@ export default function AdminPendingFeesPage() {
                     <th className="text-left py-2 px-3">Fee Head</th>
                     <th className="text-right py-2 px-3">Assigned</th>
                     <th className="text-right py-2 px-3">Paid</th>
+                    <th className="text-right py-2 px-3">Concession</th>
                     <th className="text-right py-2 px-3">Outstanding</th>
                     <th className="text-center py-2 px-3">Status</th>
                     <th className="text-left py-2 px-3">Next Due</th>

@@ -45,9 +45,8 @@ const ALL_TILES = [
   { path: '/admin/finance/fee-structures',             icon: '🏷️', label: 'Fee Structures',        perm: 'MANAGE_FEE_STRUCTURE' },
   { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'ADD_EXPENSE' },
   { path: '/admin/finance/salary',                     icon: '👔', label: 'Salary',                perm: 'VIEW_SALARY' },
-  { path: '/admin/finance/pending-fees',               icon: '⏳', label: 'Pending Fees',          perm: 'VIEW_REPORTS' },
+  { path: '/admin/finance/pending-fees',               icon: '⏳', label: 'Pending Fees',          perm: 'COLLECT_PAYMENT' },
   { path: '/admin/finance/problematic-fees',           icon: '⚠️', label: 'Problematic Fees',      perm: 'COLLECT_PAYMENT' },
-  { path: '/admin/finance/reports',                    icon: '📈', label: 'Reports',               perm: 'VIEW_REPORTS' },
   { path: '/admin/finance/profitability',              icon: '💹', label: 'Profitability',         perm: 'VIEW_PROFIT' },
 ] as const;
 
