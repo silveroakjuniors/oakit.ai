@@ -46,6 +46,7 @@ const ALL_TILES = [
   { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'ADD_EXPENSE' },
   { path: '/admin/finance/salary',                     icon: '👔', label: 'Salary',                perm: 'VIEW_SALARY' },
   { path: '/admin/finance/pending-fees',               icon: '⏳', label: 'Pending Fees',          perm: 'VIEW_REPORTS' },
+  { path: '/admin/finance/problematic-fees',           icon: '⚠️', label: 'Problematic Fees',      perm: 'COLLECT_PAYMENT' },
   { path: '/admin/finance/reports',                    icon: '📈', label: 'Reports',               perm: 'VIEW_REPORTS' },
   { path: '/admin/finance/profitability',              icon: '💹', label: 'Profitability',         perm: 'VIEW_PROFIT' },
 ] as const;
@@ -57,6 +58,7 @@ export default function FinanceDashboardPage() {
   const [dailyCollection, setDailyCollection] = useState<DailyCollection | null>(null);
   const [studentPending, setStudentPending] = useState<StudentPending | null>(null);
   const [reconPending, setReconPending] = useState<ReconPending>({ count: 0, total_amount: 0 });
+  const [problematicCount, setProblematicCount] = useState(0);
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
   const [cashTasks, setCashTasks] = useState<CashReconciliation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +84,10 @@ export default function FinanceDashboardPage() {
       setDailyCollection(daily);
       setStudentPending(pending);
       setReconPending(recon);
+      // Load problematic count separately — doesn't block main dashboard
+      apiGet<any[]>('/api/v1/financial/payments/duplicate-references', token)
+        .then(d => setProblematicCount(Array.isArray(d) ? d.filter(g => g.has_unreviewed).length : 0))
+        .catch(() => {});
       setCashTasks(cash.filter(c => c.status === 'pending').slice(0, 5));
 
       // Fetch recent transactions (last 10)
@@ -213,10 +219,15 @@ export default function FinanceDashboardPage() {
           <button
             key={path}
             onClick={() => router.push(path)}
-            className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
+            className={`p-4 rounded-xl bg-white border hover:shadow-md transition-all text-left relative ${path === '/admin/finance/problematic-fees' && problematicCount > 0 ? 'border-amber-300 bg-amber-50' : 'border-gray-200 hover:border-primary'}`}
           >
             <span className="text-2xl block mb-2">{icon}</span>
             <p className="text-sm font-semibold text-gray-800">{label}</p>
+            {path === '/admin/finance/problematic-fees' && problematicCount > 0 && (
+              <span className="absolute top-2 right-2 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">
+                {problematicCount}
+              </span>
+            )}
           </button>
         ))}
       </div>

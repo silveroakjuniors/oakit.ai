@@ -83,8 +83,9 @@ const navItems: NavItem[] = [
   { href: '/admin/finance/concessions',    label: 'Concessions',      icon: Gift,          group: 'finance', requirePerm: FIN_PERMS.MANAGE_CONCESSION },
   { href: '/admin/finance/expenses',       label: 'Expenses',         icon: Receipt,       group: 'finance', requirePerm: FIN_PERMS.ADD_EXPENSE },
   { href: '/admin/finance/salary',         label: 'Salary',           icon: Briefcase,     group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
-  { href: '/admin/finance/pending-fees',   label: 'Pending Fees',     icon: TrendingUp,    group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
-  { href: '/admin/finance/reports',        label: 'Reports',          icon: BarChart3,     group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
+  { href: '/admin/finance/pending-fees',      label: 'Pending Fees',       icon: TrendingUp,    group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
+  { href: '/admin/finance/problematic-fees',  label: 'Problematic Fees',   icon: AlertTriangle, group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
+  { href: '/admin/finance/reports',           label: 'Reports',            icon: BarChart3,     group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
   { href: '/admin/reports',          label: 'Reports',          icon: BarChart3,       group: 'insights' },
   { href: '/admin/attendance',       label: 'Attendance',       icon: ClipboardList,   group: 'insights' },
   { href: '/admin/announcements',    label: 'Announcements',    icon: Megaphone,       group: 'insights' },
@@ -217,10 +218,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'VIEW_REPORTS', 'SEND_REMINDER', 'VIEW_EXPENSE', 'VIEW_SALARY', 'VIEW_RECONCILIATION', 'PERFORM_RECONCILIATION', 'PUSH_PAYSLIP', 'EDIT_SALARY']);
         return;
       }
-      if (payload.role === 'admin') {
-        setFinPerms(['COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE']);
-        return;
-      }
+      // For admin, fetch actual permissions from the API — do not hardcode
     } catch {}
     apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
       .then(data => setFinPerms(data.permissions || []))
