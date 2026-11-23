@@ -24,7 +24,7 @@ interface PendingRow {
 }
 
 function fmt(n: number | string) {
-  return 'â‚¹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  return '\u20B9' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -41,6 +41,16 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const FEE_TYPES = [
+  { value: 'tuition',        label: 'Tuition' },
+  { value: 'admission',      label: 'Admission' },
+  { value: 'transport',      label: 'Transport' },
+  { value: 'activity',       label: 'Activity' },
+  { value: 'custom',         label: 'Custom' },
+  { value: 'daycare',        label: 'Daycare' },
+  { value: 'bags_and_books', label: 'Bags & Books' },
+];
+
 export default function AdminPendingFeesPage() {
   const token = getToken() || '';
   const [data, setData] = useState<PendingRow[]>([]);
@@ -48,15 +58,6 @@ export default function AdminPendingFeesPage() {
   const [error, setError] = useState('');
   const [classFilter, setClassFilter] = useState('');
   const [feeTypeFilter, setFeeTypeFilter] = useState('');
-  const FEE_TYPES = [
-    { value: 'tuition', label: 'Tuition' },
-    { value: 'admission', label: 'Admission' },
-    { value: 'transport', label: 'Transport' },
-    { value: 'activity', label: 'Activity' },
-    { value: 'custom', label: 'Custom' },
-    { value: 'daycare', label: 'Daycare' },
-    { value: 'bags_and_books', label: 'Bags & Books' },
-  ];
   const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
   const [search, setSearch] = useState('');
 
@@ -79,9 +80,11 @@ export default function AdminPendingFeesPage() {
     finally { setLoading(false); }
   }
 
-  const filtered = search.trim()
-    ? data.filter(r => r.student_name.toLowerCase().includes(search.toLowerCase()))
-    : data;
+  const filtered = data.filter(r => {
+    if (search.trim() && !r.student_name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (feeTypeFilter && r.fee_type !== feeTypeFilter) return false;
+    return true;
+  });
 
   const totalOutstanding = filtered.reduce((s, r) => s + Number(r.outstanding_balance), 0);
 
@@ -97,7 +100,7 @@ export default function AdminPendingFeesPage() {
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Search Student</label>
           <input type="text" className="px-3 py-2 rounded-lg border border-gray-200 text-xs w-44"
-            placeholder="Nameâ€¦" value={search} onChange={e => setSearch(e.target.value)} />
+            placeholder="Name..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         {classes.length > 0 && (
           <div>
@@ -109,6 +112,14 @@ export default function AdminPendingFeesPage() {
             </select>
           </div>
         )}
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Fee Type</label>
+          <select className="px-3 py-2 rounded-lg border border-gray-200 text-xs"
+            value={feeTypeFilter} onChange={e => setFeeTypeFilter(e.target.value)}>
+            <option value="">All Types</option>
+            {FEE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-600">{error}</div>}
@@ -159,7 +170,7 @@ export default function AdminPendingFeesPage() {
                       <td className="py-2 px-3 text-right font-bold text-violet-600">
                         {Number(r.approved_concession_amount) > 0
                           ? <span title={r.concession_type === 'percentage' ? `${r.concession_value}%` : undefined}>{fmt(r.approved_concession_amount)}</span>
-                          : <span className="text-gray-300">â‚¹0</span>}
+                          : <span className="text-gray-300">{'\u20B9'}0</span>}
                       </td>
                       <td className="py-2 px-3 text-right font-bold text-amber-600">{fmt(r.outstanding_balance)}</td>
                       <td className="py-2 px-3 text-center"><StatusBadge status={r.status} /></td>
@@ -167,10 +178,10 @@ export default function AdminPendingFeesPage() {
                         {r.next_instalment_label ? (
                           <span>
                             {r.next_instalment_label}
-                            {r.next_due_date && ` Â· ${new Date(r.next_due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                            {r.next_due_date && ` \u00B7 ${new Date(r.next_due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
                             {r.next_instalment_amount && <span className="font-semibold text-amber-600 ml-1">({fmt(r.next_instalment_amount)})</span>}
                           </span>
-                        ) : 'â€”'}
+                        ) : '\u2014'}
                       </td>
                     </tr>
                   ))}
