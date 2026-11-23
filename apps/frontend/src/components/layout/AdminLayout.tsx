@@ -269,15 +269,23 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       return;
     }
     setAuthChecked(true);
-    // Admin: only fee collection + fee structures. Principal: everything.
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       if (payload.role === 'principal') {
-        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'VIEW_REPORTS', 'SEND_REMINDER', 'VIEW_EXPENSE', 'VIEW_SALARY', 'VIEW_RECONCILIATION', 'PERFORM_RECONCILIATION', 'PUSH_PAYSLIP', 'EDIT_SALARY']);
+        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'VIEW_REPORTS', 'SEND_REMINDER', 'VIEW_EXPENSE', 'VIEW_SALARY', 'VIEW_RECONCILIATION', 'PERFORM_RECONCILIATION', 'PUSH_PAYSLIP', 'EDIT_SALARY', 'VIEW_PROFIT', 'ADD_EXPENSE']);
         return;
       }
-      // For admin, fetch actual permissions from the API — do not hardcode
+      if (payload.role === 'admin') {
+        // Set role defaults immediately so sidebar shows without waiting for API
+        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'VIEW_REPORTS', 'SEND_REMINDER', 'ADD_EXPENSE']);
+        // Then fetch actual permissions (may include per-user overrides) and update
+        apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+          .then(data => { if (data.permissions?.length) setFinPerms(data.permissions); })
+          .catch(() => {}); // keep defaults on error
+        return;
+      }
     } catch {}
+    // For finance_manager and other roles — always fetch from API
     apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
       .then(data => setFinPerms(data.permissions || []))
       .catch(() => setFinPerms([]));
