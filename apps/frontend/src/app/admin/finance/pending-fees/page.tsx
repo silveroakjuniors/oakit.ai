@@ -146,6 +146,11 @@ export default function AdminPendingFeesPage() {
                       <td className="py-2 px-3 text-gray-500">{r.fee_head_name}</td>
                       <td className="py-2 px-3 text-right text-gray-600">{fmt(r.assigned_amount)}</td>
                       <td className="py-2 px-3 text-right font-bold text-green-600">{fmt(r.total_paid)}</td>
+                      <td className="py-2 px-3 text-right font-bold text-violet-600">
+                        {Number(r.approved_concession_amount) > 0
+                          ? <span title={r.concession_type === 'percentage' ? `${r.concession_value}%` : undefined}>{fmt(r.approved_concession_amount)}</span>
+                          : <span className="text-gray-300">₹0</span>}
+                      </td>
                       <td className="py-2 px-3 text-right font-bold text-amber-600">{fmt(r.outstanding_balance)}</td>
                       <td className="py-2 px-3 text-center"><StatusBadge status={r.status} /></td>
                       <td className="py-2 px-3 text-gray-500 text-[10px]">
@@ -162,7 +167,7 @@ export default function AdminPendingFeesPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-gray-200 bg-gray-50">
-                    <td colSpan={6} className="py-2 px-3 text-xs font-bold text-gray-500 text-right">Total Outstanding</td>
+                    <td colSpan={7} className="py-2 px-3 text-xs font-bold text-gray-500 text-right">Total Outstanding</td>
                     <td className="py-2 px-3 text-right text-sm font-bold text-amber-600">{fmt(totalOutstanding)}</td>
                     <td colSpan={2} />
                   </tr>
