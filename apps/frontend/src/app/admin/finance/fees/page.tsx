@@ -32,6 +32,7 @@ interface FeeAccount {
   pricing_model: string;
   academic_year?: string;
   class_name?: string;
+  concession_locked?: boolean;
   instalments?: Instalment[];
   next_instalment?: Instalment | null;
   total_instalments?: number;
@@ -157,6 +158,11 @@ export default function FeesPage() {
   const [concErr, setConcErr] = useState('');
   const [studentConcessions, setStudentConcessions] = useState<Concession[]>([]);
 
+  // No Concession lock state
+  const [lockConcessionTarget, setLockConcessionTarget] = useState<FeeAccount | null>(null);
+  const [lockLoading, setLockLoading] = useState(false);
+  const [lockMsg, setLockMsg] = useState('');
+
   const needsRef = ['upi', 'online', 'bank_transfer'].includes(paymentMode);
 
   useEffect(() => {
@@ -261,6 +267,21 @@ export default function FeesPage() {
       loadStudentConcessions(selectedStudent.id);
     } catch (e: any) { setConcErr(e?.message || 'Failed to submit concession.'); }
     finally { setConcLoading(false); }
+  }
+
+  async function handleLockConcession() {
+    if (!selectedStudent || !lockConcessionTarget) return;
+    setLockLoading(true); setLockMsg('');
+    try {
+      await apiPost('/api/v1/financial/concessions/lock-student', {
+        student_id: selectedStudent.id,
+        fee_head_id: lockConcessionTarget.fee_head_id,
+      }, token);
+      setLockMsg('Locked — no concessions can be added for this fee account.');
+      setLockConcessionTarget(null);
+      await loadInvoice(selectedStudent.id);
+    } catch (e: any) { setLockMsg(e?.message || 'Failed to lock.'); }
+    finally { setLockLoading(false); }
   }
 
   function selectAccount(acc: FeeAccount) {
@@ -546,12 +567,25 @@ export default function FeesPage() {
                         </button>
                         {/* Grant Concession button */}
                         {!isPaid && (
-                          <div className="px-3 pb-2.5 flex justify-end border-t border-dashed border-gray-100 pt-2">
-                            <button
-                              onClick={e => { e.stopPropagation(); setConcessionTarget(acc); setConcType('fixed'); setConcValue(''); setConcReason(''); setConcErr(''); setConcMsg(''); }}
-                              className="text-xs px-3 py-1 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold border border-violet-200 transition-colors">
-                              + Grant Concession
-                            </button>
+                          <div className="px-3 pb-2.5 flex justify-end gap-2 border-t border-dashed border-gray-100 pt-2">
+                            {acc.concession_locked ? (
+                              <span className="text-[10px] px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 font-semibold flex items-center gap-1">
+                                No Concession (locked)
+                              </span>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setConcessionTarget(acc); setConcType('fixed'); setConcValue(''); setConcReason(''); setConcErr(''); setConcMsg(''); }}
+                                  className="text-xs px-3 py-1 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold border border-violet-200 transition-colors">
+                                  + Grant Concession
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setLockConcessionTarget(acc); }}
+                                  className="text-xs px-3 py-1 rounded-lg bg-gray-50 text-gray-500 hover:bg-red-50 hover:text-red-600 font-semibold border border-gray-200 hover:border-red-200 transition-colors">
+                                  No Concession
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
@@ -938,6 +972,29 @@ export default function FeesPage() {
                     disabled={!concValue || parseFloat(concValue) <= 0 || !concReason.trim() || concLoading}
                     onClick={handleGrantConcession}>
                     {concLoading ? 'Submitting…' : 'Submit for Approval'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* No Concession lock modal */}
+          {lockConcessionTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border-2 border-gray-200">
+                <h2 className="font-bold text-gray-800 text-base mb-1">Lock — No Concession</h2>
+                <p className="text-xs text-gray-500 mb-4">{lockConcessionTarget.fee_head_name}</p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-xs text-red-700">
+                  This will permanently prevent any concession from being granted for this fee account for <strong>{selectedStudent?.name}</strong>. This cannot be undone.
+                </div>
+                {lockMsg && <p className="text-xs text-green-600 mb-3">{lockMsg}</p>}
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="ghost" onClick={() => setLockConcessionTarget(null)} disabled={lockLoading}>Cancel</Button>
+                  <Button size="sm"
+                    className="bg-gray-700 hover:bg-gray-800 text-white"
+                    disabled={lockLoading}
+                    onClick={handleLockConcession}>
+                    {lockLoading ? 'Locking…' : 'Confirm — No Concession'}
                   </Button>
                 </div>
               </div>
