@@ -78,6 +78,7 @@ const navItems: NavItem[] = [
   { href: '/admin/calendar',         label: 'Calendar',         icon: CalendarDays,    group: 'content' },
   { href: '/admin/plans',            label: 'Daily Planner',    icon: ClipboardList,   group: 'content' },
   // Finance — each item gated by the relevant permission
+  { href: '/admin/finance',                label: 'Overview',           icon: DollarSign,    group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
   { href: '/admin/finance/fee-structures', label: 'Fee Structures',   icon: Tag,           group: 'finance', requirePerm: FIN_PERMS.MANAGE_FEE_STRUCTURE },
   { href: '/admin/finance/fees',           label: 'Fee Collection',   icon: CreditCard,    group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
   { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: Pencil,        group: 'school' },
@@ -184,12 +185,9 @@ function SidebarContent({ pathname, permissions, onClose }: { pathname: string; 
 
           return (
             <div key={group.key} className="mt-1">
-              {/* Collapsible group header — clicking the icon/label area navigates for finance, others just toggle */}
+              {/* Collapsible group header */}
               <button
-                onClick={() => {
-                  toggleGroup(group.key);
-                  if (group.key === 'finance') router.push('/admin/finance');
-                }}
+                onClick={() => toggleGroup(group.key)}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold uppercase tracking-widest transition-colors ${
                   hasActiveChild
                     ? 'text-primary bg-primary/5'

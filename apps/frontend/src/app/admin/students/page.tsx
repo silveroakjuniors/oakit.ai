@@ -1278,6 +1278,10 @@ export default function StudentsPage() {
   const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [incompleteParentsOnly, setIncompleteParentsOnly] = useState(false);
+
+  // Totals always fetched regardless of current filter
+  const [totalActive, setTotalActive] = useState(0);
+  const [totalTerminated, setTotalTerminated] = useState(0);
   const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -1313,6 +1317,14 @@ export default function StudentsPage() {
         apiGet<Class[]>('/api/v1/admin/classes', token),
       ]);
       setStudents(studs); setClasses(cls);
+
+      // Always fetch unfiltered totals for the summary dashboard
+      apiGet<Student[]>('/api/v1/admin/students?include_inactive=true', token)
+        .then(all => {
+          setTotalActive(all.filter(s => s.is_active).length);
+          setTotalTerminated(all.filter(s => !s.is_active).length);
+        })
+        .catch(() => {});
 
       // Load portal config
       try {
@@ -1530,6 +1542,53 @@ export default function StudentsPage() {
           </label>
         </div>
       </div>
+
+      {/* Student summary dashboard */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div
+          onClick={() => { setShowInactive(false); setFilterClass(''); setFilterSection(''); setSearch(''); }}
+          className="bg-white border border-gray-100 rounded-2xl p-3.5 cursor-pointer hover:border-primary/30 hover:shadow-sm transition-all">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Total Active</p>
+          <p className="text-2xl font-bold text-primary">{totalActive}</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">across all classes</p>
+        </div>
+        <div
+          onClick={() => { setShowInactive(true); setFilterClass(''); setFilterSection(''); setSearch(''); }}
+          className="bg-white border border-gray-100 rounded-2xl p-3.5 cursor-pointer hover:border-red-200 hover:shadow-sm transition-all">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Terminated</p>
+          <p className="text-2xl font-bold text-red-500">{totalTerminated}</p>
+          <p className="text-[10px] text-gray-400 mt-0.5">click to show</p>
+        </div>
+        <div className="bg-white border border-gray-100 rounded-2xl p-3.5 col-span-2">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Class-wise</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {classes.map(c => {
+              const cnt = students.filter(s => s.class_id === c.id && s.is_active).length;
+              if (cnt === 0) return null;
+              return (
+                <button key={c.id}
+                  onClick={() => { setFilterClass(c.id); setFilterSection(''); setShowInactive(false); }}
+                  className="text-xs text-gray-600 hover:text-primary transition-colors">
+                  <span className="font-semibold text-gray-800">{cnt}</span> {c.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Showing context line */}
+      {(filterClass || showInactive || search) && (
+        <div className="flex items-center gap-2 text-xs text-gray-400 px-1">
+          <span>Showing</span>
+          <span className="font-semibold text-gray-700">{filtered.length}</span>
+          <span>student{filtered.length !== 1 ? 's' : ''}</span>
+          {filterClass && <span>· {classes.find(c => c.id === filterClass)?.name}</span>}
+          {showInactive && <span>· includes terminated</span>}
+          {!showInactive && active.length !== filtered.length && <span>· {active.length} active, {inactive.length} terminated</span>}
+          {search && <span>· matching "{search}"</span>}
+        </div>
+      )}
 
       {/* Student list */}
       <div className="flex flex-col gap-2">
