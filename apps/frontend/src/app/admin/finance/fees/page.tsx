@@ -335,6 +335,7 @@ export default function FeesPage() {
   }
 
   const canSubmit = amtNum > 0 && !!paymentMode && !!paymentDate && selectedAccount && selectedAccount.status !== 'paid'
+    && amtNum <= outstanding
     && (!needsRef || referenceNumber.trim())
     && (!dupInfo || (dupOverride && dupOverrideComment.trim()))
     && !dupChecking;
@@ -583,11 +584,14 @@ export default function FeesPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₹)</label>
-                      <input type="number" min="1"
-                        className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${amountWarning ? 'border-amber-400' : 'border-gray-300'}`}
+                      <input type="number" min="1" max={outstanding > 0 ? outstanding : undefined}
+                        className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${amountWarning ? 'border-amber-400' : amtNum > outstanding && outstanding > 0 ? 'border-red-400' : 'border-gray-300'}`}
                         placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} />
-                      {amountWarning && <p className="text-xs text-amber-600 mt-1">⚠ {amountWarning}</p>}
-                      {amountInfo && !amountWarning && <p className="text-xs text-blue-600 mt-1">ℹ {amountInfo}</p>}
+                      {amtNum > outstanding && outstanding > 0 && (
+                        <p className="text-xs text-red-600 mt-1">Amount cannot exceed outstanding balance of ₹{outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}.</p>
+                      )}
+                      {amountWarning && !(amtNum > outstanding && outstanding > 0) && <p className="text-xs text-amber-600 mt-1">⚠ {amountWarning}</p>}
+                      {amountInfo && !amountWarning && !(amtNum > outstanding && outstanding > 0) && <p className="text-xs text-blue-600 mt-1">ℹ {amountInfo}</p>}
                       {/* Instalment breakdown when paying more than one instalment */}
                       {hasInstalments && instBreakdown.length > 1 && amtNum > 0 && (
                         <div className="mt-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 space-y-1">
