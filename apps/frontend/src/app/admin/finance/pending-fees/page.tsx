@@ -182,7 +182,7 @@ export default function AdminPendingFeesPage() {
                       <td className="py-2 px-3 text-right font-bold text-violet-600">
                         {Number(r.approved_concession_amount) > 0
                           ? <span title={r.concession_type === 'percentage' ? `${r.concession_value}%` : undefined}>{fmt(r.approved_concession_amount)}</span>
-                          : <span className="text-gray-300">{'\u20B9'}0</span>}
+                          : <span className="text-gray-300">&#x20B9;0</span>}
                       </td>
                       <td className="py-2 px-3 text-right font-bold text-amber-600">{fmt(r.outstanding_balance)}</td>
                       <td className="py-2 px-3 text-center"><StatusBadge status={r.status} /></td>
