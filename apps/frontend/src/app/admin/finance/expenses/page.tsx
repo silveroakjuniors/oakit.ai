@@ -60,8 +60,27 @@ export default function ExpensesPage() {
 
   useEffect(() => {
     apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
-      .then(d => { setPermissions(d.permissions || []); setPermsLoaded(true); })
-      .catch(() => setPermsLoaded(true));
+      .then(d => {
+        const perms = d.permissions || [];
+        // If API doesn't return ADD_EXPENSE but the JWT role is admin, grant it as fallback
+        // (migration 125 may not have run yet)
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          if (payload.role === 'admin' && !perms.includes('ADD_EXPENSE')) {
+            perms.push('ADD_EXPENSE');
+          }
+        } catch {}
+        setPermissions(perms);
+        setPermsLoaded(true);
+      })
+      .catch(() => {
+        // On error, give admin the add permission based on role
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          if (payload.role === 'admin') setPermissions(['ADD_EXPENSE']);
+        } catch {}
+        setPermsLoaded(true);
+      });
   }, []);
 
   useEffect(() => {
