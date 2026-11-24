@@ -653,6 +653,7 @@ router.get('/pending-detail', async (req, res) => {
     const result = await pool.query(
       `SELECT
          ROW_NUMBER() OVER (ORDER BY c.name, s.name) AS sl_no,
+         s.id      AS student_id,
          s.name    AS student_name,
          c.name    AS class_name,
          fh.name   AS fee_head_name,
