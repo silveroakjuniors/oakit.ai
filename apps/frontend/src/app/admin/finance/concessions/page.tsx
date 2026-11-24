@@ -54,11 +54,7 @@ export default function ConcessionsPage() {
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
 
-  // Create form
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Student[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  // Create form — bulk
   const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
   const [feeHeadId, setFeeHeadId] = useState('');
   const [concessionType, setConcessionType] = useState<'fixed' | 'percentage'>('fixed');
@@ -67,6 +63,17 @@ export default function ConcessionsPage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
   const [createSuccess, setCreateSuccess] = useState(false);
+
+  // Bulk student list
+  const [bulkStudents, setBulkStudents] = useState<Array<{ id: string; name: string; concession_locked: boolean; has_pending_concession: boolean; has_approved_concession: boolean }>>([]);
+  const [bulkStudentsLoading, setBulkStudentsLoading] = useState(false);
+  const [selectedBulkStudents, setSelectedBulkStudents] = useState<Set<string>>(new Set());
+
+  // Keep these for backward compat (search still used in some places)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Student[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
   // Pending
   const [pending, setPending] = useState<Concession[]>([]);
@@ -95,6 +102,26 @@ export default function ConcessionsPage() {
   useEffect(() => {
     if (tab === 'all') loadAll();
   }, [tab]);
+
+  // Load fee heads when class is selected
+  useEffect(() => {
+    if (!selectedClassId) { setFeeHeads([]); setFeeHeadId(''); setBulkStudents([]); setSelectedBulkStudents(new Set()); return; }
+    apiGet<{ accounts: FeeHead[] }>(`/api/v1/financial/concessions/fee-heads-for-class?class_id=${selectedClassId}`, token)
+      .then(d => { setFeeHeads(d?.accounts || []); setFeeHeadId(''); setBulkStudents([]); setSelectedBulkStudents(new Set()); })
+      .catch(() => setFeeHeads([]));
+  }, [selectedClassId]);
+
+  // Load students for selected fee head
+  useEffect(() => {
+    if (!selectedClassId || !feeHeadId) { setBulkStudents([]); setSelectedBulkStudents(new Set()); return; }
+    setBulkStudentsLoading(true);
+    apiGet<Array<{ id: string; name: string; concession_locked: boolean; has_pending_concession: boolean; has_approved_concession: boolean }>>(
+      `/api/v1/financial/concessions/students-for-fee-head?class_id=${selectedClassId}&fee_head_id=${feeHeadId}`, token
+    ).then(d => {
+      setBulkStudents(Array.isArray(d) ? d : []);
+      setSelectedBulkStudents(new Set());
+    }).catch(() => setBulkStudents([])).finally(() => setBulkStudentsLoading(false));
+  }, [feeHeadId]);
 
   async function loadClasses() {
     try {
@@ -158,26 +185,28 @@ export default function ConcessionsPage() {
   async function handleCreate() {
     setCreateError('');
     setCreateSuccess(false);
-    if (!selectedStudent) { setCreateError('Select a student.'); return; }
     if (!feeHeadId) { setCreateError('Select a fee head.'); return; }
+    if (selectedBulkStudents.size === 0) { setCreateError('Select at least one student.'); return; }
     const val = parseFloat(concessionValue);
     if (!val || val <= 0) { setCreateError('Enter a valid value.'); return; }
     if (!reason.trim()) { setCreateError('Enter a reason.'); return; }
     setCreateLoading(true);
     try {
-      await apiPost('/api/v1/financial/concessions', {
-        student_id: selectedStudent.id,
-        fee_head_id: feeHeadId,
-        type: concessionType,
-        value: val,
-        reason: reason.trim(),
-      }, token);
+      const result = await apiPost<{ created: number; skipped_locked: number; skipped_duplicate: number; message: string }>(
+        '/api/v1/financial/concessions/bulk-create',
+        {
+          fee_head_id: feeHeadId,
+          type: concessionType,
+          value: val,
+          reason: reason.trim(),
+          student_ids: Array.from(selectedBulkStudents),
+        },
+        token
+      );
       setCreateSuccess(true);
       setConcessionValue('');
       setReason('');
-      setSelectedStudent(null);
-      setSearchQuery('');
-      setFeeHeads([]);
+      setSelectedBulkStudents(new Set());
       await loadPending();
     } catch (err: unknown) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create concession.');
@@ -267,55 +296,38 @@ export default function ConcessionsPage() {
 
       {/* ── Create concession ── */}
       <Card>
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Create Concession</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Create Concession — Bulk</h2>
         <div className="space-y-4">
-          <div className="flex gap-3">
-            <div className="w-48 shrink-0">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Class</label>
+          {/* Step 1: Select class + fee head */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Class <span className="text-red-500">*</span></label>
               <select
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 value={selectedClassId}
-                onChange={e => { setSelectedClassId(e.target.value); setSearchResults([]); setShowDropdown(false); }}
+                onChange={e => { setSelectedClassId(e.target.value); setFeeHeads([]); setFeeHeadId(''); setSearchResults([]); setSelectedStudent(null); }}
               >
-                <option value="">All Classes</option>
+                <option value="">Select class…</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div className="flex-1 relative">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Student</label>
-              <input
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                placeholder="Search by name, parent name, or phone…"
-                value={searchQuery}
-                onChange={e => { setSearchQuery(e.target.value); setSelectedStudent(null); }}
-                onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
-              />
-              {showDropdown && searchResults.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {searchResults.map(s => (
-                    <button key={s.id} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0" onClick={() => selectStudent(s)}>
-                      <span className="font-medium text-gray-800">{s.name}</span>
-                      {s.class_name && <span className="text-gray-500 ml-2 text-xs">{s.class_name}{s.section_label ? ` – ${s.section_label}` : ''}</span>}
-                      {getContactDisplay(s) && <span className="text-gray-400 ml-2 text-xs">{getContactDisplay(s)}</span>}
-                      {(s.father_name || s.mother_name) && <span className="block text-xs text-gray-400 mt-0.5">{[s.father_name, s.mother_name].filter(Boolean).join(' / ')}</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {selectedStudent && (
-            <>
+            {selectedClassId && (
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Fee Head</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fee Head <span className="text-red-500">*</span></label>
                 {feeHeads.length === 0
-                  ? <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">No fee accounts found for this student. Assign a fee first.</p>
+                  ? <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mt-1">No fee heads for this class</p>
                   : <select className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={feeHeadId} onChange={e => setFeeHeadId(e.target.value)}>
-                      {feeHeads.map(fh => <option key={fh.fee_head_id} value={fh.fee_head_id}>{fh.fee_head_name} (₹{Number(fh.assigned_amount).toLocaleString('en-IN')})</option>)}
+                      <option value="">Select fee head…</option>
+                      {feeHeads.map(fh => <option key={fh.fee_head_id} value={fh.fee_head_id}>{fh.fee_head_name}</option>)}
                     </select>
                 }
               </div>
+            )}
+          </div>
+
+          {feeHeadId && (
+            <>
+              {/* Concession amount + reason */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
@@ -330,15 +342,61 @@ export default function ConcessionsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Reason</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reason <span className="text-red-500">*</span></label>
                 <textarea className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" placeholder="Reason for concession…" rows={2} value={reason} onChange={e => setReason(e.target.value)} />
+              </div>
+
+              {/* Student list with checkboxes */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-medium text-gray-600">Select Students <span className="text-red-500">*</span></label>
+                  {bulkStudents.length > 0 && (
+                    <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                      <input type="checkbox"
+                        checked={selectedBulkStudents.size === bulkStudents.length}
+                        onChange={() => setSelectedBulkStudents(
+                          selectedBulkStudents.size === bulkStudents.length
+                            ? new Set()
+                            : new Set(bulkStudents.map(s => s.id))
+                        )} />
+                      Select all ({bulkStudents.length})
+                    </label>
+                  )}
+                </div>
+                {bulkStudentsLoading ? (
+                  <p className="text-xs text-gray-400 py-3">Loading students…</p>
+                ) : bulkStudents.length === 0 ? (
+                  <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">No students assigned to this fee head</p>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg max-h-52 overflow-y-auto">
+                    {bulkStudents.map(s => (
+                      <label key={s.id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50 border-b border-gray-50 last:border-0 ${s.concession_locked ? 'opacity-40' : ''}`}>
+                        <input type="checkbox"
+                          disabled={s.concession_locked}
+                          checked={selectedBulkStudents.has(s.id)}
+                          onChange={() => {
+                            setSelectedBulkStudents(prev => {
+                              const next = new Set(prev);
+                              if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
+                              return next;
+                            });
+                          }} />
+                        <span className="flex-1 text-sm text-gray-800">{s.name}</span>
+                        {s.concession_locked && <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">No concession</span>}
+                        {s.has_pending_concession && <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Pending</span>}
+                        {s.has_approved_concession && <span className="text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded">Approved</span>}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
+
           {createError && <p className="text-xs text-red-500">{createError}</p>}
-          {createSuccess && <p className="text-xs text-green-600">✓ Concession created and sent for approval.</p>}
-          <Button onClick={handleCreate} disabled={createLoading || !selectedStudent || feeHeads.length === 0}>
-            {createLoading ? 'Creating…' : 'Create Concession'}
+          {createSuccess && <p className="text-xs text-green-600">Concession(s) submitted for approval.</p>}
+          <Button onClick={handleCreate} disabled={createLoading || !feeHeadId || selectedBulkStudents.size === 0 || !concessionValue || !reason.trim()}>
+            {createLoading ? 'Submitting…' : `Submit for Approval (${selectedBulkStudents.size} student${selectedBulkStudents.size !== 1 ? 's' : ''})`}
           </Button>
         </div>
       </Card>

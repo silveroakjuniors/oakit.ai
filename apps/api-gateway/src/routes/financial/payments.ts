@@ -52,7 +52,103 @@ router.get('/check-reference', permissionGuard('COLLECT_PAYMENT'), async (req, r
   }
 });
 
-// -- POST /request-duplicate-override � Admin flags a proof for principal approval --
+// -- GET /duplicate-references — All payments sharing a reference number ------
+// Returns every reference_number that is used by more than one payment,
+// grouped with all the payments in each group and their current override status.
+router.get('/duplicate-references', permissionGuard('COLLECT_PAYMENT'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+
+    const result = await pool.query(
+      `SELECT
+         fp.reference_number,
+         COUNT(*)::int                                   AS payment_count,
+         SUM(fp.amount)                                  AS total_amount,
+         MIN(fp.payment_date)                            AS earliest_date,
+         MAX(fp.payment_date)                            AS latest_date,
+         -- Aggregate override status for the group
+         BOOL_OR(fp.override_status = 'pending_approval') AS has_pending,
+         BOOL_OR(fp.override_status = 'approved')          AS has_approved,
+         BOOL_OR(fp.override_status IS NULL)               AS has_unreviewed,
+         -- All payments in JSON
+         JSON_AGG(
+           JSON_BUILD_OBJECT(
+             'id',               fp.id,
+             'amount',           fp.amount,
+             'payment_mode',     fp.payment_mode,
+             'payment_date',     fp.payment_date,
+             'receipt_number',   fp.receipt_number,
+             'override_status',  fp.override_status,
+             'override_reason',  fp.override_reason,
+             'student_name',     s.name,
+             'class_name',       c.name,
+             'fee_head_name',    fh.name,
+             'recorded_by',      u.name,
+             'created_at',       fp.created_at
+           )
+           ORDER BY fp.created_at
+         ) AS payments
+       FROM fee_payments fp
+       JOIN students s   ON s.id  = fp.student_id
+       LEFT JOIN classes c    ON c.id  = s.class_id
+       JOIN fee_heads fh  ON fh.id = fp.fee_head_id
+       LEFT JOIN users u  ON u.id  = fp.collected_by
+       WHERE fp.school_id = $1
+         AND fp.reference_number IS NOT NULL
+         AND fp.deleted_at IS NULL
+       GROUP BY fp.reference_number
+       HAVING COUNT(*) > 1
+       ORDER BY MAX(fp.created_at) DESC`,
+      [schoolId],
+    );
+
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[payments GET /duplicate-references]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// -- POST /:id/request-override — Admin submits a duplicate for principal review
+// (separate from the inline allow_duplicate flow — used from the problematic report page)
+router.post('/:id/request-override', permissionGuard('COLLECT_PAYMENT'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { id } = req.params;
+    const { override_reason } = req.body;
+
+    if (!override_reason?.trim())
+      return res.status(400).json({ error: 'override_reason is required' });
+
+    const result = await pool.query(
+      `UPDATE fee_payments
+       SET override_status       = 'pending_approval',
+           override_reason       = $1,
+           override_requested_by = $2
+       WHERE id = $3 AND school_id = $4
+         AND (override_status IS NULL OR override_status = 'rejected')
+         AND deleted_at IS NULL
+       RETURNING id`,
+      [override_reason.trim(), req.user!.id, id, schoolId],
+    );
+
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: 'Payment not found or already has a pending/approved override' });
+
+    pool.query(
+      `INSERT INTO audit_logs (school_id, user_id, actor_role, action, module, affected_record_id, after_data)
+       VALUES ($1,$2,$3,'REQUEST_OVERRIDE','fees',$4,$5)`,
+      [schoolId, req.user!.id, req.user!.role, id, JSON.stringify({ override_reason: override_reason.trim() })]
+    ).catch(() => {});
+
+    return res.json({ success: true, message: 'Sent to Principal for approval' });
+  } catch (err) {
+    console.error('[payments POST /:id/request-override]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// -- POST /request-duplicate-override — Admin flags a proof for principal approval --� Admin flags a proof for principal approval --
 router.post('/request-duplicate-override', permissionGuard('COLLECT_PAYMENT'), async (req, res) => {
   try {
     const schoolId = req.user!.school_id;

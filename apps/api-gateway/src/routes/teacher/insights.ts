@@ -5,7 +5,7 @@ import { getTeacherSections } from '../../lib/teacherSection';
 import { getToday } from '../../lib/today';
 
 const router = Router();
-router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher'));
+router.use(jwtVerify, forceResetGuard, schoolScope, roleGuard('teacher', 'class teacher', 'supporting teacher'));
 
 // GET /api/v1/teacher/insights/class-summary
 // Returns class-level stats: total students, attendance trends, milestone progress, observation coverage
@@ -22,7 +22,7 @@ router.get('/class-summary', async (req: Request, res: Response) => {
     let totalStudents = 0;
     try {
       const studentsResult = await pool.query(
-        `SELECT COUNT(*)::int as total FROM students WHERE section_id = ANY($1::uuid[]) AND school_id = $2`,
+        `SELECT COUNT(*)::int as total FROM students WHERE section_id = ANY($1::uuid[]) AND school_id = $2 AND is_active = true`,
         [sectionIds, school_id]
       );
       totalStudents = studentsResult.rows[0]?.total || 0;

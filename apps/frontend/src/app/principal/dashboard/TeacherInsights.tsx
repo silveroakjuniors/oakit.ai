@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { Flame, X, TrendingUp, ChevronRight } from 'lucide-react';
+import { Flame, X, TrendingUp, ChevronRight, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import type { EngagementTeacher, TeacherStreak } from './types';
 
@@ -33,6 +33,8 @@ function TeacherPopup({ teacher, schoolDays30d, onClose }: {
   const color = getColor(rate);
   const completed = teacher.completions_30d;
   const missed = Math.max(0, schoolDays30d - completed);
+  // If no completions in 30d, treat streak as stale/0
+  const effectiveStreak = completed > 0 ? teacher.current_streak : 0;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -64,35 +66,43 @@ function TeacherPopup({ teacher, schoolDays30d, onClose }: {
             </div>
             <div className="flex justify-between mt-1">
               <p className="text-[9px] text-neutral-400">{completed} plans completed</p>
-              <p className="text-[9px] text-neutral-400">{missed} missed · {schoolDays30d} total days</p>
+              <p className="text-[9px] text-neutral-400">{missed} missed &middot; {schoolDays30d} total days</p>
             </div>
           </div>
 
           {/* Streak dots */}
           <div>
             <p className="text-xs font-bold text-neutral-700 mb-2">Streak History</p>
-            <div className="flex items-center gap-1 flex-wrap">
-              {Array.from({ length: Math.min(teacher.best_streak, 20) }).map((_, i) => (
-                <div key={i} className="w-3 h-3 rounded-sm"
-                  style={{ background: i < teacher.current_streak ? (i < 5 ? '#f59e0b' : i < 10 ? '#10b981' : '#6366f1') : '#f3f4f6' }} />
-              ))}
-              {teacher.best_streak > 20 && <span className="text-[9px] text-neutral-400">+{teacher.best_streak - 20}</span>}
-            </div>
-            <div className="flex gap-3 mt-1">
-              <p className="text-[9px] text-neutral-400"><span className="font-bold text-amber-600">{teacher.current_streak}</span> current</p>
-              <p className="text-[9px] text-neutral-400"><span className="font-bold text-indigo-600">{teacher.best_streak}</span> best</p>
-            </div>
+            {effectiveStreak === 0 ? (
+              <p className="text-xs text-neutral-400 italic">No active streak in last 30 days</p>
+            ) : (
+              <>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {Array.from({ length: Math.min(teacher.best_streak, 20) }).map((_, i) => (
+                    <div key={i} className="w-3 h-3 rounded-sm"
+                      style={{ background: i < effectiveStreak ? (i < 5 ? '#f59e0b' : i < 10 ? '#10b981' : '#6366f1') : '#f3f4f6' }} />
+                  ))}
+                  {teacher.best_streak > 20 && <span className="text-[9px] text-neutral-400">+{teacher.best_streak - 20}</span>}
+                </div>
+                <div className="flex gap-3 mt-1">
+                  <p className="text-[9px] text-neutral-400"><span className="font-bold text-amber-600">{effectiveStreak}</span> current</p>
+                  <p className="text-[9px] text-neutral-400"><span className="font-bold text-indigo-600">{teacher.best_streak}</span> best</p>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Stats grid */}
           <div className="grid grid-cols-3 gap-2">
             {[
-              { l: 'Plans', v: `${completed}/${schoolDays30d}`, c: color },
-              { l: 'Rate',  v: `${rate}%`,                     c: color },
-              { l: 'Streak', v: `${teacher.current_streak}d`,  c: '#f59e0b' },
-              { l: 'Best',  v: `${teacher.best_streak}d`,      c: '#6366f1' },
-              { l: 'Last Plan', v: teacher.last_completed_date ?? 'Never', c: '#9ca3af' },
-              { l: 'Status', v: getStatus(rate),               c: color },
+              { l: 'Plans',    v: `${completed}/${schoolDays30d}`, c: color },
+              { l: 'Rate',     v: `${rate}%`,                      c: color },
+              { l: 'Streak',   v: `${effectiveStreak}d`,           c: effectiveStreak > 0 ? '#f59e0b' : '#9ca3af' },
+              { l: 'Best',     v: `${teacher.best_streak}d`,       c: '#6366f1' },
+              { l: 'Last Plan',v: teacher.last_completed_date
+                  ? new Date(teacher.last_completed_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                  : 'Never',                                        c: '#9ca3af' },
+              { l: 'Status',   v: getStatus(rate),                 c: color },
             ].map(s => (
               <div key={s.l} className="bg-neutral-50 rounded-xl p-2 border border-neutral-100 text-center">
                 <p className="text-[9px] text-neutral-400">{s.l}</p>
@@ -103,7 +113,7 @@ function TeacherPopup({ teacher, schoolDays30d, onClose }: {
 
           {teacher.amber_warning && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-2">
-              <span>⚠️</span>
+              <AlertCircle size={14} className="text-amber-500 shrink-0" />
               <p className="text-xs text-amber-700">No plan in <strong>{teacher.days_since_last}</strong> days. Follow up recommended.</p>
             </div>
           )}
@@ -143,7 +153,7 @@ function FullListPopup({ engagement, streaks, schoolDays30d, onClose, onSelectTe
 
         {/* Tabs */}
         <div className="flex gap-1 px-5 pt-3 shrink-0">
-          {[['eng', '📊 Engagement'], ['streak', '🔥 Streaks']] .map(([v, lbl]) => (
+          {[['eng', 'Engagement'], ['streak', 'Streaks']] .map(([v, lbl]) => (
             <button key={v} onClick={() => setTab(v as any)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                 tab === v ? 'bg-[#1B4332] text-white' : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
@@ -160,8 +170,8 @@ function FullListPopup({ engagement, streaks, schoolDays30d, onClose, onSelectTe
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <p className="text-xs font-semibold text-neutral-800 truncate">{t.name}</p>
-                  {t.amber_warning && <span className="text-[8px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded shrink-0">⚠</span>}
-                  {t.current_streak >= 5 && (
+                  {t.amber_warning && <span className="text-[8px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded shrink-0">Behind</span>}
+                  {t.current_streak >= 5 && t.completion_rate_30d > 0 && (
                     <span className="text-[8px] bg-orange-100 text-orange-700 px-1 py-0.5 rounded shrink-0 flex items-center gap-0.5">
                       <Flame size={7} />{t.current_streak}
                     </span>

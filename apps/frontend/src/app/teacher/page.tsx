@@ -18,12 +18,13 @@ import SessionRecorder from '@/components/SessionRecorder';
 import type { SessionTopic } from '@/components/SessionRecorder';
 import { API_BASE, apiGet, apiPost } from '@/lib/api';
 import { getToken, getRole, clearToken, signOut } from '@/lib/auth';
+import GoogleDriveUpload from '@/features/teacher/GoogleDriveUpload';
 import { useRouter } from 'next/navigation';
 import {
   CalendarDays, MessageCircle, HelpCircle, Flame, CheckCircle2,
   ChevronDown, ChevronUp, Send, Paperclip, BookOpen, Sparkles,
   LogOut, Clock, AlertCircle, ArrowRight, FileText, Users, Play, X, ClipboardList,
-  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet
+  Heart, VolumeX, TrendingUp, RefreshCw, Download, PenLine, Wallet, Megaphone, Share2
 } from 'lucide-react';
 
 interface Chunk { id: string; topic_label: string; content: string; activity_ids: string[]; page_start: number; }
@@ -190,6 +191,9 @@ export default function TeacherPlanner() {
   const [readinessMissCount, setReadinessMissCount] = useState(0);
   const [greeting, setGreeting] = useState('');
   const [todayCompleted, setTodayCompleted] = useState(false);
+  // WhatsApp opt-in modal
+  const [waOptInModal, setWaOptInModal] = useState<{ business_phone: string; display_name: string } | null>(null);
+  const [waOptInAcking, setWaOptInAcking] = useState(false);
   const [tomorrowPlan, setTomorrowPlan] = useState<DayPlan | null>(null);
   const [completedSettlingDates, setCompletedSettlingDates] = useState<Set<string>>(new Set());
   const [inlineChecked, setInlineChecked] = useState<Record<string, Set<string>>>({});
@@ -225,6 +229,13 @@ export default function TeacherPlanner() {
   const [oakiePlanText, setOakiePlanText] = useState<string | null>(null);
   const [showSessionRecorder, setShowSessionRecorder] = useState(false);
 
+  // Google Drive config for class photos link
+  const [config, setConfig] = useState<{
+    google_drive_enabled: boolean;
+    drive_folder_url: string | null;
+    class_folder_name: string | null;
+  } | null>(null);
+
   // Per-chunk homework state (Req 1.1–1.3, 6.5)
   interface HomeworkState { status: 'none' | 'saved'; record?: { id: string; chunk_id: string; topic_label?: string; raw_text: string; formatted_text: string; teacher_comments?: string } }
   const [homeworkByChunk, setHomeworkByChunk] = useState<Record<string, HomeworkState>>({});
@@ -240,6 +251,8 @@ export default function TeacherPlanner() {
   const [streak, setStreak] = useState<{ current_streak: number; best_streak: number; badge: string | null } | null>(null);
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
   const [showStreakInfo, setShowStreakInfo] = useState(false);
+  const [announcements, setAnnouncements] = useState<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>([]);
+  const [activeAnnouncement, setActiveAnnouncement] = useState<{ id: string; title: string; body: string; created_at: string; author_name: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const initialLoadDone = useRef(false);
   const todayCompletedRef = useRef(false);
@@ -264,7 +277,21 @@ export default function TeacherPlanner() {
   async function loadAll() {
     const effectiveToday = await loadContext();
     await Promise.all([loadPlan(effectiveToday), loadPending(), loadHomeworkAndNotes(), loadStreak()]);
-    if (!todayCompletedRef.current) await autoShowDailyPlan(effectiveToday);
+    // Load Drive config for the class photos button (non-critical)
+    fetch(`${API_BASE}/api/v1/teacher/media/config`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }).then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.google_drive_enabled) setConfig(data); })
+      .catch(() => {});
+    // Run AI plan and announcements in parallel — don't let AI block announcements
+    if (!todayCompletedRef.current) autoShowDailyPlan(effectiveToday);
+    // Load announcements (non-critical)
+    apiGet<{ id: string; title: string; body: string; created_at: string; author_name: string }[]>(
+      '/api/v1/teacher/announcements', token
+    ).then(data => {
+      setAnnouncements(data);
+    }).catch(() => {});
   }
 
   async function loadStreak() {
@@ -368,6 +395,14 @@ export default function TeacherPlanner() {
       const effectiveToday = data.today || new Date().toISOString().split('T')[0];
       setToday(effectiveToday);
       setMessages([{ role: 'assistant', text: data.thought_for_day }]);
+      // Check WhatsApp opt-in (non-blocking)
+      apiGet<{ enabled: boolean; business_phone?: string; display_name?: string; opted_in?: boolean }>(
+        '/api/v1/teacher/messages/whatsapp-optin-status', token,
+      ).then(s => {
+        if (s?.enabled && s.opted_in === false) {
+          setWaOptInModal({ business_phone: s.business_phone || '', display_name: s.display_name || 'Silver Oak Juniors' });
+        }
+      }).catch(() => {});
       return effectiveToday;
     } catch {
       setMessages([{ role: 'assistant', text: "Hi! Ask me about today's plan or any classroom situation." }]);
@@ -779,6 +814,9 @@ export default function TeacherPlanner() {
           />
         )}
 
+        {/* Google Drive Upload */}
+        <GoogleDriveUpload token={token} />
+
         {/* Today completed */}
         {todayCompleted ? (
           <>
@@ -828,7 +866,7 @@ export default function TeacherPlanner() {
                    tomorrowPlan.status === 'revision'  ? tomorrowPlan.special_label || 'Revision Day' :
                    tomorrowPlan.status === 'exam'      ? tomorrowPlan.special_label || 'Exam Day' :
                    tomorrowPlan.status === 'event'     ? tomorrowPlan.special_label || 'Special Event' :
-                   tomorrowPlan.chunks?.length > 0     ? `${tomorrowPlan.chunks.length} topic${tomorrowPlan.chunks.length > 1 ? 's' : ''} planned` :
+                   tomorrowPlan.chunks?.length > 0     ? tomorrowPlan.chunks.map((c: any) => c.topic_label || 'Activity').join(', ') :
                    tomorrowPlan.special_label          ? tomorrowPlan.special_label :
                    'Regular school day'}
                 </p>
@@ -919,9 +957,31 @@ export default function TeacherPlanner() {
               );
             })()}
 
-            {/* Photo Suggestions */}
-            {!todayCompleted && plan?.chunks?.length > 0 && (
-              <PhotoSuggestions token={token} sectionId={sectionId} planDate={today} />
+            {/* Google Drive Photos Button */}
+            {config?.google_drive_enabled && config?.drive_folder_url && (
+              <a
+                href={config.drive_folder_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-4 py-3 bg-white rounded-2xl border border-neutral-100 shadow-sm hover:shadow-md transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-800">View Class Photos</p>
+                    <p className="text-[10px] text-neutral-400 mt-0.5">{config.class_folder_name || 'Google Drive'}</p>
+                  </div>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-emerald-600 transition-colors">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </a>
             )}
 
             {/* Quick help chips */}
@@ -986,6 +1046,8 @@ export default function TeacherPlanner() {
             { label: 'My HR', sub: 'Salary · Leave · Offer letter', icon: Wallet, gradient: 'from-teal-500 to-cyan-600', hover: 'hover:border-teal-200 hover:bg-teal-50/40', path: '/teacher/hr' },
             { label: 'Calendar', sub: 'Holidays & special days', icon: CalendarDays, gradient: 'from-cyan-500 to-sky-600', hover: 'hover:border-cyan-200 hover:bg-cyan-50/40', path: '/teacher/calendar' },
             { label: 'Class Performance', sub: 'Stats & insights', icon: TrendingUp, gradient: 'from-indigo-500 to-blue-600', hover: 'hover:border-indigo-200 hover:bg-indigo-50/40', path: '/teacher/class-performance' },
+            { label: 'Attendance Trends', sub: 'Historical stats', icon: CalendarDays, gradient: 'from-emerald-500 to-teal-600', hover: 'hover:border-emerald-200 hover:bg-emerald-50/40', path: '/teacher/attendance-trends' },
+            { label: 'Social Media', sub: 'Post school moments', icon: Share2, gradient: 'from-pink-500 to-rose-500', hover: 'hover:border-pink-200 hover:bg-pink-50/40', path: '/teacher/social-media' },
           ].map(({ label, sub, icon: Icon, gradient, hover, path }) => (
             <button key={path} onClick={() => router.push(path)}
               className={`flex items-center gap-3 p-3.5 bg-white border border-neutral-100 rounded-2xl transition-all shadow-sm group ${hover}`}>
@@ -1020,6 +1082,66 @@ export default function TeacherPlanner() {
               </div>
             )}
           </Card>
+        )}
+
+        {/* School Announcements */}
+        {announcements.length > 0 && (
+          <Card padding="sm" className="mt-1 border-primary-100 bg-primary-50/30">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-7 h-7 rounded-xl bg-primary-100 flex items-center justify-center">
+                <Megaphone className="w-3.5 h-3.5 text-primary-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-neutral-800">School Announcements</h2>
+              <span className="ml-auto text-[10px] font-semibold text-primary-600 bg-primary-100 px-2 py-0.5 rounded-full">{announcements.length}</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {announcements.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => setActiveAnnouncement(a)}
+                  className="text-left border-l-4 border-primary-400 pl-3 py-1.5 hover:bg-primary-50 rounded-r-xl transition-colors w-full"
+                >
+                  <p className="text-sm font-semibold text-neutral-800 line-clamp-1">{a.title}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5 line-clamp-1">{a.body}</p>
+                  <p className="text-[10px] text-neutral-400 mt-1">{new Date(a.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Announcement detail modal */}
+        {activeAnnouncement && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-4 pb-4 sm:pb-0"
+            onClick={() => setActiveAnnouncement(null)}>
+            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-primary-100 flex items-center justify-center shrink-0">
+                    <Megaphone className="w-4 h-4 text-primary-600" />
+                  </div>
+                  <p className="text-sm font-bold text-neutral-900 leading-snug">{activeAnnouncement.title}</p>
+                </div>
+                <button onClick={() => setActiveAnnouncement(null)}
+                  className="ml-3 w-7 h-7 rounded-full bg-neutral-100 hover:bg-neutral-200 flex items-center justify-center shrink-0 transition-colors">
+                  <X className="w-3.5 h-3.5 text-neutral-500" />
+                </button>
+              </div>
+              <div className="px-5 py-4">
+                <p className="text-sm text-neutral-700 leading-relaxed whitespace-pre-wrap">{activeAnnouncement.body}</p>
+              </div>
+              <div className="px-5 pb-4 flex items-center justify-between">
+                <p className="text-xs text-neutral-400">
+                  By {activeAnnouncement.author_name} &middot; {new Date(activeAnnouncement.created_at.split('T')[0] + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+                <button onClick={() => setActiveAnnouncement(null)}
+                  className="text-xs font-semibold text-primary-600 px-3 py-1.5 bg-primary-50 hover:bg-primary-100 rounded-xl transition-colors">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
   );
@@ -1134,6 +1256,64 @@ export default function TeacherPlanner() {
               setHomeworkModalChunk(null);
             }}
           />
+        )}
+
+        {/* WhatsApp Opt-In modal for teachers */}
+        {waOptInModal && (
+          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm px-4 pb-6 sm:pb-0">
+            <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-r from-green-600 to-emerald-500 px-6 py-5 text-white text-center">
+                <div className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                  <svg viewBox="0 0 24 24" className="w-6 h-6 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                </div>
+                <h2 className="text-base font-bold">{waOptInModal.display_name} is on WhatsApp</h2>
+                <p className="text-xs text-white/80 mt-1">Enable updates for your teaching role</p>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-sm text-neutral-600 mb-3 leading-relaxed">Get notified on WhatsApp for:</p>
+                <div className="space-y-1.5 mb-5">
+                  {['Attendance reminders if not marked by 10 AM','Homework acknowledgement alerts from parents','Important school announcements','Leave approval status','Social media post approval updates'].map((item, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-neutral-700">
+                      <div className="w-3.5 h-3.5 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                        <svg className="w-2 h-2 text-green-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                      </div>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                {/* One-tap opt-in */}
+                <button
+                  disabled={waOptInAcking}
+                  onClick={async () => {
+                    setWaOptInAcking(true);
+                    try {
+                      await fetch(`${API_BASE}/api/v1/teacher/messages/whatsapp-optin`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ opt_in: true }),
+                      });
+                    } catch { /* non-critical */ }
+                    setWaOptInModal(null);
+                    setWaOptInAcking(false);
+                  }}
+                  className="w-full py-3 rounded-2xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {waOptInAcking ? 'Saving...' : 'Yes, enable WhatsApp notifications'}
+                </button>
+                {/* Open WhatsApp to send confirmation message */}
+                {waOptInModal.business_phone && (
+                  <a
+                    href={`https://wa.me/${waOptInModal.business_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${waOptInModal.display_name}, I am opting in to receive WhatsApp notifications for my teacher account on Oakit.`)}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="mt-2 w-full py-2.5 rounded-2xl border border-green-200 text-green-700 text-xs font-semibold text-center block hover:bg-green-50"
+                  >
+                    Or open WhatsApp to confirm directly
+                  </a>
+                )}
+                <button onClick={() => setWaOptInModal(null)} className="mt-2 w-full text-xs text-neutral-400 hover:text-neutral-600 py-1">Maybe later</button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Video Help Modal */}
@@ -1415,6 +1595,39 @@ export default function TeacherPlanner() {
   const helpTabContent = (
       <div className="p-4 flex flex-col gap-4" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
+        {/* Teacher Guide card */}
+        <div className="rounded-2xl border border-primary-200 bg-primary-50 overflow-hidden">
+          <div className="px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center shrink-0">
+              <BookOpen className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-primary-800">Teacher User Guide</p>
+              <p className="text-xs text-primary-600 leading-tight">Complete guide — attendance, plans, Oakie, social media, milestones</p>
+            </div>
+          </div>
+          <div className="px-4 pb-4 flex gap-2">
+            <a
+              href="/guide-teacher"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+              Read Guide
+            </a>
+            <a
+              href="/guide-teacher.html"
+              download="oakit-teacher-guide.html"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-primary-300 bg-white text-primary-700 text-xs font-semibold hover:bg-primary-50 transition-colors"
+              title="Download for offline / print"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download
+            </a>
+          </div>
+        </div>
+
         {/* How Oakie works */}
         <div className="rounded-2xl overflow-hidden border border-primary-200 shadow-sm">
           <div className="bg-gradient-to-br from-primary-600 to-primary-800 px-4 py-4 flex items-center gap-3">
@@ -1679,10 +1892,12 @@ export default function TeacherPlanner() {
           { id: 'plan', Icon: CalendarDays, label: 'Plan' },
           { id: 'chat', Icon: MessageCircle, label: 'Oakie' },
           { id: 'help', Icon: HelpCircle, label: 'Help' },
-        ] as { id: Tab; Icon: any; label: string }[]).map(tab => {
-          const active = activeTab === tab.id;
+          { id: 'social', Icon: Share2, label: 'Social' },
+        ] as { id: Tab | 'social'; Icon: any; label: string }[]).map(tab => {
+          const active = tab.id !== 'social' && activeTab === (tab.id as Tab);
           return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id}
+              onClick={() => tab.id === 'social' ? router.push('/teacher/social-media') : setActiveTab(tab.id as Tab)}
               className="flex-1 flex flex-col items-center py-2.5 gap-0.5 relative transition-all active:scale-95">
               {active && (
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary-600 rounded-full" />
@@ -1696,6 +1911,19 @@ export default function TeacherPlanner() {
             </button>
           );
         })}
+        {/* Guide icon — opens teacher guide in new tab with download option */}
+        <a
+          href="/guide-teacher"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col items-center py-2.5 gap-0.5 px-3 relative transition-all active:scale-95"
+          title="Teacher Guide"
+        >
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-transparent">
+            <BookOpen size={18} className="text-neutral-400" />
+          </div>
+          <span className="text-[10px] font-semibold tracking-wide text-neutral-400">Guide</span>
+        </a>
       </nav>
     </div>
   );

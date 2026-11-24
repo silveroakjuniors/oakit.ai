@@ -2,9 +2,47 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { jwtVerify, forceResetGuard, schoolScope } from '../middleware/auth';
 import { pool } from '../lib/db';
+import { uploadToGoogleDrive } from '../lib/storage';
+import { compressVideo, isFfmpegAvailable, formatBytes } from '../lib/videoCompress';
+
+/**
+ * Normalize any stored media URL to a signed proxy URL.
+ * Handles: old thumbnail URLs, old download URLs, old proxy URLs, gdrive: scheme, new proxy paths.
+ * Returns a relative path like /api/v1/drive-proxy?id=X&school=Y&sig=Z
+ */
+function normalizeToProxyUrl(url: string, schoolId: string): string {
+  if (!url) return url;
+
+  const PROXY_SECRET = process.env.JWT_SECRET || 'change_me';
+
+  function sign(fileId: string): string {
+    const sig = crypto.createHmac('sha256', PROXY_SECRET)
+      .update(`${fileId}:${schoolId}`)
+      .digest('hex').slice(0, 16);
+    return `/api/v1/drive-proxy?id=${fileId}&school=${schoolId}&sig=${sig}`;
+  }
+
+  // Already a correctly-signed proxy path — use as-is
+  if (url.startsWith('/api/v1/drive-proxy')) return url;
+
+  // gdrive: scheme
+  if (url.startsWith('gdrive:')) return sign(url.slice(7));
+
+  // Extract Drive file ID from any URL format
+  const idMatch =
+    url.match(/drive-proxy\?id=([a-zA-Z0-9_-]{10,})/) ||
+    url.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) ||
+    url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+
+  if (idMatch) return sign(idMatch[1]);
+
+  // Non-Drive URL (Supabase, local) — return as-is
+  return url;
+}
 
 const router = Router();
 router.use(jwtVerify, forceResetGuard, schoolScope);
@@ -136,39 +174,95 @@ function decodeCursor(cursor: string): { createdAt: string; id: string } | null 
 async function uploadFeedImage(
   localPath: string, schoolId: string, postId: string, scope: string,
   sectionId: string | null, filename: string, mimeType: string,
-  skipCompression: boolean = false
-): Promise<{ storagePath: string; cdnUrl: string }> {
-  const supabase = getSupabase();
-  const ext = path.extname(filename) || '.jpg';
-  const safeName = `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-  const storagePath = scope === 'school'
-    ? `${schoolId}/memory-feed/school/${postId}/${safeName}`
-    : `${schoolId}/memory-feed/sections/${sectionId}/${postId}/${safeName}`;
+  skipCompression: boolean = false,
+  actorId?: string, actorName?: string, actorRole?: string,
+  sectionLabel?: string, className?: string,
+  seqNum?: number,
+): Promise<{ storagePath: string; cdnUrl: string; originalSize: number; finalSize: number; compressed: boolean }> {
 
-  // Videos: upload raw (no compression). Images: compress to 300KB
-  const buf = skipCompression
-    ? fs.readFileSync(localPath)
-    : await compressImage(localPath, mimeType);
+  // ── Google Drive only — no Supabase storage ───────────────────────────────
+  const driveConfig = await pool.query(
+    `SELECT google_drive_enabled, google_drive_folder_id
+     FROM school_settings WHERE school_id = $1`,
+    [schoolId]
+  );
+  const cfg = driveConfig.rows[0];
 
-  if (!supabase) {
-    const dir = path.resolve('./uploads/feed', postId);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const dest = path.join(dir, safeName);
-    fs.writeFileSync(dest, buf);
-    console.log(`[feed-upload] local fallback: ${dest} (${buf.length} bytes)`);
-    return { storagePath: dest, cdnUrl: `/uploads/feed/${postId}/${safeName}` };
+  if (!cfg?.google_drive_enabled || !cfg?.google_drive_folder_id) {
+    fs.unlink(localPath, () => {});
+    throw new Error(
+      'Google Drive is not configured. Please ask your admin to set it up in Settings → Google Drive.'
+    );
   }
 
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, buf, { contentType: mimeType, upsert: false });
-  if (error) {
-    console.error(`[feed-upload] Supabase storage failed for ${storagePath}:`, error.message);
-    throw new Error(`Storage upload failed: ${error.message}`);
+  const isVideo = mimeType.startsWith('video/');
+  const today = new Date().toISOString().split('T')[0];
+  const originalSize = fs.statSync(localPath).size;
+
+  // Skip server-side compression if already an MP4 (compressed client-side)
+  // This avoids Render's 30s response timeout for video processing
+  let finalPath = localPath;
+  let compressed = false;
+  const isAlreadyMp4 = mimeType === 'video/mp4' || filename.toLowerCase().endsWith('.mp4');
+
+  if (isVideo && !skipCompression && !isAlreadyMp4) {
+    // Only compress non-MP4 formats (MOV, WebM, 3GP) that weren't compressed client-side
+    try {
+      const ffAvailable = await isFfmpegAvailable();
+      if (ffAvailable) {
+        const compressionPromise = compressVideo(localPath);
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('compression timeout')), 20000)
+        );
+        const result = await Promise.race([compressionPromise, timeoutPromise]);
+        if (result) {
+          finalPath = result.outputPath;
+          compressed = true;
+          console.log(`[feed-upload] server compressed: ${formatBytes(result.inputSize)} → ${formatBytes(result.outputSize)}`);
+        }
+      }
+    } catch (compressErr: any) {
+      console.log(`[feed-upload] server compression skipped (${compressErr.message})`);
+      finalPath = localPath;
+    }
+  } else if (isVideo) {
+    console.log(`[feed-upload] skipping server compression - already MP4 (compressed client-side)`);
   }
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-  console.log(`[feed-upload] success: ${storagePath} → ${data.publicUrl} (${buf.length} bytes)`);
-  return { storagePath, cdnUrl: data.publicUrl };
+
+  // ── Build Oaklets_ filename: Oaklets_ClassName_SectionLabel_N.ext ─────────
+  const classSlug = className
+    ? (sectionLabel ? `${className}_${sectionLabel}` : className).replace(/[^a-zA-Z0-9]/g, '_')
+    : 'Class';
+  const classSlugBase = `Oaklets_${classSlug}`;
+  const ext = isVideo ? '.mp4' : (path.extname(filename) || '.jpg');
+  const seq = seqNum || 1;
+  const smartFilename = `${classSlugBase}_${seq}${ext}`;
+
+  // ── Upload to Drive: Oaklets_ClassName_SectionLabel / YYYY-MM-DD / Photos|Videos
+  const mediaSubfolder = isVideo ? 'Videos' : 'Photos';
+  const driveFolderName = `${classSlugBase}/${today}/${mediaSubfolder}`;
+
+  const result = await uploadToGoogleDrive({
+    schoolId,
+    localPath: finalPath,
+    originalName: smartFilename,
+    mimeType: isVideo ? 'video/mp4' : mimeType,
+    actorId,
+    actorName,
+    actorRole,
+    folderId: cfg.google_drive_folder_id,
+    driveFolderName,
+  });
+
+  console.log(`[feed-upload] Google Drive: ${smartFilename} → ${result.directUrl}`);
+  const finalSize = (() => { try { return fs.statSync(finalPath).size; } catch { return originalSize; } })();
+  return {
+    storagePath: result.storagePath,
+    cdnUrl: result.directUrl || result.driveUrl,
+    originalSize,
+    finalSize,
+    compressed,
+  };
 }
 
 // ── GET /api/v1/feed ──────────────────────────────────────────────────────────
@@ -223,7 +317,9 @@ router.get('/', async (req: Request, res: Response) => {
              COALESCE(fb.cnt, 0) AS facebook_shares,
              COALESCE(dl.cnt, 0) AS downloads,
              ARRAY_AGG(fpi.cdn_url ORDER BY fpi.display_order)
-               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images
+               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS images,
+             ARRAY_AGG(fpi.media_type ORDER BY fpi.display_order)
+               FILTER (WHERE fpi.cdn_url IS NOT NULL) AS media_types
       FROM feed_posts fp
       LEFT JOIN sections s ON s.id = fp.section_id
       LEFT JOIN (
@@ -258,7 +354,9 @@ router.get('/', async (req: Request, res: Response) => {
       section_label: r.section_label || null,
       poster_name: r.poster_name,
       poster_role: r.poster_role,
-      images: r.images || [],
+      // Normalize all stored URLs to signed proxy paths — handles old & new records
+      images: (r.images || []).map((u: string) => normalizeToProxyUrl(u, user.school_id!)),
+      media_types: r.media_types || [],
       like_count: Number(r.like_count),
       liked_by_me: Boolean(r.liked_by_me),
       instagram_shares: Number(r.instagram_shares || 0),
@@ -368,6 +466,22 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
     const retentionDays = hasVideo ? VIDEO_RETENTION_DAYS : settings.retention_days;
     const expiresAt = new Date(Date.now() + retentionDays * 86400000);
 
+    // Resolve class + section names for Drive folder structure
+    let sectionLabelForDrive = '';
+    let classNameForDrive = '';
+    if (sectionId) {
+      const nameRow = await pool.query(
+        `SELECT s.label, c.name AS class_name
+         FROM sections s JOIN classes c ON c.id = s.class_id
+         WHERE s.id = $1`,
+        [sectionId]
+      );
+      if (nameRow.rows.length > 0) {
+        sectionLabelForDrive = nameRow.rows[0].label || '';
+        classNameForDrive = nameRow.rows[0].class_name || '';
+      }
+    }
+
     const postResult = await pool.query(
       `INSERT INTO feed_posts
          (school_id, section_id, class_id, posted_by, poster_name, poster_role, post_scope, caption, expires_at)
@@ -378,16 +492,25 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
     const postId = postResult.rows[0].id;
 
     const imageRows: { storagePath: string; cdnUrl: string; order: number; mediaType: string }[] = [];
+    let totalOriginalBytes = 0;
+    let totalFinalBytes = 0;
+    let anyCompressed = false;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const isVideo = VIDEO_MIMETYPES.includes(file.mimetype);
-      const { storagePath, cdnUrl } = await uploadFeedImage(
+      const result = await uploadFeedImage(
         file.path, user.school_id, postId, postScope, sectionId,
         file.originalname || `media${i}${isVideo ? '.mp4' : '.jpg'}`, file.mimetype,
-        isVideo // skip compression for videos
+        isVideo,
+        user.user_id, posterName, user.role,
+        sectionLabelForDrive, classNameForDrive,
+        i + 1
       );
-      uploadedPaths.push(storagePath);
-      imageRows.push({ storagePath, cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });
+      uploadedPaths.push(result.storagePath);
+      imageRows.push({ storagePath: result.storagePath, cdnUrl: result.cdnUrl, order: i, mediaType: isVideo ? 'video' : 'image' });
+      totalOriginalBytes += result.originalSize;
+      totalFinalBytes += result.finalSize;
+      if (result.compressed) anyCompressed = true;
       fs.unlink(file.path, () => {});
     }
 
@@ -406,6 +529,11 @@ router.post('/posts', upload.array('images', 5), async (req: Request, res: Respo
       post_scope: postScope,
       poster_name: posterName,
       created_at: new Date().toISOString(),
+      // Size info for debugging
+      original_size: formatBytes(totalOriginalBytes),
+      final_size: formatBytes(totalFinalBytes),
+      compressed: anyCompressed,
+      savings_pct: totalOriginalBytes > 0 ? Math.round((1 - totalFinalBytes / totalOriginalBytes) * 100) : 0,
     });
   } catch (err: any) {
     const supabase = getSupabase();
@@ -641,6 +769,234 @@ router.post('/generate-caption', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[feed generate-caption]', err);
     return res.status(500).json({ error: 'Failed to generate caption' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/feed/drive-cleanup/notify
+// Admin schedules a Drive cleanup: marks affected posts with a delete-after
+// date and sends a flash message popup to parents of each section.
+// Body: { older_than_days: number (min 7), delete_after_days: number (min 2) }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/drive-cleanup/notify', async (req: Request, res: Response) => {
+  const user = req.user!;
+  if (!['admin', 'principal'].includes(user.role)) return res.status(403).json({ error: 'Admin only' });
+
+  try {
+    const { older_than_days = 30, delete_after_days = 7 } = req.body;
+
+    if (older_than_days < 7) return res.status(400).json({ error: 'older_than_days must be at least 7' });
+    if (delete_after_days < 2) return res.status(400).json({ error: 'delete_after_days must be at least 2' });
+
+    const school_id = user.school_id;
+    const deleteAfterDate = new Date(Date.now() + delete_after_days * 86400000);
+    const deleteAfterStr = deleteAfterDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Find posts older than the threshold that still have Drive files
+    const postsRows = await pool.query(
+      `SELECT fp.id, fp.section_id, fp.class_id, fp.created_at,
+              s.label AS section_label, c.name AS class_name,
+              ss.google_drive_folder_id,
+              COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%')::int AS drive_file_count
+       FROM feed_posts fp
+       JOIN sections s ON s.id = fp.section_id
+       JOIN classes c ON c.id = fp.class_id
+       JOIN school_settings ss ON ss.school_id = fp.school_id
+       JOIN feed_post_images fpi ON fpi.post_id = fp.id
+       WHERE fp.school_id = $1
+         AND fp.drive_files_deleted = false
+         AND fp.created_at < NOW() - INTERVAL '1 day' * $2
+       GROUP BY fp.id, s.label, c.name, ss.google_drive_folder_id
+       HAVING COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%') > 0
+       ORDER BY c.name, s.label, fp.created_at DESC`,
+      [school_id, older_than_days],
+    );
+
+    if (!postsRows.rows.length) {
+      return res.json({ scheduled: 0, message: 'No Drive files found older than the specified days.' });
+    }
+
+    // Mark all matching posts with the delete-after date
+    const postIds = postsRows.rows.map((r: any) => r.id);
+    await pool.query(
+      `UPDATE feed_posts
+       SET drive_cleanup_scheduled_at = now(), drive_delete_after = $1
+       WHERE id = ANY($2::uuid[])`,
+      [deleteAfterStr, postIds],
+    );
+
+    // Build class-grouped summary for flash messages
+    const byClass: Record<string, { class_name: string; section_label: string; file_count: number; drive_folder_id: string | null }[]> = {};
+    for (const row of postsRows.rows) {
+      const key = row.class_name;
+      if (!byClass[key]) byClass[key] = [];
+      const existing = byClass[key].find((e: any) => e.section_label === row.section_label);
+      if (existing) {
+        existing.file_count += row.drive_file_count;
+      } else {
+        byClass[key].push({
+          class_name: row.class_name,
+          section_label: row.section_label,
+          file_count: row.drive_file_count,
+          drive_folder_id: row.google_drive_folder_id,
+        });
+      }
+    }
+
+    // Send one flash message per class to parents of that class
+    const totalFiles = postsRows.rows.reduce((s: number, r: any) => s + r.drive_file_count, 0);
+    const deleteByFormatted = deleteAfterDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    for (const [className, sections] of Object.entries(byClass)) {
+      const sectionLabels = sections.map((s: any) => s.section_label).join(', ');
+      const fileCount = sections.reduce((s: number, e: any) => s + e.file_count, 0);
+      const driveUrl = sections[0].drive_folder_id
+        ? `https://drive.google.com/drive/folders/${sections[0].drive_folder_id}`
+        : null;
+
+      const title = `Important: Download your child's photos/videos by ${deleteByFormatted}`;
+      const body = `Dear Parents of ${className} (${sectionLabels}),\n\nTo free up storage space, the school will permanently delete ${fileCount} photo(s)/video(s) from Google Drive on ${deleteByFormatted}.\n\nPlease download any photos or videos you would like to keep before this date.${driveUrl ? `\n\nClass Drive folder: ${driveUrl}` : ''}\n\nFiles already downloaded or saved to your device are not affected.`;
+
+      // Get section IDs for this class to target only affected parents
+      const sectionIds = (await pool.query(
+        `SELECT s.id FROM sections s JOIN classes c ON c.id = s.class_id
+         WHERE c.name = $1 AND c.school_id = $2`,
+        [className, school_id],
+      )).rows.map((r: any) => r.id);
+
+      await pool.query(
+        `INSERT INTO flash_messages (school_id, title, body, target_roles, start_date, end_date, created_by)
+         VALUES ($1, $2, $3, 'parent', CURRENT_DATE, $4::date, $5)`,
+        [school_id, title, body, deleteAfterStr, user.user_id],
+      );
+    }
+
+    console.log(`[feed-cleanup] school=${school_id} scheduled ${postIds.length} posts for deletion by ${deleteAfterStr}`);
+
+    return res.json({
+      scheduled: postIds.length,
+      total_files: totalFiles,
+      delete_after: deleteAfterStr,
+      flash_messages_sent: Object.keys(byClass).length,
+      message: `Scheduled deletion of ${totalFiles} file(s) across ${postIds.length} post(s). Parents notified — files will be deleted on ${deleteByFormatted}.`,
+    });
+  } catch (err) {
+    console.error('[feed-cleanup notify]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/feed/drive-cleanup/execute
+// Delete Drive files for all posts whose drive_delete_after date has passed.
+// Can be called manually by admin or triggered automatically.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/drive-cleanup/execute', async (req: Request, res: Response) => {
+  const user = req.user!;
+  if (!['admin', 'principal'].includes(user.role)) return res.status(403).json({ error: 'Admin only' });
+
+  try {
+    const school_id = user.school_id;
+
+    const postsRows = await pool.query(
+      `SELECT fp.id, fpi.storage_path
+       FROM feed_posts fp
+       JOIN feed_post_images fpi ON fpi.post_id = fp.id
+       WHERE fp.school_id = $1
+         AND fp.drive_files_deleted = false
+         AND fp.drive_delete_after IS NOT NULL
+         AND fp.drive_delete_after <= CURRENT_DATE
+         AND fpi.storage_path LIKE 'google_drive:%'`,
+      [school_id],
+    );
+
+    if (!postsRows.rows.length) {
+      return res.json({ deleted: 0, message: 'No files are due for deletion yet.' });
+    }
+
+    const { deleteDriveFile } = await import('../lib/driveDelete');
+    let deleted = 0;
+    let errors = 0;
+    const donePostIds = new Set<string>();
+    const errorPostIds = new Set<string>();
+
+    for (const row of postsRows.rows) {
+      const fileId = row.storage_path.replace('google_drive:', '');
+      try {
+        await deleteDriveFile(fileId, school_id);
+        deleted++;
+        donePostIds.add(row.id);
+      } catch (e: any) {
+        console.error(`[feed-cleanup execute] Failed to delete ${fileId}:`, e?.message);
+        errors++;
+        errorPostIds.add(row.id);
+      }
+    }
+
+    // Mark posts fully cleaned (even if some files errored — they may already be gone)
+    if (donePostIds.size) {
+      await pool.query(
+        `UPDATE feed_posts SET drive_files_deleted = true WHERE id = ANY($1::uuid[])`,
+        [Array.from(donePostIds)],
+      );
+    }
+
+    console.log(`[feed-cleanup execute] school=${school_id} deleted=${deleted} errors=${errors}`);
+
+    return res.json({
+      deleted,
+      errors,
+      message: errors
+        ? `Deleted ${deleted} file(s). ${errors} file(s) could not be deleted (may already be gone from Drive).`
+        : `Deleted ${deleted} file(s) from Google Drive.`,
+    });
+  } catch (err) {
+    console.error('[feed-cleanup execute]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/feed/drive-cleanup/preview
+// Preview what would be scheduled for cleanup
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/drive-cleanup/preview', async (req: Request, res: Response) => {
+  const user = req.user!;
+  if (!['admin', 'principal'].includes(user.role)) return res.status(403).json({ error: 'Admin only' });
+
+  try {
+    const { older_than_days = 30 } = req.query;
+    const school_id = user.school_id;
+
+    const rows = await pool.query(
+      `SELECT c.name AS class_name, s.label AS section_label,
+              COUNT(DISTINCT fp.id)::int AS post_count,
+              COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%')::int AS file_count,
+              MIN(fp.created_at)::date AS oldest_post,
+              MAX(fp.created_at)::date AS newest_post
+       FROM feed_posts fp
+       JOIN sections s ON s.id = fp.section_id
+       JOIN classes c ON c.id = fp.class_id
+       JOIN feed_post_images fpi ON fpi.post_id = fp.id
+       WHERE fp.school_id = $1
+         AND fp.drive_files_deleted = false
+         AND fp.created_at < NOW() - INTERVAL '1 day' * $2
+       GROUP BY c.name, s.label
+       HAVING COUNT(fpi.id) FILTER (WHERE fpi.storage_path LIKE 'google_drive:%') > 0
+       ORDER BY c.name, s.label`,
+      [school_id, Number(older_than_days)],
+    );
+
+    const totalFiles = rows.rows.reduce((s: number, r: any) => s + r.file_count, 0);
+    const totalPosts = rows.rows.reduce((s: number, r: any) => s + r.post_count, 0);
+
+    return res.json({
+      by_class: rows.rows,
+      total_posts: totalPosts,
+      total_files: totalFiles,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

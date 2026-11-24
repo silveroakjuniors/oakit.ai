@@ -35,6 +35,10 @@ import {
   Compass,
   Settings,
   LogOut,
+  Share2,
+  MessageSquare,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -74,15 +78,17 @@ const navItems: NavItem[] = [
   { href: '/admin/calendar',         label: 'Calendar',         icon: CalendarDays,    group: 'content' },
   { href: '/admin/plans',            label: 'Daily Planner',    icon: ClipboardList,   group: 'content' },
   // Finance — each item gated by the relevant permission
-  { href: '/admin/finance',                label: 'Finance',          icon: DollarSign,    group: 'finance', requirePerm: FIN_PERMS.VIEW_FEES },
+  { href: '/admin/finance',                label: 'Overview',           icon: DollarSign,    group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
   { href: '/admin/finance/fee-structures', label: 'Fee Structures',   icon: Tag,           group: 'finance', requirePerm: FIN_PERMS.MANAGE_FEE_STRUCTURE },
   { href: '/admin/finance/fees',           label: 'Fee Collection',   icon: CreditCard,    group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
   { href: '/admin/finance/enquiries',      label: 'Admissions',       icon: Pencil,        group: 'school' },
   { href: '/admin/finance/concessions',    label: 'Concessions',      icon: Gift,          group: 'finance', requirePerm: FIN_PERMS.MANAGE_CONCESSION },
-  { href: '/admin/finance/expenses',       label: 'Expenses',         icon: Receipt,       group: 'finance', requirePerm: FIN_PERMS.VIEW_EXPENSE },
+  { href: '/admin/finance/expenses',       label: 'Expenses',         icon: Receipt,       group: 'finance', requirePerm: FIN_PERMS.ADD_EXPENSE },
   { href: '/admin/finance/salary',         label: 'Salary',           icon: Briefcase,     group: 'finance', requirePerm: FIN_PERMS.VIEW_SALARY },
-  { href: '/admin/finance/reports',        label: 'Reports',          icon: TrendingUp,    group: 'finance', requirePerm: FIN_PERMS.VIEW_REPORTS },
+  { href: '/admin/finance/pending-fees',      label: 'Pending Fees',       icon: TrendingUp,    group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
+  { href: '/admin/finance/problematic-fees',  label: 'Problematic Fees',   icon: AlertTriangle, group: 'finance', requirePerm: FIN_PERMS.COLLECT_PAYMENT },
   { href: '/admin/reports',          label: 'Reports',          icon: BarChart3,       group: 'insights' },
+  { href: '/admin/attendance',       label: 'Attendance',       icon: ClipboardList,   group: 'insights' },
   { href: '/admin/announcements',    label: 'Announcements',    icon: Megaphone,       group: 'insights' },
   { href: '/admin/audit',            label: 'Audit Log',        icon: Search,          group: 'insights' },
   { href: '/admin/smart-alerts',     label: 'Smart Alerts',     icon: AlertTriangle,   group: 'insights' },
@@ -94,6 +100,8 @@ const navItems: NavItem[] = [
   { href: '/admin/hr',               label: 'HR',               icon: Briefcase,       group: 'system' },
   { href: '/admin/setup',            label: 'Setup Wizard',     icon: Compass,         group: 'system' },
   { href: '/admin/settings',         label: 'Settings',         icon: Settings,        group: 'system' },
+  { href: '/admin/social-media',     label: 'Social Media',     icon: Share2,          group: 'system' },
+  { href: '/admin/whatsapp',         label: 'WhatsApp',         icon: MessageSquare,   group: 'system' },
 ];
 
 const NAV_GROUPS = [
@@ -114,8 +122,30 @@ function SidebarContent({ pathname, permissions, onClose }: { pathname: string; 
     return permissions.includes(item.requirePerm);
   });
 
-  // Only show Finance group header if at least one finance item is visible
-  const hasFinanceItems = visibleItems.some(i => i.group === 'finance');
+  // Determine which group the active page belongs to
+  const activeGroup = visibleItems.find(item =>
+    pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
+  )?.group ?? 'main';
+
+  // Collapsible state — start with active group open
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    NAV_GROUPS.forEach(g => { init[g.key] = g.key === activeGroup || g.key === 'main'; });
+    return init;
+  });
+
+  function toggleGroup(key: string) {
+    setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  // Group icons
+  const GROUP_ICONS: Record<string, LucideIcon> = {
+    school:   School,
+    content:  BookOpen,
+    finance:  DollarSign,
+    insights: BarChart3,
+    system:   Settings,
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -125,35 +155,71 @@ function SidebarContent({ pathname, permissions, onClose }: { pathname: string; 
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5 overflow-y-auto">
+      <nav className="flex-1 px-3 py-3 flex flex-col gap-0.5 overflow-y-auto">
         {NAV_GROUPS.map(group => {
-          if (group.key === 'finance' && !hasFinanceItems) return null;
           const items = visibleItems.filter(i => i.group === group.key);
           if (items.length === 0) return null;
+
+          // 'main' group (Dashboard) — always flat, no header
+          if (!group.label) {
+            return items.map(item => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link key={item.href} href={item.href} onClick={onClose}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                    isActive ? 'bg-primary/10 text-primary' : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
+                  }`}>
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            });
+          }
+
+          const isOpen = openGroups[group.key] ?? false;
+          const hasActiveChild = items.some(i =>
+            pathname === i.href || (i.href !== '/admin' && pathname.startsWith(i.href))
+          );
+          const GroupIcon = GROUP_ICONS[group.key] ?? Settings;
+
           return (
-            <div key={group.key} className={group.label ? 'mt-4 first:mt-0' : ''}>
-              {group.label && (
-                <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
-                  {group.label}
-                </p>
+            <div key={group.key} className="mt-1">
+              {/* Collapsible group header */}
+              <button
+                onClick={() => toggleGroup(group.key)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold uppercase tracking-widest transition-colors ${
+                  hasActiveChild
+                    ? 'text-primary bg-primary/5'
+                    : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
+                }`}>
+                <GroupIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1 text-left">{group.label}</span>
+                {isOpen
+                  ? <ChevronDown className="w-3 h-3 shrink-0" />
+                  : <ChevronRight className="w-3 h-3 shrink-0" />}
+              </button>
+
+              {/* Children — slide in/out */}
+              {isOpen && (
+                <div className="mt-0.5 ml-2 pl-2 border-l border-neutral-100 flex flex-col gap-0.5">
+                  {items.map(item => {
+                    const isActive = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href));
+                    const Icon = item.icon;
+                    return (
+                      <Link key={item.href} href={item.href} onClick={onClose}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
+                          isActive
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
+                        }`}>
+                        <Icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-              {items.map(item => {
-                const isActive = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href));
-                const Icon = item.icon;
-                return (
-                  <Link key={item.href} href={item.href} onClick={onClose}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-                      isActive
-                        ? 'bg-primary-50 text-primary-700'
-                        : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800'
-                    }`}>
-                    <span className="w-5 text-center shrink-0 flex items-center justify-center">
-                      <Icon className="w-4 h-4" />
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </Link>
-                );
-              })}
             </div>
           );
         })}
@@ -163,9 +229,7 @@ function SidebarContent({ pathname, permissions, onClose }: { pathname: string; 
       <div className="px-3 py-4 border-t border-neutral-100">
         <button onClick={() => { clearToken(); router.push('/login'); }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-all">
-          <span className="w-5 text-center shrink-0 flex items-center justify-center">
-            <LogOut className="w-4 h-4" />
-          </span>
+          <LogOut className="w-4 h-4 shrink-0" />
           <span>Sign out</span>
         </button>
       </div>
@@ -204,18 +268,23 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       return;
     }
     setAuthChecked(true);
-    // Admin: only fee collection + fee structures. Principal: everything.
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       if (payload.role === 'principal') {
-        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'VIEW_REPORTS', 'SEND_REMINDER', 'VIEW_EXPENSE', 'VIEW_SALARY', 'VIEW_RECONCILIATION', 'PERFORM_RECONCILIATION', 'PUSH_PAYSLIP', 'EDIT_SALARY']);
+        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'VIEW_REPORTS', 'SEND_REMINDER', 'VIEW_EXPENSE', 'VIEW_SALARY', 'VIEW_RECONCILIATION', 'PERFORM_RECONCILIATION', 'PUSH_PAYSLIP', 'EDIT_SALARY', 'VIEW_PROFIT', 'ADD_EXPENSE']);
         return;
       }
       if (payload.role === 'admin') {
-        setFinPerms(['COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE']);
+        // Set role defaults immediately so sidebar shows without waiting for API
+        setFinPerms(['VIEW_FEES', 'COLLECT_PAYMENT', 'MANAGE_FEE_STRUCTURE', 'MANAGE_CONCESSION', 'APPROVE_CONCESSION', 'SEND_REMINDER', 'ADD_EXPENSE']);
+        // Then fetch actual permissions (may include per-user overrides) and update
+        apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
+          .then(data => { if (data.permissions?.length) setFinPerms(data.permissions); })
+          .catch(() => {}); // keep defaults on error
         return;
       }
     } catch {}
+    // For finance_manager and other roles — always fetch from API
     apiGet<{ permissions: string[] }>('/api/v1/financial/permissions', token)
       .then(data => setFinPerms(data.permissions || []))
       .catch(() => setFinPerms([]));

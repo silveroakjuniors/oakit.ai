@@ -47,15 +47,17 @@ export default function PhotoSuggestions({ token, sectionId, planDate }: Props) 
   return (
     <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 overflow-hidden">
       {/* Header */}
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-emerald-50 transition-colors"
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setExpanded(v => !v); }}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-emerald-50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2">
           <Camera size={16} className="text-emerald-600 flex-shrink-0" />
           <span className="text-sm font-semibold text-emerald-800">
-            📸 Photo Suggestions for Today&apos;s Feed
+            Photo Suggestions for Today&apos;s Feed
           </span>
           <span className="text-xs text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full font-medium">
             {suggestions.length} ideas
@@ -76,7 +78,7 @@ export default function PhotoSuggestions({ token, sectionId, planDate }: Props) 
             <ChevronDown size={15} className="text-emerald-500" />
           )}
         </div>
-      </button>
+      </div>
 
       {/* Body */}
       {expanded && (

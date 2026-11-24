@@ -21,6 +21,9 @@
     "test:report": "node ../../node_modules/playwright/cli.js show-report playwright-report --host localhost --port 9323"
   },
   "dependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "@ffmpeg/util": "0.12.2",
     "@tiptap/extension-color": "^3.22.4",
     "@tiptap/extension-text-align": "^3.22.4",
     "@tiptap/extension-text-style": "^3.22.4",

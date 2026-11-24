@@ -32,6 +32,7 @@ interface FeeAccount {
   pricing_model: string;
   academic_year?: string;
   class_name?: string;
+  concession_locked?: boolean;
   instalments?: Instalment[];
   next_instalment?: Instalment | null;
   total_instalments?: number;
@@ -45,6 +46,9 @@ interface Concession {
   type: 'fixed' | 'percentage';
   value: number;
   reason: string;
+  status: 'pending_approval' | 'approved' | 'rejected';
+  rejection_reason?: string;
+  created_at: string;
 }
 
 interface Invoice {
@@ -67,6 +71,7 @@ interface Payment {
   payment_mode: string;
   payment_date: string;
   receipt_number: string;
+  reference_number?: string;
   receipt_url?: string;
   fee_head_name?: string;
   needs_reconciliation?: boolean;
@@ -117,8 +122,8 @@ export default function FeesPage() {
 
   const [selectedAccount, setSelectedAccount] = useState<FeeAccount | null>(null);
   const [amount, setAmount] = useState('');
-  const [paymentMode, setPaymentMode] = useState('cash');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMode, setPaymentMode] = useState('');
+  const [paymentDate, setPaymentDate] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState('');
@@ -142,6 +147,21 @@ export default function FeesPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelMsg, setCancelMsg] = useState('');
+
+  // Concession state
+  const [concessionTarget, setConcessionTarget] = useState<FeeAccount | null>(null);
+  const [concType, setConcType] = useState<'fixed' | 'percentage'>('fixed');
+  const [concValue, setConcValue] = useState('');
+  const [concReason, setConcReason] = useState('');
+  const [concLoading, setConcLoading] = useState(false);
+  const [concMsg, setConcMsg] = useState('');
+  const [concErr, setConcErr] = useState('');
+  const [studentConcessions, setStudentConcessions] = useState<Concession[]>([]);
+
+  // No Concession lock state
+  const [lockConcessionTarget, setLockConcessionTarget] = useState<FeeAccount | null>(null);
+  const [lockLoading, setLockLoading] = useState(false);
+  const [lockMsg, setLockMsg] = useState('');
 
   const needsRef = ['upi', 'online', 'bank_transfer'].includes(paymentMode);
 
@@ -188,6 +208,7 @@ export default function FeesPage() {
     setDupOverrideComment('');
     await loadInvoice(student.id);
     await loadHistory(student.id);
+    loadStudentConcessions(student.id);
   }
 
   async function loadInvoice(studentId: string) {
@@ -198,10 +219,7 @@ export default function FeesPage() {
       const firstPending = data.accounts.find(a => a.status !== 'paid');
       if (firstPending) {
         setSelectedAccount(firstPending);
-        const suggested = firstPending.next_instalment
-          ? firstPending.next_instalment.amount
-          : firstPending.outstanding_balance;
-        setAmount(String(suggested));
+        setAmount('');
       }
     } catch { setInvoice(null); }
     finally { setInvoiceLoading(false); }
@@ -219,12 +237,64 @@ export default function FeesPage() {
     finally { setHistoryLoading(false); }
   }
 
+  async function loadStudentConcessions(studentId: string) {
+    try {
+      const data = await apiGet<Concession[]>(`/api/v1/financial/concessions/student/${studentId}`, token);
+      setStudentConcessions(Array.isArray(data) ? data : []);
+    } catch { setStudentConcessions([]); }
+  }
+
+  async function handleGrantConcession() {
+    if (!selectedStudent || !concessionTarget) return;
+    setConcErr(''); setConcMsg('');
+    const val = parseFloat(concValue);
+    if (!val || val <= 0) { setConcErr('Enter a valid value.'); return; }
+    if (concType === 'percentage' && val > 100) { setConcErr('Percentage cannot exceed 100.'); return; }
+    if (!concReason.trim()) { setConcErr('Reason is required.'); return; }
+    setConcLoading(true);
+    try {
+      await apiPost('/api/v1/financial/concessions', {
+        student_id: selectedStudent.id,
+        fee_head_id: concessionTarget.fee_head_id,
+        type: concType,
+        value: val,
+        reason: concReason.trim(),
+      }, token);
+      setConcMsg('Concession submitted — pending Principal approval.');
+      setConcValue(''); setConcReason(''); setConcType('fixed');
+      setConcessionTarget(null);
+      await loadInvoice(selectedStudent.id);
+      loadStudentConcessions(selectedStudent.id);
+    } catch (e: any) { setConcErr(e?.message || 'Failed to submit concession.'); }
+    finally { setConcLoading(false); }
+  }
+
+  async function handleLockConcession() {
+    if (!selectedStudent || !lockConcessionTarget) return;
+    setLockLoading(true); setLockMsg('');
+    try {
+      await apiPost('/api/v1/financial/concessions/lock-student', {
+        student_id: selectedStudent.id,
+        fee_head_id: lockConcessionTarget.fee_head_id,
+      }, token);
+      setLockMsg('Locked — no concessions can be added for this fee account.');
+      setLockConcessionTarget(null);
+      await loadInvoice(selectedStudent.id);
+    } catch (e: any) { setLockMsg(e?.message || 'Failed to lock.'); }
+    finally { setLockLoading(false); }
+  }
+
   function selectAccount(acc: FeeAccount) {
     setSelectedAccount(acc);
+    setAmount('');
+    setPaymentMode('');
+    setPaymentDate('');
+    setReferenceNumber('');
+    setDupInfo(null);
+    setDupOverride(false);
+    setDupOverrideComment('');
     setPayError('');
     setPayResult(null);
-    const suggested = acc.next_instalment ? acc.next_instalment.amount : acc.outstanding_balance;
-    setAmount(String(suggested));
   }
 
   async function handleScreenshotUpload(file: File) {
@@ -281,11 +351,12 @@ export default function FeesPage() {
         amountInfo = `Partial payment. ₹${(outstanding - amtNum).toLocaleString('en-IN')} will remain outstanding.`;
       }
     } else if (nextInstAmt > 0 && amtNum < nextInstAmt) {
-      amountWarning = `Less than next instalment (₹${nextInstAmt.toLocaleString('en-IN')}). Recorded as partial payment.`;
+      amountWarning = `Less than next instalment (₹${Number(nextInstAmt).toLocaleString('en-IN', { maximumFractionDigits: 0 })}). Recorded as partial payment.`;
     }
   }
 
-  const canSubmit = amtNum > 0 && selectedAccount && selectedAccount.status !== 'paid'
+  const canSubmit = amtNum > 0 && !!paymentMode && !!paymentDate && selectedAccount && selectedAccount.status !== 'paid'
+    && amtNum <= outstanding
     && (!needsRef || referenceNumber.trim())
     && (!dupInfo || (dupOverride && dupOverrideComment.trim()))
     && !dupChecking;
@@ -318,6 +389,8 @@ export default function FeesPage() {
       );
       setPayResult(result);
       setAmount('');
+      setPaymentMode('');
+      setPaymentDate('');
       setReferenceNumber('');
       setScreenshotFile(null);
       setScreenshotUrl('');
@@ -432,63 +505,90 @@ export default function FeesPage() {
                     const isSelected = selectedAccount?.fee_head_id === acc.fee_head_id;
                     const isPaid = acc.status === 'paid';
                     return (
-                      <button key={acc.fee_head_id} onClick={() => !isPaid && selectAccount(acc)} disabled={isPaid}
-                        className={`w-full text-left p-3 rounded-xl border transition-all ${
-                          isPaid ? 'bg-gray-50 border-gray-100 opacity-60 cursor-default' :
+                      <div key={acc.fee_head_id}
+                        className={`w-full text-left rounded-xl border transition-all ${
+                          isPaid ? 'bg-gray-50 border-gray-100 opacity-60' :
                           isSelected ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20' :
-                          'bg-white border-gray-200 hover:border-primary/30 hover:bg-primary/5'
+                          'bg-white border-gray-200'
                         }`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-semibold text-gray-800">{acc.fee_head_name}</span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                                isPaid ? 'bg-green-100 text-green-700' :
-                                acc.status === 'overdue' ? 'bg-red-100 text-red-700' :
-                                acc.status === 'partially_paid' ? 'bg-blue-100 text-blue-700' :
-                                'bg-yellow-100 text-yellow-700'
-                              }`}>{isPaid ? '✓ Paid' : acc.status.replace('_', ' ')}</span>
-                            </div>
-                            {/* Pending instalments */}
-                            {acc.instalments && acc.instalments.length > 0 && (
-                              <div className="mt-1.5 space-y-1">
-                                {acc.instalments.slice(0, 3).map((inst, i) => (
-                                  <div key={inst.id} className={`flex items-center justify-between text-xs px-2 py-1 rounded-lg ${
-                                    i === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'
-                                  }`}>
-                                    <span className={i === 0 ? 'font-semibold text-amber-800' : 'text-gray-500'}>
-                                      {i === 0 ? '→ ' : ''}{inst.label || `Instalment ${inst.instalment_number}`}
-                                      {inst.due_date && ` · Due ${new Date(inst.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
-                                    </span>
-                                    <span className={i === 0 ? 'font-bold text-amber-800' : 'text-gray-500'}>
-                                      ₹{Number(inst.amount).toLocaleString('en-IN')}
-                                    </span>
-                                  </div>
-                                ))}
-                                {(acc.pending_instalments_count ?? 0) > 3 && (
-                                  <p className="text-xs text-gray-400 pl-2">+{(acc.pending_instalments_count ?? 0) - 3} more pending</p>
-                                )}
+                        {/* Clickable area to select for payment */}
+                        <button onClick={() => !isPaid && selectAccount(acc)} disabled={isPaid}
+                          className="w-full text-left p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-gray-800">{acc.fee_head_name}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                                  isPaid ? 'bg-green-100 text-green-700' :
+                                  acc.status === 'overdue' ? 'bg-red-100 text-red-700' :
+                                  acc.status === 'partially_paid' ? 'bg-blue-100 text-blue-700' :
+                                  'bg-yellow-100 text-yellow-700'
+                                }`}>{isPaid ? '✓ Paid' : acc.status.replace('_', ' ')}</span>
                               </div>
+                              {/* Pending instalments */}
+                              {acc.instalments && acc.instalments.length > 0 && (
+                                <div className="mt-1.5 space-y-1">
+                                  {acc.instalments.slice(0, 3).map((inst, i) => (
+                                    <div key={inst.id} className={`flex items-center justify-between text-xs px-2 py-1 rounded-lg ${
+                                      i === 0 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'
+                                    }`}>
+                                      <span className={i === 0 ? 'font-semibold text-amber-800' : 'text-gray-500'}>
+                                        {i === 0 ? '→ ' : ''}{inst.label || `Instalment ${inst.instalment_number}`}
+                                        {inst.due_date && ` · Due ${new Date(inst.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                                      </span>
+                                      <span className={i === 0 ? 'font-bold text-amber-800' : 'text-gray-500'}>
+                                        ₹{Number(inst.amount).toLocaleString('en-IN')}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {(acc.pending_instalments_count ?? 0) > 3 && (
+                                    <p className="text-xs text-gray-400 pl-2">+{(acc.pending_instalments_count ?? 0) - 3} more pending</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-sm font-bold text-gray-800">₹{Number(acc.outstanding_balance).toLocaleString('en-IN')}</p>
+                              <p className="text-xs text-gray-400">outstanding</p>
+                              {/* Show approved concessions for this fee head */}
+                              {invoice.concessions.filter(c => c.fee_head_id === acc.fee_head_id).map(c => {
+                                const concAmt = c.type === 'fixed'
+                                  ? Number(c.value)
+                                  : (Number(c.value) / 100) * Number(acc.assigned_amount);
+                                return (
+                                  <p key={c.id} className="text-xs text-green-600 mt-0.5">
+                                    − ₹{concAmt.toLocaleString('en-IN')}
+                                    {c.type === 'percentage' && ` (${c.value}%)`} concession
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </button>
+                        {/* Grant Concession button */}
+                        {!isPaid && (
+                          <div className="px-3 pb-2.5 flex justify-end gap-2 border-t border-dashed border-gray-100 pt-2">
+                            {acc.concession_locked ? (
+                              <span className="text-[10px] px-2.5 py-1 rounded-lg bg-gray-100 text-gray-400 font-semibold flex items-center gap-1">
+                                No Concession (locked)
+                              </span>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setConcessionTarget(acc); setConcType('fixed'); setConcValue(''); setConcReason(''); setConcErr(''); setConcMsg(''); }}
+                                  className="text-xs px-3 py-1 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold border border-violet-200 transition-colors">
+                                  + Grant Concession
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setLockConcessionTarget(acc); }}
+                                  className="text-xs px-3 py-1 rounded-lg bg-gray-50 text-gray-500 hover:bg-red-50 hover:text-red-600 font-semibold border border-gray-200 hover:border-red-200 transition-colors">
+                                  No Concession
+                                </button>
+                              </>
                             )}
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-sm font-bold text-gray-800">₹{Number(acc.outstanding_balance).toLocaleString('en-IN')}</p>
-                            <p className="text-xs text-gray-400">outstanding</p>
-                            {/* Show approved concessions for this fee head */}
-                            {invoice.concessions.filter(c => c.fee_head_id === acc.fee_head_id).map(c => {
-                              const concAmt = c.type === 'fixed'
-                                ? Number(c.value)
-                                : (Number(c.value) / 100) * Number(acc.assigned_amount);
-                              return (
-                                <p key={c.id} className="text-xs text-green-600 mt-0.5">
-                                  − ₹{concAmt.toLocaleString('en-IN')}
-                                  {c.type === 'percentage' && ` (${c.value}%)`} concession
-                                </p>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -518,11 +618,14 @@ export default function FeesPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Amount (₹)</label>
-                      <input type="number" min="1"
-                        className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${amountWarning ? 'border-amber-400' : 'border-gray-300'}`}
+                      <input type="number" min="1" max={outstanding > 0 ? outstanding : undefined}
+                        className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 ${amountWarning ? 'border-amber-400' : amtNum > outstanding && outstanding > 0 ? 'border-red-400' : 'border-gray-300'}`}
                         placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} />
-                      {amountWarning && <p className="text-xs text-amber-600 mt-1">⚠ {amountWarning}</p>}
-                      {amountInfo && !amountWarning && <p className="text-xs text-blue-600 mt-1">ℹ {amountInfo}</p>}
+                      {amtNum > outstanding && outstanding > 0 && (
+                        <p className="text-xs text-red-600 mt-1">Amount cannot exceed outstanding balance of ₹{outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}.</p>
+                      )}
+                      {amountWarning && !(amtNum > outstanding && outstanding > 0) && <p className="text-xs text-amber-600 mt-1">⚠ {amountWarning}</p>}
+                      {amountInfo && !amountWarning && !(amtNum > outstanding && outstanding > 0) && <p className="text-xs text-blue-600 mt-1">ℹ {amountInfo}</p>}
                       {/* Instalment breakdown when paying more than one instalment */}
                       {hasInstalments && instBreakdown.length > 1 && amtNum > 0 && (
                         <div className="mt-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 space-y-1">
@@ -544,6 +647,7 @@ export default function FeesPage() {
                       <label className="block text-xs font-medium text-gray-600 mb-1">Payment Mode</label>
                       <select className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                         value={paymentMode} onChange={e => { setPaymentMode(e.target.value); setReferenceNumber(''); setDupInfo(null); setDupOverride(false); }}>
+                        <option value="" disabled>Select mode</option>
                         <option value="cash">Cash</option>
                         <option value="upi">UPI</option>
                         <option value="online">Online</option>
@@ -674,6 +778,7 @@ export default function FeesPage() {
                       <th className="text-left py-2 px-3">Fee Head</th>
                       <th className="text-right py-2 px-3">Amount</th>
                       <th className="text-center py-2 px-3">Mode</th>
+                      <th className="text-left py-2 px-3">Reference</th>
                       <th className="text-center py-2 px-3">Date</th>
                       <th className="text-left py-2 px-3">Collected by</th>
                       <th className="text-left py-2 px-3">Reconciled</th>
@@ -690,6 +795,9 @@ export default function FeesPage() {
                         <td className="py-2 px-3 text-right font-semibold text-gray-800">₹{Number(p.amount).toLocaleString('en-IN')}</td>
                         <td className="py-2 px-3 text-center">
                           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{p.payment_mode}</span>
+                        </td>
+                        <td className="py-2 px-3 text-xs text-gray-600 font-mono">
+                          {p.reference_number || <span className="text-gray-300">—</span>}
                         </td>
                         <td className="py-2 px-3 text-center text-gray-600 text-xs">
                           {new Date(p.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -759,6 +867,7 @@ export default function FeesPage() {
                         <td className="py-2 px-3 text-center">
                           <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-500">cancelled</span>
                         </td>
+                        <td className="py-2 px-3 text-xs text-gray-300 font-mono">—</td>
                         <td className="py-2 px-3 text-center text-xs text-gray-400">
                           {new Date(c.payment_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
@@ -772,13 +881,125 @@ export default function FeesPage() {
                       </tr>
                     ))}
                     {history.length === 0 && cancellations.length === 0 && (
-                      <tr><td colSpan={10} className="py-6 text-center text-gray-400 text-sm">No payment history</td></tr>
+                      <tr><td colSpan={11} className="py-6 text-center text-gray-400 text-sm">No payment history</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
             )}
           </Card>
+
+          {/* Concession modal */}
+          {concessionTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-violet-200">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="font-bold text-gray-800 text-base">Grant Concession</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">{concessionTarget.fee_head_name}</p>
+                  </div>
+                  <button onClick={() => setConcessionTarget(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+                </div>
+
+                {concMsg && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-3 text-xs text-green-700 font-medium">
+                    {concMsg}
+                  </div>
+                )}
+                {concErr && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3 text-xs text-red-600">
+                    {concErr}
+                  </div>
+                )}
+
+                {/* Type toggle */}
+                <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
+                  <button onClick={() => { setConcType('fixed'); setConcValue(''); }}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${concType === 'fixed' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
+                    Fixed Amount (₹)
+                  </button>
+                  <button onClick={() => { setConcType('percentage'); setConcValue(''); }}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors ${concType === 'percentage' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>
+                    Percentage (%)
+                  </button>
+                </div>
+
+                {/* Value */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {concType === 'fixed' ? 'Concession Amount (₹)' : 'Concession Percentage (%)'} <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      {concType === 'fixed' ? '₹' : '%'}
+                    </span>
+                    <input type="number" min="1" max={concType === 'percentage' ? 100 : undefined}
+                      className="w-full pl-7 pr-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200"
+                      placeholder={concType === 'fixed' ? '0' : '0–100'}
+                      value={concValue} onChange={e => setConcValue(e.target.value)} />
+                  </div>
+                  {/* Preview */}
+                  {concValue && parseFloat(concValue) > 0 && (
+                    <p className="text-xs text-violet-600 mt-1">
+                      {concType === 'fixed'
+                        ? `₹${Number(concValue).toLocaleString('en-IN')} off the outstanding balance`
+                        : `₹${((parseFloat(concValue) / 100) * Number(concessionTarget.assigned_amount)).toLocaleString('en-IN')} off (${concValue}% of ₹${Number(concessionTarget.assigned_amount).toLocaleString('en-IN')})`}
+                    </p>
+                  )}
+                </div>
+
+                {/* Reason */}
+                <div className="mb-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Reason <span className="text-red-500">*</span>
+                  </label>
+                  <textarea rows={2}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200 resize-none"
+                    placeholder="e.g. Sibling discount, scholarship, financial hardship…"
+                    value={concReason} onChange={e => setConcReason(e.target.value)} />
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-4 text-xs text-amber-700">
+                  Concession will be sent to the Principal for approval before it is applied.
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="ghost" onClick={() => setConcessionTarget(null)} disabled={concLoading}>
+                    Cancel
+                  </Button>
+                  <Button size="sm"
+                    className="bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-40"
+                    disabled={!concValue || parseFloat(concValue) <= 0 || !concReason.trim() || concLoading}
+                    onClick={handleGrantConcession}>
+                    {concLoading ? 'Submitting…' : 'Submit for Approval'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* No Concession lock modal */}
+          {lockConcessionTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 border-2 border-gray-200">
+                <h2 className="font-bold text-gray-800 text-base mb-1">Lock — No Concession</h2>
+                <p className="text-xs text-gray-500 mb-4">{lockConcessionTarget.fee_head_name}</p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-xs text-red-700">
+                  This will permanently prevent any concession from being granted for this fee account for <strong>{selectedStudent?.name}</strong>. This cannot be undone.
+                </div>
+                {lockMsg && <p className="text-xs text-green-600 mb-3">{lockMsg}</p>}
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="ghost" onClick={() => setLockConcessionTarget(null)} disabled={lockLoading}>Cancel</Button>
+                  <Button size="sm"
+                    className="bg-gray-700 hover:bg-gray-800 text-white"
+                    disabled={lockLoading}
+                    onClick={handleLockConcession}>
+                    {lockLoading ? 'Locking…' : 'Confirm — No Concession'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Cancel request modal */}
           {cancelTarget && (

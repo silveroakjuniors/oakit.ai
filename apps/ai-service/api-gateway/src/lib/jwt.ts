@@ -5,6 +5,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'change_me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 const REFRESH_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 
+// Production safety: prevent startup with weak/default JWT secret
+if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change_me' || process.env.JWT_SECRET.length < 32) {
+    console.error('FATAL: JWT_SECRET must be set to a strong value (32+ chars) in production.');
+    process.exit(1);
+  }
+}
+
 export interface JwtPayload {
   user_id: string;
   id?: string; // alias for user_id — some routes use req.user!.id

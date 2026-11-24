@@ -491,6 +491,236 @@ router.get('/reconciliation-summary', async (req, res) => {
   }
 });
 
+// ── GET /fee-type-collection — Paid + pending by fee head type (principal only)
+router.get('/fee-type-collection', principalOnly, async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { academic_year } = req.query as Record<string, string>;
+
+    const params: any[] = [schoolId];
+    let yearFilter = '';
+    if (academic_year) { yearFilter = ` AND fs.academic_year = $2`; params.push(academic_year); }
+
+    const result = await pool.query(
+      `SELECT
+         fh.type AS fee_type,
+         fh.name AS fee_head_name,
+         COUNT(DISTINCT sfa.student_id)::int               AS student_count,
+         COALESCE(SUM(sfa.assigned_amount),0)              AS total_assigned,
+         COALESCE(SUM(fp_totals.paid),0)                   AS total_paid,
+         COALESCE(SUM(sfa.outstanding_balance),0)          AS total_outstanding,
+         ROUND(
+           COALESCE(SUM(fp_totals.paid),0) * 100.0
+           / NULLIF(SUM(sfa.assigned_amount),0), 1
+         )                                                  AS collection_pct
+       FROM fee_heads fh
+       JOIN fee_structures fs ON fs.id = fh.fee_structure_id
+       LEFT JOIN student_fee_accounts sfa
+         ON sfa.fee_head_id = fh.id AND sfa.school_id = $1 AND sfa.deleted_at IS NULL
+       LEFT JOIN (
+         SELECT fee_head_id, student_id, SUM(amount) AS paid
+         FROM fee_payments
+         WHERE school_id = $1 AND deleted_at IS NULL
+         GROUP BY fee_head_id, student_id
+       ) fp_totals ON fp_totals.fee_head_id = fh.id AND fp_totals.student_id = sfa.student_id
+       WHERE fh.school_id = $1 AND fh.deleted_at IS NULL${yearFilter}
+       GROUP BY fh.type, fh.name, fh.id
+       ORDER BY fh.type, fh.name`,
+      params,
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[reports GET /fee-type-collection]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /instalment-status — Instalment-wise paid/pending per class (principal only)
+router.get('/instalment-status', principalOnly, async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { class_id } = req.query as Record<string, string>;
+
+    const params: any[] = [schoolId];
+    let classFilter = '';
+    if (class_id) { classFilter = ` AND s.class_id = $2`; params.push(class_id); }
+
+    const result = await pool.query(
+      `SELECT
+         c.name                                             AS class_name,
+         fh.name                                           AS fee_head_name,
+         fi.instalment_number,
+         COALESCE(fi.label, 'Instalment ' || fi.instalment_number) AS instalment_label,
+         fi.due_date,
+         fi.amount                                         AS instalment_amount,
+         COUNT(DISTINCT sfa.student_id)::int               AS total_students,
+         COUNT(DISTINCT CASE
+           WHEN fp_cum.cum_paid >= (fi.instalment_number * fi.amount) THEN sfa.student_id
+         END)::int                                         AS students_paid,
+         COUNT(DISTINCT CASE
+           WHEN fp_cum.cum_paid < (fi.instalment_number * fi.amount) THEN sfa.student_id
+         END)::int                                         AS students_pending,
+         COALESCE(SUM(CASE
+           WHEN fp_cum.cum_paid >= (fi.instalment_number * fi.amount) THEN fi.amount
+           ELSE GREATEST(0, fp_cum.cum_paid - ((fi.instalment_number-1) * fi.amount))
+         END), 0)                                          AS amount_collected,
+         COALESCE(SUM(CASE
+           WHEN fp_cum.cum_paid >= (fi.instalment_number * fi.amount) THEN 0
+           ELSE fi.amount - GREATEST(0, fp_cum.cum_paid - ((fi.instalment_number-1) * fi.amount))
+         END), 0)                                          AS amount_pending
+       FROM fee_instalments fi
+       JOIN fee_heads fh ON fh.id = fi.fee_head_id AND fh.school_id = $1 AND fh.deleted_at IS NULL
+       JOIN student_fee_accounts sfa ON sfa.fee_head_id = fi.fee_head_id AND sfa.school_id = $1 AND sfa.deleted_at IS NULL
+       JOIN students s ON s.id = sfa.student_id${classFilter}
+       JOIN classes c ON c.id = s.class_id
+       LEFT JOIN (
+         SELECT student_id, fee_head_id, SUM(amount) AS cum_paid
+         FROM fee_payments WHERE school_id = $1 AND deleted_at IS NULL
+         GROUP BY student_id, fee_head_id
+       ) fp_cum ON fp_cum.student_id = sfa.student_id AND fp_cum.fee_head_id = fi.fee_head_id
+       GROUP BY c.name, fh.name, fi.instalment_number, fi.label, fi.due_date, fi.amount, fh.id, fi.id
+       ORDER BY c.name, fh.name, fi.instalment_number`,
+      params,
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[reports GET /instalment-status]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /paid-detail — Full paid transactions list (principal only) ────────────
+router.get('/paid-detail', principalOnly, async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { from, to, class_id, fee_head_id } = req.query as Record<string, string>;
+
+    const params: any[] = [schoolId];
+    let idx = 2;
+    const filters: string[] = [];
+    if (from)        { filters.push(`fp.payment_date >= $${idx++}`);  params.push(from); }
+    if (to)          { filters.push(`fp.payment_date <= $${idx++}`);  params.push(to); }
+    if (class_id)    { filters.push(`s.class_id = $${idx++}`);        params.push(class_id); }
+    if (fee_head_id) { filters.push(`fp.fee_head_id = $${idx++}`);    params.push(fee_head_id); }
+
+    const where = filters.length ? ` AND ${filters.join(' AND ')}` : '';
+
+    const result = await pool.query(
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY fp.payment_date DESC, fp.created_at DESC) AS sl_no,
+         fp.receipt_number,
+         s.name    AS student_name,
+         c.name    AS class_name,
+         fh.name   AS fee_head_name,
+         fh.type   AS fee_type,
+         fp.amount,
+         fp.payment_mode,
+         fp.payment_date,
+         fp.reference_number,
+         CASE WHEN fp.reconciled_at IS NOT NULL THEN 'Reconciled'
+              WHEN fp.needs_reconciliation THEN 'Pending reconciliation'
+              ELSE 'Cash/confirmed' END AS reconciliation_status,
+         fp.gateway_status AS notes
+       FROM fee_payments fp
+       JOIN students s ON s.id = fp.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       JOIN fee_heads fh ON fh.id = fp.fee_head_id
+       WHERE fp.school_id = $1 AND fp.deleted_at IS NULL${where}
+       ORDER BY fp.payment_date DESC, fp.created_at DESC`,
+      params,
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[reports GET /paid-detail]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /pending-detail — Full pending list (admin + principal) ───────────────
+router.get('/pending-detail', async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { class_id, fee_head_id } = req.query as Record<string, string>;
+
+    const params: any[] = [schoolId];
+    let idx = 2;
+    const filters: string[] = [];
+    if (class_id)    { filters.push(`s.class_id = $${idx++}`);     params.push(class_id); }
+    if (fee_head_id) { filters.push(`sfa.fee_head_id = $${idx++}`); params.push(fee_head_id); }
+
+    const where = filters.length ? ` AND ${filters.join(' AND ')}` : '';
+
+    const result = await pool.query(
+      `SELECT
+         ROW_NUMBER() OVER (ORDER BY c.name, s.name) AS sl_no,
+         s.id      AS student_id,
+         s.name    AS student_name,
+         c.name    AS class_name,
+         fh.name   AS fee_head_name,
+         fh.type   AS fee_type,
+         sfa.assigned_amount,
+         -- Live calculation: outstanding = assigned - paid (not from stored column)
+         GREATEST(0, sfa.assigned_amount - COALESCE(fp_totals.paid, 0)) AS outstanding_balance,
+         COALESCE(fp_totals.paid, 0)             AS total_paid,
+         CASE
+           WHEN GREATEST(0, sfa.assigned_amount - COALESCE(fp_totals.paid, 0)) = 0 THEN 'paid'
+           WHEN COALESCE(fp_totals.paid, 0) > 0 THEN 'partially_paid'
+           ELSE 'pending'
+         END AS status,
+         -- Approved concessions for this student+fee_head
+         COALESCE(conc_totals.concession_amount, 0) AS approved_concession_amount,
+         conc_totals.concession_type,
+         conc_totals.concession_value,
+         next_inst.due_date           AS next_due_date,
+         next_inst.amount             AS next_instalment_amount,
+         COALESCE(next_inst.label, 'Instalment ' || next_inst.instalment_number) AS next_instalment_label
+       FROM student_fee_accounts sfa
+       JOIN students s ON s.id = sfa.student_id AND s.is_active = true
+       LEFT JOIN classes c ON c.id = s.class_id
+       JOIN fee_heads fh ON fh.id = sfa.fee_head_id
+       LEFT JOIN (
+         SELECT student_id, fee_head_id, SUM(amount) AS paid
+         FROM fee_payments WHERE school_id = $1 AND deleted_at IS NULL
+         GROUP BY student_id, fee_head_id
+       ) fp_totals ON fp_totals.student_id = sfa.student_id AND fp_totals.fee_head_id = sfa.fee_head_id
+       LEFT JOIN (
+         SELECT
+           cn.student_id, cn.fee_head_id,
+           cn.type  AS concession_type,
+           cn.value AS concession_value,
+           CASE cn.type
+             WHEN 'fixed'      THEN cn.value
+             WHEN 'percentage' THEN (cn.value / 100.0) * sfa2.assigned_amount
+             ELSE 0
+           END AS concession_amount
+         FROM concessions cn
+         JOIN student_fee_accounts sfa2
+           ON sfa2.student_id = cn.student_id AND sfa2.fee_head_id = cn.fee_head_id
+           AND sfa2.school_id = $1 AND sfa2.deleted_at IS NULL
+         WHERE cn.school_id = $1 AND cn.status = 'approved' AND cn.deleted_at IS NULL
+       ) conc_totals ON conc_totals.student_id = sfa.student_id AND conc_totals.fee_head_id = sfa.fee_head_id
+       LEFT JOIN LATERAL (
+         SELECT fi.due_date, fi.amount, fi.instalment_number, fi.label
+         FROM fee_instalments fi
+         WHERE fi.fee_head_id = sfa.fee_head_id
+           AND (fi.instalment_number * fi.amount) > COALESCE(fp_totals.paid, 0)
+         ORDER BY fi.instalment_number ASC
+         LIMIT 1
+       ) next_inst ON true
+       WHERE sfa.school_id = $1 AND sfa.deleted_at IS NULL
+         -- Only show rows where live-calculated outstanding > 0
+         AND GREATEST(0, sfa.assigned_amount - COALESCE(fp_totals.paid, 0)) > 0
+         ${where}
+       ORDER BY c.name, s.name, fh.name`,
+      params,
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[reports GET /pending-detail]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET /:type/pdf — Generate and stream report PDF ───────────────────────────
 router.get('/:type/pdf', async (req, res) => {
   try {

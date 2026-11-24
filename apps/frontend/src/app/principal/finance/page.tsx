@@ -545,6 +545,7 @@ export default function PrincipalFinanceOverview() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <ActionTile href="/principal/finance/fees"           icon="💳" label="Collect Fee"          desc="Record payments" />
           <ActionTile href="/principal/finance/fee-structures" icon="🏷️" label="Fee Structures"       desc="Create & assign" />
+          <ActionTile href="/principal/finance/fee-reports"    icon="📊" label="Fee Reports"           desc="Paid, pending, instalment" />
           <ActionTile href="/principal/finance/concessions"    icon="🎁" label="Concessions"          desc="Approve requests" badge={pendingConcessions} badgeColor="bg-amber-500" />
           <ActionTile href="/principal/finance/overrides"      icon="🔑" label="Overrides"            desc="Duplicate refs"   badge={pendingOverrides} />
           <ActionTile href="/principal/finance/cancellations"  icon="🗑️" label="Cancellations"        desc="Receipt cancels"  badge={pendingCancels} />

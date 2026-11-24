@@ -5,6 +5,119 @@ import { jwtVerify, permissionGuard } from '../../middleware/auth';
 const router = Router();
 router.use(jwtVerify);
 
+// ── POST /bulk-create — Admin creates concessions for multiple students at once
+router.post('/bulk-create', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { fee_head_id, type, value, reason, student_ids } = req.body as {
+      fee_head_id: string;
+      type: 'fixed' | 'percentage';
+      value: number;
+      reason: string;
+      student_ids: string[];
+    };
+
+    if (!fee_head_id || !type || value === undefined || !reason || !Array.isArray(student_ids) || student_ids.length === 0)
+      return res.status(400).json({ error: 'fee_head_id, type, value, reason, and student_ids are required' });
+    if (!['fixed', 'percentage'].includes(type))
+      return res.status(400).json({ error: 'type must be fixed or percentage' });
+    if (value <= 0)
+      return res.status(400).json({ error: 'value must be > 0' });
+    if (type === 'percentage' && value > 100)
+      return res.status(400).json({ error: 'percentage cannot exceed 100' });
+
+    let created = 0;
+    let skipped_locked = 0;
+    let skipped_duplicate = 0;
+
+    for (const student_id of student_ids) {
+      // Check per-student concession lock
+      const lockCheck = await pool.query(
+        `SELECT concession_locked FROM student_fee_accounts
+         WHERE student_id = $1 AND fee_head_id = $2 AND school_id = $3 AND deleted_at IS NULL`,
+        [student_id, fee_head_id, schoolId]
+      );
+      if (lockCheck.rows[0]?.concession_locked) { skipped_locked++; continue; }
+
+      // Skip if a pending/approved concession already exists
+      const existing = await pool.query(
+        `SELECT id FROM concessions
+         WHERE student_id = $1 AND fee_head_id = $2 AND school_id = $3
+           AND status IN ('pending_approval', 'approved') AND deleted_at IS NULL`,
+        [student_id, fee_head_id, schoolId]
+      );
+      if (existing.rows.length > 0) { skipped_duplicate++; continue; }
+
+      await pool.query(
+        `INSERT INTO concessions (school_id, student_id, fee_head_id, type, value, reason, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending_approval',$7)`,
+        [schoolId, student_id, fee_head_id, type, value, reason, req.user!.id]
+      );
+      created++;
+    }
+
+    pool.query(
+      `INSERT INTO audit_logs (school_id, user_id, actor_role, action, module, after_data)
+       VALUES ($1,$2,$3,'BULK_CREATE_CONCESSION','fees',$4)`,
+      [schoolId, req.user!.id, req.user!.role,
+       JSON.stringify({ fee_head_id, type, value, student_count: created })]
+    ).catch(() => {});
+
+    return res.status(201).json({
+      created,
+      skipped_locked,
+      skipped_duplicate,
+      message: `${created} concession(s) submitted for approval.${skipped_locked > 0 ? ` ${skipped_locked} skipped (concession locked).` : ''}${skipped_duplicate > 0 ? ` ${skipped_duplicate} skipped (already have an active concession).` : ''}`,
+    });
+  } catch (err) {
+    console.error('[concessions POST /bulk-create]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /lock-student — Lock a specific student's fee account against concessions
+router.post('/lock-student', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { student_id, fee_head_id } = req.body;
+
+    if (!student_id || !fee_head_id)
+      return res.status(400).json({ error: 'student_id and fee_head_id are required' });
+
+    const result = await pool.query(
+      `UPDATE student_fee_accounts
+       SET concession_locked = true
+       WHERE student_id = $1 AND fee_head_id = $2 AND school_id = $3
+         AND deleted_at IS NULL AND concession_locked = false
+       RETURNING id`,
+      [student_id, fee_head_id, schoolId]
+    );
+
+    if (result.rows.length === 0) {
+      const check = await pool.query(
+        `SELECT concession_locked FROM student_fee_accounts
+         WHERE student_id = $1 AND fee_head_id = $2 AND school_id = $3 AND deleted_at IS NULL`,
+        [student_id, fee_head_id, schoolId]
+      );
+      if (check.rows[0]?.concession_locked)
+        return res.json({ success: true, already_locked: true });
+      return res.status(404).json({ error: 'Fee account not found' });
+    }
+
+    pool.query(
+      `INSERT INTO audit_logs (school_id, user_id, actor_role, action, module, after_data)
+       VALUES ($1,$2,$3,'LOCK_STUDENT_CONCESSION','fees',$4)`,
+      [schoolId, req.user!.id, req.user!.role,
+       JSON.stringify({ student_id, fee_head_id })]
+    ).catch(() => {});
+
+    return res.json({ success: true, message: 'No concession locked for this student fee account. This cannot be undone.' });
+  } catch (err) {
+    console.error('[concessions POST /lock-student]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST / — Create concession (PENDING_APPROVAL) ────────────────────────────
 router.post('/', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
   try {
@@ -17,6 +130,15 @@ router.post('/', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
       return res.status(400).json({ error: 'type must be fixed or percentage' });
     if (value <= 0)
       return res.status(400).json({ error: 'value must be > 0' });
+
+    // Check per-student concession lock
+    const lockCheck = await pool.query(
+      `SELECT concession_locked FROM student_fee_accounts
+       WHERE student_id = $1 AND fee_head_id = $2 AND school_id = $3 AND deleted_at IS NULL`,
+      [student_id, fee_head_id, schoolId]
+    );
+    if (lockCheck.rows[0]?.concession_locked)
+      return res.status(409).json({ error: 'Concessions are locked for this student fee account.' });
 
     // Validate against fee account if it exists (not mandatory — concession can be pre-created)
     const acctResult = await pool.query(
@@ -47,6 +169,68 @@ router.post('/', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
     return res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('[concessions POST]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /fee-heads-for-class — Fee heads assigned to students in a class ─────
+router.get('/fee-heads-for-class', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { class_id } = req.query as { class_id?: string };
+    if (!class_id) return res.status(400).json({ error: 'class_id is required' });
+
+    const result = await pool.query(
+      `SELECT DISTINCT fh.id AS fee_head_id, fh.name AS fee_head_name, fh.type,
+              sfa.assigned_amount
+       FROM student_fee_accounts sfa
+       JOIN fee_heads fh ON fh.id = sfa.fee_head_id
+       JOIN students s ON s.id = sfa.student_id AND s.is_active = true
+       WHERE sfa.school_id = $1
+         AND s.class_id = $2
+         AND sfa.deleted_at IS NULL
+       ORDER BY fh.name`,
+      [schoolId, class_id],
+    );
+    return res.json({ accounts: result.rows });
+  } catch (err) {
+    console.error('[concessions GET /fee-heads-for-class]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /students-for-fee-head — Students in a class assigned to a fee head ──
+router.get('/students-for-fee-head', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { class_id, fee_head_id } = req.query as { class_id?: string; fee_head_id?: string };
+    if (!class_id || !fee_head_id) return res.status(400).json({ error: 'class_id and fee_head_id are required' });
+
+    const result = await pool.query(
+      `SELECT
+         s.id, s.name,
+         sfa.concession_locked,
+         -- has pending or approved concession?
+         EXISTS (
+           SELECT 1 FROM concessions cn
+           WHERE cn.student_id = s.id AND cn.fee_head_id = $3
+             AND cn.school_id = $1 AND cn.status = 'pending_approval' AND cn.deleted_at IS NULL
+         ) AS has_pending_concession,
+         EXISTS (
+           SELECT 1 FROM concessions cn
+           WHERE cn.student_id = s.id AND cn.fee_head_id = $3
+             AND cn.school_id = $1 AND cn.status = 'approved' AND cn.deleted_at IS NULL
+         ) AS has_approved_concession
+       FROM students s
+       JOIN student_fee_accounts sfa ON sfa.student_id = s.id AND sfa.fee_head_id = $3
+         AND sfa.school_id = $1 AND sfa.deleted_at IS NULL
+       WHERE s.school_id = $1 AND s.class_id = $2 AND s.is_active = true
+       ORDER BY s.name`,
+      [schoolId, class_id, fee_head_id],
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[concessions GET /students-for-fee-head]', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

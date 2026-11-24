@@ -43,9 +43,10 @@ const ALL_TILES = [
   { path: '/admin/finance/reconciliation/online',      icon: '🔍', label: 'Online Reconciliation', perm: 'VIEW_RECONCILIATION' },
   { path: '/admin/finance/enquiries',                  icon: '📝', label: 'Admissions',            perm: 'VIEW_FEES' },
   { path: '/admin/finance/fee-structures',             icon: '🏷️', label: 'Fee Structures',        perm: 'MANAGE_FEE_STRUCTURE' },
-  { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'VIEW_EXPENSE' },
+  { path: '/admin/finance/expenses',                   icon: '🧾', label: 'Expenses',              perm: 'ADD_EXPENSE' },
   { path: '/admin/finance/salary',                     icon: '👔', label: 'Salary',                perm: 'VIEW_SALARY' },
-  { path: '/admin/finance/reports',                    icon: '📈', label: 'Reports',               perm: 'VIEW_REPORTS' },
+  { path: '/admin/finance/pending-fees',               icon: '⏳', label: 'Pending Fees',          perm: 'COLLECT_PAYMENT' },
+  { path: '/admin/finance/problematic-fees',           icon: '⚠️', label: 'Problematic Fees',      perm: 'COLLECT_PAYMENT' },
   { path: '/admin/finance/profitability',              icon: '💹', label: 'Profitability',         perm: 'VIEW_PROFIT' },
 ] as const;
 
@@ -56,6 +57,7 @@ export default function FinanceDashboardPage() {
   const [dailyCollection, setDailyCollection] = useState<DailyCollection | null>(null);
   const [studentPending, setStudentPending] = useState<StudentPending | null>(null);
   const [reconPending, setReconPending] = useState<ReconPending>({ count: 0, total_amount: 0 });
+  const [problematicCount, setProblematicCount] = useState(0);
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
   const [cashTasks, setCashTasks] = useState<CashReconciliation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,11 +83,22 @@ export default function FinanceDashboardPage() {
       setDailyCollection(daily);
       setStudentPending(pending);
       setReconPending(recon);
+      // Load problematic count separately — doesn't block main dashboard
+      apiGet<any[]>('/api/v1/financial/payments/duplicate-references', token)
+        .then(d => setProblematicCount(Array.isArray(d) ? d.filter(g => g.has_unreviewed).length : 0))
+        .catch(() => {});
       setCashTasks(cash.filter(c => c.status === 'pending').slice(0, 5));
 
       // Fetch recent transactions (last 10)
-      const txns = await apiGet<RecentTransaction[]>(`/api/v1/financial/reports/daily-collection?date=${today}&limit=10`, token).catch(() => []);
-      setRecentTransactions(Array.isArray(txns) ? txns : []);
+      try {
+        const txnData = await apiGet<{ payments?: RecentTransaction[] } | RecentTransaction[]>(
+          `/api/v1/financial/reports/daily-collection?date=${today}`, token
+        );
+        const txnList = Array.isArray(txnData)
+          ? txnData
+          : (txnData as any)?.payments ?? [];
+        setRecentTransactions(Array.isArray(txnList) ? txnList.slice(0, 10) : []);
+      } catch { setRecentTransactions([]); }
     } catch {
       // Ignore
     } finally {
@@ -111,14 +124,14 @@ export default function FinanceDashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <StatCard
           label="Today's Collections"
-          value={`₹${dailyCollection?.total.toLocaleString('en-IN') || 0}`}
-          subvalue={`${dailyCollection?.count || 0} payments`}
+          value={`₹${(dailyCollection?.total ?? 0).toLocaleString('en-IN')}`}
+          subvalue={`${dailyCollection?.count ?? 0} payments`}
           color="success"
         />
         <StatCard
           label="Total Pending"
-          value={`₹${studentPending?.total_pending.toLocaleString('en-IN') || 0}`}
-          subvalue={`${studentPending?.student_count || 0} students`}
+          value={`₹${(studentPending?.total_pending ?? 0).toLocaleString('en-IN')}`}
+          subvalue={`${studentPending?.student_count ?? 0} students`}
           color="warning"
         />
         <div
@@ -127,7 +140,7 @@ export default function FinanceDashboardPage() {
         >
           <p className="text-xs font-medium text-gray-500 mb-1">Reconciliation Pending</p>
           <p className={`text-2xl font-black ${reconPending.count > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
-            {reconPending.count > 0 ? `₹${reconPending.total_amount.toLocaleString('en-IN')}` : '—'}
+            {reconPending.count > 0 ? `₹${(reconPending.total_amount || 0).toLocaleString('en-IN')}` : '—'}
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
             {reconPending.count > 0 ? `${reconPending.count} payment${reconPending.count === 1 ? '' : 's'} awaiting bank match` : 'All payments reconciled'}
@@ -212,10 +225,15 @@ export default function FinanceDashboardPage() {
           <button
             key={path}
             onClick={() => router.push(path)}
-            className="p-4 rounded-xl bg-white border border-gray-200 hover:border-primary hover:shadow-md transition-all text-left"
+            className={`p-4 rounded-xl bg-white border hover:shadow-md transition-all text-left relative ${path === '/admin/finance/problematic-fees' && problematicCount > 0 ? 'border-amber-300 bg-amber-50' : 'border-gray-200 hover:border-primary'}`}
           >
             <span className="text-2xl block mb-2">{icon}</span>
             <p className="text-sm font-semibold text-gray-800">{label}</p>
+            {path === '/admin/finance/problematic-fees' && problematicCount > 0 && (
+              <span className="absolute top-2 right-2 text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">
+                {problematicCount}
+              </span>
+            )}
           </button>
         ))}
       </div>

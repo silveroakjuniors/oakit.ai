@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Oakit.ai — Teacher Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{--brand:#0369a1;--accent:#f59e0b;--bg:#f0f9ff;--surface:#fff;--border:#e0f2fe;--text:#1f2937;--muted:#6b7280;--sidebar:260px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:15px}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+.top-nav{position:sticky;top:0;z-index:100;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:56px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.nav-logo{font-weight:900;font-size:18px;letter-spacing:-.5px}.nav-logo span{color:var(--accent)}
+.nav-title{font-size:13px;font-weight:600;opacity:.8;display:none}
+.nav-actions{display:flex;gap:8px}
+.nav-btn{background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:5px}
+.nav-btn:hover{background:rgba(255,255,255,.25)}
+.hamburger{background:none;border:none;color:#fff;cursor:pointer;padding:8px;display:none}
+.layout{display:flex;min-height:calc(100vh - 56px)}
+.sidebar{width:var(--sidebar);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;padding:20px 0}
+.sidebar-inner{padding:0 16px 40px}
+.sidebar h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:20px 0 6px}
+.sidebar a{display:block;font-size:12.5px;color:var(--text);text-decoration:none;padding:4px 8px;border-radius:6px;margin-bottom:1px}
+.sidebar a:hover,.sidebar a.active{background:#e0f2fe;color:var(--brand);font-weight:600}
+.main{flex:1;min-width:0;padding:32px 40px 80px;max-width:860px}
+h1{font-size:28px;font-weight:800;color:var(--brand);margin-bottom:8px}
+h2{font-size:20px;font-weight:800;color:var(--brand);margin:48px 0 14px;padding-bottom:8px;border-bottom:2px solid #bae6fd;scroll-margin-top:72px}
+h3{font-size:15px;font-weight:700;color:var(--brand);margin:28px 0 10px;scroll-margin-top:72px}
+h4{font-size:13px;font-weight:600;color:#374151;margin:16px 0 6px}
+p{margin-bottom:10px;color:#374151}
+ul,ol{padding-left:22px;margin-bottom:10px}
+li{margin-bottom:5px;color:#374151}
+strong{color:#111827}
+a{color:var(--brand);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:'SF Mono',monospace;font-size:12px;background:#e0f2fe;padding:2px 6px;border-radius:4px;color:var(--brand)}
+.box{border-radius:10px;padding:14px 18px;margin:14px 0}
+.box-green{background:#f0fdf4;border-left:4px solid #22c55e}
+.box-amber{background:#fffbeb;border-left:4px solid var(--accent)}
+.box-red{background:#fef2f2;border-left:4px solid #ef4444}
+.box-blue{background:#eff6ff;border-left:4px solid #3b82f6}
+.box-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.box-green .box-label{color:#16a34a}
+.box-amber .box-label{color:#d97706}
+.box-red .box-label{color:#dc2626}
+.box-blue .box-label{color:#2563eb}
+.steps{margin:12px 0}
+.step{display:flex;gap:14px;margin-bottom:12px}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step-body{flex:1;padding-top:3px}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+th{background:var(--brand);color:#fff;padding:9px 12px;text-align:left;font-weight:600}
+td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:nth-child(even) td{background:#f0f9ff}
+.badge{display:inline-flex;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.badge-green{background:#dcfce7;color:#15803d}
+.badge-amber{background:#fef3c7;color:#92400e}
+.badge-red{background:#fee2e2;color:#991b1b}
+.badge-blue{background:#dbeafe;color:#1e40af}
+#btt{position:fixed;bottom:24px;right:20px;background:var(--brand);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.2);opacity:0;transition:opacity .3s;z-index:50}
+#btt.show{opacity:1}
+.hero{background:linear-gradient(135deg,var(--brand),#0284c7);color:#fff;border-radius:16px;padding:32px 36px;margin-bottom:36px}
+.hero .logo{font-size:28px;font-weight:900}.hero .logo span{color:var(--accent)}
+.hero h1{color:#fff;font-size:22px;margin:8px 0 4px}
+.hero p{color:rgba(255,255,255,.8);font-size:13px;margin:0}
+.hero .role-badge{display:inline-flex;margin-top:12px;padding:4px 14px;background:rgba(255,255,255,.2);border-radius:20px;font-size:12px;font-weight:600}
+@media(max-width:768px){
+  .sidebar{display:none;position:fixed;top:56px;left:0;height:calc(100vh - 56px);z-index:90;box-shadow:4px 0 20px rgba(0,0,0,.15)}
+  .sidebar.open{display:block}
+  .hamburger{display:flex}
+  .nav-title{display:block}
+  .main{padding:20px 18px 80px}
+  .hero{padding:22px 20px}
+  h2{font-size:17px;margin-top:36px}
+  table{font-size:12px}
+  th,td{padding:7px 9px}
+}
+@media(min-width:1200px){.nav-title{display:block}}
+</style>
+</head>
+<body>
+<nav class="top-nav">
+  <div style="display:flex;align-items:center;gap:14px">
+    <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="nav-logo">Oakit<span>.ai</span></div>
+    <div class="nav-title">Teacher Guide</div>
+  </div>
+  <div class="nav-actions">
+    <a class="nav-btn" href="guide-admin.html">Admin Guide</a>
+    <a class="nav-btn" href="guide-parent.html">Parent Guide</a>
+    <button class="nav-btn" onclick="window.print()">Print / PDF</button>
+  </div>
+</nav>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <h3>Getting Started</h3>
+      <a href="#overview">1. What Teachers Can Do</a>
+      <a href="#login">2. Logging In</a>
+      <a href="#daily-routine">3. Daily Routine</a>
+      <h3>Core Daily Tasks</h3>
+      <a href="#attendance">4. Marking Attendance</a>
+      <a href="#plan">5. Today's Plan</a>
+      <a href="#completing">6. Completing Topics</a>
+      <a href="#feed">7. Class Feed</a>
+      <a href="#homework">8. Homework</a>
+      <a href="#notes">9. Class Notes</a>
+      <h3>Oakie AI</h3>
+      <a href="#oakie">10. Oakie AI Chat</a>
+      <h3>Social Media</h3>
+      <a href="#social">11. Social Media Posts</a>
+      <h3>Student Progress</h3>
+      <a href="#milestones">12. Milestones</a>
+      <a href="#reports">13. Holistic Reports</a>
+      <a href="#observations">14. Observations</a>
+      <h3>Tools &amp; More</h3>
+      <a href="#handout">15. Teacher Handout PDF</a>
+      <a href="#voice">16. Voice Input</a>
+      <a href="#settings">17. Settings</a>
+      <a href="#trouble">18. Common Problems</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="hero">
+      <div class="logo">Oakit<span>.ai</span></div>
+      <h1>Teacher User Guide</h1>
+      <p>Silver Oak Juniors &nbsp;&middot;&nbsp; <a href="https://oakit.silveroakjuniors.in" style="color:rgba(255,255,255,.8)">oakit.silveroakjuniors.in</a></p>
+      <span class="role-badge">Role: Teacher &nbsp;&mdash;&nbsp; Manage your class, plan lessons, communicate with parents</span>
+    </div>
+
+    <h2 id="overview">1. What Teachers Can Do</h2>
+    <p>As a teacher in Oakit, you manage your assigned sections day-to-day. You are the primary person parents interact with through the platform, and your activity directly affects what parents see in their app.</p>
+    <table>
+      <tr><th>You can</th><th>You cannot</th></tr>
+      <tr><td>Mark daily attendance</td><td>See other teachers' classes</td></tr>
+      <tr><td>Post photos and videos to the class feed</td><td>Change school settings or fees</td></tr>
+      <tr><td>Tick topics as completed in the lesson plan</td><td>Add or remove students from the school</td></tr>
+      <tr><td>Assign homework and track parent acknowledgements</td><td>Access student fee or financial records</td></tr>
+      <tr><td>Send class notes to parents</td><td>Generate or modify the academic calendar</td></tr>
+      <tr><td>Ask Oakie AI for lesson ideas, activity suggestions, and content</td><td>Approve social media posts (admin/principal only)</td></tr>
+      <tr><td>Submit social media posts for admin approval</td><td>Access HR salary records</td></tr>
+      <tr><td>Record student milestones and observations</td><td>Delete posts from other teachers</td></tr>
+      <tr><td>Generate AI holistic reports</td><td>See parent messages from other sections</td></tr>
+      <tr><td>Download weekly/monthly PDF handouts</td><td></td></tr>
+    </table>
+
+    <h2 id="login">2. Logging In</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Open <code>https://oakit.silveroakjuniors.in</code> in Chrome or Safari on your phone or computer.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Enter your mobile number and password. Tap <strong>Sign In</strong>.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">The app opens on your Teacher portal. You will see only your assigned sections.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Install the app on your phone</div>
+      <p>The Oakit app works as a PWA (Progressive Web App). In Chrome on Android: tap the three-dot menu &rarr; "Add to Home Screen". On iPhone Safari: tap the Share button &rarr; "Add to Home Screen". The app icon appears on your home screen and works offline for reading.</p>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">Forgot your password</div>
+      <p>Contact your admin. Only the admin can reset teacher passwords. The admin will give you a temporary password to log in with, then you can change it in Settings &rarr; Change Password.</p>
+    </div>
+
+    <h2 id="daily-routine">3. Your Daily Routine in Oakit</h2>
+    <p>Here is the ideal morning-to-evening workflow for a teacher using Oakit effectively:</p>
+    <table>
+      <tr><th>Time</th><th>Task in Oakit</th><th>Why</th></tr>
+      <tr><td>By 9:30 AM</td><td>Mark attendance for today</td><td>Parents check the app first thing in the morning. Late marking causes unnecessary calls to the school.</td></tr>
+      <tr><td>Before class starts</td><td>Read today's plan and admin notes</td><td>The plan shows today's topic and any special instructions from the admin.</td></tr>
+      <tr><td>During / after class</td><td>Tick topics as completed</td><td>Updates coverage percentage for admin and principal visibility. Parents see topic progress.</td></tr>
+      <tr><td>During class</td><td>Post photos/videos to the feed</td><td>Parents love seeing their child's day. Aim for 2–3 quality posts per day.</td></tr>
+      <tr><td>End of day</td><td>Assign tomorrow's homework</td><td>Parents and students need to see homework in the evening.</td></tr>
+      <tr><td>End of day</td><td>Send any class notes</td><td>Reminders, event information, or materials for parents.</td></tr>
+      <tr><td>Weekly</td><td>Record milestones and observations</td><td>Builds the student's developmental record. Used for holistic reports at term end.</td></tr>
+    </table>
+
+    <h2 id="attendance">4. Marking Attendance</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Open the app. Tap <strong>Attendance</strong> at the bottom of the screen.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">You will see today's class list for your section. Tap each student to mark Present, Absent, or Late.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Tap <strong>Submit Attendance</strong>.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Parents of absent students receive an in-app notification immediately after submission.</div></div>
+    </div>
+    <div class="box box-red">
+      <div class="box-label">Mark attendance every day — no exceptions</div>
+      <p>If attendance is not marked, parents see "Not marked yet" in their app and assume the teacher is absent or the system is broken. Unmarked attendance also breaks the monthly attendance reports that parents and admin rely on.</p>
+    </div>
+    <h3>4.1 Marking Late Arrivals</h3>
+    <p>If a student arrives after attendance has been submitted, re-open the attendance view and change their status to "Late". You can update attendance until end of day. The timestamp of the late arrival is recorded.</p>
+    <h3>4.2 If You Made a Mistake</h3>
+    <p>You can re-open today's attendance at any time before midnight and correct it. Changes are logged.</p>
+
+    <h3>4.3 Viewing Previous Days' Attendance</h3>
+    <p>You can now go back and view attendance for any past date — this was a commonly requested feature.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Open the Attendance page. At the top you will see a date navigator with left/right arrow buttons.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Tap the <strong>&larr;</strong> arrow to go to the previous day, or use the date picker to jump directly to any past date.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">The attendance for that day loads — Present/Absent status is shown for every student. Past days are read-only.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Tap the <strong>Today</strong> button at any time to return to today's attendance.</div></div>
+    </div>
+    <div class="box box-blue">
+      <div class="box-label">Why view past attendance</div>
+      <p>Use this to verify what was submitted on a specific day, resolve parent queries about absence records, or check patterns before a parent-teacher meeting.</p>
+    </div>
+
+    <h3>4.4 Per-Student Absence History</h3>
+    <p>You can see every date a specific student was absent this academic year — including their overall attendance percentage.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">On any past day's attendance view (or after submitting today's attendance), tap any student's name row.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">A panel slides up showing:
+        <ul>
+          <li>Total school days, present count, absent count</li>
+          <li>Attendance percentage with a colour bar (green above 75%, red below)</li>
+          <li>A warning if the student is below 75% — the standard threshold for concern</li>
+          <li>Full list of every absent date this year, newest first</li>
+          <li>Late arrival dates are marked with a "Late" badge</li>
+        </ul>
+      </div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Tap the X to close and return to the class list.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Use this before parent-teacher meetings</div>
+      <p>Open the absence history for each student the day before PTM. If a student is below 75% attendance, you can raise it with the parent directly with specific dates as evidence. This eliminates the need to maintain a paper register or count absences manually.</p>
+    </div>
+
+    <h2 id="plan">5. Today's Plan — Reading and Using It</h2>
+    <p>Go to the <strong>Plan</strong> tab. This shows today's lesson plan generated by the admin.</p>
+    <h3>5.1 What You Will See</h3>
+    <ul>
+      <li><strong>Topic card</strong> — the curriculum topic assigned for today, with Oakie's suggested activities for that topic</li>
+      <li><strong>Admin note (blue box)</strong> — special instructions from the admin for today (e.g. "Use the chart from the storeroom today" or "PTM preparation — keep today's class shorter"). Read this first.</li>
+      <li><strong>Pending topics</strong> — topics from previous days that you did not tick as complete. These carry forward automatically and appear here until you complete them.</li>
+      <li><strong>Special day label</strong> — if today is a special event (Sports Day, PTM, etc.), the event name appears instead of or alongside the topic.</li>
+    </ul>
+    <div class="box box-blue">
+      <div class="box-label">What "pending topics" means</div>
+      <p>If you did not tick a topic yesterday, Oakit did not delete it. It moved to today as a pending item. This is called "carry-forward". You can see pending topics at the top of the Plan tab. Complete them when you can — they are tracked in the coverage report.</p>
+    </div>
+    <h3>5.2 Viewing Future Plans</h3>
+    <p>Tap the arrows on the Plan tab to navigate forward through the week or month. You can see what topics are coming up so you can prepare materials in advance.</p>
+    <h3>5.3 If the Plan Shows "No Plan"</h3>
+    <p>This means the admin has not yet generated plans for this month. Contact your admin. The admin generates plans from Admin &rarr; Plans.</p>
+
+    <h2 id="completing">6. Completing a Topic</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Plan</strong> tab &rarr; find today's topic card.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">After teaching the topic, tap the checkbox on the topic card.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">The topic moves to "Completed". The class's coverage percentage updates immediately on the admin's dashboard.</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">What if you could not complete the topic today</div>
+      <p>That is fine — do not tick it. Oakit automatically carries it forward to tomorrow. It will appear in your pending list. You will see it again the next day without any action needed from you.</p>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Why ticking matters</div>
+      <p>When you tick a topic, three things happen: (1) the admin's coverage report updates, (2) parents see that the topic was taught today, and (3) the topic is removed from the pending list. Not ticking means the admin and principal think you are behind on curriculum — even if you taught the topic in class.</p>
+    </div>
+
+    <h2 id="feed">7. Posting to the Class Feed</h2>
+    <p>The Class Feed is the daily photo/video diary of your classroom. Parents see these posts in real time in their app. This is the most engaging part of Oakit for parents — post at least once every day.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to the <strong>Feed</strong> tab &rarr; tap <strong>New Post</strong> (or the camera icon).</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Upload 1–5 photos or one video. Tap the upload area and select files from your phone.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Write a caption describing what is happening in the photos, or tap <strong>Generate with Oakie</strong> to get an AI-written caption.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Tap <strong>Post</strong>. Parents see it immediately.</div></div>
+    </div>
+    <h3>7.1 Video Guidelines</h3>
+    <ul>
+      <li>Maximum video length: 90 seconds</li>
+      <li>Videos over 15 MB are automatically compressed before upload (you will see a progress bar)</li>
+      <li>If the video is longer than 90 seconds, trim it on your phone before uploading</li>
+      <li>Vertical (portrait) videos look best on phones</li>
+    </ul>
+    <h3>7.2 Photo Guidelines</h3>
+    <ul>
+      <li>Up to 5 photos per post</li>
+      <li>Formats: JPG, PNG, WEBP</li>
+      <li>Avoid blurry photos — parents want to see their child clearly</li>
+      <li>Group activities, art projects, and class moments make the best posts</li>
+    </ul>
+    <h3>7.3 Daily Post Limit</h3>
+    <p>Your admin has set a daily limit for posts per section (usually 5). If you reach the limit, you cannot post more until tomorrow. Focus on quality over quantity.</p>
+    <h3>7.4 Deleting a Post</h3>
+    <p>Go to your post in the feed &rarr; tap the three-dot menu &rarr; <strong>Delete</strong>. Only your own posts can be deleted by you. The admin can delete any post.</p>
+
+    <h2 id="homework">8. Homework</h2>
+    <h3>8.1 Assigning Homework</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Homework</strong> tab &rarr; <strong>Assign Homework</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Write the homework task. Be specific: "Complete page 15, questions 1–5 in the Maths workbook."</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Set the due date.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Optionally tap <strong>Suggest with Oakie</strong> — Oakie will suggest homework based on today's topic.</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body">Tap <strong>Assign</strong>. All parents of your section see it immediately.</div></div>
+    </div>
+    <h3>8.2 Tracking Parent Acknowledgements</h3>
+    <p>Go to <strong>Homework</strong> &rarr; select the homework. You can see which parents have tapped "Acknowledged" and which have not. Use this to follow up with parents who haven't seen the homework.</p>
+    <div class="box box-blue">
+      <div class="box-label">Why acknowledging matters</div>
+      <p>When a parent taps "Acknowledged", they confirm they have seen the homework and ensured their child will do it. This is a digital record replacing the physical homework diary. It is much more reliable — the parent's acknowledgement is timestamped.</p>
+    </div>
+
+    <h2 id="notes">9. Class Notes</h2>
+    <p>Class notes are messages sent to all parents of your section — class reminders, event information, materials, or anything parents need to know that is not homework.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Notes</strong> tab &rarr; <strong>New Note</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Write your note. Optionally attach a file (PDF, image, Word document).</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Set an expiry date (or leave as the default set by admin, usually 14 days).</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Tap <strong>Send Note</strong>. Parents see it in their Updates / Notes section.</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">Notes auto-expire</div>
+      <p>Notes disappear after their expiry date. This keeps the parent's view clean. If you need a permanent announcement (e.g. school calendar), ask the admin to post it as an Announcement instead.</p>
+    </div>
+
+    <h2 id="oakie">10. Oakie AI Chat</h2>
+    <p>Oakie is your AI teaching assistant. It knows your class's curriculum because the admin uploaded the PDF textbooks, and Oakie read and indexed them. You can ask Oakie anything related to teaching and your class.</p>
+    <h3>10.1 How to Use Oakie</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Tap the <strong>Oakie</strong> tab (chat bubble icon) or the floating Oakie button.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Type your question or use the microphone for voice input.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Oakie responds with text, activity ideas, or structured content.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Tap the <strong>Download PDF</strong> button to save any Oakie response as a PDF file.</div></div>
+    </div>
+    <h3>10.2 Example Questions to Ask Oakie</h3>
+    <table>
+      <tr><th>What you want</th><th>What to type</th></tr>
+      <tr><td>Activity ideas for a topic</td><td>"What hands-on activities can I do with Nursery students for the topic 'Animals'?"</td></tr>
+      <tr><td>Homework suggestion</td><td>"Suggest a simple homework task for today's lesson on colours for 3-year-olds."</td></tr>
+      <tr><td>Class management help</td><td>"How do I handle a child who refuses to participate in group activities?"</td></tr>
+      <tr><td>Warm-up activity</td><td>"Give me a 5-minute warm-up activity for a Monday morning KG class."</td></tr>
+      <tr><td>Story or rhyme</td><td>"Tell me a short story I can read aloud about friendship for Nursery children."</td></tr>
+      <tr><td>What topics are due</td><td>"What topics has my class not covered yet this month?"</td></tr>
+      <tr><td>Assessment ideas</td><td>"How can I assess if my Nursery students understand the concept of big and small?"</td></tr>
+    </table>
+    <div class="box box-blue">
+      <div class="box-label">Oakie knows your curriculum</div>
+      <p>When you ask Oakie about activities for a specific topic, it cross-references the uploaded curriculum PDF for your class. This means suggestions are aligned with what you are actually supposed to be teaching — not generic content.</p>
+    </div>
+    <h3>10.3 Downloading Oakie Responses as PDF</h3>
+    <p>Every Oakie response has a small PDF download button. Tap it to save the content as a formatted PDF. Use this to: print activity sheets, share content with the principal, or build a teaching folder.</p>
+    <div class="box box-amber">
+      <div class="box-label">AI credits</div>
+      <p>Each school has a quota of AI queries. If you see "out of credits" error, contact your admin. The admin can top up AI credits from Settings.</p>
+    </div>
+
+    <h2 id="social">11. Social Media Posts</h2>
+    <p>If your school has the Social Media Publisher enabled, you can submit Instagram/Facebook posts for the admin's approval. Nothing goes live without admin sign-off.</p>
+    <h3>11.1 Submitting a Post</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Social Media</strong> tab &rarr; <strong>New Post</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Select <strong>Video/Reel</strong> or <strong>Photo Carousel</strong>. For carousel, you must upload at least 2 photos (maximum 5).</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Upload your media. Videos auto-compress if over 15 MB. Maximum video length: 90 seconds.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Write a caption (your notes about the post) or tap <strong>Generate with Oakie</strong> for a viral-optimised caption with hashtags.</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body">Select the platforms (Instagram, Facebook, etc.) and tap <strong>Submit for Approval</strong>.</div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-body">The post is in the admin's approval queue. You receive an in-app notification when it is approved and published.</div></div>
+    </div>
+    <h3>11.2 Daily Limits</h3>
+    <ul>
+      <li>1 video per day</li>
+      <li>2 photo carousels per day</li>
+      <li>Deleted posts free up the slot — if you delete a post, you can submit again</li>
+      <li>Failed posts (not published due to errors) also do not count against the limit</li>
+    </ul>
+    <h3>11.3 Managing Your Posts (My Posts Tab)</h3>
+    <table>
+      <tr><th>Status</th><th>What it means</th><th>What you can do</th></tr>
+      <tr><td><span class="badge badge-blue">pending approval</span></td><td>Waiting for admin to review</td><td>Wait. Contact admin if urgent.</td></tr>
+      <tr><td><span class="badge badge-green">published</span></td><td>Live on social media. Shows "View on Instagram/Facebook" link.</td><td>Tap the link to see your live post</td></tr>
+      <tr><td><span class="badge badge-red">rejected</span></td><td>Admin returned it with a reason</td><td>Read the rejection reason, edit your caption or media, and resubmit</td></tr>
+      <tr><td><span class="badge badge-red">failed</span></td><td>Publishing failed (platform error)</td><td>Wait for admin to retry. The error was a technical issue, not your fault.</td></tr>
+      <tr><td>recalled</td><td>You recalled it before approval</td><td>Edit and resubmit, or delete</td></tr>
+    </table>
+    <h3>11.4 Recalling a Post</h3>
+    <p>You can recall a post that is in <strong>rejected</strong> or <strong>failed</strong> status. This moves it back to your draft state so you can edit and resubmit. You cannot recall a post that is pending approval or already published.</p>
+    <h3>11.5 Viewing Your Published Post</h3>
+    <p>In <strong>My Posts</strong>, find a published post. You will see "View on Instagram" or "View on Facebook" links next to the platform badge. Tap to open the live post directly in Instagram or Facebook.</p>
+
+    <h2 id="milestones">12. Milestones and Observations</h2>
+    <p>Milestones are developmental achievements you mark for each student. They cover four areas: cognitive, physical, social, and emotional development. This is the digital replacement for the developmental checklist teachers normally do on paper.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Milestones</strong> tab &rarr; select a student.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">You will see a checklist of milestones for the class level. Tick each milestone when the child achieves it.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Tap <strong>Add Observation</strong> to write a free-text observation (e.g. "Priya showed excellent problem-solving during the blocks activity today").</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Save. Parents see newly achieved milestones in their app. Observations are visible to parents and admin.</div></div>
+    </div>
+    <div class="box box-green">
+      <div class="box-label">Why record milestones weekly</div>
+      <p>Milestones feed directly into the AI-generated holistic term report. The more milestones and observations you record, the richer and more personalised the report will be. Parents treasure these reports.</p>
+    </div>
+
+    <h2 id="reports">13. Holistic Reports</h2>
+    <p>At the end of each term, Oakie generates a personalised holistic development report for each student based on the milestones and observations you recorded.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body">Go to <strong>Reports</strong> tab &rarr; <strong>Generate Holistic Report</strong>.</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body">Select the student and term.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body">Oakie generates a paragraph-format report covering all four development areas based on the recorded data.</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body">Review the report. If you want to add or change anything, edit the text directly.</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body">Tap <strong>Save Report</strong>. The parent can now see it in their Reports tab and download it as a PDF.</div></div>
+      <div class="step"><div class="step-num">6</div><div class="step-body">To regenerate (if you added more observations after generating), tap the <strong>Refresh</strong> button on the saved report.</div></div>
+    </div>
+    <div class="box box-amber">
+      <div class="box-label">Generate reports before parent-teacher meetings</div>
+      <p>Have holistic reports ready 2–3 days before PTM day so parents have time to read them. Reports are available to parents in the app immediately after you save them.</p>
+    </div>
+
+    <h2 id="observations">14. Observations</h2>
+    <p>Observations are free-text notes about a specific student. They complement milestones by capturing context — the story behind the achievement.</p>
+    <ul>
+      <li>Write at least one observation per student per week if possible</li>
+      <li>Be specific: "Arjun counted to 20 without help during the morning circle activity on Tuesday" is better than "Arjun did well in counting"</li>
+      <li>Observations are visible to the principal and admin, and to the parent in the student portfolio</li>
+      <li>They feed into the holistic AI report at term end</li>
+    </ul>
+
+    <h2 id="handout">15. Teacher Handout PDF</h2>
+    <p>Go to <strong>Plan</strong> tab &rarr; <strong>Download Handout</strong>. Select the week or month. The system generates a formatted PDF plan with every day's topic, activities, and special day notes — ready to print and keep at your desk, or share with the principal.</p>
+
+    <h2 id="voice">16. Voice Input</h2>
+    <p>You can use your phone's microphone to talk to Oakie instead of typing. Tap the microphone icon in the Oakie chat box, speak your question, and Oakie will respond. This works well for quick questions during class when typing is inconvenient.</p>
+    <div class="box box-blue">
+      <div class="box-label">Voice in multiple languages</div>
+      <p>Voice input supports any language your phone recognises. If you are more comfortable in Hindi or Telugu, speak in that language and Oakie will understand and respond in English (or your preferred language if translation is enabled).</p>
+    </div>
+
+    <h2 id="settings">17. Settings</h2>
+    <ul>
+      <li><strong>Change Password</strong> — go to Settings &rarr; Change Password. Use a strong password of at least 8 characters.</li>
+      <li><strong>Notifications</strong> — enable or disable push notifications for different events (new messages, homework acknowledgements, etc.)</li>
+      <li><strong>Language</strong> — change the app display language</li>
+      <li><strong>Profile photo</strong> — upload a photo that appears in the teacher profile visible to parents</li>
+    </ul>
+
+    <h2 id="trouble">18. Common Problems</h2>
+    <table>
+      <tr><th>Problem</th><th>Fix</th></tr>
+      <tr><td>I cannot see my students in Attendance</td><td>Contact admin — your section assignment may be missing or incorrect</td></tr>
+      <tr><td>My plan shows "No plan for today"</td><td>Admin has not generated plans for this month. Contact admin to generate.</td></tr>
+      <tr><td>Topic appears again after I ticked it</td><td>Refresh the page. If it persists, contact admin — this is a rare sync issue.</td></tr>
+      <tr><td>Photo upload fails</td><td>Check your internet connection. Files larger than 200 MB will fail. Try a smaller photo or shorter video.</td></tr>
+      <tr><td>Video upload is very slow</td><td>Videos are compressed before upload. This is normal for large videos. Wait for the compression progress bar to finish.</td></tr>
+      <tr><td>Oakie says "out of credits"</td><td>Contact admin. The school's AI credit quota is exhausted and needs to be topped up.</td></tr>
+      <tr><td>Social media post shows "rejected"</td><td>Read the rejection reason in the post card. Edit and resubmit.</td></tr>
+      <tr><td>Social media post shows "failed"</td><td>This is a platform error (usually an expired token). The admin will retry it. You do not need to do anything.</td></tr>
+      <tr><td>I cannot see any feed posts from parents</td><td>Parents post to their feed, not yours. The class feed shows only teacher posts. Use Messages to communicate with specific parents.</td></tr>
+      <tr><td>I forgot to tick a topic yesterday</td><td>Tick it today in the Pending section. Coverage updates immediately even if the date has passed.</td></tr>
+    </table>
+
+    <div style="margin-top:48px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);text-align:center">
+      <p>Oakit.ai Teacher Guide &nbsp;&middot;&nbsp; Silver Oak Juniors &nbsp;&middot;&nbsp; <a href="https://oakit.silveroakjuniors.in">oakit.silveroakjuniors.in</a></p>
+      <p style="margin-top:4px">Also see: <a href="guide-admin.html">Admin Guide</a> &nbsp;&middot;&nbsp; <a href="guide-parent.html">Parent Guide</a></p>
+    </div>
+  </main>
+</div>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">&#8679;</button>
+<script>
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+document.addEventListener('click',function(e){var sb=document.getElementById('sidebar');if(sb.classList.contains('open')&&!sb.contains(e.target)&&!e.target.closest('.hamburger'))sb.classList.remove('open');});
+window.addEventListener('scroll',function(){document.getElementById('btt').classList.toggle('show',window.scrollY>300);var links=document.querySelectorAll('.sidebar a');var sections=document.querySelectorAll('h2[id],h3[id]');var cur='';sections.forEach(function(s){if(s.getBoundingClientRect().top<120)cur=s.id;});links.forEach(function(l){l.classList.toggle('active',l.getAttribute('href')==='#'+cur);});});
+</script>
+</body>
+</html>

@@ -1,6 +1,5 @@
 from datetime import date, timedelta
 import logging
-import math
 from uuid import UUID
 from db import get_pool
 
@@ -98,13 +97,18 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
     holidays = [r["holiday_date"] for r in holiday_rows]
 
     special_rows = await pool.fetch(
-        "SELECT day_date, day_type, label, duration_type FROM special_days WHERE school_id = $1 AND academic_year = $2",
+        "SELECT day_date, day_type, label, duration_type FROM special_days WHERE school_id = $1 AND academic_year = $2 ORDER BY day_date",
         UUID(school_id), academic_year
     )
     full_day_set = {r["day_date"] for r in special_rows if r["duration_type"] == "full_day"}
     half_day_set = {r["day_date"] for r in special_rows if r["duration_type"] == "half_day"}
     special_day_set = full_day_set | half_day_set  # all special days (for placeholder creation)
-    special_day_info = {r["day_date"]: (r["day_type"], r["label"]) for r in special_rows}
+    # Build info map — one entry per date, prefer full_day over half_day if somehow duplicated
+    special_day_info: dict = {}
+    for r in special_rows:
+        d = r["day_date"]
+        if d not in special_day_info or r["duration_type"] == "full_day":
+            special_day_info[d] = (r["day_type"], r["label"])
 
     # Determine date range
     cal_start = cal["start_date"]
@@ -130,11 +134,31 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
     # Half-day dates receive content; only full-day specials are excluded from curriculum days
     all_curriculum_days = [d for d in all_working_days if d not in full_day_set]
 
-    # For monthly mode: figure out which chunk index to start from.
-    # Half-days advance the index by 0.5; normal curriculum days advance by 1.
+    # For monthly mode: determine the starting chunk index by finding the last chunk
+    # actually assigned to this section before the month starts — then continue from there.
+    # This is more reliable than counting calendar days, because it respects completed/skipped days.
     if month and plan_year:
-        days_before = [d for d in all_curriculum_days if d < range_start]
-        chunk_start_idx = sum(0.5 if d in half_day_set else 1.0 for d in days_before)
+        # Find the last chunk_id assigned before range_start (skip event/holiday placeholders)
+        last_plan = await pool.fetchrow(
+            """SELECT chunk_ids FROM day_plans
+               WHERE section_id = $1
+                 AND plan_date < $2
+                 AND array_length(chunk_ids, 1) > 0
+               ORDER BY plan_date DESC LIMIT 1""",
+            UUID(section_id), range_start
+        )
+        if last_plan and last_plan["chunk_ids"]:
+            last_chunk_id = str(last_plan["chunk_ids"][-1])
+            try:
+                chunk_start_idx = float(all_chunk_ids.index(last_chunk_id) + 1)
+            except ValueError:
+                # Chunk not found in current list (curriculum updated?) — fall back to count
+                days_before = [d for d in all_curriculum_days if d < range_start]
+                chunk_start_idx = sum(0.5 if d in half_day_set else 1.0 for d in days_before)
+        else:
+            # No prior plans — start from beginning
+            days_before = [d for d in all_curriculum_days if d < range_start]
+            chunk_start_idx = sum(0.5 if d in half_day_set else 1.0 for d in days_before)
 
         # Delete existing plans for this section in this month only
         await pool.execute(
@@ -154,11 +178,13 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
         # Still create special day placeholders
         for day in range_working:
             if day in special_day_set:
+                if day not in special_day_info:
+                    continue
                 day_type, label = special_day_info[day]
                 await pool.execute(
                     """INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
                        VALUES ($1, $2, $3, $4, '{}', $5)
-                       ON CONFLICT (section_id, plan_date) DO UPDATE SET chunk_ids = '{}', status = EXCLUDED.status""",
+                       ON CONFLICT (section_id, plan_date) DO NOTHING""",
                     UUID(school_id), UUID(section_id), teacher_id, day, day_type
                 )
         return 0
@@ -176,28 +202,22 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
         if prev_plan and prev_plan["carry_forward_fragment"]:
             preceding_carry_fragment = prev_plan["carry_forward_fragment"]
 
-    # Distribute chunks across curriculum days in this range.
-    # Each day gets 1 chunk (or ceil if chunks < days).
-    total_curriculum_days_year = len(all_curriculum_days)
-    chunks_per_day = math.ceil(len(all_chunk_ids) / total_curriculum_days_year) if total_curriculum_days_year > 0 else 1
+    # Distribute chunks across curriculum days — exactly 1 chunk per teaching day.
+    # Full-day special days are excluded from range_curriculum_days so they never
+    # advance the chunk index. Events/exam-prep days are simply skipped; the curriculum
+    # picks up from the same chunk on the next teaching day.
 
     plans_created = 0
+    # chunk_start_idx is now the exact index to start from (float to handle half-days)
+    current_chunk_pos = chunk_start_idx
     # Track carry-forward fragment to prepend to the next working day
     pending_fragment: str | None = None
 
     for i, day in enumerate(range_curriculum_days):
-        # chunk_start_idx is a float; each half-day consumed 0.5, each full day 1.0
-        global_idx = int(chunk_start_idx + sum(
-            0.5 if d in half_day_set else 1.0 for d in range_curriculum_days[:i]
-        ))
-        start_idx = global_idx * chunks_per_day
-        day_chunk_ids = all_chunk_ids[start_idx:start_idx + chunks_per_day]
-        if not day_chunk_ids:
-            # Chunks exhausted — cycle back from beginning to fill remaining days
-            cycle_idx = (global_idx * chunks_per_day) % len(all_chunk_ids)
-            day_chunk_ids = all_chunk_ids[cycle_idx:cycle_idx + chunks_per_day]
-            if not day_chunk_ids:
-                day_chunk_ids = all_chunk_ids[-chunks_per_day:]  # use last chunk as fallback
+        # Each teaching day gets exactly 1 chunk in sequential order.
+        # Full-day special days are not in range_curriculum_days so they never advance this index.
+        chunk_idx = int(current_chunk_pos) % len(all_chunk_ids)
+        day_chunk_ids = [all_chunk_ids[chunk_idx]]
 
         if day in half_day_set:
             # Task 6.3: Half-day plan writing.
@@ -227,6 +247,7 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
                 day_chunk_ids, combined_first
             )
             plans_created += 1
+            current_chunk_pos += 0.5  # half-day consumes half a chunk slot
 
             # Find the next working day in the range to prepend the second half
             next_days = range_curriculum_days[i + 1:]
@@ -271,20 +292,26 @@ async def generate_plans(class_id: str, section_id: str, school_id: str, academi
                     UUID(school_id), UUID(section_id), teacher_id, day, day_chunk_ids
                 )
             plans_created += 1
+            current_chunk_pos += 1.0  # full day consumes one chunk slot
 
-    # Create placeholder plans for full-day special days in range
-    # Only create for actual working days (guards against bad data in special_days)
+    # Create placeholder plans for full-day special days in range.
+    # Only create for actual working days (guards against bad data in special_days).
+    # IMPORTANT: do NOT overwrite an existing scheduled plan — only insert if no row exists yet.
     for day in range_working:
         if day in full_day_set:
             # Extra guard: verify this day is actually a working day (not weekend)
             if day.isoweekday() not in list(cal["working_days"]):
                 logger.warning("Skipping special day placeholder for non-working day %s", day)
                 continue
+            if day not in special_day_info:
+                logger.warning("No special_day_info entry for full_day special on %s — skipping", day)
+                continue
             day_type, label = special_day_info[day]
+            # Only insert — never overwrite an existing plan (a scheduled plan takes precedence)
             await pool.execute(
                 """INSERT INTO day_plans (school_id, section_id, teacher_id, plan_date, chunk_ids, status)
                    VALUES ($1, $2, $3, $4, '{}', $5)
-                   ON CONFLICT (section_id, plan_date) DO UPDATE SET chunk_ids = '{}', status = EXCLUDED.status""",
+                   ON CONFLICT (section_id, plan_date) DO NOTHING""",
                 UUID(school_id), UUID(section_id), teacher_id, day, day_type
             )
 
