@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../../lib/db';
 import { jwtVerify, permissionGuard } from '../../middleware/auth';
-import { sendPushToStudentParents } from '../../lib/pushNotification';
+import { sendPushToParent } from '../../lib/pushNotification';
 import { sendTextMessage, normalisePhone } from '../../lib/whatsappSender';
 
 const router = Router();
@@ -130,21 +130,23 @@ router.post('/send', permissionGuard('SEND_REMINDER'), async (req, res) => {
       const formattedAmt = `\u20B9${outstanding.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
       // 1. Push notification to parent's device
-      try {
-        const pushResult = await sendPushToStudentParents(student.student_id, {
-          title: `Fee Reminder — ${student.student_name}`,
-          body: `Outstanding fee balance: ${formattedAmt} for ${student.student_name} (${student.class_name}). Please pay at the earliest.`,
-          url: '/parent/fees',
-          icon: '/school-logo.png',
-        });
-        pushSent += pushResult.sent;
-      } catch { /* push best-effort */ }
+      if (student.parent_id) {
+        try {
+          await sendPushToParent(student.parent_id, {
+            title: `Fee Reminder \u2014 ${student.student_name}`,
+            body: `Outstanding fee balance: ${formattedAmt} for ${student.student_name} (${student.class_name}). Please pay at the earliest.`,
+            url: '/parent/fees',
+            icon: '/school-logo.png',
+          });
+          pushSent++;
+        } catch { /* push best-effort */ }
+      }
 
       // 2. WhatsApp message to parent if opted in
       if (send_whatsapp && student.whatsapp_opt_in && student.parent_id) {
         const phone = normalisePhone(student.whatsapp_phone || student.parent_mobile || '');
         if (phone) {
-          const msg = `Dear ${student.parent_name || 'Parent'},\n\nThis is a gentle reminder from ${schoolName}.\n\nYour child *${student.student_name}* (${student.class_name}) has an outstanding fee balance of *${formattedAmt}*.\n\nKindly visit the school or login to Oakit to clear the dues at the earliest.\n\nThank you,\n${schoolName}`;
+        const msg = `Dear ${student.parent_name || 'Parent'},\n\nThis is a gentle reminder from ${schoolName}.\n\nYour child *${student.student_name}* (${student.class_name}) has an outstanding fee balance of *${formattedAmt}*.\n\nKindly visit the school or login to Oakit to clear the dues at the earliest.\n\nThank you,\n${schoolName}`;
           try {
             const waResult = await sendTextMessage(schoolId, phone, msg);
             if (waResult.success) whatsappSent++; else whatsappFailed++;

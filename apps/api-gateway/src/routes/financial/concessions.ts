@@ -173,6 +173,68 @@ router.post('/', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
   }
 });
 
+// ── GET /fee-heads-for-class — Fee heads assigned to students in a class ─────
+router.get('/fee-heads-for-class', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { class_id } = req.query as { class_id?: string };
+    if (!class_id) return res.status(400).json({ error: 'class_id is required' });
+
+    const result = await pool.query(
+      `SELECT DISTINCT fh.id AS fee_head_id, fh.name AS fee_head_name, fh.type,
+              sfa.assigned_amount
+       FROM student_fee_accounts sfa
+       JOIN fee_heads fh ON fh.id = sfa.fee_head_id
+       JOIN students s ON s.id = sfa.student_id AND s.is_active = true
+       WHERE sfa.school_id = $1
+         AND s.class_id = $2
+         AND sfa.deleted_at IS NULL
+       ORDER BY fh.name`,
+      [schoolId, class_id],
+    );
+    return res.json({ accounts: result.rows });
+  } catch (err) {
+    console.error('[concessions GET /fee-heads-for-class]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /students-for-fee-head — Students in a class assigned to a fee head ──
+router.get('/students-for-fee-head', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
+  try {
+    const schoolId = req.user!.school_id;
+    const { class_id, fee_head_id } = req.query as { class_id?: string; fee_head_id?: string };
+    if (!class_id || !fee_head_id) return res.status(400).json({ error: 'class_id and fee_head_id are required' });
+
+    const result = await pool.query(
+      `SELECT
+         s.id, s.name,
+         sfa.concession_locked,
+         -- has pending or approved concession?
+         EXISTS (
+           SELECT 1 FROM concessions cn
+           WHERE cn.student_id = s.id AND cn.fee_head_id = $3
+             AND cn.school_id = $1 AND cn.status = 'pending_approval' AND cn.deleted_at IS NULL
+         ) AS has_pending_concession,
+         EXISTS (
+           SELECT 1 FROM concessions cn
+           WHERE cn.student_id = s.id AND cn.fee_head_id = $3
+             AND cn.school_id = $1 AND cn.status = 'approved' AND cn.deleted_at IS NULL
+         ) AS has_approved_concession
+       FROM students s
+       JOIN student_fee_accounts sfa ON sfa.student_id = s.id AND sfa.fee_head_id = $3
+         AND sfa.school_id = $1 AND sfa.deleted_at IS NULL
+       WHERE s.school_id = $1 AND s.class_id = $2 AND s.is_active = true
+       ORDER BY s.name`,
+      [schoolId, class_id, fee_head_id],
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[concessions GET /students-for-fee-head]', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── GET / — List all concessions (filterable by status) ──────────────────────
 router.get('/', permissionGuard('MANAGE_CONCESSION'), async (req, res) => {
   try {
